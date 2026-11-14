@@ -254,7 +254,7 @@ test('§1.3 ruling 8 — the human stage SKIPS the seed-verdict read, and the sk
   assert.equal(human.verdict, 'skipped');
   assert.equal(human.judged, false);
   assert.match(String(human.detail.why), /ruling 8/i);
-  assert.deepEqual([...SEED_EXEMPT_KINDS].sort(), ['human-confirms', 'judged-floor']);
+  assert.deepEqual([...SEED_EXEMPT_KINDS].sort(), ['human-confirms']);
 });
 
 test('§1.3 — a PAUSE is never graded: neither runDeclaredClose nor the arbiter bridge may render it as green or as a fault', async () => {

@@ -226,11 +226,11 @@ const READING_ASKED = '. Agree?';
 const READING_ANSWER = ' Answer "agree"';
 const READING_TAIL = `${READING_ASKED}${READING_ANSWER}`;
 /** @param {number} n @returns {string} the rest of a reading ask after its answer words */
-const readingRest = (n) => `, or type your own reading (your answer is added as a new ~ rule on line ${n}).`;
+const readingRest = (n) => `, or type your own reading (your answer replaces that ~ rule on line ${n}).`;
 /** @param {number} n @returns {string} the answer words a reading ask ends with (said once, here, and cut in the panel) */
 export const readingTail = (n) => `${READING_ANSWER}${readingRest(n)}`;
 /** @param {number} n @returns {string} the answer words a can't-check ask ends with (said once, here, and cut in the panel) */
-export const cantCheckTail = (n) => ` Answer "${DROP_IT}", or type how to check it (your answer is added as a new ~ rule on line ${n}).`;
+export const cantCheckTail = (n) => ` Answer "${DROP_IT}", or type how to check it (your answer replaces that ~ rule on line ${n}).`;
 /** @param {number} n @param {string} rule @param {string} reading @returns {string} */
 export const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_TAIL}${readingRest(n)}`;
 /** @param {unknown} q a recorded question @returns {string|null} the reading a reading ask proposed, or null when it was another kind of question */

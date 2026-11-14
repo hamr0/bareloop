@@ -102,12 +102,14 @@ test('the checks: one row per close stage, the existing question words, the stat
 test('a failed run shows which check said no, in red with the status word failed', () => {
   const { red } = real();
   const h = fns.resultChecksCard(red.checks);
-  assert.match(strip(h), /6 of 7 passed/);
+  assert.match(strip(h), /1 of 2 passed · 5 not reached/);
   const rows = h.split('data-testid="result-check"').slice(1);
   const bad = rows.filter((r) => r.includes('class="dot red"'));
   assert.equal(bad.length, 1);
-  assert.match(bad[0], /no casts or silencers added\?/);
   assert.match(bad[0], /<b class="st-word">failed<\/b>/);
+  const grey = rows.filter((r) => r.includes('class="dot grey"') && r.includes('<b class="st-word">not reached</b>'));
+  assert.equal(grey.length, 5, 'the stages the latest close never reached read grey "not reached"');
+  assert.match(grey[4], /no casts or silencers added\?/);
   assert.equal(h.includes('rs-ok'), false, 'no tick on a run that did not pass every check');
   assert.match(fns.resultGenericHtml(red, detailOf()), /What changed/);
 });

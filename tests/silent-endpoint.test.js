@@ -19,7 +19,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { runLocate, LOCATE_AXES, defaultJudgeLoop } from '../src/judged.js';
 import { runAuthorScout, SURVEY_CAUSES } from '../src/authorscout.js';
 
 /** a local HTTP server that accepts every request and never answers it — the
@@ -38,37 +37,6 @@ const BOUND_MS = 1500;
 // generous: bare-agent's idle timer plus scheduling slack, well under node:test's
 // own per-test timeout below — a real hang would blow BOTH.
 const SLACK_MS = BOUND_MS * 2 + 1500;
-
-test(
-  'runLocate: a real silent endpoint REJECTS within the bound instead of hanging forever (F152)',
-  { timeout: 15_000 },
-  async () => {
-    const { OpenAIProvider } = await import('bare-agent/providers');
-    const srv = await silentServer();
-    try {
-      const provider = new OpenAIProvider({ apiKey: 'x', model: 'm', baseUrl: `http://127.0.0.1:${srv.port}/v1` });
-      // the SAME production seam planrun.js wires the judge through — no policy,
-      // toolless, exactly `defaultJudgeLoop({ provider, system })`.
-      const loopFactory = (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider, system: o.system });
-
-      const startedAt = Date.now();
-      const r = await runLocate({
-        artifactText: 'function f() {}\n',
-        card: { items: [{ rule: 'has-doc', text: 'every function needs a doc comment' }] },
-        loopFactory,
-        callBounds: { timeoutMs: BOUND_MS },
-      });
-      const elapsedMs = Date.now() - startedAt;
-
-      assert.ok(elapsedMs < SLACK_MS, `must settle near the ${BOUND_MS}ms bound, not hang: took ${elapsedMs}ms`);
-      assert.equal(r.ok, false, 'a silent endpoint can never produce usable facts');
-      assert.equal(r.red?.axis, LOCATE_AXES.PROVIDER, 'a call that never answers is the call-failed axis, honestly, never a laundered pass');
-      assert.equal(r.costUsd, null, 'a call that never resolved has no knowable cost (F6) — never a laundered $0');
-    } finally {
-      await srv.close();
-    }
-  },
-);
 
 test(
   'runAuthorScout: a real silent endpoint REJECTS within the bound instead of hanging the process (F152)',

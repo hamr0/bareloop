@@ -237,6 +237,18 @@ function pageDecimal(lines, signs) {
 /** the shapes that read a value after a label */
 const VALUE_SHAPES = ['money', 'time', 'number', 'date'];
 
+/**
+ * The ONE owner of a label's separator: the label as the page writes it. The run's checker reads a value right after the signed label, so a page that
+ * writes "Departure time: 10:24 AM." can only be read by the label "Departure time:". When EVERY place the page holds the label has a colon right after
+ * it, the label is signed with that colon; one bare place leaves it as the look gave it. A plain count of the page's own text, no pattern.
+ * @param {string} text the frozen page text @param {string} label a label as normLabel leaves it @returns {string}
+ */
+export function withColon(text, label) {
+  if (label.endsWith(':')) return label;
+  const n = countExact(text, label);
+  return n >= 1 && countExact(text, `${label}:`) === n ? `${label}:` : label;
+}
+
 /** the full month names of each language a date may be signed in (bareguard 0.27 reads these and short forms; one full name on the page proves the language is the page's) */
 const MONTHS_FULL = /** @type {Record<string, string[]>} */ ({
   en: ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'],
@@ -353,9 +365,12 @@ export function applyPageRules(text, mapping, jobLines) {
       const asListed = [];
       /** U1: labels the page writes after the number */
       const moved = [];
-      for (const w0 of words) {
-        const w = normLabel(w0);
-        if (!w) continue;
+      for (const w00 of words) {
+        const base = normLabel(w00);
+        if (!base) continue;
+        // a label the page always writes with a colon right after it ("Departure time: 10:24 AM.") is signed as the page writes it (run mwgsl7zx)
+        const w = withColon(text, base);
+        const w0 = w === base ? w00 : w;
         if (countExact(text, w) < 1) { asListed.push(w0); drop(f, w0, 'not-on-page'); continue; }
         if (amount) {
           const { B, A } = beforeAfter(lines, w);

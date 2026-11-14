@@ -1,5 +1,5 @@
 // R8 fix (2026-11-08): a run the outer close never reached shows the checks its STEPS ran, read through the Audit grid's own data. REAL archived spine: tests/fixtures/audit-grid (live run mvtatlxw: a step
-// whose try 1 was red and try 2 green), with its `outer-close` record removed so the close "never ran". The standing of a check is its LAST graded try (not the first), and the count of tries is the step's.
+// whose try 1 was red and try 2 green), with its `outer-close` and staged `close-verdict` records removed so the close "never ran". The standing of a check is its LAST graded try (not the first), and the count of tries is the step's.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,7 @@ test('a step\'s check that was red on try 1 and green on try 2 stands green; the
   assert.match(before.checks.head, /the close ran them after the worker stopped$/);
   // remove the outer close from the spine (the file the run list points at)
   const row = readRunList(w.opts).rows.find((r) => r.runid === RUNID);
-  const text = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"/.test(l)).join('\n') + '\n';
+  const text = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-verdict".*"stages"/.test(l)).join('\n') + '\n';
   writeFileSync(row.spine, text);
   const k = getRunResult(RUNID, w.opts).checks;
   assert.ok(k, 'the steps\' own checks stand in');
@@ -38,7 +38,7 @@ test('a step\'s check that was red on try 1 and green on try 2 stands green; the
 test('a check a LATER step ran again takes that later standing (the same name red in a later step reads red)', () => {
   const w = noCloseWorld();
   const row = readRunList(w.opts).rows.find((r) => r.runid === RUNID);
-  const lines = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"/.test(l)).map((l) => {
+  const lines = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-verdict".*"stages"/.test(l)).map((l) => {
     const r = JSON.parse(l);
     // the second step's artifact check goes red; the first step's stays green
     if (r.type === 'exit-eval' && r.step === 'annotate-cfg-params') r.results = r.results.map((x) => (x.type === 'artifact-written' ? { ...x, pass: false, detail: 'x was not written' } : x));

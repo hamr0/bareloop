@@ -80,7 +80,7 @@ test('session: a proposal ask carries Agree + Drop it, its box shows the questio
   const ask = w.session.state.pendingAsk;
   assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree', 'drop']);
   assert.equal(ask.box.text, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
-  assert.match(ask.question, /I propose at most 80 words\. Answer "agree" to use it, or type your own words \(your answer is added as a new ~ rule on line 1\), or answer "drop it" to leave it Not checked\.$/);
+  assert.match(ask.question, /I propose at most 80 words\. Answer "agree" to use it, or type your own words \(your answer replaces that ~ rule on line 1\), or answer "drop it" to leave it Not checked\.$/);
   assert.equal(w.bot().at(-1).text.endsWith('I propose at most 80 words.'), true, 'the thread holds the panel copy');
   assert.deepEqual(w.session.send('', 'agree'), { ok: true });
   assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
@@ -91,9 +91,9 @@ test('session: a proposal ask carries Agree + Drop it, its box shows the questio
   assert.equal(w.session.signPrepare().ok, true);
   assert.ok(await until(() => w.legs.length === 1));
   // ruling 1 (2026-11-12): agree writes a `~` line into the signed job lines AND a row with the SAME rule number; the agreed rule's row carries the pick (no aiProposal)
-  assert.deepEqual(w.legs[0].jobLines[0].rules, ['under 80 words', 'be nice', 'at most 80 words']);
+  assert.deepEqual(w.legs[0].jobLines[0].rules, ['at most 80 words', 'be nice'], 'one rule in, one rule out: the agreed words REPLACED "under 80 words"');
   const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'under 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true], [3, 'at most 80 words', null, false]]);
+  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true]]);
   const rows = human(w);
   assert.deepEqual(rows.map((r) => [r.answer, r.choice]), [['agree', 'agree'], ['drop it', 'drop']], 'the human row keeps the answer words, and says which button');
   assert.match(rows[0].question, /Answer "agree" to use it/, 'the logged question keeps its words');
@@ -109,9 +109,9 @@ test('the box\'s own words are a rule WHOLE, even when they read "agree" or "dro
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
   assert.ok(await until(() => w.legs.length === 1));
-  assert.deepEqual(w.legs[0].jobLines[0].rules, ['under 80 words', 'be nice', 'agree, why not', 'drop it'], 'both kept word for word');
+  assert.deepEqual(w.legs[0].jobLines[0].rules, ['agree, why not', 'drop it'], 'both typed answers kept word for word, each REPLACING the rule it was asked about');
   const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.origin, r.pick ?? null, r.left ?? false, r.cantAsked ?? false]), [[1, 'job', null, false, true], [2, 'job', null, false, true], [3, 'typed', null, false, false], [4, 'typed', null, false, false]], 'own words: the asked rule is settled (a pick with no check), a typed row holds the words; nothing was left Not checked by words');
+  assert.deepEqual(blockRows.map((r) => [r.rule, r.origin, r.pick ?? null, r.left ?? false, r.cantAsked ?? false]), [[1, 'typed', null, false, true], [2, 'typed', null, false, true]], 'own words: the asked rule is settled (a pick with no check), a typed row holds the words; nothing was left Not checked by words');
   assert.deepEqual(human(w).map((r) => [r.answer, r.choice]), [['agree, why not', 'rule'], ['drop it', 'rule']]);
 });
 
@@ -149,10 +149,10 @@ test('a can\'t-check ask (real look path): Drop it leaves the rule Not checked; 
   assert.ok(await until(() => asking(b.session)));
   b.session.send('drop it', 'rule');
   assert.ok(await until(() => b.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(b.session.state.messages.some((m) => /Your answers are in as ~ rules/.test(m.text)), 'a rule, not a drop');
+  assert.ok(b.session.state.messages.some((m) => /Your answers are in on those job lines/.test(m.text)), 'a rule, not a drop');
   b.session.signPrepare();
   assert.ok(await until(() => b.legs.length === 1));
-  assert.deepEqual(b.legs[0].jobLines[0].rules, ['one per week', 'drop it']);
+  assert.deepEqual(b.legs[0].jobLines[0].rules, ['drop it']);
   const c = rubricSession({ jobText: job });
   assert.ok(await until(() => asking(c.session)));
   c.session.send('drop it');
@@ -208,12 +208,12 @@ test('a reading ask: Agree writes the reading as a ~ rule; no Drop it (it has no
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
   assert.ok(await until(() => w.legs.length === 1));
-  assert.deepEqual(w.legs[0].jobLines[0].rules, ['under $450', 'not a red-eye', 'nonstop', 'departure time between 06:00 and 21:00']);
+  assert.deepEqual(w.legs[0].jobLines[0].rules, ['under $450', 'departure time between 06:00 and 21:00', 'nonstop']);
   const w2 = readingSession();
   assert.ok(await until(() => asking(w2.session)));
   w2.session.send('agree', 'rule');
   assert.ok(await until(() => w2.session.state.pendingAsk?.kind === 'menu'));
   w2.session.signPrepare();
   assert.ok(await until(() => w2.legs.length === 1));
-  assert.equal(w2.legs[0].jobLines[0].rules.at(-1), 'agree', 'kept whole as the person\'s own rule word');
+  assert.equal(w2.legs[0].jobLines[0].rules[1], 'agree', 'kept whole as the person\'s own rule word, replacing the asked rule');
 });

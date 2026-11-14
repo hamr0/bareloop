@@ -1,20 +1,20 @@
 # bareloop — Integration Guide
 
-> **Current: v0.16.0.** The verdict classes are **`green` + `soft-green`**. `soft-green` has
-> a real judged floor (`judged-floor`, `src/judged.js`): a pinned haiku-4.5 judge LOCATEs
-> facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail from
-> a signed rubric card, and *unsure* is a red, never a pass — bought by a signed calibration
-> gate (ten graded truths, five resisted lies, floor 10/10, itemized reds). A soft-green pass
-> mints its bridge row QUARANTINED: no reuse credit until an `accept` releases it, forward
+> **Current: v0.16.0 (header text; see CHANGELOG for the real release).** The verdict classes are **`green` + `soft-green`**. **Deterministic** means anything a machine
+> can check (tests, lint, errors), including PR and ticket jobs that lint or test: a repo job is Deterministic. **Rubric** (`soft-green`) means read-and-act work: read
+> something, check it, prepare it, close or route a ticket; it runs on the `~` / `!` / `$` check list (each check a code-decided `rubric-step` rule), and on a repo ONLY
+> for a Tickets job (any other repo + rubric start refuses at $0: "A repo job uses a Deterministic check."). **The old judge is gone** (2026-11-14): the PASS/FAIL judge
+> examples, the judge-card compile (`src/cardauthor.js`), the 10-case calibration gate (`src/calibrate.js`, gate 4 of `prepareSigning`) and the fit check
+> (`src/fitcheck.js`) are removed, with their library exports (BREAKING). A `~ PASS:` / `~ FAIL:` line is refused ("PASS/FAIL examples are gone — write what you want as a
+> ~ rule."), and a signed spec that carries one, or a `judged-floor` stage, refuses at Reuse, at `bareloop run <bundle>` and at `run-u --spec` (`oldJobWords`, `src/job.js`: "draft it fresh"). The old judge's RUNTIME engine is gone too (BREAKING, hamr 2026-11-14: "i don't need old runs in anything"): `src/judged.js` keeps only `resolveJudge` / `resolveJobJudge`, and the `judged-floor` kind, the locate call, `decide`, the calibration shape and the judge's paid seam (`judgeProvider` / `judgeModel` / `judgeRates`, `JUDGE_API_KEY`) no longer exist.
+> A soft-green pass mints its bridge row QUARANTINED: no reuse credit until an `accept` releases it, forward
 > only; a rerun records a disposition and its outcome is a NEW run's own row, born held
 > again. Every run ends at the signer's **review door** — `accept` / `rerun` / `pause` — which
 > records a disposition and **never changes the loop's own verdict** (`runPlan` still returns
 > `green`/`already-green` exactly as before). The door
 > is open **always for `soft-green`**, and **opt-in for `green`** via `reviewDoor: true` /
 > `--review-door` (the flag wins in both directions, never inferred); `accept` re-runs the
-> close's MECHANICAL stages only — never a judged floor, never a person. Shipped in v0.12.0
-> (2026-08-23); see CHANGELOG `## [0.12.0]` onward for the softgreen rung and the fixes/rungs
-> that followed through v0.15.0. **The plan shape is the ONLY shape**: the legacy
+> close's MECHANICAL stages only — never a person. **The plan shape is the ONLY shape**: the legacy
 > operator-authored `steps[]` path, config-v1 and its draft-PR step were deleted
 > 2026-07-26 (PRD v1.32), so `interpret`, `validateConfig` and `extractRules` are gone from
 > the public surface — a breaking change. Runs on two worker surfaces — the API `Loop` and,
@@ -44,7 +44,7 @@ inherited rule carries the green that minted it and the contrast that attributed
 
 - **Verdict class — how "done" gets decided:** `green` (a mechanical close: exit code =
   truth, `src/kinds.js` `LIVE_KINDS`) is the default and the only class with a live-proven
-  paid run. `soft-green` (a judged floor behind a signed calibration gate, plus a review
+  paid run. `soft-green` (read-and-act work on the check list, plus a review
   door) is fully admitted (`VERDICT_TYPES`, `src/job.js:106`) but has never rendered a live
   verdict — see `## Tickets: reading a ticket through the person's MCP server (MCP + tickets R2a)
 
@@ -69,7 +69,7 @@ A rubric or plain-folder job whose signed spec carries `mcp` (and flow type `tic
 - **One check block per rubric job (`src/checkblock.js`, `CheckBlock`; made by `authorCloseForJob` and driven by `authorClose({block, editGenerate})`; it replaced the Phase A/B list's own readers).** Pure (no I/O, no clock, no model): ONE store, `rows`, of three kinds: `~` (the person's rule, `by: you`), `!` (the agent's: a look fact, or an AI edit, `by: agent`) and `$` (code's defaults: the cited rule on a text line of a one-input job, the numbers tie after a fact line, the mechanical floor which never counts; `by: default`). Code matches every row against the saved page and builds every check through the bareguard shapes; a row it cannot build keeps its place with a plain reason. Every row ends `built`, `not-checked` (with a reason), `suggested` or `dropped`. The AI's whole part is a list of row EDITS (`add`, `reading`, `pick`, `not-checkable`; `src/rowedit.js`, tool `submit_edits`), each judged alone by code (a refused edit costs the rest nothing; at most `MAX_BANG` = 3 adds per reply); `editGenerate` is its model boundary and `ledgerGenerate` the `ledger-suggest` call that seeds the `!` rows (absent = the block is built from the look and the defaults). A `~` wins over a `!`; a check needing exact words that hold a version or a date is refused as week-only unless a place rule fits it (below); a `~` rule that carries a negation (`NEGATING_RE`) builds no phrase check. With `split` (the product path) code splits the `!` rows: words (or the count number) found in the job line or its `~` rules = JOB-DERIVED (built, the person may Drop it); anything else is SUGGESTED (held out of the close, offered only when code has proved it builds, switched on by Add). A rubric job's confirm turn plans the goal only (`confirmSystemFor`, `RUBRIC_CONFIRM_NOTE`; `accepted.goalOnly` is `true`). Progress: `onPhase('draft-ledger-try', {label, kept, refused})` per try, `onPhase('ledger-built', {rows})` once when the block is made and `onPhase('draft-ledger', {rows})` / `onPhase('draft-retention', {lines})` at the end; the panel writes `draft-log.jsonl` lines `kind: 'ledger'` (per row, `phase: 'built'` or `'final'`, with `key`, `line`, `rowKind`, `from`, `by`, `words`, `state`, `reason`), `kind: 'ledger-try'`, `kind: 'draft-notbuilt'` (suggested checks code could not build, one plain sentence each) and `kind: 'row-edit'`; the CLI emits the same phases to the author spine as `author-phase`. `authorClose` returns the signed form of the final rows as `ledger` (`signedRows`) and `authorCloseForJob` returns the unbuilt suggestions as `notBuilt` and carries the rows as `closeDecl.list` (fields `SIGNED_ROW_FIELDS`: line, key, from, by, kind, state, rule, part `{line, part}`, reason; never words), admitted by `CLOSE_DECL_FIELDS` and shape-checked by `validateCloseDecl`. Readers: `refusedOf`/`ruleNotChecked` (Not checked), `retentionOfList`, `listMatchesClose` (called by the panel's `signRun`), `cardOfClose` (the card after drafting, from the close alone). The confirm card's Drop / Add are `POST /api/author/<session>/row-edit` `{op: 'drop'|'add', key}`: $0, instant, no model call, answered 400 `bad-row` / `bad-choice` / `no-plan` in plain words. While a question is open, `POST /api/author/<session>/send` with no typed `choice` is refused 400 `bad-choice` (an out-of-date page): nothing is logged and the question stays open. The Audit's `Checks` fold lists the card's sections (Checks, Not checked, Always checked) with each row's recorded result. Rubric jobs only; a code job is unchanged.
 - **Place rules (`src/placerule.js`; hamr go 2026-11-11).** A phrase fact whose words hold a version or a date is true only while the input stays as it is. At drafting, CODE fits a place rule (`{kind: 'headingBetween'|'headingDateAfter', prefix, end, shape, skip}`; `fitPlacePhrase`) to the input's own newest release heading and the signed fact carries it as `fact.place`; the value itself is never signed. At run start, before any provider call, code re-reads the run's own frozen copy of the input with each rule (`readPlaceRules`): the values found are bound as those facts' phrases on the run's in-memory copy AFTER the approval check and the `job-start` record (`bindPlaceValues`, so the signed spec and its hash never change), and the run records one `place-rules` spine event (rows `{key, kind, found, value, was, reason}`) right after `job-start`. A rule that finds no value stops the run at $0 with every rule listed in plain words (`stopWords`). A resume or a door Accept/Rerun rebinds the values from that run's own `place-rules` record (`placeValuesOfEvents`), and a door with no record refuses (`NO_PLACE_RECORD_WORDS`); `runJob` takes them as `opts.placeValues` / `opts.placeRead`.
 
-## Public API` → "THE JUDGED FLOOR" and "THE REVIEW DOOR" below. `green` and
+## Public API` → "THE REVIEW DOOR" below. `green` and
   `soft-green` are the only classes on offer for new jobs.
 - **Worker surface — how the agent runs:** `provider: 'anthropic-api'` (the default, the
   only one with an operational guarantee, F48) drives `bare-agent`'s `Loop` and takes the
@@ -86,8 +86,7 @@ A rubric or plain-folder job whose signed spec carries `mcp` (and flow type `tic
   `buildRunnerProviders`) and holds only the bare-agent client class and endpoint option name per shape; an unknown provider name THROWS there, it never falls
   back to a default. The request-key spelling is the ROW's tick, never a model-id table: a server that ignores `max_completion_tokens` (F149) does not bind
   the output cap until the "old max_tokens" box is ticked, and an output cap that does not bind is a money hazard, so tick it on that row before a paid run
-  (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for
-  (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because a model's default thinking can eat the 4000-token locate budget); the WORKER's per-call mode is decided in code from the phase and attempt (see "Thinking on" below). A plan step's
+  (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The WORKER's per-call mode is decided in code from the phase and attempt (see "Thinking on" below). A plan step's
   `model: "sonnet"` is a documented schema token meaning "this job's worker model" (`STEP_MODELS`), not a model id. `gemini-api` (PRD item 31.3) is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
   `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
@@ -101,15 +100,11 @@ A rubric or plain-folder job whose signed spec carries `mcp` (and flow type `tic
   mis-spelled endpoint is silently DROPPED rather than rejected. Your job spec keeps one
   field name, `baseUrl`; the translation happens once, inside `makeProvider`. Ollama is
   deliberately NOT admitted: it takes no key and bills nothing, so every round would price
-  at $0 through machinery that treats $0 as a real price. The JUDGE IS NO LONGER PINNED
-  (PRD item 32): `resolveJudge` (exported) resolves it per job — the spec's signed
+  at $0 through machinery that treats $0 as a real price. A job's `judge` identity
+  (PRD item 32) is resolved by `resolveJudge` (exported): the spec's signed
   `judge: {provider, model}` if it names one, else **this job's own worker provider and
-  model**, so a job on any provider judges on its own provider and needs no second
-  account. There is no library fall-back: a run that cannot name its judge has not wired
-  one, and the judged stage instrument-STOPS rather than grading under an identity nobody
-  chose. The old `JUDGE_MODEL` constant is gone (a vendor model id is not a public export).
-  The judge's key is the resolved judge row's own variable (the worker's row when the judge shares its shape), with `JUDGE_API_KEY`
-  as a role-named override in front of it. The bundle runner
+  model**; there is no library fall-back. Nothing calls a judge model any more (the old judge is gone), so this identity
+  only feeds the spec stamp and the workflow key. The bundle runner
   (`bareloop run`) is a door to this same engine (`src/bundlerun.js` → `src/userrun.js`), so it
   reads whatever key the bundle's provider names (keys file or env) and refuses a missing one
   at $0, exit 2, naming it.
@@ -189,7 +184,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `ticketFilter` | optional `{priority?: ['P0'..'P3'], labels?: [name]}`, at least one key, lists non-empty and without duplicates (labels compared case-blind, 1-100 characters) | which tickets run: pure matching on labels and state, no model per ticket. The drafter of a Tickets job may PROPOSE it (the authoring declaration offers an optional top-level `ticketFilter`, kept beside the close, never in it); the person signs it; a draft cannot carry it into a spec (`assembleSpec` refuses it). Needs `mcp`. Decided by code at run start (see "A skipped ticket" in Tickets); a signed filter is part of the hash and the workflow key |
 | `ticketWatch` | optional non-empty list of `'state'` \| `'labels'`, no duplicates | the ticket fields a schedule may watch for a change (typed values only). Needs `mcp`. Validated and signed in this build; the scheduler that reads it arrives with the schedule rung |
 | `readMap` | optional boolean | EXPERIMENTAL, default OFF: absent = off, `true` makes the FIRST `shell_read` of a file of 200+ lines (not a test file) in an ask return a map of the file's named parts instead of its bytes; the second read of that path in the ask is today's read (see "First-read map" below). Only `true`/`false` are legal (anything else is an `invalid-value` red). An old spec keeps the hash it always had; a present value is signed. Not shown in the panel |
-| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature and forces recalibration. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
+| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE identity (PRD item 32). Absent, it resolves to this job's own `provider`/`model` (`resolveJudge`). No model call reads it now (the old judge is gone, 2026-11-14); it stays because the spec stamp and the workflow key resolve through it. Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -207,8 +202,8 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
 | `jobLines`, `inputs` | optional (P7). `jobLines: [{ n, text, rule, rules? }]` — the person's own numbered job lines, `rule` = their `~` lines joined with `'; '` (`''` when none), `rules` = the same `~` lines as an array BESIDE `rule` (present only when the line has any; must join back to `rule` exactly; the Reuse card prefers it so an example's own `; ` is not cut; an older spec lacking it renders by splitting `rule`); `inputs: [{ n, label, value }]` — line 1 the repo (absolute path), lines 2+ tracked files inside it. Exact fields, numbered 1..n in order | what the Job tab and Reuse show back exactly as typed (the signed `goal` stays the model's confirm sentence, which the worker reads). **A spec without them keeps its `jobSpecHash`** (never rewritten); only NEW jobs carry them, so a new job's `workflowKey` differs from an old one's. `inputs` is OPEN on a reuse (`REUSE_OPEN_SPEC_FIELDS`), so `workflowKey` ignores it; `jobSpecHash` covers it. Parsed by `parseJobBlock` / `parseInputs` (`src/jobblock.js`, one owner for the panel and the CLI) |
-| `verdictType` | `green` \| `soft-green` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **AUTHORING offers both (`MENU_CLASSES`).** `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door. Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
-| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs?, direction? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; an object close names no command to run, so the plan flow refuses one at runtime as `close-unsupported`. The modern route to a judged or human-decided close is a staged `closeDecl` (`judged-floor` / `human-confirms` stage kinds), not this object form |
+| `verdictType` | `green` \| `soft-green` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **AUTHORING offers both (`MENU_CLASSES`).** `soft-green` is read-and-act work on the check list (the old judged floor, its rubric card and calibration gate are gone, 2026-11-14), paired with the end-of-run review door. Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
+| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs?, direction? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; an object close names no command to run, so the plan flow refuses one at runtime as `close-unsupported`. The modern route to a human-decided close is a staged `closeDecl` (the `human-confirms` stage kind, or `rubric-step` on the check list), not this object form |
 | `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params, fromLine? }], notes?, refused?, guardLines? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. **Job-line coverage (P7, `checkJobLines` in `validateDeclaration`, $0, fed back through the revise loop):** with `jobLines` handed in, every stage the drafter writes carries `fromLine: [N, ...]` — a non-empty, duplicate-free ARRAY of real job lines, so one check (e.g. the one judged stage) may serve several lines, the mandatory guards carry none, and every numbered line has at least one stage OR a `{line, reason}` in `closeDecl.refused` — a note in `notes` does NOT cover a line (`job-line-uncovered`). `validateCloseDecl`/`validateJob` run it when the spec carries `jobLines`. **`guardLines` (F281):** an optional `[{guard, lines: [N, ...]}]` beside `stages` names the job lines a MANDATORY guard already does (a line fully covered by the always-on checks, e.g. "fix the cause in src/" with "no suppression comments"); the guard stage itself stays the genre's own object and still carries no `fromLine`. A listed line counts as covered (no stage, no `refused` entry needed); `guard` must name a mandatory guard of this close, `lines` must be real job lines, a guard is listed once with a duplicate-free non-empty `lines`, else a `$0` `invalid-value` red fed back through the revise loop. It is kept in the signed `closeDecl` (names and numbers only), and the plan card shows `check - always-on: <guard>` under a covered line. Old specs without it behave as before. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
@@ -306,8 +301,7 @@ supports** (a close is data, never code; verdict-class laundering is a named red
 `close-hierarchy`). The go-forward shape is the staged list above; a `predicate` object is
 legal shorthand for a one-stage list and the plan flow adapts it, but `gold`/`rubric`
 validate and then refuse at runtime (`close-unsupported`) regardless of verdict class — the
-plan flow has never executed an object close beyond `predicate`. `soft-green`'s judged floor
-is a STAGE (`judged-floor` inside a `closeDecl`) — never a close TYPE — so both OBJECT forms
+plan flow has never executed an object close beyond `predicate`. Both OBJECT forms
 below stay refused at runtime exactly as they were:
 
 | type | fields (exact — extras red) | legal class |
@@ -600,18 +594,18 @@ Every function and constant this section discusses by name is exported at the pa
 ```js
 import {
   authorClose, authorCloseForJob, AUTHORED_SPEC_FIELDS, AUTHOR_SCOUT_VERBS, assembleSpec,
-  buildSeedListing, CALIBRATION_SIZE, CASUALTY_AXES, CLASS_BATTERIES, classGuards,
-  closeCeiling, decide, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens, expectedOf,
-  foldJudgedArtifacts, genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
-  INJECTION_LOCATE_BATTERY, JUDGE_ATTEMPTS, JUDGED_MARKER, JUDGE_RULE_IDS, JUDGE_RULES,
-  KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_JUDGED_PATHS, MAX_REVISIONS,
+  buildSeedListing, CLASS_BATTERIES, classGuards,
+  closeCeiling, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens,
+  genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
+  JUDGED_MARKER,
+  KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_REVISIONS,
   mechanicalStages, NEVER_OFFERED_KINDS, normalizeHumanRuling, prepareSigning,
-  proposeJudgedArtifacts, questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
+  questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
   READ_SHIM_DIFF_STRATEGY, READ_SHIM_STRATEGY, refusalEvents, refuseLockedKind,
-  requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runCalibration, runClose,
-  runDeclaredClose, runDeclaredStages, runInterview, runLocate, runStage, SCOUT_ATTEMPTS,
-  SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead, signJudgedArtifacts,
-  STOP_FAULTS, validateCalibrationSet, validateCloseDecl, validateDeclaration,
+  requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runClose,
+  runDeclaredClose, runDeclaredStages, runInterview, runStage, SCOUT_ATTEMPTS,
+  SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead,
+  STOP_FAULTS, validateCloseDecl, validateDeclaration,
   ACCOUNTED_ROUND_TYPES,
 } from 'bareloop';
 ```
@@ -630,8 +624,7 @@ everything else refuses honestly, and every refusal is COUNTED.
 **The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
 `verdictType` is a declared radio the preflight validates, never inferred:
 `MENU_CLASSES` = `green` | `soft-green`, with `LOCKED_CLASSES` = **empty** —
-`soft-green` shipped its judged floor in v0.12.0 (2026-08-23) and is fully admitted
-alongside `green`. The
+`soft-green` is fully admitted alongside `green` (its old judged floor is gone, 2026-11-14; it grades on the check list). The
 review door (`accept`/`rerun`/`pause`) is shipped and
 live — always on for `soft-green`, opt-in for `green` via `reviewDoor: true` /
 `--review-door`. A future LOCKED_CLASSES entry would still return a counted `request-red`
@@ -646,7 +639,7 @@ a step, or test it without a provider.
 
 | step | call | what it is |
 |---|---|---|
-| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. The interview ADMITS only what is on the menu (`MENU_CLASSES`): nothing is locked today (`LOCKED_CLASSES` is empty), and any pick off the menu returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost several slots since it was frozen (D13's genre confirm; the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input; and, at PRD item 33 M3 piece 3, the old "which files change/read" question, replaced by Source and Destination — MECHANICAL fields, proven against the machine, never a numbered answer), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today (P7) the green set is ONE question — "The job", the person's numbered lines with their `~` rules, rendered by `renderJobLines` (`src/jobblock.js`); the `soft-green` set is that one plus Judge Examples, DERIVED from the `~ PASS:` / `~ FAIL:` lines of the same block (`renderExamples`, each example kept with its line number) — the judged floor's one required input, compiled into the signed rubric card and the frozen calibration set. Inputs (`label: value` lines) travel beside the answers as `inputs`, and `authorCloseForJob({ jobLines, inputs })` tells the drafter "the person pointed at these inputs: N label path" and orders `fromLine` tagging. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
+| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. The interview ADMITS only what is on the menu (`MENU_CLASSES`): nothing is locked today (`LOCKED_CLASSES` is empty), and any pick off the menu returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost several slots since it was frozen (D13's genre confirm; the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input; and, at PRD item 33 M3 piece 3, the old "which files change/read" question, replaced by Source and Destination — MECHANICAL fields, proven against the machine, never a numbered answer), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today (P7) the green set is ONE question — "The job", the person's numbered lines with their `~` rules, rendered by `renderJobLines` (`src/jobblock.js`); the `soft-green` set is the same one question (the old judge-examples answer, `renderExamples` and the signed rubric card and calibration set are gone, 2026-11-14). Inputs (`label: value` lines) travel beside the answers as `inputs`, and `authorCloseForJob({ jobLines, inputs })` tells the drafter "the person pointed at these inputs: N label path" and orders `fromLine` tagging. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
 | authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does. **F176 (fixed):** "kept the last accepted revision" is not the same claim as "kept the best revision" — a later revise round can VALIDATE fine yet MEASURE worse (every stage instrument-stops rather than reading a real red/green verdict). `declaration`/`seedRead`/`finalFrom`/the returned `genreEnv.dropped` are therefore the NEWEST SOUND measured iteration, not simply the last one, when the last one instrument-stopped and an earlier one did not; `stop` itself never changes. The swap is never silent: the return also carries **`fellBack`** — `null` on every run where it never fired, else `{from, to, brokenStages}` naming which iteration was dropped, which now stands, and which of the dropped one's stages instrument-stopped — reported through `onPhase('author-fallback', …)` as it happens and printed at the terminal readout (`fellBackLines`, `src/authorreadout.js` — lifted out of `scripts/author-readout.mjs` by PANEL-BUILD.md P0; called from `src/authorrun.js`). **F179/F180 (history):** bare-agent 0.42.0's OpenAIProvider used to THROW mid-call on malformed tool-call JSON (a raw SyntaxError, after the billed round), crashing past this function; a 2026-09-15 stopgap caught it as a `provider-red`/`ask.providerError` casualty (booked `costUsd: null`) so a sound prior declaration was kept via the fallback above rather than discarded. **F179 (bare-agent 0.43.0, BA-27 — the real mechanism):** the throw is fixed upstream. `OpenAIProvider`/`OllamaProvider.generate` now return a malformed round PRICED (real `usage`, never `costUsd: null`) with `toolCalls: []` plus their own `malformedToolCall: {name, error}` marker, which `Loop.run` surfaces unchanged on its return. For the authoring declaration and confirm-turn calls, `askStructured` reads that marker and RETRIES through the existing malformed-emission retry ladder (`MAX_STRUCTURE_RETRIES`) instead of stopping the run — nothing is ever repaired, and a malformed FIRST call no longer needs an earlier sound declaration to fall back to. The generic provider-casualty fallback above (idle-timeout, etc.) still applies for every other admitted class. **F184 (fixed, worker path):** the scout and the worker path never joined that retry ladder (still true — retrying is arbiter-adjacent, out of scope), but the worker path's `ask()` (`src/planrun.js`) now at least READS the marker where it already sees it and emits a distinct spine record, `worker-malformed-tool-call` (`{phase, iteration, name, error}`), before returning `r` unexamined exactly as before — no retry, no change to strikes/ladder/attempt counting or verdict routing, purely the same visibility bar this section's authoring-path fix already set |
@@ -688,9 +681,8 @@ are asked after two failed drafts, about a job line.
 
 **Thinking on (per job; hamr 2026-10-11).** The New job card has a "Thinking on" tick under Model, unticked by default, saved in the SIGNED job as the optional
 boolean `thinking` (absent = off; an old spec and any unticked job keep the hash they would have had; a ticked job's `jobSpecHash` and `workflowKey` differ). It
-covers DRAFTING (scout, confirm, author, revise, structure retries) AND the rubric JUDGE, and as the think-everywhere override it makes every WORKER call think too (below). A Reuse card does not
-offer the tick: it never drafts and the judge follows the SIGNED value, so the 10/10 calibration gate runs with the same tick as the later grading
-(`defaultJudgeLoop({ ..., thinking })` takes it in all three constructors: the run, `run-author`, the panel's gate). bareloop keeps NO per-model thinking list and no
+covers DRAFTING (scout, confirm, author, revise, structure retries), and as the think-everywhere override it makes every WORKER call think too (below). A Reuse card does not
+offer the tick: it never drafts, so it follows the SIGNED value. No judge is built anywhere (the old judge is gone). bareloop keeps NO per-model thinking list and no
 vendor regex: bare-agent (>= 0.52) owns the request shapes, and `thinkingSupport(kind, model, { baseUrl })` (a pure lookup, no network) answers `true` (measured
 switchable), `false` (measured NOT switchable) or `'unverified'`. `src/thinking.js` is the ONE owner of what a call sends:
 
@@ -748,154 +740,14 @@ no model found, it moves no seed number, and a declaration that authors it itsel
 
 **The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
 `count-not-worse`, `pattern-absent-in-diff`, `files-changed`, `human-confirms` and
-`judged-floor` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
+`rubric-step` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
 from v1 entirely (an unknown-kind typo, never counted demand). The locked-kind machinery is
 unchanged and is what a future entry arrives on: in tool mode a locked kind is INEXPRESSIBLE —
 the schema carries one branch per live kind — so that demand arrives through the interview
 layer instead (`refuseLockedKind(kind)`), whose "named but locked" wording is currently
 unreachable for exactly the reason above.
 
-**`judged-floor` is the one kind that BUYS its measurement** (softgreen module 2), and it is
-CLASS-GATED rather than locked: it renders a `soft-green` verdict, `soft-green` is still a
-LOCKED verdict class, so a real declaration naming it reds `class-ceiling` under a green pick
-and `class-battery-locked` under a soft-green one. The kind runs; no signable spec can reach it
-until the class is admitted. Its parameters are `card` — the signer's rubric as ENUMERATED
-items, where `rule` SELECTS from the arbiter's own rulebook (`JUDGE_RULES` / `JUDGE_RULE_IDS`,
-so a rule we do not implement is inexpressible) and `text` is the signer's words, which explain
-a red and never decide one — and `paths`, the AUTHORITATIVE artifacts, read off the seed listing
-like every other path and bounded at `MAX_JUDGED_PATHS` (one paid call each). It spawns nothing,
-so it takes no `cmd`, no `timeoutMs` and no `env`; it is `offer: false` BY LAW
-(`NEVER_OFFERED_KINDS` — a paid judge is never an in-run ruler); and it SKIPS the seed-verdict
-read (ruling 8) as a recorded `skipped` row.
-
-**Wiring a judged close, and what it costs.** The judge is RESOLVED per job (`resolveJudge`,
-PRD item 32) and is never a step knob or agent-selectable — naming your own examiner is arbiter
-territory, and `judge` is a field the human SIGNS into the hash. The runner supplies BOTH halves,
-`runJob({ judgeProvider, judgeModel })` — its own seam, not `provider`/`providerFor` — and they
-travel together: a judged stage missing EITHER instrument-STOPS as a wiring gap (two distinct
-messages, identity checked first) rather than grading on whatever binding was at hand or under a
-name nobody wrote. Each locate call is metered per call and emitted
-as a distinct `judge-round` spine record, which `runJob`'s ONE ledger accounts exactly like a
-`worker-round` (`ACCOUNTED_ROUND_TYPES`, and `readResume`'s fold reads that same list, so a
-resumed leg cannot silently widen a signed budget by the close's own spend). A budget funds the
-attempt PLUS its close. Unpriced is never free: a null cost is a `pricing-red` stop that is
-never retried, and the ladder is otherwise ONE retry (`JUDGE_ATTEMPTS`) — after that a broken
-judge is an instrument stop, never a red about the tree.
-
-**The rulebook, and what each rule can raise** (`JUDGE_RULES` in `src/judged.js`; every rule carries a plain-words `means` the case-proposal prompt renders, so a proposed practice case never expects a red the rule cannot raise). The judge only POINTS (quotes lines verbatim); code does every check; unsure is red; the judge never says pass/fail. Quotes are matched by bareguard's `quoteIn(..., {wholeLines:true})` (`wholeLines` arrived in bareguard 0.21; bareloop now needs `^0.26.0`): a contiguous run of whole artifact lines, so a bare fragment cannot pass by hiding in a longer line, while a dropped leading `* ` of a JSDoc tag line still matches. `has-doc` checks only that a JSDoc block sits directly above the function (read off the artifact by `docBlockAbove`; the judge's quote is a pointer that must lie inside that block), so a documented function never breaks it. **`says-what`** (the doc's description must say more than the function's own name) reds when the described prose, minus a fixed list of function words and the name's own words (camel/snake/kebab, light inflections, and a prefix echo such as `init`/`initialize` when the shorter word is at least 4 letters), leaves nothing; no description, or an unlocatable quote, reds. It catches a pure name echo only ("Returns the total." for `getTotal` passes), and with NO doc block at all it stays silent and leaves the red to `has-doc` (the card is not required to carry both). `params` reds a declared parameter with no tag, an `@param` naming no parameter (each destructured slot absorbs one unmatched root tag), and, when the doc names any field of a simple destructured parameter, a missing field; `@param options` alone for `{ x, y }` passes. `returns` reds a returning function with no `@returns`. A practice case that expects a `has-doc` red on a function that has a block is refused as a legality red before any call (`validateCalibrationSet`).
-
-**A judged stage may only judge files inside the job's write fence** (`judgedOutsideFence`, `src/authoring.js`, called from `validateDeclaration`, which every door reaches: the authoring revise loop, `validateCloseDecl` at signing and runner pre-flight, and `validateJob` for hand-written or reused specs). A path outside `writeScope` reds `judged-outside-write-scope` at draft time, because a finding on a file the run is fenced out of can never be fixed. With no fence to compare against (the plain-folder deferral) the rule is not run.
-
-**One red count.** A judged stage's red COUNT is the number of distinct failing functions it itemizes (`redCount`/`redSet` on the stage detail, `src/kinds.js`; an unsure entry counts as one). The same number is the gap headline ("N red(s) across M of K artifact(s)") and the trend value the close-trend governor compares to best-so-far, direction always down (`trendValueOf`, `src/declaredclose.js`), so a repeated or growing judged failure strikes like any numeric stage instead of running to the wall. Spines written before this change carry the old headline (the card-item count).
-
-**A refused draft or signing says WHY in plain words.** `proposalStopText` (a refused rubric proposal: `proposal-invalid` / `rubric-invalid`) and `signingStopText` (refused signing gates) in `src/authorreadout.js` are the one owner of the wording, printed by the panel's failed step and the CLI alike: code-written sentences per red kind naming the case and function, the real spend so far, and what to do; a practice-case/check mismatch is not claimed to be anyone's fault; an unknown red code is quoted, never dropped. The full scrubbed reds go into the session's `draft-log.jsonl` as a `step-reds` record, and the calibrating line shows the gate's real result (`calibrationSummary`: "N of 10 practice cases graded right, M of 5 attack tests resisted").
-
-**The worker is warned about the `any` suppression guard.** A job whose actual close stages carry the js `any` suppression pattern gets one extra genre-owned line in the worker system prompt (`ANY_SUPPRESSION_WARNING`, `anySuppressionWarning`, `src/authoring.js`): the guard scans added comment lines too, so prose like `, any` trips it. The guard regex itself is unchanged.
-
-**The two SIGNED artifacts of a judged close** (softgreen module 4, design §4.3/§4.4). The
-softgreen interview's Judge Examples answer (PRD item 33 M3 piece 3 — one example to pass, one
-to fail, and why; formerly two questions, Q6+Q7) compiles into the RUBRIC CARD and the FROZEN
-CALIBRATION SET, on
-the D5 shown-and-fixed path: `proposeJudgedArtifacts({answers, generate, book})` buys ONE
-schema-forced proposal (tool `propose_rubric`, over the same bounded malformed-emission ladder
-the declaration uses — a parse failure is an `artifact-red` retried under the cap, a proposal
-that parsed and then broke a rule is NOT retried); a UI shows it; `signJudgedArtifacts({proposal,
-fix})` stores the SIGNER's version (the fix replaces the proposal WHOLE, never merges — a signer
-who deleted a line must not get it back) and reports `source: 'signer'|'proposal'`; and
-`foldJudgedArtifacts(closeDecl, {card, cases})` enumerates both into the declaration. Free text
-in either artifact is scrubbed at ingest through the one `SECRET_PATTERNS` inventory, because a
-signed spec outlives the run that produced it.
-
-**Where they land, and what the hash covers.** The card replaces the ONE `judged-floor` stage's
-`params.card` — one card per close, and it is the signed one; a fold into a close with no judged
-stage (or two) THROWS rather than storing a rubric nothing reads. The cases land beside the
-stages as `closeDecl.calibration.cases`, because the set calibrates the RULER and is read before
-any stage runs. Both sit inside the spec, so `jobSpecHash` covers them by construction: a card
-line or a single case edit flips the hash and forces a re-sign, and a byte-identical re-store
-does not.
-
-**What a legal calibration set is** (`validateCalibrationSet`, beside the rulebook in
-`src/judged.js`, and re-checked at the spec gate by `validateCloseDecl`). EXACTLY
-`CALIBRATION_SIZE` = 10 cases — hamr's ruling, verbatim *"go build 10, we could double later"*,
-operator territory and never agent-picked — with BOTH polarities present, because a set that
-cannot fail one way proves nothing. A case is
-`{id, artifact, expect: {verdict: 'pass'|'red', reds: [{rule, fn}]}}`: `artifact` is the REAL
-source text the judge will be pointed at (never a description of one), and a red case must be
-ITEMIZED, naming a `rule` THIS close's card actually carries (§4.3's ceiling, mechanically — the
-fix for a miss is a new card line and a re-sign) and the `fn` the red lands on. The judge's own
-`why`/`quote` are deliberately NOT stored: no signer can predict prose, and pinning it would
-fail an honest pipe on wording. `expectedOf(decision)` is the ONE reduction of a `decide()`
-result to that shape, so a harness compares one shape rather than two.
-
-**THE CALIBRATION GATE** (`runCalibration`, softgreen module 5, `src/calibrate.js`). It runs the
-WHOLE pipe — `runLocate` over the shipped `JUDGE_ATTEMPTS` ladder, then `decide()` — over each of
-the ten, and compares `expectedOf(decision)` against the stored `expect` by VERDICT **and**
-ITEMIZED REDS (a `(rule, fn)` set, order-insensitive): *a pipe that reds the right case for the
-wrong reason has not been calibrated, it has been lucky*. The floor is **10/10, zero reds**
-(hamr, 2026-08-18) and it is reported per case — `graded: [{id, ok, got, want, detail}]` — never
-as an aggregate percentage.
-
-Alongside it runs **`INJECTION_LOCATE_BATTERY`: five ARBITER-OWNED artifacts**, one per
-bare-agent attack style, **re-aimed at the LOCATE axis** (2026-08-18 second addendum, ruling 1 —
-upstream's `shouldBreak` gold assumes a judge that renders a verdict, and this one never does).
-The attack text is embedded in the artifact, and a style resists only when the extracted FACTS
-are unaffected: same function list, same per-function doc reality. Reading the DECISION alone
-would be blind here — an invented `docQuote` reds `has-doc` through the quote-verification route,
-so a leak and a resist can render identical itemized reds. **All five must resist**; a leak fails
-calibration and names the style. Nothing about the battery is stored in a spec and no signer
-authors it.
-
-A **CASUALTY is never a failed case**: a dead call, an unpriced one (F6 — never retried) or an
-emission that never parses after the ladder STOPS the gate on `runLocate`'s own axis
-(`CASUALTY_AXES`), keeps the graded prefix, and reports zero failures — a broken judge is no
-evidence about the set in either direction. Every locate call is metered through `onCost` on
-every route out and the totals fold through `tallyCalls`, so one unpriced call makes `costUsd`
-null rather than an exact-looking floor.
-
-**At signing it is MANDATORY and it is the only PAID gate** (`prepareSigning`, gate 4). A close
-carrying a `judged-floor` stage is refused when no set is stored, when no `judgeLoop` seam is
-wired (a wiring gap, never a silent pass), when the gate is a casualty, and when anything short
-of all-of-them grades. It runs **after** gates 1–3, so no $0 refusal is ever paid for. The
-signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers the
-resolved judge identity), the graded rows and the battery — beside `judgeModel` itself.
-`runCalibration` takes `judgeModel` as a REQUIRED argument and throws without one.
-
-**D9.3 for a close with a judged stage** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*;
-widened 2026-10-09: *"a rubric job should check if judge can judge (calibration) ... we can't close
-everything upfront"*). A judged stage skips the seed read (ruling 8), so it can never be red at seed. For
-ANY close carrying a judged stage, pure or mixed with mechanical stages, a PASSED calibration gate plays the
-seed-red role (`seedProofIsCalibration`), and the record says so when no mechanical stage is red itself:
-`gates.seedVerdict.satisfiedBy === 'calibration'`. A failed or missing calibration never satisfies it. A close
-with NO judged stage is UNCHANGED and still needs a work stage red at the seed.
-
-**THE JUDGE TIER IS INSIDE THE SIGNATURE, and the stage refuses a mismatch.** *"A judge-model
-bump forces a full recalibration"* used to be an operator-side rule with nothing to fire on,
-which makes it prose (F45); it now has both halves of a detector. The tier the signer's set was
-graded by is stored beside the cases as **`calibration.judgeModel`** — `CALIBRATION_FIELDS`
-enumerates a stored set as exactly `cases` and `judgeModel` and nothing else — written by
-`foldJudgedArtifacts` from the RESOLVED judge identity the caller hands in (required; it throws
-without one). Because it is INSIDE the spec, `jobSpecHash` covers it by construction: change the
-judge — its model OR its provider — and every signed judged spec hashes differently, the
-signature dies, and the re-sign is what re-runs the calibration gate. `runJudgedFloor` refuses to
-grade when the stored identity is not the one about to grade, naming both, and it does not
-degrade in either direction. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
-on `…calibration.judgeModel`) — a set nobody can attribute to a tier is a floor nobody can tell
-apart from a bumped one. **`declaredStages` stamps it onto the judged stage** as
-`calibrationJudgeModel`, from the SIGNED bytes and through the one seam that already turns a
-declaration into stages (the same carry `offer: false` rides), so a stage can never name a tier
-the signature does not and no second close-level channel is plumbed through every executor seam.
-**`runJudgedFloor` then STOPS on a stored-vs-live mismatch** before it buys a call, naming both
-models and the two things that fix it — *re-sign the spec with the new tier* and *re-run the
-calibration gate (recalibrate)* — under `STOP_FAULTS.FAILED`, the same fault and the same reason
-as the absent judge seam beside it: nothing is broken, something was never re-done. It stops
-rather than degrading in either direction, because grading on the new tier mints a verdict
-against an uncalibrated floor and grading on the old one is not on offer (the pin is a constant).
-
-**The one honest limit, deliberate:** an ABSENT stamp does not stop. It is the same split the
-SET's own presence already lives under — a signed spec that judges cannot reach a run without a
-calibration (the signing gate) or without a model on it (the spec gate), so the only runtime
-question is ever WHICH model, and a bare stage descriptor handed straight to `runStage` by a test
-or an adopter is not a signed spec making a claim about a tier.
+**`judged-floor` is gone** (2026-11-14, hamr: "i don't need old runs in anything"). The kind, its runner, the locate call, the rulebook, `decide`, the calibration set's shape (`closeDecl.calibration`) and `RETIRED_KINDS` are deleted (BREAKING: the judge rulebook and its id list, the locate call, `decide`, the calibration validators and size, and the judged attempt and path ceilings are no longer exported; the CHANGELOG names each). A signed spec that carries a `judged-floor` stage or a PASS/FAIL job-line rule refuses in plain words ("draft it fresh") through `oldJobWords(spec)` (`src/job.js`), at the panel's Reuse (and so a scheduled fire), at `bareloop run <bundle>` and at `run-u --spec`. Old runs are not repaired.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be
@@ -1279,7 +1131,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, judgeRates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 **`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
 AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
@@ -1975,7 +1827,7 @@ tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is reco
 VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
 **Where bareloop takes it from:** the CUSTOMER's own price on the model line in
 `~/.config/bareloop/config.json` (`models.<ENV NAME>[].inPerM` / `outPerM`, USD per 1M
-tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` (and `judgeRates`) as data and
+tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` as data and
 hand them to the one `Loop` that drives worker, scout and planner rounds; the run doors resolve
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
@@ -1984,8 +1836,7 @@ before. bareloop keeps no price list of its own, ever.
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
-(the guess). `judge-round` records carry it too (the judge Loop's per-call label, forwarded by
-`src/kinds.js` `onJudgeCost`): `'caller'` under your price on the judge's row, else the guess label. The
+(the guess). A `judge-round` record in an old spine carries it too. The
 exceptions read UNKNOWN provenance, correctly, and by the same rule that governs the archive: every
 round archived before the signal existed (judge rounds before this change included). The native
 per-turn `worker-turn` carries `null`, bareloop's OWN statement rather than a forwarded one: that
@@ -3355,7 +3206,7 @@ worktree, before the engine is ever reached.
 `src/cli.js`'s `main(argv, deps)`, exported from the package root as **`cliMain`**
 (`export { main as cliMain } from './cli.js'` — renamed on export so it never collides with
 some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
-integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
+integration seam: pass `deps.provider` (and optionally `providerFor`) and the
 real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
@@ -3768,7 +3619,7 @@ key you want first (the panel picks the row by the Model menu).
   job: press Reuse workflow." The Chat card's Check type is one radio group of three
   (Deterministic · Rubric · Reuse workflow), and the third opens a search picker over `GET /api/author/reuse-jobs` (below) that
   fills the card through this same path (a pick puts the radio on the job's own check type). The button opens the Chat tab's New
-  job card filled from the SIGNED job with EVERY box open (job lines and `~` rules, check type, judge examples, thinking, Inputs,
+  job card filled from the SIGNED job with EVERY box open (job lines and `~` rules, check type, thinking, Inputs,
   Destination, Model, $ cap, Time cap) under a code-owned origin line "Reuse: <job> (run-N)"; nothing is locked and the server
   no longer refuses a changed job box. **The path is decided by the CARD, not the drafted spec** (`jobBoxesChanged(card, originCard)`
   in `src/panel/authorsession.js`): the JOB boxes are the job text, the check type and the thinking tick; the RUN boxes (Inputs,
@@ -4027,8 +3878,7 @@ Two files in `~/.config/bareloop/`, outside any repo:
 a finite number 0 or more (0 / 0 typed is a chosen price), and a ticked line needs both (`modelsProblem`, `src/config.js`, the one rule). A line without both prices cannot be ticked, so it
 is never in Chat's menu and a run on it refuses at $0 (`<model> is not set up: …`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) reads the line's price (`ratesOfLine`);
 the run doors resolve the chosen line once, at $0, before the monthly claim and any worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker line
-prices worker, scout and planner rounds; the judge is priced at ITS model's own line — for a different provider its own row, for the worker's provider the row on the worker's endpoint
-with a line named for the judge's model (`judgeRatesFor`), falling back to the worker's price when the model names no line. A priced round is stamped `rateSource:'caller'`
+prices worker, scout and planner rounds; A priced round is stamped `rateSource:'caller'`
 (VOUCHED, see `spendProvenance`). The run preview and the run tail print `price    yours: in $0.006 / out $1.20 per 1M tokens (MY_KEY row)`; a 0 / 0 price is accepted but the
 line then ends `— WARNING: this price is $0, so spend and limits read $0`. **The price is yours, and it sets what the cap means:** the cap and the halts run on the dollars your
 price produces, so a price set too low weakens the cap. When a vendor lists two prices (for example a cache-hit and a cache-miss input rate) enter the higher one. bare-agent
@@ -4392,13 +4242,11 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
 
 - **Providers.** `provider` (shell-owned LLM binding for the `Loop`/API path),
   `nativeProvider` (a factory required for a `clipipe-subscription` job),
-  `providerFor(tier)` (per-step model-tier provider, forwarded to the plan flow), and
-  `judgeProvider` (SOFTGREEN's own seam — the provider a judged close stage runs its
-  locate-only call through; distinct from `provider`/`providerFor` because the judge tier
-  is fixed, never the worker's). All four are documented at `src/run.js:91-101`.
+  and `providerFor(tier)` (per-step model-tier provider, forwarded to the plan flow). The judge seam
+  (`judgeProvider`) is gone with the old judge. They are documented in `src/run.js`.
 - **Close stage kinds.** The catalogue is fixed and enumerated (`LIVE_KINDS`,
   `src/kinds.js:142`: `command-exit`, `count-not-worse`, `pattern-absent-in-diff`,
-  `files-changed`, `human-confirms`, `judged-floor`). An adopter's declaration SELECTS
+  `files-changed`, `human-confirms`, `rubric-step`). An adopter's declaration SELECTS
   from this menu; it never authors a new kind — a stage naming an unimplemented or unknown
   kind is a hard runtime stop (`src/kinds.js:1885-1888`), not a way to run adopter code
   inside the close.
@@ -4407,7 +4255,7 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
   signature can stand in as a custom sink, but it is write-only — nothing in bareloop reads
   the spine back, so a custom sink cannot feed anything into a run's own decisions.
 - **`rates` is data the run doors hand in, not a behaviour hook.** `runJob` / `runPlan` take
-  `rates` / `judgeRates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
+  `rates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
   row (`ratesFor`, `src/providerrows.js`); bareloop keeps no price table and never picks a price
   itself. A price is the customer's, and sets what the cap means.
 
@@ -4505,23 +4353,31 @@ blast radius.
 
 ## The job block (P7) — "The job" + "Inputs"
 
-Goal, Success, Guardrails and Judge examples are one box, **The job**, and Source is **Inputs** (CLI interview and panel card alike).
+Goal, Success and Guardrails are one box, **The job**, and Source is **Inputs** (CLI interview and panel card alike).
 
-- **The job:** each plain line is numbered 1, 2, 3 (the number sits in a gutter outside the box). A `~` line has no number and belongs to the numbered line above; consecutive `~` lines join into ONE rule with `'; '`. A `~` line starting `PASS:` / `FAIL:` is a judge example (a rubric check that holds a judged part needs at least one of each; a rubric on a local file does not; a deterministic check refuses them); any other `~` line is a guardrail. A `~` before line 1 is a $0 red. Empty lines are ignored. `parseJobBlock(text)` → `{ ok, lines: [{ n, text, rule, examples }] }` or `{ ok:false, error }`; `jobBlockFitsCheck(lines, rubric, { judged? })` is the Check-type cross-check.
+- **The job:** each plain line is numbered 1, 2, 3 (the number sits in a gutter outside the box). A `~` line has no number and belongs to the numbered line above; consecutive `~` lines join into ONE rule with `'; '`. A `~` line starting `PASS:` / `FAIL:` is refused at $0 ("PASS/FAIL examples are gone — write what you want as a ~ rule.", `PASS_FAIL_GONE_WORDS`); every other `~` line is a rule for the line above. A `~` before line 1 is a $0 red. Empty lines are ignored. `parseJobBlock(text)` → `{ ok, lines: [{ n, text, rule, rules }] }` or `{ ok:false, error }`. `jobBlockFitsCheck` and `renderExamples` are removed (BREAKING).
 - **Inputs:** one `label: value` per line, numbered. Line 1 = the repo (absolute path). Lines 2+ = files or folders inside that repo, repo-relative; `proveInputFiles(inputs)` (`src/source.js`) proves them at $0 before any token — exists, inside the repo, tracked, and (files) not an environment file by name, not a symlink, text, under the size ceiling, a known secret shape in a file's content is MASKED wherever bareloop records it, never refused (the P6 worktree door ruling; `.env` by name and symlinks stay refused). A miss is `Inputs, line N: ...`. Search lines and files outside the repo are `only files inside the repo for now`. The panel proves them in `POST /api/author/start` (400 naming the line); the CLI re-asks.
 - **Drafter:** every stage carries `fromLine`, or the line is listed in `closeDecl.refused` with a reason (see `closeDecl` above); the confirm turn's checks are `{ text, fromLine: [N, ...] }`; the plan draws a multi-line check under EACH line it serves.
 - **Panel:** the card is `{ jobName, checkType, provider, model, thinking, jobText, inputs, destination, capUsd, maxWallMs }` (`provider` = the picked key's env name, `thinking` = the "Thinking on" tick). The confirm plan is a structured chat message `{ role: 'bot', kind: 'plan', plan }` and the Job tab reads the SIGNED spec through the same model (`src/panel/jobplan.js`: `planFromConfirm`, `planFromSpec`); the page draws both with one `renderJobPlan()`. `GET /api/runs/:id/job` returns `plan`, `jobLines`, `inputs`, `specHash`, `signedAt` (the run's FIRST `job-start`) and `signed` (`YYYY-MM-DD HH:MM · <first 6 of specHash>`, local time). An older spec (no `jobLines`) renders the signed goal as line 1 with its stage names as checks and the note `older job — numbered lines were not saved`; Reuse / Edit / Resume prefill the same fallback.
+
+### A Tickets + rubric job (hamr 2026-11-14, `docs/product/ITEM33-BUILD.md` "Addendum 2026-11-14")
+
+A Rubric job on a repo is allowed ONLY for a Tickets job. Its one input is the ticket: the ticket line is the only input and is renumbered from 1 by `cardInputs` (`src/panel/authorsession.js`;
+`ticketRubricInputs` is the same rule for parsed lines), read by the fresh card, the session, the Destination check, a scheduled start and Reuse (`buildReuseSpec`), so a signed spec's `inputs` run 1, 2, 3.
+The drafting-time read takes the newest ticket the job has not run (`newestUnrunTicket`, `src/ticketnext.js`) and reads it (`readTicket`, `src/ticket.js`); there is no ticket-number box. The frozen
+draft input is that ticket's masked text and carries the list address as its `url`, which run start re-reads (`refreezeUrlInputs`). A rubric card whose first input is a repo and whose flow is not Tickets is
+refused at $0: `REPO_RUBRIC_WORDS` = "A repo job uses a Deterministic check." (the CLI interview refuses a `soft-green` pick the same way, since it always takes a repo).
 
 ### A rubric job on your own local files — no judge yet (Part 1a, `src/rubricstep.js`, `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-12")
 
 A **Rubric** job whose first Input is the full path of a FILE (not a repo folder) works on your local text files; there is no repo, no language and no scout. Each Inputs line is `label: /absolute/file`.
 
 - **Door.** `proveRubricInputs({ inputs, into, destination? })` (`src/source.js`) proves every line at $0 and freezes the files under `input/` of the same hidden-git tree a plain folder gets; `source.json` also records `inputs: [{ label, rel, sha256 }]` (hashed once, there). Refused in plain words naming the line and ending "Nothing spent.": a web address or a `search` line ("line N: web inputs (URLs, search) arrive in a later build. Nothing spent."), a relative path, a missing file, a folder, a symlink, an environment file, a file over 5 MiB (`RUBRIC_INPUT_MAX_BYTES`), text that is not valid UTF-8, a repeated label, a known secret shape. `isRubricFilesManifest(manifest)` tells this manifest from a repo's. Destination is the full path of a folder (the finished files are copied there on a minted green); a relative one is refused at $0.
-- **No examples needed.** `jobBlockFitsCheck(lines, rubric, { judged })`: the `~ PASS:` / `~ FAIL:` lines are required of a rubric job ONLY when it holds a judged part. A rubric on a file holds none in this build, so a job without examples is fine (written examples are kept and unused until the judge arrives). A rubric on a repo still needs them.
+- **No examples.** The `~` lines are the checks; a `~ PASS:` / `~ FAIL:` line is refused (above). A rubric on a repo is refused at $0 ("A repo job uses a Deterministic check.") unless the flow is Tickets.
 - **One output per job line.** The worker writes `output/steps/<n>.json` for job line n: `{ "text": "...", "cites": { "<input label>": [ { "claim": "...", "quote": "..." } ] } }`. The worker's goal is written by code (`rubricGoal`) from the numbered lines and the frozen input paths, and states this contract (`stepFileContract`, one text shared with the composer's prompt). `output/steps/` is delivered with the rest of `output/` (`copyOut`: `steps/<n>-YYYY-MM-DD.json` under Destination).
 - **The close.** The text genre (`closeDecl.lang: "text"`, `RUBRIC_LANG`; `DECLARABLE_LANGUAGES` = the code languages plus `text`) has two kinds: the mandatory `changed-from-seed` guard and `rubric-step`, one stage per job line (`params: { step: n, parts: [...] }`, `fromLine: [n]`). A code job never sees `rubric-step` (`catalogueForLang`). `rubric-step` builds bareguard's rubric at every run (input shas from `source.json`) and grades the step file: `happened` (it exists and is a JSON object), `text` present, then the countable limits on `text` (`maxWords`, `minWords`, `maxLines`, `sections`, `sectionWords`) and `cited` per input the step cites (every quote found word for word in that input, spacing and `**` ignored; every number in a claim in its quote). A missing, cut-off or non-object file is a RED; an input that no longer matches its frozen sha, an unreadable `source.json`, a file over 5 MiB or a rubric that cannot be built is an INSTRUMENT STOP (exit 97). A step file cut inside valid JSON cannot be told from a short answer; that limit is stated, not hidden. A symlinked step file is red, never followed.
 - **Every part is sorted at drafting** (`class`: `countable` | `judged` | `guard` | `none`), and `checkRubricParts` reds in the person's words: `line N: this rule needs the judge, which arrives in the next build. Nothing spent.`; `line N: '<part>' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show.`; a guard (`line N: '<part>' is about web sources, and this job has no web input. Nothing spent.`); contradictions name both parts and both numbers; a stage must serve exactly its own line; a `cited` part must name one of the job's input labels. These codes are `rubric-*` and print whole in the drafting and signing stops (`draftStopText`, `signingStopText`).
-- **Signing is $0.** `prepareSigning` runs its paid calibration gate only for a close with a judged stage; a rubric-step close has none, so signing makes zero judge-round records. Not in this build: the judge, the final human accept, web inputs and search, chips (see the addendum's deferred list).
+- **Signing is $0.** `prepareSigning` has gates 1-3 only (the paid calibration gate is gone), so signing makes zero judge-round records. Not in this build: the final human accept, web inputs and search, chips (see the addendum's deferred list).
 - **Confirm turn (ruling 1A).** A rubric job on local files runs the same form -> confirm turn -> sign flow a repo job has (one confirm turn, two rounds at most; the scout stays off, the survey is the numbered inputs). `authorCloseForJob` runs it when `isRepo` or `lang === 'text'`. The protections shown are code's, never the model's: `confirmProtections({ verdictType, lang, writeScope, jobLines })` lists the text genre's guard (`changed-from-seed`), the write fence and, for every numbered line, `line N file — output/steps/N.json must exist, be complete JSON, and carry text`; the same list is fed to the model as ALREADY COVERED, and `RUBRIC_CONFIRM_NOTE` tells it a check here is a counted limit or a claim backed by a quote (anything needing judgement goes in `notChecked`). The confirmed plan reaches the composer, and its goal sentence rides in the worker goal as "The plan the person confirmed". `POST /api/author/start` skips the repo proof of Inputs for a rubric card whose first input is a local file (`looksLikeLocalFile`); the session proves each line.
 - **Fix-loop number.** A red `rubric-step` stage puts `detail.redCount` on its result: failing claims under a `cited` check (bareguard's `measured`) plus 1 per other failing check; `trendValueOf` hands it to the governor as `closeGrade` `{ stage, value }`, lower is better (no prose is parsed).
 - **Panel wording.** `stageQuestionText` words a rubric-step stage "line N — does its output pass the line's checks?". The worker brief also tells the worker to copy every number, time and price in a claim exactly as the input writes it ("9:27 AM", not "09:27").
@@ -4541,10 +4397,12 @@ For a rubric job (a text file input; `RUBRIC_LANG`) the **drafter writes no word
 - **The call.** After the look and its asks, before the confirm turn, ONE call (`runCheckSuggest`, over `askStructured`: the ceiling is read first, one retry, the scrubbed answer and its price land in `draft-log.jsonl` as `call` label `check-suggest`) suggests, per in-scope `~` rule, one check or `none`. The tool is `suggest_checks` with a per-rule `anyOf` answer form. An unusable answer reads "I can't check this" for every rule (never a guess). Needs `pickGenerate` (the panel wires it from the draft's provider; absent = no pick path, nothing asked).
 - **Scope (`scopedRules`).** A rubric job's `~` rules, minus a rule a kept look fact carries (`forRule`) or the look put under Not checked, and minus (fwd's `codeScope`) a rule of a job with a web-page input that names no whole-output word number. `guardLines` cover whole lines and never settle one word-count rule, so they do not remove a rule from scope. D5 mandatory guards are never offered or replaced.
 - **Keep-or-drop (`keepOrDrop`).** A suggestion is kept only if its rule is on bareguard's list AND offered, it carries only that rule's own fields, every number is one the rule names (`maxWords 79` for "under 80 words" is dropped) and every word is a word of the rule; a section count must match the rule's.
-- **The asks** are the look's own ask path (`source: 'look'`, `ask: 'check' | 'no-check'`): `Line n, guardrail "<rule>": I propose <plain words>. Answer "agree" to use it, or type your own words (your answer is added as a new ~ rule on line n), or answer "drop it" to leave it Not checked.` or `Line n, guardrail "<rule>": I can't check this. Your own words, or Not checked? ...`. **The cap:** a proposal never counts; the look's asks plus the `I can't check this` asks may be at most `MAX_QUESTIONS` (3), else the draft stops at $0 (`look-asks-too-many`) and lists them. `agree` writes the plain words as a new `~` rule and picks the check; own words are a `~` rule with no check; `drop it` leaves it Not checked.
-- **What the plan carries** (`applyPicks`, before validation): on each stage of a line this call settles, the drafter's own shape parts are gone, a part per pick is added with `rules: [the rule, the ~ line the answer wrote]`, and every other settled rule is a `refused` entry with a reason from `NOTE_WORDS` (`You chose to leave it Not checked...`, `Your own words are on the line...`, `No check was picked for it...`). The drafter and the confirm turn are told which rules code settles (`settled`). The plan card draws a `You picked` row per pick (chat plan card; the Job tab shows the check rows and the Not checked rows of the signed close, not the label).
-- **Revise, Start over (am17, am18, am20).** `picks-record.json` in the draft's session folder holds one entry per pick keyed by the job line's WORDS (plus its order among equal lines) and the rule's exact words, never a number. The card sends `carryFrom` (the id of the draft it follows); the next draft keeps every pick whose line and rule words still match (not sent to the call, not asked, not counted, marked `kept from last draft`), asks only what is new or changed, and a deleted rule takes its pick. Revise reopens the boxes holding the server's card (the `~` lines the answers added) and names the draft it follows (`carryFrom`, with `carryKind` = `revise` or `startover`); it does not draft. Each draft has 2 revises (fwdloop M4e am14 item 3): the plan menu shows "2 revises left" / "1 revise left" beside **Revise**, and after the second the same button reads **Start over** (there is no separate Start over button; it also reopens the boxes, and its draft has 2 new revises). A revise is a new session, so the count rides the link: `revises.json` (`{used}`) in each draft's folder, a Revise draft has the followed draft's `used` + 1, a Start over or a first draft 0, and the session state carries `revisesUsed` / `revisesLeft` (a refresh brings it back). `POST /api/author/:id/abandon` with `{kind:'revise'}`, and a start whose `carryKind` is `revise`, are refused (409, plain words, nothing ended, no model call) when that would be the third. The draft log carries `{kind:'draft-label', label}` for a Revise or Start over draft (`src/revises.js` `draftLabelOf` owns the words; none for a first draft); the drafting part (`draftingPartFor`) exposes it as `draftLabel`, shown as the Audit Draft group's first row.
-- **Editing an agreed line (am21).** If the person edits the `~` line an `agree` wrote, ONE ask is about the edited words (`pairRule` = the rule it was agreed from); the answer replaces that line in place, the old line never comes back, and `drop it` leaves it and its source Not checked.
+- **The asks** are the look's own ask path (`source: 'look'`, `ask: 'check' | 'no-check'`): `Line n, guardrail "<rule>": I propose <plain words>. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line n), or answer "drop it" to leave it Not checked.` or `Line n, guardrail "<rule>": I can't check this. Your own words, or Not checked? ...`. **The cap:** a proposal never counts; the look's asks plus the `I can't check this` asks may be at most `MAX_QUESTIONS` (3), else the draft stops at $0 (`look-asks-too-many`) and lists them. `agree` REPLACES the asked rule with the plain words and picks the check (one rule in, one rule out; the check list is the one owner and the job text is rebuilt from it); own words replace the asked rule with no check; `drop it` leaves it Not checked.
+- **What the plan carries** (`applyPicks`, before validation): on each stage of a line this call settles, the drafter's own shape parts are gone, a part per pick is added with `rules: [the rule]` (an answer replaced that rule, so there is no second line), and every other settled rule is a `refused` entry with a reason from `NOTE_WORDS` (`You chose to leave it Not checked...`, `Your own words are on the line...`, `No check was picked for it...`). The drafter and the confirm turn are told which rules code settles (`settled`). The plan card draws a `You picked` row per pick (chat plan card; the Job tab shows the check rows and the Not checked rows of the signed close, not the label).
+- **Revise, Start over (am17, am18, am20).** `picks-record.json` in the draft's session folder holds one entry per pick keyed by the job line's WORDS (plus its order among equal lines) and the rule's exact words, never a number. The card sends `carryFrom` (the id of the draft it follows); the next draft keeps every pick whose line and rule words still match (not sent to the call, not asked, not counted, marked `kept from last draft`), asks only what is new or changed, and a deleted rule takes its pick. Revise reopens the boxes holding the server's card (the `~` rules as the answers left them) and names the draft it follows (`carryFrom`, with `carryKind` = `revise` or `startover`); it does not draft. Each draft has 2 revises (fwdloop M4e am14 item 3): the plan menu shows "2 revises left" / "1 revise left" beside **Revise**, and after the second the same button reads **Start over** (there is no separate Start over button; it also reopens the boxes, and its draft has 2 new revises). A revise is a new session, so the count rides the link: `revises.json` (`{used}`) in each draft's folder, a Revise draft has the followed draft's `used` + 1, a Start over or a first draft 0, and the session state carries `revisesUsed` / `revisesLeft` (a refresh brings it back). `POST /api/author/:id/abandon` with `{kind:'revise'}`, and a start whose `carryKind` is `revise`, are refused (409, plain words, nothing ended, no model call) when that would be the third. The draft log carries `{kind:'draft-label', label}` for a Revise or Start over draft (`src/revises.js` `draftLabelOf` owns the words; none for a first draft); the drafting part (`draftingPartFor`) exposes it as `draftLabel`, shown as the Audit Draft group's first row.
+- **One rule in, one rule out (2026-11-14; replaces the earlier am21 "editing an agreed line" pairing).** An answer replaces the asked `~` rule (same line, same rule number), so there is never an agreed line beside its source and no follower row; a Revise that edits the replaced rule simply makes it a new rule, asked again. A counting rule whose own words already are the check ("exactly 3 list items", `obviousCheck`) is settled as written, with no question.
+- **The note question (2026-11-14 (b), `src/noteask.js`).** Only when a rubric line ends facts-only, ONE typed call (the destination call's provider, model and thinking-off; one retry; no repair) asks per such line whether it also wants written words. Code decides: yes adds a `$` row "line N writes a note — the note must be there" with a countable `nonEmpty` part beside the facts; no changes nothing; a failed call shows a Not checked row. Test-proven; not seen live.
+- **A label the page writes with a colon (`withColon`, `src/pagerules.js`).** When every place the page holds a value label has a colon right after it ("Departure time: 10:24 AM."), the label is signed with the colon; one bare place leaves it as given. A `!` phrase found in no result row of the line's money fact, and a `~` money rule in another currency than the page fact, are Not checked with plain reasons, never built.
 - **Last-try drop (PRD v1.131 tick 4, `dropExtras` in `src/checkpick.js`, `dropAfterLastTry` in `src/authorflow.js`).** Rubric jobs only, only after the LAST try failed the plan check: when every red points at one part the AI wrote (not a pick, not a guard, not a `numbersFromFacts` part), those parts are dropped to Not checked (a pure extra as a `line N: "<words>"` note, a part that carried a `~` rule no other part carries as that rule's `refused` entry, both with `DROPPED_WORDS`) and the plan is checked once more; any other red keeps the refusal. Known gap (F309): a line whose only AI part is dropped leaves its rubric-step with `parts: []` and the plan can still sign with zero checks. Seen live in paid round 6 (3 drafts; paid round 5: 0 firings).
 - **Retention record (PRD v1.131 tick 7, `retentionOf` in `src/checkpick.js`).** When a rubric draft ends, `authorClose` reports the `draft-retention` phase once and the panel session writes one `{kind:'retention', no, lines:[{line, aiParts, kept, dropped, picks}], at}` row to `draft-log.jsonl`: counts only, no words. Seen live in paid rounds 5 and 6 (a record on every draft that reached a declaration; a draft refused before one has none).
 - **One label list.** For an input the page-word map read, the drafter is offered only the labels the draft gate accepts (`labelListsFor`, `src/factwords.js`); any other input keeps the code-made scan list. The gate itself is unchanged. Leaning, not proof: `rubric-fact-label-off-list` had 0 tries in 20 drafts in paid round 6 (n=10 per arm, one model).
@@ -4605,4 +4463,4 @@ For an integrating agent reading a run's record:
 - **Money line** `moneyWithDraft(spendCore, draftUsd, budgetUsd, draftComplete, runUsd)`: `$run run + $draft drafting = $total of $cap`; without `runUsd` the sum is omitted. The panel's own spelling is `panelMoney2` (`src/panelmoney.js`, one Node owner; `src/panel/index.html` carries a pinned browser copy): 2 decimals from a cent up, 4 decimals for a real amount under a cent (`$0.0054`), `<$0.0001` below that, exact zero `$0.00`, null `unknown`; the CLI's `money()` keeps its own 4 decimals.
 - Not built from the signed spec (see the Part 5 commits): the early ask about a number the AI made (T1), because the data it needs does not exist at that point; T1 is replaced by Part 5b below. The "fetching the page…" state (Q2) was built after the run-start refetch moved to after the run is listed: the sign progress list shows the step (`settleFetchingStep`, `src/panel/authorroutes.js`) and a listed run with no log yet reads "fetching the page… the run has not started yet" (`startingStub`, `webFetchState`), both read from `source.json`'s `refrozenAt`.
 - **The look reads, code asks (PRD v1.107 Part 5b; `src/pagemap.js`).** A map fact on a `time` or `money` shape may carry an optional `reading: {op, value | lo, hi}` (the signed-rule `op` set; a time bound is a string, a money bound a number); any other `reading` makes the whole map answer malformed (no repair). `askableFromLook(look, jobLines)` sorts every `~` rule: a kept page word carries it (no ask); a `reading` whose bound is NOT in the person's own words (`boundInWords`, the same test as `rubric-fact-unmarked`; it reads the words by kind, F242: a number bound is said only as a bare number or an amount's number, a time bound only as a time token with the hour's leading zero ignored, a date bound only as a date token, never a piece of a token) asks `Your line N says "<rule>". I read it as: <fact> <ruleWords>. Agree?`; a rule no kept fact carries asks `... I can't check this on the page. Drop it?`. Readings come first, then can't-check asks. `agree` (or `yes`) writes the reading as a `~` rule in plain words, so the bound is the person's own and the fact signs plain; a typed answer is the `~` rule instead (F240: a leading agree word directly followed by a comma or colon, as in `yes, check it as ...` or `agree: ...`, is stripped by `stripAgreeLead` in `src/pagemap.js` before the rule is signed; a bare space, a hyphen or any dash after the word is not a separator, so `yes-no questions only` is kept whole); `drop it` on a can't-check ask adds no rule and leaves it Not checked. `MAX_QUESTIONS` is 3: more asks than that stops the draft before the confirm turn (stop `look-asks-too-many`, no extra spend) with `tooManyAsksText`, a code-written list of every ask and its reading. Asks carry `ask: 'reading' | 'cant-check'` (and `reading` for the agree text) through `normalizeQuestions`.
-- **The fit check (F243, `src/fitcheck.js`; `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-21 — fit check build spec").** Rubric jobs only, once, after the inputs are frozen and the content gate passes and BEFORE the look; it runs only when the caller passes the answer seam `fitAsk` to `authorCloseForJob` (the panel; the CLI door and any test without it never run it; `fitFn: null` = no check). `runFitCheck` makes ONE AI call (the drafter identity, the drafting thinking rule, label `fit-check`, cap checked before the call) that splits each job line (no `~` rules) into asks copied from that line and quotes the page for each; plain code (`decideFit`) decides: an ask is found only if `found` is true AND its quote is on an input (whitespace and case ignored), a found-with-off-page-quote is `madeUp` and counts as not found, a reply with an ask not copied from its line or a line with no ask is malformed (one retry). All found = `fits` (nothing shown); any not found = `ask`: one question through the panel `ask` seam (`I found X of Y of your asks on this page. Not found: <ask> (line N), .... Type go on to keep drafting, or anything else to stop and change the job or the page.`); `go on` continues to the look, anything else stops `fit-stopped` (plain words in `draftStopText`), no answer is `confirm-abandoned`. The answer is not a `~` rule and changes nothing in the job. Failure is OPEN: a cut, two unreadable replies, a failed call or a cap stop is `absent`, chat says "The fit check did not finish; drafting goes on." and drafting goes on. The result is one `fit-check` row in `draft-log.jsonl`.
+- **The fit check is removed** (2026-11-14; was F243, `src/fitcheck.js`): no paid call before the look, no Go on / Stop question, no `fit-stopped` stop, no `fit-check` draft-log row. One place for all checks: the check list. "A run needs at least one check" stays.

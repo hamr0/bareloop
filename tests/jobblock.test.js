@@ -1,11 +1,12 @@
-// P7: the job block's one parser (src/jobblock.js) — numbered lines, `~` rules, PASS/FAIL examples, numbered inputs.
+// P7: the job block's one parser (src/jobblock.js) — numbered lines, `~` rules, numbered inputs (PASS/FAIL examples are gone, 2026-11-14).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { parseJobBlock, parseInputs, renderJobLines, renderExamples, renderInputs } from '../src/jobblock.js';
+import * as jobblock from '../src/jobblock.js';
+import { parseJobBlock, parseInputs, renderJobLines, renderInputs } from '../src/jobblock.js';
 import { proveInputFiles } from '../src/source.js';
 import { redactSecrets } from '../src/validate.js';
 
@@ -23,13 +24,19 @@ test('consecutive ~ lines join into ONE rule with "; " and belong to the line ab
   assert.equal(r.lines[1].rule, '');
 });
 
-test('PASS:/FAIL: ~ lines are judge examples kept with their line number; other ~ lines are not', () => {
-  const r = parseJobBlock('Find flights\n~ PASS: price quoted from the page\n~ FAIL: a price not on the page\nSort them\n~ direct only');
-  assert.ok(r.ok);
-  assert.deepEqual(r.lines[0].examples, [{ verdict: 'PASS', text: 'price quoted from the page' }, { verdict: 'FAIL', text: 'a price not on the page' }]);
-  assert.equal(r.lines[0].rule, 'PASS: price quoted from the page; FAIL: a price not on the page');
-  assert.deepEqual(r.lines[1].examples, []);
-  assert.equal(r.lines[1].rule, 'direct only');
+test('a ~ PASS: / ~ FAIL: line is refused in plain words (the examples are gone); any other ~ line stays a rule', () => {
+  const words = 'PASS/FAIL examples are gone \u2014 write what you want as a ~ rule.';
+  for (const body of ['~ PASS: price quoted from the page', '~ fail: a price not on the page', '~ PASS:']) {
+    const r = /** @type {any} */ (parseJobBlock(`Find flights\n${body}\nSort them`));
+    assert.equal(r.ok, false, body);
+    assert.equal(r.error, words, body);
+  }
+  const ok = parseJobBlock('Find flights\n~ prices quoted from the page\nSort them\n~ direct only');
+  assert.ok(ok.ok);
+  assert.equal(ok.lines[0].rule, 'prices quoted from the page');
+  assert.equal('examples' in ok.lines[0], false, 'no examples field any more');
+  assert.equal(jobblock.renderExamples, undefined);
+  assert.equal(jobblock.jobBlockFitsCheck, undefined);
 });
 
 test('a ~ before line 1 is a red; an empty box is a red; a bare PASS: is a red', () => {
@@ -57,11 +64,10 @@ test('inputs: a line without label: value is a red naming its number', () => {
   assert.equal(parseInputs('').ok, false);
 });
 
-test('renderers: numbered lines with rules, examples with their line number, inputs as the drafter is told', () => {
-  const r = parseJobBlock('Find flights\n~ PASS: price quoted\n~ FAIL: invented price\nSort them\n~ direct only');
+test('renderers: numbered lines with rules, inputs as the drafter is told', () => {
+  const r = parseJobBlock('Find flights\n~ price quoted\n~ no invented price\nSort them\n~ direct only');
   assert.ok(r.ok);
-  assert.equal(renderJobLines(r.lines), '1. Find flights\n   rule: PASS: price quoted; FAIL: invented price\n2. Sort them\n   rule: direct only');
-  assert.equal(renderExamples(r.lines), 'line 1 PASS: price quoted\nline 1 FAIL: invented price');
+  assert.equal(renderJobLines(r.lines), '1. Find flights\n   rule: price quoted; no invented price\n2. Sort them\n   rule: direct only');
   assert.equal(renderInputs([{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }]),
     'the person pointed at these inputs: 1 repo /r · 2 spec docs/spec.md');
 });
@@ -141,10 +147,10 @@ test('proveInputFiles: a repo reached through a symlinked parent still proves it
 
 test('signedJobLines keeps each ~ line whole in rules beside the joined rule; a line with no ~ line carries no rules', async () => {
   const { signedJobLines } = await import('../src/jobblock.js');
-  const r = parseJobBlock('Document it\n~ PASS: /** Adds a and b; returns sum */\n~ FAIL: none\nPlain');
+  const r = parseJobBlock('Document it\n~ has a /** Adds a and b; returns sum */ block\n~ no suppression\nPlain');
   assert.ok(r.ok);
   assert.deepEqual(signedJobLines(r.lines), [
-    { n: 1, text: 'Document it', rule: 'PASS: /** Adds a and b; returns sum */; FAIL: none', rules: ['PASS: /** Adds a and b; returns sum */', 'FAIL: none'] },
+    { n: 1, text: 'Document it', rule: 'has a /** Adds a and b; returns sum */ block; no suppression', rules: ['has a /** Adds a and b; returns sum */ block', 'no suppression'] },
     { n: 2, text: 'Plain', rule: '' },
   ]);
 });

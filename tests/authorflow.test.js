@@ -245,9 +245,9 @@ test('the interview block carries each field\'s LABEL beside its question, from 
   assert.match(p, /Q1 \(The job\)\. the job, as numbered lines/);
 });
 
-test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
+test('labelsFor mirrors questionsFor: same admission rule, and soft-green has the one label (the judge examples are gone)', () => {
   assert.deepEqual(labelsFor('green'), { 1: 'The job' });
-  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job', 2: 'Judge examples' });
+  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job' });
   // hitl's own second question has no row in the signed table — no fabricated label
   assert.deepEqual(labelsFor('hitl'), { 1: 'The job' });
   assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
@@ -465,7 +465,7 @@ test('declarationSchema: a LOCKED kind is INEXPRESSIBLE — no branch, no mentio
   assert.ok(!text.includes('harness-loop'), 'a locked kind must not appear anywhere in the tool schema');
   // …and the live one IS expressible, with the catalogue's own parameters
   const live = JSON.stringify(declarationSchema());
-  assert.ok(live.includes('judged-floor') && live.includes('card') && live.includes('paths'));
+  assert.ok(live.includes('files-changed') && live.includes('allowPrefixes') && !live.includes('judged-floor'));
 });
 
 test('declarationSchema: a note is a NON-EMPTY string — an empty one is inexpressible at the source, not rejected after', () => {
@@ -1497,17 +1497,17 @@ test('the text fallback parses a fenced declaration and is the ONLY locked-kind 
   // locked entry left to demand. The CHANNEL is what is under test, and it must
   // keep a real subject rather than a vacuous one — the day a kind is locked
   // again (harness-loop is the named candidate) this is the path it arrives on.
-  decl.stages.push({ name: 'judged-check', kind: 'judged-floor', params: {} });
+  decl.stages.push({ name: 'judged-check', kind: 'harness-loop', params: {} });
   const generate = async () => ({
     text: `\`\`\`json\n${JSON.stringify(decl)}\n\`\`\``,
     error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 },
   });
-  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
+  const catalogue = { ...KIND_CATALOGUE, 'harness-loop': { verdictClass: 'green', required: [], optional: [], pathParams: [], locked: true, shape: 'LOCKED', asserts: 'recorded demand; it will not run.' } };
   const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, structuredMode: 'text', catalogue });
   // the demand IS counted here, because text mode can express what the schema cannot
   const locked = r.iterations[0].validation.reds.filter((/** @type {any} */ x) => x.code === 'locked-kind');
   assert.equal(locked.length, 1);
-  assert.equal(locked[0].kind, 'judged-floor');
+  assert.equal(locked[0].kind, 'harness-loop');
   assert.equal(locked[0].lib, 'bareloop');
 });
 

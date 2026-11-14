@@ -367,39 +367,3 @@ export function ratesOfLine(line) {
   const outPerM = /** @type {number} */ (line.outPerM);
   return { rates: { in: inPerM / 1000, out: outPerM / 1000 }, inPerM, outPerM };
 }
-
-/**
- * The row a judge's key and endpoint come from: the worker's own row when the judge shares the worker's API shape, else the judge
- * shape's row that ticks the judge's model (else the first row of that shape). `null` when no row is on that shape.
- * @param {readonly KeyRow[]} rows
- * @param {{ provider: string, model?: string|null }} judge
- * @param {string|null|undefined} workerProvider
- * @param {KeyRow|null} workerRow
- * @returns {KeyRow|null}
- */
-export function judgeRowFor(rows, judge, workerProvider, workerRow) {
-  if (judge.provider === workerProvider && workerRow) return workerRow;
-  const onShape = rows.filter((r) => r.provider === judge.provider);
-  return onShape.find((r) => r.models.some((l) => l.model === judge.model && isTickedLine(l))) ?? onShape[0] ?? null;
-}
-
-/**
- * The price a judge's rounds are booked at. A price belongs to the MODEL's line: when the judge is
- * the worker's own provider it calls the worker's endpoint, so a row on that endpoint with a line
- * NAMED for the judge's model prices it ({@link ratesFor}); a judge model that is absent or names
- * no line there keeps the worker's price (the worker's row, or none = the guess). A different
- * provider resolves with no endpoint. The judge's KEY is chosen elsewhere (`judgeRowFor`:
- * the worker's own row when the judge shares its provider), so the two can come from different rows.
- * @param {{ provider: string, model?: string|null }} judge
- * @param {string|null|undefined} workerProvider
- * @param {string|null|undefined} workerBaseUrl
- * @param {ReturnType<typeof ratesFor>} workerPrice what the worker's own rounds are booked at
- * @param {readonly KeyRow[]} rows
- * @returns {ReturnType<typeof ratesFor>}
- */
-export function judgeRatesFor(judge, workerProvider, workerBaseUrl, workerPrice, rows) {
-  if (judge.provider !== workerProvider) return ratesFor(judge.provider, undefined, rows, judge.model);
-  const want = endpointOf(judge.provider, workerBaseUrl);
-  const named = judge.model ? rows.some((r) => r.provider === judge.provider && endpointOf(r.provider, r.baseUrl) === want && r.models.some((l) => l.model === judge.model)) : false;
-  return named ? ratesFor(judge.provider, workerBaseUrl, rows, judge.model) : workerPrice;
-}

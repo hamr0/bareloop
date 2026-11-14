@@ -29,7 +29,7 @@ test('the three free-text card boxes (The job, Inputs, Destination) are wrapping
   assert.match(PAGE, /<textarea[^>]*id="jf-dest"[^>]*placeholder="the write fence/);
   // P7: the empty-box examples are set by the page and change with the Check type radio (setJobPlaceholders)
   assert.match(PAGE, /deterministic: "Fix the failing date tests in src\/date\.js\\n~ don't edit any test file\\nMake npm test pass"/);
-  assert.match(PAGE, /rubric: "Write a one-page summary of docs\/plan\.md\\n~ PASS: every number is quoted from the file\\n~ FAIL: a number that is not in the file\\nKeep it under 300 words"/);
+  assert.match(PAGE, /rubric: "Write a one-page summary of docs\/plan\.md\\n~ every number is quoted from the file\\nKeep it under 300 words"/);
   assert.match(PAGE, /INPUTS_PLACEHOLDER = "repo: \/home\/me\/myrepo\\nspec: docs\/spec\.md"/);
   // no Enter handler on them: Enter is a newline
   assert.doesNotMatch(PAGE, /getElementById\("jf-(job|inputs|dest)"\)\.addEventListener\("keydown"/);

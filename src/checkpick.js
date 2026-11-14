@@ -264,6 +264,15 @@ export function countCheck(text) {
 }
 
 /**
+ * The check a counting rule's own words already ARE ("exactly 3 list items" -> listItems 3), or null. No obvious asks (hamr 2026-11-14): such a rule is settled as written, never proposed back to the person.
+ * @param {string} text @returns {Record<string, any>|null}
+ */
+export function obviousCheck(text) {
+  const c = countCheck(text);
+  return c !== null && c !== undefined && sameRuleWords(text, plainWords(/** @type {any} */ (c))) ? c : null;
+}
+
+/**
  * What the call's answer comes to, one row per scoped rule: the check kept (or null) and why it was dropped. A rule the answer never mentions is dropped as `no entry`; an
  * entry for a rule that was not sent is ignored.
  * @param {Rule[]} scoped @param {any} args the tool call's arguments
@@ -285,7 +294,7 @@ export function rowsFromAnswer(scoped, args) {
 /** the can't-check ask, as the signed words say it */
 export const CANT_CHECK_WORDS = "I can't check this. Your own words, or Not checked?";
 /** how every answer is told, once (fwd am2 item 2's words) */
-export const HOW_TO_ANSWER = (/** @type {number} */ line, /** @type {boolean} */ agree) => `${agree ? 'Answer "agree" to use it, or type your own words' : 'Type your own words'} (your answer is added as a new ~ rule on line ${line}), or answer "drop it" to leave it Not checked.`;
+export const HOW_TO_ANSWER = (/** @type {number} */ line, /** @type {boolean} */ agree) => `${agree ? 'Answer "agree" to use it, or type your own words' : 'Type your own words'} (your answer replaces that ~ rule on line ${line}), or answer "drop it" to leave it Not checked.`;
 
 /** a part of a rubric-step stage, from a pick: the check's own fields, the rule's words, and the `~` rule numbers it carries out @param {Record<string, any>} check @param {string} text @param {number[]} rules */
 export function partOfPick(check, text, rules) {

@@ -37,7 +37,7 @@ import { Readable } from 'node:stream';
 import { main as interviewMain } from '../src/interviewrun.js';
 import { PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
-import { INPUTS_FIELD, DESTINATION_FIELD_REPO, labelsFor, SOFTGREEN_JUDGE_EXAMPLES_KEY } from '../src/authorflow.js';
+import { INPUTS_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorflow.js';
 import { cleanEnv } from './helpers.js';
 
 // The fixture class for every wizard test below: the LONGEST question set the
@@ -45,7 +45,8 @@ import { cleanEnv } from './helpers.js';
 // DERIVED from the menu, never a literal — it was `hitl` until PRD item 31.1
 // took that class off the menu, and a literal here would have silently become a
 // test of a class the product no longer offers.
-const CLASS = MENU_CLASSES.reduce((a, b) => (requiredAnswersFor(b).length > requiredAnswersFor(a).length ? b : a));
+// 2026-11-14: the CLI interview takes a repo on line 1 and a repo job is Deterministic (a soft-green pick is refused, tests/repo-rubric-refused.test.js), so green is the fixture
+const CLASS = 'green';
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 task 3/4 — the ORCHESTRATION this file's two source-text
@@ -185,10 +186,8 @@ const a = (/** @type {string} */ s) => [s, ''];
  * M3, ruling 2) — `source` defaults to the real repo fixture above, `destination`
  * to a fence glob (repo Source: Destination IS the write fence). */
 const front = (over = {}) => [...a(`repo: ${over.source ?? repoBase}`), ...a(over.destination ?? 'src/**')];
-/** P7: "The job" is ONE multi-line answer; a rubric needs PASS:/FAIL: example lines under a job line */
-const jobBlock = (verdict, text = 'answer to question 1') => (verdict === 'soft-green'
-  ? [text, '~ PASS: a documented function', '~ FAIL: an undocumented function', '']
-  : [text, '']);
+/** P7: "The job" is ONE multi-line answer; a `~` rule line under a job line is its check (the PASS/FAIL examples are gone, 2026-11-14) */
+const jobBlock = (_verdict, text = 'answer to question 1') => [text, '~ every exported function has a doc block', ''];
 /** a complete, valid session for a class, ending with "n" at the paid-step offer.
  * NO GOAL LINE (PRD item 33 M3 piece 4, step S5): the interview no longer asks a
  * separate goal question — the confirm turn (run-author.mjs) drafts and confirms
@@ -233,11 +232,9 @@ test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, 
   // (D13's genre confirm, then the repo question), and the fixture class changed
   // from hitl to soft-green at PRD item 31.1 — a hardcoded count here would have
   // gone stale three times. The DELTA is not asserted, only that there IS one.
-  assert.ok(nums.length > requiredAnswersFor('green').length,
-    `the ${CLASS} set is the green questions plus that class's own asks`);
+  assert.deepEqual(nums, requiredAnswersFor('green'), `the ${CLASS} set is the green questions, and nothing more`);
   assert.deepEqual(nums, nums.map((_, i) => i + 1), 'numbered contiguously from 1 — the number shown is the key the answer is filed under');
-  // P7: the judge examples are DERIVED from the job block's PASS:/FAIL: lines, so that key is filed but never asked
-  const askedNums = nums.filter((q) => q !== SOFTGREEN_JUDGE_EXAMPLES_KEY);
+  const askedNums = nums;
   let at = -1;
   askedNums.forEach((q, i) => {
     const line = `${q}. ${qs[q]}`;
@@ -248,21 +245,14 @@ test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, 
   });
 });
 
-test('the GREEN class gets its own set, shorter than the judged one — read from the library, never from a copy here', () => {
+test('the GREEN class is asked the same one set as the rubric class — read from the library, never from a copy here', () => {
   const out = outDir();
   const r = interview({ verdict: 'green', out, lines: session('green') });
   assert.equal(r.code, 0, r.out);
-  // DERIVED from the library on both sides. Green has lost two slots since it was
-  // frozen (D13's genre confirm, then the repo question hamr dropped once
-  // `--patient` made it a second answer for a fact the machine already holds), so a
-  // literal count here would have gone stale twice while still passing once.
   const greenNums = requiredAnswersFor('green');
-  const judgedNums = requiredAnswersFor(CLASS);
-  const last = judgedNums[judgedNums.length - 1];
-  assert.ok(greenNums.length < judgedNums.length, `the ${CLASS} set is green plus that class's own asks`);
+  assert.deepEqual(requiredAnswersFor(CLASS), greenNums, `the ${CLASS} set is the green set (the judge examples are gone)`);
   assert.match(r.out, new RegExp(`── ${greenNums.length} of ${greenNums.length} `));
-  assert.doesNotMatch(r.out, new RegExp(`── ${greenNums.length + 1} of `), `the extra slots belong to ${CLASS}: a rubric needs its own asks, and a green close has none`);
-  assert.doesNotMatch(r.out, new RegExp(questionsFor(CLASS)[last].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(r.out, new RegExp(`── ${greenNums.length + 1} of `), 'no slot beyond the green set');
 });
 
 test('tripwire: the script SPELLS no question of its own', () => {
@@ -290,49 +280,12 @@ test('the GREEN interview shows exactly Inputs, Destination, The job, in that or
     assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
     at = seen;
   }
-  const judgeQ = questionsFor('soft-green')[SOFTGREEN_JUDGE_EXAMPLES_KEY];
-  assert.ok(!r.out.includes(judgeQ), 'a green interview never shows the Judge Examples question');
-});
-
-test('the SOFT-GREEN interview shows Inputs, Destination, The job (the judge examples come from its PASS:/FAIL: lines)', () => {
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const q = questionsFor('soft-green');
-  const judgeKey = requiredAnswersFor('soft-green').at(-1);
-  // P7: the judge examples are DERIVED from the job block's PASS:/FAIL: lines, never asked as their own question
-  const order = [INPUTS_FIELD.prompt, DESTINATION_FIELD_REPO.prompt, q[1]];
-  assert.equal(judgeKey, SOFTGREEN_JUDGE_EXAMPLES_KEY);
-  assert.ok(!r.out.includes(q[judgeKey]), 'the Judge Examples question is not asked');
-  let at = -1;
-  for (const text of order) {
-    const seen = r.out.indexOf(text);
-    assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
-    at = seen;
-  }
-});
-
-test('the SOFT-GREEN interview shows each free-text field\'s LABEL, in order, from the signed table (PRD item 33 M3 piece 3 wording fix)', () => {
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const labels = labelsFor('soft-green');
-  assert.deepEqual(labels, { 1: 'The job', 2: 'Judge examples' });
-  // Source and Destination already have their own section headers (── SOURCE ──,
-  // ── DESTINATION ──); this asserts the ORDER of the SECTIONS plus the newly-shown
-  // labels for the four free-text fields, together, exactly as a person sees them.
-  const order = ['── INPUTS', '── DESTINATION', labels[1]];
-  let at = -1;
-  for (const text of order) {
-    const seen = r.out.indexOf(text);
-    assert.ok(seen > at, `expected to find ${JSON.stringify(text)} after position ${at}`);
-    at = seen;
-  }
+  assert.ok(!r.out.includes('PASS:'), 'no interview shows the (gone) Judge Examples question');
 });
 
 test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix; the confirm turn\'s own ask of it is ALSO retired now, hamr\'s ruling 2026-09-28 — it is never asked anywhere any more)', () => {
   const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  const r = interview({ verdict: 'green', out, lines: session('green') });
   assert.equal(r.code, 0, r.out);
   assert.doesNotMatch(r.out, /worse than before/i);
 });
@@ -530,8 +483,8 @@ test('it writes exactly what run-author.mjs consumes: the answers, and the OPERA
   // the LAST answer is the human stage's own ask, and it is the one a green run has
   // no slot for — named by the library's own last number rather than by a literal
   const last = judgedNums[judgedNums.length - 1];
-  assert.equal(answers[1], '1. answer to question 1\n   rule: PASS: a documented function; FAIL: an undocumented function');
-  assert.equal(answers[last], 'line 1 PASS: a documented function\nline 1 FAIL: an undocumented function');
+  assert.equal(answers[1], '1. answer to question 1\n   rule: every exported function has a doc block');
+  assert.equal(last, 1);
 
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.equal(draft.schema, 'job-v1');
@@ -602,12 +555,12 @@ test('a multi-line answer survives as the person typed it', () => {
   const out = outDir();
   const lines = [
     ...front(),
-    'first line', 'second line', '~ PASS: p', '~ FAIL: f', '',
+    'first line', 'second line', '~ p', '~ f', '',
     ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
-  assert.equal(JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'))['1'], '1. first line\n2. second line\n   rule: PASS: p; FAIL: f');
+  assert.equal(JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'))['1'], '1. first line\n2. second line\n   rule: p; f');
 });
 
 test('a secret typed into an answer is SCRUBBED by the library seam before it reaches disk', () => {
@@ -627,26 +580,6 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
 });
 
 // ══ the refusals, all of them for $0 ═══════════════════════════════════════════
-
-test('the SOFT-GREEN class files its judge examples too, derived from the job block\'s PASS:/FAIL: lines', () => {
-  // This slot used to hold the locked-class refusal, with soft-green as its
-  // exemplar. Softgreen module 3 admitted the class, so the refusal is unreachable
-  // (`LOCKED_CLASSES` is empty and the script's branch keys on it) and what
-  // replaces it is the positive the admission bought: the script asks the class's
-  // own set, one at a time, and files every answer — including the one the judged
-  // floor needs (Judge Examples, compiled at module 4, PRD item 33 M3 piece 3).
-  assert.deepEqual([...LOCKED_CLASSES], [], 'nothing left to refuse');
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const nums = requiredAnswersFor('soft-green');
-  assert.equal(nums.length, requiredAnswersFor('green').length + 1, 'the job plus Judge Examples');
-  const qs = questionsFor('soft-green');
-  assert.ok(r.out.includes(`1. ${qs[1]}`), 'The job is asked verbatim');
-  assert.match(r.out, /── 1 of 1 /);
-  const answers = JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'));
-  assert.deepEqual(Object.keys(answers).map(Number), nums, 'every answer is filed, module 4\'s inputs included');
-});
 
 test('an unknown verdict is a TYPO, refused with the menu handed over enumerated', () => {
   const out = outDir();
@@ -797,7 +730,7 @@ test('a blank answer is RE-ASKED with the rule named — never accepted, never f
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /that one is required/);
-  assert.equal(JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'))['1'], '1. finally an answer\n   rule: PASS: a documented function; FAIL: an undocumented function');
+  assert.equal(JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'))['1'], '1. finally an answer\n   rule: every exported function has a doc block');
 });
 
 test('a number that is not a number is re-asked, and the field is named', () => {
@@ -1079,23 +1012,15 @@ test('a repo Source with dependencies but node_modules ALREADY present: no insta
 
 // ══ P7: the job block and Inputs at the terminal (docs/product/PANEL-BUILD.md) ═════════════════
 
-test('P7: a rubric job block with no PASS:/FAIL: line, and a deterministic one WITH examples, are each re-asked naming the rule', () => {
+test('P7: a ~ PASS: / ~ FAIL: line is re-asked with the plain refusal (the examples are gone, 2026-11-14)', () => {
   const out = outDir();
   const bad = [
-    ...front(), 'Write the summary', '', ...jobBlock('soft-green'),
+    ...front(), 'Write the summary', '~ PASS: x', '', ...jobBlock('green'),
     ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
-  const r = interview({ verdict: 'soft-green', out, lines: bad });
+  const r = interview({ verdict: 'green', out, lines: bad });
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /a Rubric check needs at least one "~ PASS:" line and one "~ FAIL:" line/);
-  const out2 = outDir();
-  const det = [
-    ...front(), 'Fix it', '~ PASS: x', '', ...jobBlock('green'),
-    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
-  ];
-  const r2 = interview({ verdict: 'green', out: out2, lines: det });
-  assert.equal(r2.code, 0, r2.out);
-  assert.match(r2.out, /PASS:\/FAIL: examples are for a Rubric check/);
+  assert.match(r.out, /PASS\/FAIL examples are gone \u2014 write what you want as a ~ rule\./);
 });
 
 test('P7: Inputs lines 2+ are proven at $0 — a miss names its line and re-asks; the good set lands in the draft as jobLines + inputs', () => {
@@ -1111,5 +1036,5 @@ test('P7: Inputs lines 2+ are proven at $0 — a miss names its line and re-asks
   assert.match(r.out, /Inputs, line 2: src\/missing\.md does not exist in the repo/);
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.deepEqual(draft.inputs, [{ n: 1, label: 'repo', value: repoBase }, { n: 2, label: 'main', value: 'src/index.js' }]);
-  assert.deepEqual(draft.jobLines, [{ n: 1, text: 'Fix src/index.js', rule: '' }]);
+  assert.deepEqual(draft.jobLines, [{ n: 1, text: 'Fix src/index.js', rule: 'every exported function has a doc block', rules: ['every exported function has a doc block'] }]);
 });

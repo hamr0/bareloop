@@ -20,8 +20,7 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
-import { judgePick, judgeRatesFor, judgeRowFor, keyValueOf, modelChoiceFor, ratesOfLine, rowsForHome } from '../providerrows.js';
-import { ConfigError } from '../config.js';
+import { judgePick, keyValueOf, modelChoiceFor, ratesOfLine, rowsForHome } from '../providerrows.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
 } from 'node:fs';
@@ -42,34 +41,37 @@ import {
 import { prepareSigning } from '../authorjob.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import {
-  questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor, SOFTGREEN_JUDGE_EXAMPLES_KEY,
+  questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor,
 } from '../authorflow.js';
 import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
 } from '../providers.js';
-import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
+import { resolveJobJudge } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
-import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
-import { FLOW_TYPES } from '../job.js';
+import { FLOW_TYPES, flowTypeOf, oldJobWords } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
+import { newestUnrunTicket } from '../ticketnext.js';
+import { readTicket } from '../ticket.js';
+import { readRunList } from '../runlist.js';
+import { fetchPageText } from '../pagefetch.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
-import { plainWords, SUGGEST_SYSTEM, sameRuleWords } from '../checkpick.js';
+import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
-import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
+import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
+import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
-  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
+  parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
 import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
@@ -95,7 +97,6 @@ export const STEP_LABELS = Object.freeze({
   listing: 'listing files',
   confirm: 'confirming plan',
   draft: 'drafting',
-  calibrate: 'calibrating',
   gates: 'checking signing gates',
   hash: 'generating hash',
   signed: 'signed hash',
@@ -131,17 +132,11 @@ export const PHASE_STEP = Object.freeze({
   'scout-done': 'scout',
   look: 'look',
   'look-done': 'look',
-  // F243: the fit check's one call is counted in the look's line, like the look
-  'fit-check': 'look',
-  'fit-check-done': 'look',
   confirm: 'confirm',
   'confirm-turn-done': 'confirm',
   listing: 'listing',
   'listing-done': 'listing',
   author: 'draft',
-  rubric: 'calibrate',
-  'rubric-done': 'calibrate',
-  'rubric-scrubbed': 'calibrate',
 });
 
 export { thinkingRowText };
@@ -239,13 +234,38 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
+ * The card's Inputs as the JOB reads them: the one place that decides which lines are inputs (hamr 2026-11-14, piece 5): the fresh card, the session, the
+ * Destination check and Reuse (`buildReuseSpec`) all read THIS, never a copy.
+ * @param {any} card
+ * @param {{rubric?: boolean, flowType?: 'plain'|'mcp'|'tickets'}} [o]
+ * @returns {{ok: true, inputs: import('../jobblock.js').JobInput[]}|{ok: false, error: string}}
+ */
+export function cardInputs(card, o = {}) {
+  const ip = parseInputs(card?.inputs);
+  if (!ip.ok) return ip;
+  return { ok: true, inputs: ticketRubricInputs(ip.inputs, { rubric: o.rubric ?? card?.checkType === 'rubric', flowType: o.flowType ?? flowOfCard(card).flowType }) };
+}
+
+/**
+ * The renumbering itself, for a caller that holds parsed lines already (`startSession`): a Tickets + rubric job reads the ticket and nothing else (a repo line is
+ * not an input of it), so the ticket line stands alone, numbered 1 (a signed spec's inputs must run 1, 2, 3...). Any other job keeps its lines as typed.
+ * @param {import('../jobblock.js').JobInput[]} inputs @param {{rubric: boolean, flowType: 'plain'|'mcp'|'tickets'}} o
+ * @returns {import('../jobblock.js').JobInput[]}
+ */
+export function ticketRubricInputs(inputs, { rubric, flowType }) {
+  if (!rubric || flowType !== 'tickets') return inputs;
+  const line = inputs.find((i) => parseTicketList(i.value).ok);
+  return line ? [{ ...line, n: 1 }] : inputs;
+}
+
+/**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
  * box does not parse (the card validator refuses that before anything uses this).
  * @param {any} card
  * @returns {string}
  */
 export function cardSource(card) {
-  const p = parseInputs(card?.inputs);
+  const p = cardInputs(card);
   return p.ok ? p.inputs[0].value : '';
 }
 
@@ -264,7 +284,7 @@ export function cardFields(card) {
 /**
  * REUSE WORKFLOW, ONE DOOR (RULED 2026-10-15, v1.101; replaces v1.88's five open boxes). Every box on the card is open. What decides
  * the path is the CARD compared with the origin run's card, never the drafted spec: the JOB boxes are the job text (numbered lines,
- * `~` rules, `~ PASS`/`~ FAIL`), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
+ * `~` rules), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
  * never decide it. A green origin with no job box changed reuses the signed plan verbatim (no drafting); anything else drafts.
  */
 export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking', 'flowType', 'mcp']);
@@ -350,7 +370,7 @@ export function buildReuseSpec(originSpec, card, rows) {
   // an ABSOLUTE Destination is a per-run output folder (a plain-files job): it is never part of the signed spec, and the spec's own
   // fence (inside the run's tree) stays as signed. A repo job's Destination is the fence and is relative (an absolute one is refused).
   if (!isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-  const ip = parseInputs(card.inputs);
+  const ip = cardInputs(card, { rubric: spec.verdictType === 'soft-green', flowType: flowTypeOf(spec) });
   if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
   if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
@@ -406,7 +426,7 @@ export const DESTINATION_HINT = 'Type the folder that holds the files the job sh
  * @returns {string|null} the plain refusal, or null when the Destination is fine
  */
 export function startDestinationProblem(card) {
-  const ip = parseInputs(card?.inputs);
+  const ip = cardInputs(card);
   const source = ip.ok ? (ip.inputs[0]?.value ?? '') : '';
   const destination = typeof card?.destination === 'string' ? card.destination : '';
   const isRepoLike = looksLikeRepoSource(source);
@@ -455,13 +475,10 @@ export function validateJobCard(card, opts = {}) {
   if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
   const jb = parseJobBlock(card.jobText);
   if (!jb.ok) return { ok: false, error: jb.error };
-  const ib = parseInputs(card.inputs);
+  const ib = cardInputs(card);
   if (!ib.ok) return { ok: false, error: ib.error };
-  // P1=B: PASS/FAIL examples are required of a rubric job only when it holds a judged part. A rubric on the person's own
-  // local files (first input not a repo) holds none in this build; a rubric on a repo composes the judged floor.
-  const rubricFiles = checkType === 'rubric' && looksLikeRubricInput(ib.inputs[0].value);
-  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric', { judged: !rubricFiles });
-  if (misfit) return { ok: false, error: misfit };
+  // hamr 2026-11-14: a repo job is Deterministic. Rubric on a repo is for a Tickets job only (its input is the ticket, below).
+  if (checkType === 'rubric' && flowOfCard(card).flowType !== 'tickets' && looksLikeRepoSource(ib.inputs[0].value)) return { ok: false, error: REPO_RUBRIC_WORDS };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
@@ -476,8 +493,8 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -491,7 +508,7 @@ export function createSession(card, deps = {}) {
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
   const jobParsed = parseJobBlock(card.jobText);
   const jobLines = jobParsed.ok ? jobParsed.lines : [];
-  const inputsParsed = parseInputs(card.inputs);
+  const inputsParsed = cardInputs(card, { flowType: deps.flow?.flowType ?? 'plain' });
   const INPUTS = inputsParsed.ok ? inputsParsed.inputs : [];
   /** the repo — Inputs line 1 */
   const SOURCE = INPUTS[0]?.value ?? '';
@@ -582,7 +599,7 @@ export function createSession(card, deps = {}) {
   };
 
   /** a rubric job on local files words its copy/read steps for files (set once the card is known) */
-  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
+  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(INPUTS[0]?.value ?? '');
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
     const labels = fileJob ? { ...STEP_LABELS, ...FILE_JOB_STEP_LABELS } : STEP_LABELS;
@@ -664,7 +681,7 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
+    } else if (step.kind === 'answer' && (step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
     else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
@@ -683,19 +700,6 @@ export function createSession(card, deps = {}) {
   };
 
   let lastTryRefused = false;
-  // F243: the fit check's result is one drafting-log row (the asks, what was found, what the quote proved); an `absent` check says so in chat
-  // (a seam of its own - onPhase never posts a chat message)
-  const onFit = (/** @type {any} */ data) => {
-    const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
-    appendDraftLog(outDir, {
-      kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
-      asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
-        line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true, ...(a.ignored === 'number' ? { ignored: 'number' } : {}),
-      })),
-      notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
-    });
-    if (data.state === 'absent') say('bot', FIT_ABSENT_NOTE);
-  };
   const onPhase = (name, data = {}) => {
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
@@ -710,6 +714,7 @@ export function createSession(card, deps = {}) {
     // progress line shows it briefly, in code's words
     // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
     // the one check list of a rubric job: each row once when it is built and once at the end, and each try's refusals (kind `ledger` / `ledger-try`)
+    if (name === 'note-answered') appendDraftLog(outDir, { kind: 'note-ask', no: Math.max(0, state.steps.length - 1), state: data.state, answers: data.answers, ...(data.reason ? { reason: redactSecrets(String(data.reason)) } : {}), at: new Date().toISOString() });
     if (name === 'ledger-built' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'built', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, kept: data.kept, refused: data.refused, at: new Date().toISOString() });
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
@@ -851,6 +856,9 @@ export function createSession(card, deps = {}) {
     const keyProblem = apiKeyProblem(apiKey);
     if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
 
+    // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused; old runs are not repaired. Before any copy or read.
+    const oldJob = deps.reuse ? oldJobWords(deps.reuse.spec) : null;
+    if (oldJob !== null) { refuse(`${oldJob} Nothing spent.`); return; }
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(SOURCE);
@@ -883,7 +891,20 @@ export function createSession(card, deps = {}) {
     /** @type {any} */
     let prep;
     if (RUBRIC_FILES) {
-      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+      // hamr 2026-11-14 (piece 5): a Tickets + rubric job's one input is the ticket. The drafting-time read takes the newest ticket this job has not run
+      // (the product's own lookup, `newestUnrunTicket`) and reads it (`readTicket`): there is no ticket-number box. Run start re-reads the same list row.
+      const ticketFlow = deps.flow?.flowType === 'tickets' && deps.flow.pick ? deps.flow.pick : null;
+      /** @param {string} url @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} */
+      const readNewestTicket = async (url) => {
+        const rows = (() => { try { return readRunList({ home: configHome }).rows; } catch { return []; } })();
+        const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: card.jobName, rows, inputs: INPUTS, mcp: /** @type {{server: string, tools: string[]}} */ (ticketFlow) });
+        if (!picked.ok) return { ok: false, error: picked.say.replace(/\s*Nothing spent\.$/, '') };
+        const t = await (deps.readTicketFn ?? readTicket)({ mcp: /** @type {{server: string, tools: string[]}} */ (ticketFlow), listUrl: url, number: picked.number });
+        return t.ok ? { ok: true, text: t.ticket.text, url } : { ok: false, error: t.error };
+      };
+      const pageFetch = deps.fetchUrl ?? fetchPageText;
+      const draftFetch = ticketFlow ? (/** @type {string} */ url) => (parseTicketList(url).ok ? readNewestTicket(url) : pageFetch(url)) : deps.fetchUrl;
+      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(draftFetch ? { fetchUrl: draftFetch } : {}) });
       prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
       // what each header-only page read came back with (already secret-masked at capture), so the next live failure shows it
       if (!proved.ok && proved.attempts?.length) appendDraftLog(outDir, { kind: 'page-fetch-attempts', no: Math.max(0, state.steps.length - 1), attempts: proved.attempts, at: new Date().toISOString() });
@@ -1024,53 +1045,13 @@ export function createSession(card, deps = {}) {
         return;
       }
       state.phase = 'signing-gates';
-      stepStart('gates', 'gates 1–3 cost $0; gate 4 only for a rubric');
-      const judges = closeJudges(spec.closeDecl);
-      const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
-      let judgeProvider = null;
-      /** @type {import('../providerrows.js').PriceResult} */
-      let judgePrice = null;
-      if (judge) {
-        const judgeRow = judgeRowFor(keyCfg, judge, modelChoice.provider, keyCfg.find((r) => r.envName === modelChoice.envName) ?? null);
-        try {
-          judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
-        } catch (e) {
-          if (!(e instanceof ConfigError)) throw e;
-          refuse(`${e.message} — refusing before gate 4 spends anything`);
-          return;
-        }
-        const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? apiKey : keyValueOf(env, judgeRow?.envName));
-        const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
-        if (!judgeKeyValue || judgeKeyProblem) {
-          refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
-          return;
-        }
-        judgeProvider = buildRunnerProviders({
-          providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
-          judgeApiKey: judgeKeyValue, judgeModel: judge.model, judgeProviderName: judge.provider,
-          judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : (judgeRow?.baseUrl.trim() || undefined),
-          judgeLegacyMaxTokens: judge.provider === modelChoice.provider ? modelChoice.legacyMaxTokens : (judgeRow?.legacyMaxTokens ?? false),
-        }).judgeProvider;
-      }
+      stepStart('gates', 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
         spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
-        shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
-        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null, thinking: spec.thinking === true }) : null,
-        judgeModel: judge?.model ?? null,
-        onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
+        shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
-      // The `calibrating` line is the rubric phase the person watched; its ✓ was set long before the gate graded
-      // anything. Once the gate has a result, the line says THAT, on its own line (hamr, 2026-10-09).
-      const calSum = calibrationSummary(signing.gates?.calibration);
-      const calStep = latestStep(state.steps, 'calibrate');
-      if (calSum && calStep) {
-        calStep.status = calSum.ok ? 'done' : 'failed';
-        calStep.detail = calSum.note;
-        logSteps();
-      }
-
       if (!signing.ok) {
         // plain words for the person (src/authorreadout.js, the one owner the CLI prints too); the full reds go into
         // the drafting log on the failed step, so the cause survives the session
@@ -1146,19 +1127,13 @@ export function createSession(card, deps = {}) {
 
     /** @type {Record<string, string>} */
     const answers = { 1: renderJobLines(jobLines) };
-    if (verdictType === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(jobLines);
-    // a rubric job on files holds no judged part in this build, so the PASS/FAIL examples are not required of it
     const required = RUBRIC_FILES ? [1] : requiredAnswersFor(verdictType);
     for (const n of required) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
     }
 
-    const draftJudge = (() => {
-      try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: modelChoice.name }; }
-    })();
     const { provider } = buildRunnerProviders({
       providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
-      judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed
@@ -1218,6 +1193,19 @@ export function createSession(card, deps = {}) {
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
     // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
     // signed `jobLines`, the answers text and the plan card all read the same words.
+    /** the job text as the draft shows and signs it: the signed lines, the card's box, the answers text and one message (the check list's rebuilt lines, or the lines a try-3 answer added) */
+    const syncJobLines = (/** @type {any[]} */ lines, /** @type {string|null} */ say = null, /** @type {any} */ confirmed = null) => {
+      // ONE owner: the session's own lines take the rebuilt ones in place, so the plan cards (`planMessage(..., jobLines)`) and the signed rows read the same words
+      if (lines !== jobLines) jobLines.splice(0, jobLines.length, ...lines);
+      draft.jobLines = signedJobLines(lines);
+      // the card's job box holds the rules as they now are (an answer replaced the rule it was asked about), so a Revise reopens the boxes with them; `card` is what card.json stores
+      state.card = { ...state.card, jobText: jobBoxText(lines) };
+      card = { ...card, jobText: state.card.jobText };
+      answers[1] = renderJobLines(lines);
+      if (say !== null) state.messages.push({ ...planMessage({ ...(confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, lines), text: say });
+    };
+    /** the answers message of a check-list ask, drawn once the list has rebuilt the lines @type {{say: string, confirmed: any}|null} */
+    let pendingSay = null;
     const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, ruleText?: string, check?: Record<string, any>}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
@@ -1255,43 +1243,34 @@ export function createSession(card, deps = {}) {
         const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'no-check' || q.ask === 'check') && Number.isInteger(q.rule);
         if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
-        // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
-        // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
-        let agreedPick = false;
+        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked; anything else
+        // is the person's own words, which replace the asked rule word for word (no check unless the words are the check: they judge it at Accept)
         const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
-        // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
-        const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
-        if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
+        if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && agrees;
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
-          agreedPick = agreed === true;
           if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
-          picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
+          picks.push({ line: q.line, rule: /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, ...(agreed ? {} : { own: true }) });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
         }
+        // one rule in, one rule out (hamr 2026-11-14): an answer about a rule of the check list REPLACES that rule, and the list is the one owner (the caller rebuilds the job text from it: `onJobLines`).
+        // Only an answer that is not about a list row (a model's own try-3 question) is still added word for word as a new `~` rule on its line.
         const line = jobLines.find((l) => l.n === q.line);
-        if (line && pair !== null) { line.rules[/** @type {number} */ (q.rule) - 1] = text; line.rule = line.rules.join('; '); }
-        // F318: agreeing to words the line already holds as a ~ rule adds no second line (the pick cites the rule that is there); different words still add one
-        else if (line && !(agreedPick && line.rules.some((/** @type {string} */ t) => sameRuleWords(t, text)))) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (q.source !== 'look' && line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
-      draft.jobLines = signedJobLines(jobLines);
-      // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
-      state.card = { ...state.card, jobText: jobBoxText(jobLines) };
-      answers[1] = renderJobLines(jobLines);
-      state.messages.push({ ...planMessage({ ...(o.confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      const said = left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.';
+      // a check-list ask (every question carries a list key): the list has not yet replaced the asked rules, so the message waits for the rebuilt lines (`onJobLines`) and is drawn from them
+      if (o.questions.every((q) => typeof (/** @type {any} */ (q)).key === 'string')) pendingSay = { say: said, confirmed: o.confirmed };
+      else syncJobLines(jobLines, said, o.confirmed);
       return { jobLines, answers, left, picks, choices };
     };
 
-    // F243: the fit check's one question, through the same `ask` (the chat box + Send; a blank answer asks again, there is no skip)
-    const fitAsk = async (/** @type {string} */ question) => {
-      for (;;) {
-        const a = await ask({ kind: 'answer', source: 'fit-check', index: 1, total: 1, question });
-        if (a === null) return null;
-        if (String(a).trim()) return String(a);
-        say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
-      }
-    };
+    // 2026-11-14 (b): the note question's own call (src/noteask.js), same provider, model and thinking-off as the destination call; a test that replaces the model boundary never reaches it unless it brings `deps.noteFn`
+    const noteFn = deps.noteFn !== undefined ? deps.noteFn : (deps.generate ? null : (/** @type {any} */ o) => runNoteAsk({
+      ...o, provider, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+      ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
+    }));
 
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
@@ -1299,7 +1278,6 @@ export function createSession(card, deps = {}) {
     // the internal resolved tier model string (MODEL) or the raw provider
     // name — the same id the Model field's own dropdown showed.
     const authored = await authorCloseForJob({
-      judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
       jobLines, inputs: INPUTS,
@@ -1308,7 +1286,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
@@ -1321,31 +1299,11 @@ export function createSession(card, deps = {}) {
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
-      // F243: the fit check asks through the ordinary ask path; like the look, a test that replaces the model boundary never reaches the real paid call
-      fitAsk, onFit,
-      ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
       ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),
     });
 
-    if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
-      // a refused rubric proposal: the person gets the reason in plain words (src/authorreadout.js, the one owner the
-      // CLI prints too), and the full reds go into the drafting log on the failed step so the cause survives the session
-      const cases = authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null;
-      const reds = authored.reds ?? [];
-      const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
-      appendDraftLog(outDir, {
-        kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: authored.stop,
-        reds: redsRecord(reds, { cases }), at: new Date().toISOString(),
-      });
-      refuse(proposalStopText({
-        stop: String(authored.stop), reds, cases,
-        spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
-        source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
-      }));
-      return;
-    }
     if (!authored.ok) {
       // ITEM 6 (P7): every drafting stop says WHY in plain words (the reds travel into the drafting log beside it) — the bare
       // "Stopped: provider-red" of live session smv2bzdqmp0f8 carried a code and no reason.

@@ -1,0 +1,242 @@
+{
+  "schema": "job-v1",
+  "job": "changelog-recent",
+  "description": "changelog-recent — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List the 3 newest versions, each with its release date.",
+      "rule": "at most 3 bullets; at most 3 list items",
+      "rules": [
+        "at most 3 bullets",
+        "at most 3 list items"
+      ]
+    },
+    {
+      "n": 2,
+      "text": "Say in one short sentence what the newest version changed.",
+      "rule": "keep it short",
+      "rules": [
+        "keep it short"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "changelog",
+      "value": "/SCRATCH/shots-src/CHANGELOG.md"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.3,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - changelog: input/CHANGELOG.md\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"cites\". It holds a \"text\" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so\nthe same file carries both \"results\" and \"text\"). A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List the 3 newest versions, each with its release date.\n   rule: at most 3 bullets; at most 3 list items\n2. Say in one short sentence what the newest version changed.\n   rule: keep it short\n\nThe plan the person confirmed: From the changelog, produce a list of the 3 newest versions each with its release date (at most 3 items), plus one short sentence on what the newest version changed.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "at most 3 bullets",
+              "class": "countable",
+              "check": "maxListItems",
+              "value": 3,
+              "rules": [
+                1,
+                2
+              ]
+            },
+            {
+              "text": "every claim is backed by a quote copied from \"changelog\"",
+              "class": "countable",
+              "check": "cited",
+              "source": "changelog"
+            }
+          ]
+        }
+      },
+      {
+        "name": "line-2",
+        "kind": "rubric-step",
+        "fromLine": [
+          2
+        ],
+        "params": {
+          "step": 2,
+          "parts": [
+            {
+              "text": "every claim is backed by a quote copied from \"changelog\"",
+              "class": "countable",
+              "check": "cited",
+              "source": "changelog"
+            }
+          ]
+        }
+      }
+    ],
+    "refused": [
+      {
+        "line": 2,
+        "rule": 1,
+        "reason": "You chose to leave it Not checked, so you judge it at Accept."
+      }
+    ],
+    "picks": [
+      {
+        "line": 1,
+        "part": {
+          "text": "at most 3 bullets",
+          "class": "countable",
+          "check": "maxListItems",
+          "value": 3,
+          "rules": [
+            1,
+            2
+          ]
+        }
+      }
+    ],
+    "list": [
+      {
+        "line": 1,
+        "key": "L1.~1",
+        "from": "pick",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 1,
+        "part": {
+          "line": 1,
+          "part": 0
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.$floor",
+        "from": "default",
+        "by": "default",
+        "kind": "floor",
+        "state": "built"
+      },
+      {
+        "line": 2,
+        "key": "L2.~1",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "not-checked",
+        "rule": 1,
+        "reason": "You chose to leave it Not checked, so you judge it at Accept."
+      },
+      {
+        "line": 2,
+        "key": "L2.$floor",
+        "from": "default",
+        "by": "default",
+        "kind": "floor",
+        "state": "built"
+      },
+      {
+        "line": 2,
+        "key": "L2.fact.newest version change",
+        "from": "look",
+        "by": "agent",
+        "kind": "fact",
+        "state": "not-checked",
+        "reason": "One result is one record; ask for N results instead."
+      },
+      {
+        "line": 1,
+        "key": "L1.fact.release dates",
+        "from": "look",
+        "by": "agent",
+        "kind": "fact",
+        "state": "not-checked",
+        "reason": "the page shows no month name in English, so the date is not checked."
+      },
+      {
+        "line": 1,
+        "key": "L1.fact.versions",
+        "from": "look",
+        "by": "agent",
+        "kind": "fact",
+        "state": "not-checked",
+        "reason": "No word on this page reads \"versions\" safely."
+      },
+      {
+        "line": 1,
+        "key": "L1.$cited",
+        "from": "default",
+        "by": "default",
+        "kind": "cited",
+        "state": "built",
+        "part": {
+          "line": 1,
+          "part": 1
+        }
+      },
+      {
+        "line": 2,
+        "key": "L2.$cited",
+        "from": "default",
+        "by": "default",
+        "kind": "cited",
+        "state": "built",
+        "part": {
+          "line": 2,
+          "part": 0
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.count.3-3",
+        "from": "agent",
+        "by": "agent",
+        "kind": "count",
+        "state": "dropped",
+        "reason": "a ~ rule already says it: line 1 rule 1 names the number"
+      },
+      {
+        "line": 1,
+        "key": "L1.~2",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 2,
+        "part": {
+          "line": 1,
+          "part": 0
+        }
+      }
+    ]
+  }
+}

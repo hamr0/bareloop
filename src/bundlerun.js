@@ -24,7 +24,7 @@ import {
 import { askRequired, isQuit } from './prompts.js';
 import { askBundle, resolveBundleRef } from './bundleref.js';
 import { rowsForHome, chatLines } from './providerrows.js';
-import { jobSpecHash } from './job.js';
+import { jobSpecHash, oldJobWords } from './job.js';
 import { addWorktree, worktreePath, commitWork } from './worktree.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf } from './legs.js';
@@ -93,6 +93,9 @@ export async function bundleMain(args, {
   // the repo. Any red (incl. bundle-tampered) stops here.
   const bundle = readBundle(bundleDir);
   if (!bundle.ok) { printReds(bundle.reds, err); return 1; }
+  // hamr 2026-11-14 (piece 6): a bundle of a job made with PASS/FAIL examples or the old judge does not run; old runs are not repaired
+  const oldJob = oldJobWords(bundle.spec);
+  if (oldJob !== null) { err(oldJob); return 1; }
 
   // 1b. F128 — the bundle's OWN node_modules must carry `bareloop` before anything else
   // runs. Left unchecked, the close crashes deep inside runJob's close-first precheck with

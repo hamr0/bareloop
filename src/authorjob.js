@@ -99,14 +99,11 @@
 // in the stored declaration (forward-compat point 3), and the suite pins it.
 
 import { jobSpecHash, validateJob } from './job.js';
-import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
+import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
 import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
-import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
-import { runCalibration } from './calibrate.js';
-import { CALIBRATION_SIZE } from './judged.js';
 import {
   GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
@@ -116,13 +113,14 @@ import {
   runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS,
 } from './authorflow.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
-import { runFitCheck, fitQuestionText, notFoundList, isGoOn } from './fitcheck.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, tooManyAsksText } from './pagemap.js';
 import { CheckBlock } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
-import { scopedRules, codeScope, plainWords } from './checkpick.js';
+import { askNotes } from './noteask.js';
+import { renderJobLines } from './jobblock.js';
+import { scopedRules, codeScope, plainWords, obviousCheck } from './checkpick.js';
 import { matchRecord, entriesFromAnswers, KEPT_WORDS } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
 import { runLedgerSuggest, ledgerRecord } from './checklist.js';
@@ -429,25 +427,23 @@ function composerRefusal(reds) {
  * one-genre-at-a-time law is untouched.
  *
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
- *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   jobLines?: {n: number, text: string, rule?: string, rules?: string[]}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
- *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
+ *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
- *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null, fitFn?: Function|null,
- *   fitAsk?: ((question: string) => Promise<string|null>)|null, onFit?: (fit: {state: string, asks: any[], notFound: any[]}) => void,
+ *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
- *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
- *   closeDecl: any, seedRef: string|null, authoring: any, judged: any, reds: Red[],
+ *   closeDecl: any, seedRef: string|null, authoring: any, reds: Red[],
  *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[]}>}
  */
 export async function authorCloseForJob({
@@ -466,11 +462,6 @@ export async function authorCloseForJob({
   // `writeScope`, and this is what carries it into the composer prompt
   // (`authorPrompt`'s `writeScopeBlock`) instead of letting it vanish.
   writeScope = null,
-  // THE JUDGE IDENTITY (PRD item 32.1), required only on the path that actually
-  // composes a judged stage — the stored calibration set carries the judge that
-  // certified it, and there is no library pin to fall back to. Absent on a purely
-  // mechanical close is correct and costs nothing: that close never judges.
-  judgeModel = null,
   // THE PROGRESS SEAMS. This composition is the pipeline's long silence — a real
   // survey, a real declaration ladder, and a real toolchain per close stage — and
   // it emitted nothing until it returned, so an operator watching a live run
@@ -482,9 +473,6 @@ export async function authorCloseForJob({
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
   // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
   lookFn = runPageMap,
-  // THE FIT CHECK (F243): one paid call BEFORE the look, rubric jobs only. It runs only when the caller supplies the answer seam `fitAsk` (the panel);
-  // `fitFn` null is an explicit "no check" (a test seam). With no `fitAsk` (the CLI door) it never runs.
-  fitFn = runFitCheck, fitAsk = null, onFit = () => {},
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -492,17 +480,16 @@ export async function authorCloseForJob({
   // the model boundary of the list call (a `makeLoopGenerate` bound to LEDGER_SYSTEM), rubric jobs only. ABSENT = the list is built from the look and the defaults with no suggestion call
   // (a test seam, like `pickGenerate`); the CLI and the panel always bring it.
   ledgerGenerate = null,
+  // 2026-11-14 (b): the note question (src/noteask.js), asked ONLY when a rubric line is facts-only; ABSENT = never asked (every older caller and test)
+  noteFn = null,
+  // one rule in, one rule out: called with the job lines rebuilt from the check list after an answer (the seam that shows the job text updates itself); ABSENT = nothing shows it
+  onJobLines = null,
   // the row-edit turn's own model boundary (src/rowedit.js ROW_EDIT_SYSTEM); a test that replaces `generate` need not bring one
   editGenerate = null,
   // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
   carriedPicks = null, onPicks = () => {},
   // hamr 2026-11-13 (N-2): the Drop/Add choices of the draft this one follows (the picks record file's `rowChoices`); a Revise keeps them, code still judges every one
   carriedChoices = null, onChoices = () => {},
-  // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
-  // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
-  // signed as proposed, and `signJudgedArtifacts` records which of the two
-  // happened rather than leaving a reader to guess.
-  signerFix = null, proposeFn = proposeJudgedArtifacts, compileOpts = {},
   // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
   // every existing caller runs byte-identical: `ask` absent means no confirm
   // turn runs at all, exactly as before this piece existed.
@@ -532,7 +519,7 @@ export async function authorCloseForJob({
   /** @type {any} */
   const base = {
     ok: false, refusal: null, verdictType: null, closeDecl: null, seedRef: null,
-    authoring: null, judged: null, reds: [], stop: null, cost: null, interview: null,
+    authoring: null, reds: [], stop: null, cost: null, interview: null,
     confirmed: null,
   };
 
@@ -640,26 +627,6 @@ export async function authorCloseForJob({
       // nothing to check a rule against. Plain words, before any model call.
       survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn) {
-      if (fitAsk && fitFn) {
-        // F243: a page that does not show what the job asks for stops here, before the look spends. Failure is OPEN: an `absent` check
-        // (cut, unreadable twice, call failed, cap) asks nothing and drafting goes on; the answer is NOT a `~` rule and changes nothing in the job.
-        onPhase('fit-check', {});
-        const fitCallOptions = thinkingCallOptions(provider, draftThinking);
-        const fit = await fitFn({
-          jobLines, texts: frozen.texts, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}),
-          ...(Object.keys(fitCallOptions).length ? { callOptions: fitCallOptions } : {}),
-        });
-        onPhase('fit-check-done', { state: fit.state });
-        onFit({ state: fit.state, asks: fit.asks, notFound: fit.notFound });
-        if (fit.state === 'ask') {
-          const foundAsks = fit.asks.filter((/** @type {any} */ a) => !a.ignored && a.found).map((/** @type {any} */ a) => ({ line: a.line, ask: a.ask }));
-          const answer = await fitAsk(fitQuestionText({ found: foundAsks.length, foundAsks, total: fit.asks.filter((/** @type {any} */ a) => !a.ignored).length, notFound: fit.notFound }));
-          if (answer === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
-          if (!isGoOn(answer)) {
-            return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'fit-stopped', path: 'jobLines', detail: notFoundList(fit.notFound) }], stop: 'fit-stopped', cost: null };
-          }
-        }
-      }
       onPhase('look', {});
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);
       survey = await lookFn({
@@ -709,13 +676,10 @@ export async function authorCloseForJob({
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
+    // a rule whose words already are its check is settled by the block as written (no ask, no suggestion call)
+    matched.askRules = matched.askRules.filter((r) => !obviousCheck(r.text));
     carried = { kept: matched.kept };
-    block.carry({ picks: matched.picks, left: matched.left }, matched.askRules);
-    // a rule the record folded into another ask (a broken pair's partner) is neither asked nor given the old check: Not checked, in the pick path's own words
-    for (const r of scoped) {
-      const row = block.ruleRows(r.line).find((x) => x.rule === r.rule);
-      if (row && !matched.askRules.some((a) => a.line === r.line && a.rule === r.rule) && !row.pick && !row.cantAsked && !row.left && !row.parent) row.folded = true;
-    }
+    block.carry({ picks: matched.picks, left: matched.left });
     block.reconcile();
     // the pick call: one suggestion per counting rule the record did not keep; each kept suggestion is a `pick` edit
     if (answerQuestions && pickGenerate && matched.askRules.length > 0) {
@@ -742,6 +706,8 @@ export async function authorCloseForJob({
       block.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: adds });
       block.reconcile();
     }
+    // the note question: ONE call, only when a line is facts-only. The AI says yes/no per line; code decides (block.setNotes -> a `$` note row and a countable text part). A failed call leaves the line facts-only with a Not checked row.
+    survey.calls = [...(survey.calls ?? []), ...(await askNotes({ block, jobLines, noteFn, ceilingUsd, onCall, onPhase }))];
     // a Revise keeps the last draft's Drop/Add choices (the suggestions exist now); code still judges every one when the list is reconciled
     if (Array.isArray(carriedChoices)) { block.carryChoices(carriedChoices); onChoices(block.choicesRecord()); }
     block.reconcile();
@@ -768,12 +734,19 @@ export async function authorCloseForJob({
         answered.picks.push(...(Array.isArray(updated.picks) ? updated.picks : []));
         answered.left.push(...(Array.isArray(updated.left) ? updated.left : []));
         const refused = applyChoices(block, Array.isArray(updated.choices) ? updated.choices : []);
+        // one rule in, one rule out (hamr 2026-11-14): the list replaced each answered rule, so the job text is rebuilt FROM the list (its one owner) and handed back to the seam that shows it
+        const rebuilt = block.jobLinesView(jobLines);
+        jobLines = rebuilt;
+        interview.answers = { ...interview.answers, 1: renderJobLines(rebuilt) };
+        if (typeof onJobLines === 'function') onJobLines(rebuilt);
         if (refused.length === 0) break;
       }
       // the record this draft hands on, written whether or not anything was asked (a draft that kept every pick still carries them forward): the picks it kept, as they were, and the picks just answered, keyed by words
       if (scoped.length > 0) {
+        // the record keeps the FINAL words of each rule (an answer replaced the rule it was asked about), numbered on this card
+        const finalRules = jobLines.flatMap((l) => (l.rules ?? []).map((t, i) => ({ line: l.n, rule: i + 1, text: t })));
         onPicks({
-          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, scoped, answered.picks, answered.left.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
+          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, finalRules, answered.picks, answered.left.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
           kept: carried.kept.map((k) => ({ line: k.line, rule: k.rule, entry: k.entry })),
         });
       }
@@ -968,92 +941,6 @@ export async function authorCloseForJob({
       : {}),
   };
 
-  // ── THE TWO SIGNED ARTIFACTS (softgreen module 4, wired here by module 5) ──
-  //
-  // A close that judges needs a rubric card and a calibration set, and until now
-  // nothing in the pipeline called the compile — module 4 shipped the machinery
-  // and said so. This is the call: Q6 and Q7 go to the compiler VERBATIM, the
-  // proposal is SHOWN (`onPhase`, and the driver prints it), the SIGNER's fix is
-  // what is stored, and both land inside the spec where the hash covers them.
-  //
-  // KEYED OFF THE DECLARATION, never off the picked class: a soft-green close
-  // that composed no judged stage needs no card, and a judged stage is a judged
-  // stage whatever the radio said. One judged stage is the composition law
-  // (AT_MOST_ONCE_KINDS), so the fold's own throw is unreachable here — it stays
-  // as the caller-error guard it is.
-  /** @type {any} */
-  let judged = null;
-  if (closeJudges(closeDecl)) {
-    // ONE CEILING, ALL THREE PAID SEAMS. The declaration loop's own calls are
-    // ABSORBED before the compile is asked for, so the ceiling folds in prior
-    // spend and re-invoking a seam cannot silently widen it. `absorb` deliberately
-    // does not re-fire `onCall`, so nothing is reported twice.
-    const book = makeCostBook({ ceilingUsd, onCall });
-    book.absorb(authored.cost?.calls ?? []);
-    onPhase('rubric', { size: CALIBRATION_SIZE });
-    const proposed = await proposeFn({
-      answers: stageAnswers,
-      questions: questions ?? questionsFor(picked),
-      generate,
-      book,
-      ...compileOpts,
-    });
-    onPhase('rubric-done', { ok: proposed.ok, stop: proposed.stop, attempts: proposed.attempts });
-    if (!proposed.ok) {
-      return {
-        ...base,
-        verdictType: picked, seedRef: seed, authoring: authored, judged: { proposal: proposed, signed: null },
-        reds: proposed.reds, stop: proposed.stop, cost: book.report(), interview,
-      };
-    }
-
-    // THE D5 MOMENT. `signerFix` is the seam a UI (or an operator's own editor)
-    // hands the fixed artifacts back through; ABSENT is a legal answer and it is
-    // recorded as one — `source: 'proposal'` says *nobody changed this*, which is
-    // a different fact from *a person read it and changed nothing*.
-    const fix = typeof signerFix === 'function' ? await signerFix(proposed.proposal) : signerFix;
-    const signed = signJudgedArtifacts({ proposal: proposed.proposal, fix });
-    judged = { proposal: proposed, signed, scrubbed: signed.scrubbed, source: signed.source };
-    if (!signed.ok) {
-      return {
-        ...base,
-        verdictType: picked, seedRef: seed, authoring: authored, judged,
-        reds: signed.reds, stop: 'rubric-invalid', cost: book.report(), interview,
-      };
-    }
-    // THE SCRUB, ANNOUNCED. A signer signs a hash over the STORED bytes, so bytes
-    // the ONE inventory masked on the way in are said out loud rather than left
-    // for them to notice — by PATH only, because echoing the matched string would
-    // be the same leak one hop on.
-    if (signed.scrubbed.length) onPhase('rubric-scrubbed', { paths: signed.scrubbed.map((s) => s.path) });
-    // `cases` is an array on every ok path — `validateCalibrationSet` reds a
-    // non-array before anything can be `ok` — and the narrowing is stated rather
-    // than defaulted: `?? []` here would fold an EMPTY signed set into a close,
-    // which is the one direction that must never be reachable.
-    if (typeof judgeModel !== 'string' || judgeModel.trim() === '') {
-      throw new Error('[authorjob] authorCloseForJob composed a JUDGED close and was given no judgeModel (PRD item '
-        + '32.1). The stored calibration set carries the judge that certified it, and a set stamped with a model '
-        + 'nobody named is exactly the unattributable floor that field exists to prevent.');
-    }
-    closeDecl = foldJudgedArtifacts(closeDecl, {
-      card: signed.card, cases: /** @type {any[]} */ (signed.cases), judgeModel,
-    });
-    return {
-      ok: true,
-      refusal: null,
-      verdictType: picked,
-      closeDecl,
-      seedRef: seed,
-      authoring: authored,
-      judged,
-      reds: authored.reds,
-      stop: authored.stop,
-      cost: book.report(),
-      interview,
-      confirmed,
-    };
-  }
-
   return {
     ok: true,
     refusal: null,
@@ -1061,7 +948,6 @@ export async function authorCloseForJob({
     closeDecl,
     seedRef: seed,
     authoring: authored,
-    judged,
     // the checks the person picked, for the plan card's "You picked" rows (read from the block's rows)
     ...(block ? { hasBuiltCheck: block.hasBuiltCheck() } : {}),
     // the suggestions code could not build, one plain sentence each: the Audit's draft lines, never the card (hamr 2026-11-13, F-b)
@@ -1212,184 +1098,6 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
 ));
 
 /**
- * THE one spelling of "a passed calibration gate stands in for the seed red": the
- * close carries a judged stage AND the gate ran and passed. A failed or missing
- * calibration never satisfies it, and a close with no judged stage never reaches it.
- * @param {any[]} judged `judgedStages(closeDecl)` @param {any} calibration `gates.calibration`
- * @returns {boolean}
- */
-export function seedProofIsCalibration(judged, calibration) {
-  return judged.length > 0 && calibration?.ok === true;
-}
-
-/**
- * GATE 4 — the calibration gate, and the only gate here that spends money.
- *
- * It answers ONE question: has this close's own ruler been shown to grade the
- * signer's own ten correctly, itemized, and to resist all five attack styles?
- * Anything else it learns — a missing set, an unwired judge, a dead call — is
- * reported under its own name and refuses, because every one of them leaves the
- * question unanswered and an unanswered calibration is not a passed one.
- *
- * THE CASUALTY SPLIT is the same one the judged stage runs (F45, contract (a)): a
- * provider failure, an unpriced call or an unparseable emission after the ladder
- * says NOTHING about the set. It refuses the signature — an ungraded ruler is
- * still ungraded — but it refuses under the TRANSPORT's name, so the operator is
- * sent to the socket or the meter and never to their own rubric.
- * AND IT MEETS THE ONE CEILING. This is the run's THIRD paid seam — the largest of
- * them, at up to `CALIBRATION_SIZE` locate calls plus a five-artifact battery, each
- * under its own retry ladder — and it used to run with no bound at all while the
- * scout and the declaration loop were both stopped by the operator's own number.
- * That is the advertised budget and the enforced budget being two different numbers.
- * The book is built HERE and PRIOR SPEND IS ABSORBED into it, so the ceiling folds in
- * what the earlier seams already spent and re-invoking a seam cannot silently widen
- * it; the gate reads it between calls and stops as a refusal that names money.
- * `judgeModel` is the RESOLVED judge identity (PRD item 32.1), required and with no
- * default: it is stamped onto the graded set and onto the calibration-missing record
- * alike, so both say which judge the close would have been certified by.
- * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null, judgeModel: string,
- *   onJudgeCost: ((c: any) => void)|null, calibrateFn: Function,
- *   ceilingUsd: number|null, priorCalls: any[]}} o
- * @returns {Promise<{ok: boolean, record: any, reds: Red[], refusal: Refusal|null}>}
- */
-async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
-  const cases = spec.closeDecl?.calibration?.cases ?? null;
-  // ONE card, and it is the SIGNED one — the card the calibration is graded
-  // against must be the card the close will RUN, or the gate certifies a ruler
-  // nobody is going to use. `validateCloseDecl` has already refused a second
-  // judged stage (AT_MOST_ONCE_KINDS), so there is exactly one here.
-  const card = judgedStages[0]?.params?.card ?? null;
-
-  if (cases === null || cases === undefined) {
-    const detail = `This close judges with a rubric card, and no calibration set is stored with it. The judged floor `
-      + `is only a floor once the whole pipe has graded ${CALIBRATION_SIZE} signed cases correctly — until then the `
-      + 'ruler is unmeasured, and an unmeasured ruler cannot be signed.';
-    return {
-      ok: false,
-      record: { ok: false, stop: 'calibration-missing', judgeModel, required: CALIBRATION_SIZE },
-      reds: [{ code: 'calibration-missing', path: 'closeDecl.calibration.cases', detail }],
-      refusal: refuse({
-        kind: 'decision-ready',
-        verb: null,
-        path: 'closeDecl.calibration',
-        detail,
-        options: [
-          `author the calibration set from the interview's own Q7 answer (${CALIBRATION_SIZE} cases, mixed polarity) and re-sign`,
-          'drop the judged stage and describe a job whose done is machine-checkable',
-          'abandon the job',
-        ],
-      }),
-    };
-  }
-
-  // ONE CEILING, ALL THE PAID SEAMS (`authorCloseForJob` says the same words over
-  // the compile). The book absorbs what the run has already spent, so what the gate
-  // reads is the REMAINING balance and never a fresh allowance; `absorb` deliberately
-  // does not re-fire a reporter, so nothing is counted twice downstream.
-  const book = makeCostBook({ ceilingUsd });
-  book.absorb(Array.isArray(priorCalls) ? priorCalls : []);
-  const cal = await calibrateFn({
-    cases,
-    card,
-    judgeLoop,
-    judgeModel,
-    // the gate's own calls join the same tally the ceiling is read against — a
-    // ceiling that cannot see the spend it bounds is F45's blind detector in a
-    // money coat. The caller's reporter fires with the call's whole record, after.
-    onCost: (/** @type {any} */ c) => {
-      book.absorb([{ label: c?.label ?? 'calibrate', costUsd: c?.costUsd ?? null, unpricedRounds: c?.unpricedRounds ?? 0 }]);
-      if (typeof onJudgeCost === 'function') onJudgeCost(c);
-    },
-    capStop: () => book.capStop(),
-  });
-
-  /** what the signing evidence KEEPS about this gate. The per-case artifacts are
-   * deliberately not in it — they are already in the signed spec, and a second
-   * copy in the evidence file is a second thing to keep in step. Each graded row's
-   * `diag` (F192) keeps the judge's own facts and the decision's reds — scrubbed
-   * and bounded quotes, never an artifact body — so a refusal reads from its own
-   * record. What IS kept is
-   * WHICH BYTES were certified (`cardHash`/`casesHash`/`setHash`) and BY WHICH
-   * MODEL (`judgeModel`), which is what makes a judge-model bump detectable at
-   * all. */
-  const record = {
-    ok: cal.ok,
-    stop: cal.stop,
-    judgeModel: cal.judgeModel,
-    cardHash: cal.cardHash,
-    casesHash: cal.casesHash,
-    setHash: cal.setHash,
-    graded: cal.graded,
-    failures: cal.failures,
-    injection: cal.injection,
-    casualty: cal.casualty,
-    costUsd: cal.costUsd,
-    knownUsd: cal.knownUsd,
-    spendComplete: cal.spendComplete,
-    calls: cal.calls?.length ?? 0,
-  };
-  if (cal.ok) return { ok: true, record, reds: [], refusal: null };
-
-  const reds = cal.reds.map(scrubRed);
-  const casualty = cal.casualty !== null && cal.casualty !== undefined;
-  /** the OPERATOR's own governance stop, and it is neither a casualty nor a reading
-   * of the close: the ceiling ran out mid-question, and what was graded before it
-   * did says nothing either way about the rest of the set. */
-  const budget = cal.stop === 'cap-halt' || cal.stop === 'pricing-red';
-  const detail = budget
-    ? (cal.stop === 'cap-halt'
-      ? `The calibration gate ran out of CEILING before it could finish: ${cal.graded.length} of `
-        + `${Array.isArray(cases) ? cases.length : 0} case(s) were graded and the next call was never made. A `
-        + 'part-graded set is an ungraded ruler, so nothing is signable — and nothing here says the ruler is wrong.'
-      : 'The calibration gate stopped on an UNPRICED call: with the run\'s total unknown the ceiling cannot be read '
-        + 'against it, and unpriced is never free (F6). Nothing here says anything about the set.')
-    : casualty
-      ? `The calibration gate could not be RUN: the judge produced no usable facts for ${cal.casualty.kind} `
-        + `"${cal.casualty.at}" [${cal.casualty.axis}]. A broken judge is a casualty and never a verdict, so this says `
-        + 'nothing about the set — but an ungraded ruler is still an ungraded ruler, and it cannot be signed.'
-      : cal.stop === 'no-judge'
-        ? `This close carries a judged stage and no judge seam was wired, so the ${CALIBRATION_SIZE}-case gate never ran. `
-          + 'An absent seam is a wiring gap, never a fall-back: a gate that grades nothing would certify every close.'
-        : cal.stop === 'invalid-set'
-          ? 'The stored rubric card and calibration set do not compose into something gradeable, so the gate refused '
-            + 'before spending anything.'
-          : `The whole pipe did not grade this close's own calibration set correctly: `
-            + `${cal.failures.length} of ${Array.isArray(cases) ? cases.length : 0} case(s) graded wrong`
-            + `${cal.injection.leaks.length ? ` and ${cal.injection.leaks.length} injection style(s) leaked` : ''}. `
-            + `The floor is ${CALIBRATION_SIZE}/${CALIBRATION_SIZE} with itemized reds and all styles resisting `
-            + '(hamr, 2026-08-18) — the fix for a miss is a new card line or a corrected case, and a re-sign.';
-
-  return {
-    ok: false,
-    record,
-    reds,
-    refusal: refuse({
-      kind: 'decision-ready',
-      verb: null,
-      path: 'closeDecl.calibration',
-      detail,
-      options: budget
-        ? [
-          'raise the authoring ceiling and re-run the gate — the $0 gates above are already passed',
-          'run the gate unbounded (omit the ceiling) — that is a stated operator choice, never a default',
-          'abandon the job',
-        ]
-        : casualty || cal.stop === 'no-judge'
-          ? [
-            'wire a judge provider pinned to the judged tier and re-run the gate',
-            'wait out the provider and re-run — nothing about the close was judged here',
-            'abandon the job',
-          ]
-          : [
-            'correct the card line or the case the pipe graded differently, and re-sign',
-            'read the itemized rows above: a case the pipe reds for the WRONG reason is the card talking, not the judge',
-            'abandon the job',
-          ],
-    }),
-  };
-}
-
-/**
  * D9, in code: *nothing JUDGES the close; three mechanical gates plus a
  * signature.* No LLM validates another LLM's close, here or anywhere.
  *
@@ -1402,23 +1110,7 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJu
  *      A close with NO work stage red at seed has nothing to do and is refused
  *      decision-ready — gate-2 round 2's arm B died exactly there, on a mypy that
  *      scanned nothing and therefore read clean.
- *   4. THE CALIBRATION GATE (softgreen module 5) — for a close carrying a
- *      `judged-floor` stage ONLY. The whole judged pipe runs over the signed ten
- *      and the five arbiter-owned injection artifacts, and anything short of
- *      10/10 with itemized reds and 5/5 resisted is an unsignable close. It is
- *      the ONE gate here that spends money, so it runs LAST — every free refusal
- *      has already had its chance, and nobody pays to discover a broken
- *      declaration.
- *
- * D9.3 AND THE JUDGED CLOSE (2026-08-18 second addendum, ruling 3; hamr: *"fix it now,
- * we are delivering softgreen, isn't that the whole point?"*; widened 2026-10-09 to mixed
- * closes, hamr: *"a rubric job should check if judge can judge (calibration) and judge
- * rules can apply properly to pass ... we can't close everything upfront"*). Gate 3
- * protects against a close that cannot fail. A judged stage SKIPS the seed read by ruling
- * 8, so it can never show red there. For ANY close carrying a judged stage (pure or
- * mixed with mechanical stages), a PASSED calibration gate plays the seed-red role
- * (`seedProofIsCalibration`). A close with NO judged stage is UNCHANGED: some work stage
- * must be red at the seed. A failed or missing calibration never satisfies it.
+ *   (There was a fourth, paid gate, the calibration gate of the old judge; it is gone with the old judge, 2026-11-14.)
  *
  * Gates 2 and 3 share ONE execution, and that is stated rather than hidden: at
  * job creation the tree IS the seed, so "does every stage run against the real
@@ -1431,35 +1123,18 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJu
  * comes back is the resolved spec, its hash, and the evidence to sign against.
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
- *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function,
- *   judgeLoop?: Function|null, judgeModel?: string|null, onJudgeCost?: ((c: any) => void)|null,
- *   calibrateFn?: Function, ceilingUsd?: number|null, priorCalls?: any[]}} o
+ *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function}} o
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
 export async function prepareSigning({
   spec, workdir, seedRef = null, shellCapUsd, timeoutMs,
   seedFn = seedAtHead, listingFn = seedListing, seedReadFn = runSeedRead,
-  // THE PAID SEAM, and it is the operator's to wire — this module owns no
-  // provider and picks none (the same contract `authorCloseForJob` keeps for the
-  // drafting model). Absent is never a fall-back: a judged close whose gate could
-  // not run is refused, not waved through. `judgeModel` is the seam's other half
-  // (PRD item 32.1) — WHICH model that loop drives, resolved by the caller
-  // (`resolveJudge`, src/judged.js). The two travel together: a gate that grades
-  // without recording its judge certifies a floor nobody can attribute.
-  judgeLoop = null, judgeModel = null, onJudgeCost = null, calibrateFn = runCalibration,
-  // THE OPERATOR'S CEILING, and the spend it has already met. `null`/absent is
-  // UNBOUNDED and is a stated choice, never a default invented here (the same
-  // contract `authorCloseForJob` keeps). `priorCalls` is what the earlier paid
-  // seams of this run already cost — a `makeCostBook().report().calls` list — and
-  // it is ABSORBED so the gate reads the remaining balance rather than opening a
-  // fresh allowance under the same number.
-  ceilingUsd = null, priorCalls = [],
 }) {
   /** @type {any} */
   const base = {
     ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: [], refusal: null,
-    gates: { declaration: null, precheck: null, seedVerdict: null, calibration: null },
+    gates: { declaration: null, precheck: null, seedVerdict: null },
   };
 
   // ── gate 1a: the spec itself. A declared close that is not on a plan-shape
@@ -1514,7 +1189,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot
@@ -1562,7 +1237,7 @@ export async function prepareSigning({
   };
   if (stops.length) {
     // M2: a rubric job's readout never uses the code-job wording ("install, build and test commands")
-    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && (st.kind === 'rubric-step' || st.kind === 'judged-floor'));
+    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && st.kind === 'rubric-step');
     const reds = stops.map((s) => ({
       code: 'broken-close',
       ...(rubricJob ? { rubricJob: true } : {}),
@@ -1598,49 +1273,12 @@ export async function prepareSigning({
     workRed: workRed.map((r) => r.stage),
   };
 
-  // ── gate 4: THE CALIBRATION GATE (softgreen module 5). The ONLY paid gate, and
-  // it runs LAST for exactly that reason: every $0 refusal above has already had
-  // its chance, so a broken declaration or a stage that cannot run is found for
-  // free. MANDATORY for any close carrying a judged-floor stage — module 4's
-  // validator checks a stored set for LEGALITY only and deliberately allows a
-  // judged stage with no set at all, because making it mandatory is a signing
-  // decision and this is the signing gate.
-  const judged = judgedStages(spec.closeDecl);
-  if (judged.length) {
-    if (judgeLoop !== null && (typeof judgeModel !== 'string' || judgeModel.trim() === '')) {
-      throw new Error('[authorjob] prepareSigning was wired a judgeLoop with no judgeModel (PRD item 32.1). The two '
-        + 'halves of the judge seam travel together: the graded set is stamped with the judge that certified it, and '
-        + 'there is no library pin to fall back to.');
-    }
-    const cal = await calibrationGate({
-      spec, judgedStages: judged, judgeLoop, judgeModel: /** @type {string} */ (judgeModel),
-      onJudgeCost, calibrateFn, ceilingUsd, priorCalls,
-    });
-    base.gates.calibration = cal.record;
-    if (!cal.ok) return { ...base, work, guards, reds: cal.reds, refusal: cal.refusal };
-  }
-
   // D9.3 — nothing red at seed means nothing to do. Round 2's arm B read GREEN
   // with value 0 because mypy died on an unrelated broken fixture and scanned
   // nothing: an instrument scanning nothing reads clean, which is F6's shape at
   // the close-authoring layer, and this gate is what refuses it BEFORE a
   // signature rather than after a paid run.
-  //
-  // THE JUDGED ROUTE (ruling 3, widened 2026-10-09 by hamr: "a rubric job should
-  // check if judge can judge (calibration) and judge rules can apply properly to
-  // pass ... we can't close everything upfront"). A close carrying ANY judged stage
-  // has a work-bearing stage that ruling 8 exempts from the seed read, so the seed
-  // cannot show it red — not because it measures nothing, but because it is not
-  // measured there. Its proof of failability is the calibration gate, which has
-  // just run and passed (a failed one returned above), and which contains signed
-  // cases the pipe must RED as well as ones it must pass. That holds for a PURE
-  // judged close and a MIXED one alike; a close with NO judged stage takes the
-  // original path unchanged (some work stage must be red at the seed).
-  if (workRed.length === 0 && seedProofIsCalibration(judged, base.gates.calibration)) {
-    // said out loud in the record: this close passed gate 3 on a DIFFERENT proof,
-    // and a reader must never have to infer which one from an empty workRed list
-    base.gates.seedVerdict.satisfiedBy = 'calibration';
-  } else if (!workRed.length) {
+  if (!workRed.length) {
     return {
       ...base,
       work,

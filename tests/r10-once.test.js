@@ -62,14 +62,15 @@ test('D3: round-4 draft 9 (the suggest call said none for "exactly 3 bullets"): 
   const { asks } = asksOf(['exactly 3 bullets', 'under 80 words']);
   const [a, b] = asks;
   assert.deepEqual([a.ask, a.counted, a.check], ['check', false, { rule: 'listItems', value: 3 }]);
-  assert.equal(a.question, 'Line 1, guardrail "exactly 3 bullets": I propose exactly 3 list items. Answer "agree" to use it, or type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.');
+  assert.equal(a.question, 'Line 1, guardrail "exactly 3 bullets": I propose exactly 3 list items. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
   assert.deepEqual([b.ask, b.check], ['check', { rule: 'maxWords', value: 80 }]);
   assert.ok(!asks.some((x) => x.question.includes(CANT_CHECK_WORDS)));
 });
 test('D3: with no suggestion every count rule still gets its proposal; a non-count rule is the can\'t-check ask; two different counts in one rule build nothing; (rowsFromAnswer keeps its own rows for the pick path)', () => {
   const texts = ['exactly 3 bullets', 'under 80 words', 'at least 200 words', 'at most 10 lines', 'be friendly', 'between 100 and 200 words'];
   const { asks } = asksOf(texts);
-  assert.deepEqual(asks.map((a) => [a.rule, a.ask, a.check ?? null]), [[5, 'cant-check', null], [6, 'cant-check', null], [1, 'check', { rule: 'listItems', value: 3 }], [2, 'check', { rule: 'maxWords', value: 80 }], [3, 'check', { rule: 'minWords', value: 200 }], [4, 'check', { rule: 'maxLines', value: 10 }]]);
+  // no obvious asks (hamr 2026-11-14): "at least 200 words" and "at most 10 lines" ARE their checks, so they are built as written and not asked; the other two count rules still get a proposal
+  assert.deepEqual(asks.map((a) => [a.rule, a.ask, a.check ?? null]), [[5, 'cant-check', null], [6, 'cant-check', null], [1, 'check', { rule: 'listItems', value: 3 }], [2, 'check', { rule: 'maxWords', value: 80 }]]);
   assert.ok(texts.slice(0, 4).every((t) => isCountable(t)));
   assert.equal(asksOf(['exactly 3 bullets under 80 words']).asks[0].ask, 'cant-check', 'two different counts in one rule: nothing is built');
   const rs = [...rules, { line: 1, rule: 3, text: 'at least 200 words' }, { line: 1, rule: 4, text: 'at most 10 lines' }, { line: 1, rule: 5, text: 'be friendly' }, { line: 1, rule: 6, text: 'between 100 and 200 words' }];

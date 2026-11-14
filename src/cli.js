@@ -6,7 +6,7 @@
 // `bareloop run <bundle>` is a thin door (`src/bundlerun.js`) to the same engine `bareloop
 // run-u` drives (`src/userrun.js`): providers, keys (the keys file / env, any provider the
 // bundle's spec names), judge, monthly limit and readout are that engine's. The test seam is
-// the engine's too: `deps.provider` (and `providerFor`/`judgeProvider`) supplies a scripted
+// the engine's too: `deps.provider` (and `providerFor`) supplies a scripted
 // provider and skips the real-key check (same as `tests/planrun-*.test.js`'s pattern).
 //
 // Money/arbiter rules the bundle door keeps: `--budget`/`--wall` only TIGHTEN a bundle's
@@ -305,7 +305,7 @@ async function runLauncher(cmd, rest, deps, io, home) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, interactive?: boolean, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, now?: () => number, stdin?: any, interactive?: boolean, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {
@@ -353,7 +353,7 @@ async function mainInner(argv, deps, holder) {
   // (`--job`/`--spec`/`--resume`/`--door`/`--decide`/`--text`/
   // `--review-door`/`--approve`/`--registry`/`--workflow`/`--model`/
   // `--read-shim`/`--scout`/`--ticket`/`--anyway`). `deps` is spread first so an injected test
-  // seam (`deps.provider`/`providerFor`/`judgeProvider`) still reaches it,
+  // seam (`deps.provider`/`providerFor`) still reaches it,
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.

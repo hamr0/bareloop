@@ -74,7 +74,7 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS,
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
@@ -1534,13 +1534,14 @@ function stepChecksOf(records, spec) {
 }
 
 /**
- * The generic Result tab's "The checks" box, from the run's LAST `outer-close` record: each stage's plain question ({@link stageQuestionText}'s one
+ * The generic Result tab's "The checks" box, from the run's FINAL close record (the last `outer-close` or fix-loop staged `close-verdict`): each stage's plain question ({@link stageQuestionText}'s one
  * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. A run the close never reached
  * falls back to the checks its steps ran ({@link stepChecksOf}); `null` when neither exists.
  * @param {any[]} records @param {any} spec
  */
 function checksOf(records, spec) {
-  const oc = records.findLast((r) => r && r.type === 'outer-close' && Array.isArray(r.stages));
+  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1)
+  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
   if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
@@ -1555,9 +1556,16 @@ function checksOf(records, spec) {
     };
   });
   const ok = stages.filter((/** @type {any} */ s) => s.passed).length;
+  // a stage the signed close declares but this LATEST close never reached (it stops at the first red) is "not reached" — never the precheck's old reading
+  const ran = new Set(stages.map((/** @type {any} */ s) => s.name));
+  const unreached = [...(kindMeta ?? new Map())].filter(([n]) => !ran.has(n)).map(([name, m]) => ({
+    name, question: m.question, passed: false, notReached: true, status: NOT_REACHED,
+    value: null, baseline: null, direction: m.direction, baselineKind: m.baselineKind, notes: null,
+  }));
+  const shown = kindMeta ? [...kindMeta.keys()].map((n) => stages.find((/** @type {any} */ s) => s.name === n) ?? unreached.find((u) => u.name === n)).concat(stages.filter((/** @type {any} */ s) => !kindMeta.has(s.name))) : stages;
   return {
-    head: `${ok} of ${stages.length} passed · the close ran them after the worker stopped`,
-    passed: ok, total: stages.length, allPassed: ok === stages.length, stages,
+    head: `${ok} of ${stages.length} passed${unreached.length ? ` · ${unreached.length} not reached` : ''} · the close ran them after the worker stopped`,
+    passed: ok, total: stages.length, notReached: unreached.length, allPassed: ok === stages.length, stages: shown,
     notes: stages.filter((/** @type {any} */ s) => s.notes).map((/** @type {any} */ s) => ({ name: s.name, text: s.notes })),
   };
 }
@@ -1995,16 +2003,6 @@ function getRunDetailBody(runid, opts) {
   // the export row only for a run export would take — the one rule, `checkExportable`, never a copy of it
   const exportName = checkExportable(row, runName).ok ? runName : null;
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true, exportName);
-  // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
-  // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
-  // close's own paid judge seam, distinct from the worker `model` above.
-  // `null` whenever no judge-round was ever recorded (the common case —
-  // src/replay.js's own note: no real archived run measured against this
-  // build carries one yet), never guessed from the worker model.
-  const judgeRoundWithModel = rawSpineRecords.find(
-    (r) => r && typeof r === 'object' && r.type === 'judge-round' && typeof r.model === 'string' && r.model.length > 0,
-  );
-  const judgeModel = judgeRoundWithModel ? judgeRoundWithModel.model : null;
 
   /** @param {string|null} outcome @param {boolean} isLast */
   const stateFor = (outcome, isLast) => {
@@ -2141,7 +2139,6 @@ function getRunDetailBody(runid, opts) {
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
     provider: summary.provider,
-    judgeModel,
     budgetUsd: summary.budgetUsd,
     glyph: status.sign,
     status,
@@ -2248,7 +2245,7 @@ function getRunDetailBody(runid, opts) {
     // Cross-run learnings now ride on the part that received them (`part.learnings`, `part.learningsError`; src/panel/handed.js).
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
-    checksLine: checksLineOf(rawSpineRecords, enrichedParts),
+    checksLine: checksLineOf(rawSpineRecords, specForParts),
     auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
@@ -3179,53 +3176,17 @@ export function callsLineOf(records, behaviour) {
     : `${model} model · tool calls: no log saved`;
 }
 
-/** "1-5", "2", "1-2, 4" from try numbers @param {number[]} ns */
-function tryRanges(ns) {
-  const out = [];
-  for (let i = 0; i < ns.length; i += 1) {
-    let j = i;
-    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j += 1;
-    out.push(j > i ? `${ns[i]}-${ns[j]}` : String(ns[i]));
-    i = j;
-  }
-  return out.join(', ');
-}
-
 /**
- * "16 run · 8 passed · 8 failed (write-flight-facts tries 1-5, then tries 1-3)" — counts of what ran, never a fraction (the "checks N/M"
- * headline stays withdrawn). Every `exit-eval` result plus every graded `outer-close` stage; the parenthesis names the steps and try ranges
- * that failed, from the same `tries[]` the Audit reads. A run with neither says `not recorded`.
- * @param {any[]} records the run's raw spine @param {any[]|null|undefined} parts the enriched parts
+ * "3 run · 3 passed · 0 failed" (+ " · N not reached") — counts of what the run's LATEST close ran, never a fraction (the "checks N/M" headline stays withdrawn).
+ * Read from {@link checksOf}, the one owner the Audit checks fold and the Result checks box read (live run mwg3pov1): the last staged close, a stage it never reached counts as
+ * neither passed nor failed, and a run no close reached falls back to the checks its steps ran. No history of earlier tries. A run with neither says `not recorded`.
+ * @param {any[]} records the run's raw spine @param {any} spec the run's signed spec (names the stages the close declares)
  * @returns {string}
  */
-export function checksLineOf(records, parts) {
-  let run = 0;
-  let passed = 0;
-  let outerFailed = false;
-  for (const r of records) {
-    if (!r) continue;
-    if (r.type === 'exit-eval' && Array.isArray(r.results)) {
-      for (const x of r.results) { run += 1; if (x && x.pass === true) passed += 1; }
-    } else if (r.type === 'outer-close' && Array.isArray(r.stages)) {
-      for (const x of r.stages) { run += 1; if (x && x.verdict === 'satisfied') passed += 1; else outerFailed = true; }
-    }
-  }
-  if (run === 0) return 'not recorded';
-  /** @type {string[]} */
-  const named = [];
-  /** @type {Set<string>} */
-  const seenLabel = new Set();
-  for (const p of parts ?? []) {
-    if (p.kind !== 'step' || !Array.isArray(p.tries)) continue;
-    const bad = p.tries.filter((/** @type {any} */ t) => t.failed > 0).map((/** @type {any} */ t) => t.n);
-    if (bad.length === 0) continue;
-    const text = `tries ${tryRanges(bad)}`;
-    named.push(seenLabel.has(p.label) ? `then ${text}` : `${p.label} ${text}`);
-    seenLabel.add(p.label);
-  }
-  if (outerFailed) named.push('the outer close');
-  const failed = run - passed;
-  return `${run} run · ${passed} passed · ${failed} failed${named.length ? ` (${named.join(', ')})` : ''}`;
+export function checksLineOf(records, spec) {
+  const c = checksOf(records, spec);
+  if (!c || c.total === 0) return 'not recorded';
+  return `${c.total} run · ${c.passed} passed · ${c.total - c.passed} failed${c.notReached ? ` · ${c.notReached} not reached` : ''}`;
 }
 
 /** 1 -> "1st", 4 -> "4th", 12 -> "12th" @param {number} n */
@@ -3424,15 +3385,15 @@ function auditChecksFor(row, records, spec, opts) {
   if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
     try {
       guards = confirmProtections({
-        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
+        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, closeDecl: spec.closeDecl,
         writeScope: Array.isArray(spec.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null,
       });
     } catch { guards = []; }
   }
   const got = checksOf(records, spec);
-  const results = got ? new Map(got.stages.map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
+  const results = got ? new Map(got.stages.filter((/** @type {any} */ x) => !x.notReached).map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
   const rows = scopedAuditRows(row, records);
-  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows));
+  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows), got !== null && got.notReached !== undefined);
 }
 
 /**

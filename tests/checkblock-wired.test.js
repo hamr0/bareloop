@@ -136,7 +136,7 @@ function askedBlock() {
   return b;
 }
 
-test('the panel\'s choices into rows (ruling 1): agree writes a `~` row with the NEXT rule number (the panel adds the same line to jobLines) and the fact carries no aiProposal, the card says "you agreed"; drop leaves the rule Not checked; a typed rule is a typed row', () => {
+test('the panel\'s choices into rows (one rule in, one rule out, 2026-11-14): agree REPLACES the asked rule (same number) and the fact carries no aiProposal; drop leaves the rule Not checked; a typed rule replaces its asked rule as a typed row', () => {
   const b = askedBlock();
   const asks = questionsOfBlock(b);
   assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[1, 'reading'], [2, 'cant-check'], [3, 'cant-check']]);
@@ -147,11 +147,13 @@ test('the panel\'s choices into rows (ruling 1): agree writes a `~` row with the
   ]);
   assert.deepEqual(refused, []);
   const rules = b.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(rules.map((r) => [r.rule, r.origin, r.left ?? false]), [[1, 'job', false], [2, 'job', false], [3, 'job', false], [4, 'agreed', false], [5, 'typed', false]].map(([n, o]) => [n, o, n === 2]), 'rule 2 is left; the agreed and typed lines number 4 and 5');
+  assert.deepEqual(rules.map((r) => [r.rule, r.origin, r.left ?? false]), [[1, 'job', false], [2, 'job', true], [3, 'typed', false]], 'three rules stay three; rule 2 is left; the typed answer replaced rule 3');
+  assert.match(rules[0].text, /^Departure time between /, 'the agreed reading replaced rule 1');
+  assert.equal(rules[2].text, 'be gentle in tone');
   assert.equal(rules.find((r) => r.rule === 1)?.state, 'built');
   const fact = b.closeCache.parts.find((/** @type {any} */ p) => p.class === 'fact').facts.find((/** @type {any} */ f) => f.name === 'Departure time');
   assert.equal(Object.hasOwn(fact, 'aiProposal'), false, 'the bound is now the person\'s own words');
-  assert.match(renderCard(b.rows).map((l) => l.text).join('\n'), /you agreed: /);
+  assert.equal(rules.length, 3, 'no follower row');
   assert.equal(rules.find((r) => r.rule === 2)?.reason, 'You chose to leave it Not checked, so you judge it at Accept.');
   assert.equal(b.hasOpenQuestions(), false);
 });

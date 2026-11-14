@@ -61,8 +61,9 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
     answerQuestions: async (o) => {
       order.push('ask'); asked = o;
       const jobLines = JSON.parse(JSON.stringify(LINES));
-      jobLines[0].rule += '; every Monday'; jobLines[0].rules.push('every Monday');
-      return { jobLines, answers: { 1: '1. Find the last 3 releases\n   rule: released in October; one per week; every Monday' } };
+      // one rule in, one rule out: the person's words REPLACE the asked rule (rule 2 "one per week"); the check list rebuilds the job text from that choice
+      jobLines[0].rules[1] = 'every Monday'; jobLines[0].rule = jobLines[0].rules.join('; ');
+      return { jobLines, answers: { 1: 'x' }, choices: o.questions.map((q) => ({ key: q.key, choice: 'rule', text: 'every Monday' })) };
     },
     generate: async () => { throw new Error('no model call'); },
     authorFn: async (o) => { order.push('authorFn'); seen = o; return { ok: true, declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] }, genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }; },
@@ -120,7 +121,7 @@ test('the panel: the early ask goes through the ordinary ask path, required with
   assert.ok(await until(() => ['refused', 'error', 'prepared'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'refused', String(session.state.error));
   assert.equal(legs.length, 1, 'one draft, and no piecemeal ask after it failed');
-  assert.deepEqual(legs[0].jobLines[0].rules, ['one per week', 'each release is a weekly build']);
+  assert.deepEqual(legs[0].jobLines[0].rules, ['each release is a weekly build'], 'the typed words REPLACED the asked rule (one rule in, one rule out)');
   assert.match(session.state.error, /What to do: review the whole job - every line and its ~ rules, and the inputs - and submit it again\./);
   assert.match(session.state.error, /the label "from" is not one of the labels the input "Changelog"/);
 });

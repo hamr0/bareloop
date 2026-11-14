@@ -11,6 +11,7 @@
 //
 // `cls` is 'machine check' | 'judge' | null (null = not known yet: the confirm card's checks are the model's plan, the
 // stage kinds exist only after drafting). Pure; no file IO.
+import { NOT_REACHED } from './status.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
@@ -19,7 +20,7 @@ import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGo
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
-/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-checked'|'held'|'record-missing', word?: string}} AuditRow */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string}} AuditRow */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
@@ -178,12 +179,12 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * (`results`: stage name to passed), never re-derived; a row no verdict was recorded for says so. A Not checked row's result is "not checked" (its reason is in its words).
  * The write fence is enforced per write by the gate, so its row reads the gate's own record of THIS run (hamr ruling A, 2026-11-13): `blocked` = the write/edit attempts the gate denied
  * (`held · N writes blocked`), or `null` when the run's gate record is missing (said in plain words, never "held").
- * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked]
+ * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked] @param {boolean} [closeRan] the results are a CLOSE's (the latest), so a declared stage missing from them was not reached (the close stops at its first red); else a stage no verdict was recorded for reads none
  * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[]}}
  */
-export function auditChecksOf(plan, guards, results, blocked = null) {
-  /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'} */
-  const verdict = (stage) => (!stage || !results || !results.has(stage) ? 'none' : (results.get(stage) ? 'passed' : 'failed'));
+export function auditChecksOf(plan, guards, results, blocked = null, closeRan = false) {
+  /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'|'not-reached'} */
+  const verdict = (stage) => (!stage || !results ? 'none' : (!results.has(stage) ? (closeRan ? 'not-reached' : 'none') : (results.get(stage) ? 'passed' : 'failed')));
   /** @type {AuditRow[]} */
   const checks = [];
   for (const l of plan.lines) for (const c of l.checks) checks.push({ text: `line ${l.n} · ${c.name}`, by: c.by ?? null, result: verdict(c.stage) });
@@ -206,5 +207,6 @@ export function auditChecksOf(plan, guards, results, blocked = null) {
     }
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
   });
+  for (const r of [...checks, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
   return { checks, notChecked, always };
 }

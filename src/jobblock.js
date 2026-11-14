@@ -4,18 +4,22 @@
 //
 // Both are pure and $0: a malformed block is a named red `{ok: false, error}`, never a throw and never a guess.
 
-/** @typedef {{verdict: 'PASS'|'FAIL', text: string}} JobExample a `~ PASS:` / `~ FAIL:` line (rubric only), kept with its job line */
-/** @typedef {{n: number, text: string, rule: string, rules: string[], examples: JobExample[]}} JobLine one numbered job line; `rule` = its `~` lines joined with '; ' ('' when none), `rules` = those same `~` lines one by one (so an example's own '; ' survives) */
+/** @typedef {{n: number, text: string, rule: string, rules: string[]}} JobLine one numbered job line; `rule` = its `~` lines joined with '; ' ('' when none), `rules` = those same `~` lines one by one */
 /** @typedef {{n: number, label: string, value: string}} JobInput one numbered `label: value` input line */
+
+/** hamr 2026-11-14: Rubric on a repo is allowed ONLY for a Tickets job; any other repo + rubric start is refused at $0 in these words */
+export const REPO_RUBRIC_WORDS = 'A repo job uses a Deterministic check.';
 
 /** the joiner for consecutive `~` lines (fwd's joinGuardrails) */
 export const RULE_JOINER = '; ';
 
+/** hamr 2026-11-14: a `~ PASS:` / `~ FAIL:` line is refused at $0; the check list (`~` rules, Drop and Add) covers what the examples did */
+export const PASS_FAIL_GONE_WORDS = 'PASS/FAIL examples are gone \u2014 write what you want as a ~ rule.';
+
 /**
  * Parse "The job" box. A plain line is a numbered job line (1, 2, 3...). A line starting `~` has no number and belongs
  * to the numbered line above; consecutive `~` lines become ONE rule joined with `'; '`. A `~` line starting `PASS:` or
- * `FAIL:` is also a judge example (kept with its line number); any other `~` line is a guardrail. Empty lines are
- * ignored. A `~` before line 1 is a red.
+ * `FAIL:` is a red ({@link PASS_FAIL_GONE_WORDS}). Empty lines are ignored. A `~` before line 1 is a red.
  * @param {unknown} text the box's raw text
  * @returns {{ok: true, lines: JobLine[]}|{ok: false, error: string}}
  */
@@ -35,16 +39,12 @@ export function parseJobBlock(text) {
       if (lines.length === 0) return { ok: false, error: `The job, line ${row}: a "~" line belongs to the numbered line above it, and there is none yet` };
       const body = t.slice(1).trim();
       if (body === '') continue;
+      if (/^(PASS|FAIL):/i.test(body)) return { ok: false, error: PASS_FAIL_GONE_WORDS };
       rule.push(body);
-      const m = /^(PASS|FAIL):\s*(.*)$/i.exec(body);
-      if (m) {
-        if (m[2].trim() === '') return { ok: false, error: `The job, line ${row}: "${m[1].toUpperCase()}:" needs an example after it` };
-        lines[lines.length - 1].examples.push({ verdict: /** @type {'PASS'|'FAIL'} */ (m[1].toUpperCase()), text: m[2].trim() });
-      }
       continue;
     }
     flush();
-    lines.push({ n: lines.length + 1, text: t, rule: '', rules: [], examples: [] });
+    lines.push({ n: lines.length + 1, text: t, rule: '', rules: [] });
   }
   flush();
   if (lines.length === 0) return { ok: false, error: 'The job is required' };
@@ -100,16 +100,6 @@ export function jobBoxText(lines) {
 }
 
 /**
- * The PASS:/FAIL: examples the person wrote, each kept with its line number (answer 2 of a rubric interview — what the
- * calibration compile reads). Empty string when there are none.
- * @param {JobLine[]} lines
- * @returns {string}
- */
-export function renderExamples(lines) {
-  return lines.flatMap((l) => l.examples.map((e) => `line ${l.n} ${e.verdict}: ${e.text}`)).join('\n');
-}
-
-/**
  * The inputs as the drafter is told about them: "the person pointed at these inputs: N label path".
  * @param {JobInput[]} inputs
  * @returns {string}
@@ -119,32 +109,7 @@ export function renderInputs(inputs) {
 }
 
 /**
- * The two cross-checks between a parsed job block and the Check type: a RUBRIC job needs at least one `PASS:` and one
- * `FAIL:` example (the calibration compile reads them); a DETERMINISTIC job has no judge, so an example line would be
- * silently dropped — a red instead.
- * PART 1a (hamr's ruling P1=B, docs/product/ITEM33-BUILD.md "Addendum 2026-10-12"): the examples are required of a rubric
- * job ONLY when it holds a judged part. A rubric job on the person's own local files holds none in this build (its
- * parts are counted or checked against a quote), so the caller says `judged: false` and a block without examples fits.
- * Examples written anyway are never a red there — they simply have no judge to read them yet.
- * @param {JobLine[]} lines
- * @param {boolean} rubric
- * @param {{judged?: boolean}} [o] `judged` (default true): does this job hold a judged part, so that it needs examples?
- * @returns {string|null} the plain red, or null when the block fits the Check type
- */
-export function jobBlockFitsCheck(lines, rubric, { judged = true } = {}) {
-  const all = lines.flatMap((l) => l.examples.map((e) => ({ n: l.n, ...e })));
-  if (!rubric) {
-    return all.length ? `The job, line ${all[0].n}: PASS:/FAIL: examples are for a Rubric check — a Deterministic job has no judge to read them` : null;
-  }
-  if (judged && (!all.some((e) => e.verdict === 'PASS') || !all.some((e) => e.verdict === 'FAIL'))) {
-    return 'The job: a Rubric check needs at least one "~ PASS:" line and one "~ FAIL:" line under a job line';
-  }
-  return null;
-}
-
-/**
- * The signed `jobLines` field from parsed lines: the person's own words, `{n, text, rule, rules}` (examples stay inside the
- * rule text, where the person wrote them). `rules` is the same `~` lines as an array, BESIDE the joined `rule` (never
+ * The signed `jobLines` field from parsed lines: the person's own words, `{n, text, rule, rules}`. `rules` is the same `~` lines as an array, BESIDE the joined `rule` (never
  * replacing it); it is omitted on a line with no `~` line, and an older spec lacks it entirely.
  * @param {JobLine[]} lines
  * @returns {{n: number, text: string, rule: string, rules?: string[]}[]}

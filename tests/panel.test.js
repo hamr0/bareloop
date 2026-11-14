@@ -1146,7 +1146,6 @@ test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2)
   // this real spine's judge-round records (if any) all land inside a step
   // window (src/replay.js's own "no real archived run carries a leftover
   // judge-round" note) — no judge model is recorded for this run.
-  assert.equal(body.judgeModel, null);
 });
 
 test('/api/runs/:runid: a spine predating the `model`/`provider` fields reports both null — "not recorded", never a guessed "sonnet"', async (t) => {
@@ -1164,7 +1163,6 @@ test('/api/runs/:runid: a spine predating the `model`/`provider` fields reports 
   const body = await res.json();
   assert.equal(body.model, null);
   assert.equal(body.provider, null);
-  assert.equal(body.judgeModel, null);
 });
 
 // ---------------------------------------------------------------------------

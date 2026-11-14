@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfig, updateConfig } from '../src/config.js';
-import { keyRows, keyNameFor, judgeRatesFor, priceReadout, ratesFor, endpointOf } from '../src/providerrows.js';
+import { keyRows, keyNameFor, priceReadout, ratesFor, endpointOf } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
 
 /** @param {import('node:test').TestContext} t */
@@ -211,7 +211,6 @@ test('end to end: the cap binds on the customer-priced dollars — a low price d
 
 // ── every other door and seam that makes a model call ─────────────────────────────────────────────
 import { makeLoopGenerate } from '../src/authorflow.js';
-import { defaultJudgeLoop } from '../src/judged.js';
 import { runAuthorScout } from '../src/authorscout.js';
 import { main as authorMain } from '../src/authorrun.js';
 import { prepareSource } from '../src/source.js';
@@ -220,16 +219,12 @@ const RATES = { in: 0.001, out: 0.002 };
 const tokenOnly = () => scriptedProvider([{ text: 'x', costUsd: null, usage: USAGE }]);
 const expectRated = (USAGE.inputTokens / 1000) * RATES.in + (USAGE.outputTokens / 1000) * RATES.out;
 
-test('the drafter / confirm seam (makeLoopGenerate) and the judge seam (defaultJudgeLoop) price a round at the rates they are handed; without rates, at the guess', async () => {
+test('the drafter / confirm seam (makeLoopGenerate) prices a round at the rates it is handed; without rates, at the guess', async () => {
   const msgs = () => [{ role: 'user', content: 'q' }];
   const g = await makeLoopGenerate(tokenOnly(), { rates: RATES })(msgs(), []);
   assert.ok(Math.abs(g.metrics.costUsd - expectRated) < 1e-12);
-  const j = await defaultJudgeLoop({ provider: tokenOnly(), system: 's', rates: RATES }).run(msgs(), []);
-  assert.ok(Math.abs(j.metrics.costUsd - expectRated) < 1e-12);
-  const gj = await defaultJudgeLoop({ provider: tokenOnly(), system: 's' }).run(msgs(), []);
-  assert.notEqual(gj.metrics.costUsd, j.metrics.costUsd, 'no rates = the guess, a different number');
-  const gg = await makeLoopGenerate(tokenOnly())(msgs(), []);
-  assert.equal(gg.metrics.costUsd, gj.metrics.costUsd, 'both seams take the same guess when unpriced');
+  const gj = await makeLoopGenerate(tokenOnly())(msgs(), []);
+  assert.notEqual(gj.metrics.costUsd, g.metrics.costUsd, 'no rates = the guess, a different number');
 });
 
 test('the authoring scout hands its rates to every Loop it builds, and no rates key at all when none is set', async () => {
@@ -245,100 +240,6 @@ test('the authoring scout hands its rates to every Loop it builds, and no rates 
   for (const o of seen) assert.equal(Object.hasOwn(o, 'rates'), false);
 });
 
-// ── a judged (soft-green) close, end to end through the run-u engine ────────────────────────────
-// The judge's rounds are priced at the row the judge's KEY comes from: the worker's row when the
-// judge is the worker's own provider (no signed `judge`), the judge provider's row when a signed
-// `judge` names another. Scripted worker AND judge providers (token usage only, costUsd null, so
-// bare-agent prices them); scratch home; nothing paid.
-
-import { readFileSync as readText } from 'node:fs';
-import { classGuards } from '../src/authoring.js';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-
-const POC_PASS = readText(join(dirname(fileURLToPath(import.meta.url)), '..', 'poc', 'softgreen-judge', 'artifact-pass.txt'), 'utf8');
-// facts tests/judged-stage.test.js reconstructed against this same artifact (lifted, as that file does)
-const PASS_FACTS = {
-  functions: [{
-    name: 'makeSpine',
-    declarationQuote: 'export function makeSpine(file, { startSeq = 0 } = {}) {',
-    docQuote: '/**',
-    paramNames: ['file', '{ startSeq = 0 } = {}'],
-    paramIsPattern: [false, true],
-    paramTagNames: ['file', 'opts'],
-    returnsTagQuote: ' * @returns {(type: string, data?: object) => object} emit — returns the event as written',
-    returnsValueQuote: '    return ev;',
-  }],
-};
-const noSupp = classGuards({ verdictType: 'soft-green', lang: 'js' }).find((g) => g.name === 'no-suppressions');
-const JUDGE_USAGE = { inputTokens: 2000, outputTokens: 300 };
-const perRound = (u, price) => (u.inputTokens * price.priceInPerM + u.outputTokens * price.priceOutPerM) / 1e6;
-
-/** one run-u start whose close JUDGES; `home` carries the rows/prices, `judge` is the signed override (or none) */
-async function runJudged(t, { home, judge }) {
-  const workdir = tmp(t);
-  mkdirSync(join(workdir, 'src'), { recursive: true });
-  writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
-  writeFileSync(join(workdir, 'src', 'spine.js'), POC_PASS);
-  git(workdir, ['init', '-q']);
-  git(workdir, ['config', 'user.email', 'price-test@example.com']);
-  git(workdir, ['config', 'user.name', 'price-test']);
-  git(workdir, ['add', '.']);
-  git(workdir, ['commit', '-q', '-m', 'seed']);
-  const seed = git(workdir, ['rev-parse', 'HEAD']);
-  const spec = {
-    schema: 'job-v1', job: 'customer-price-judged', description: 'customer price judged fixture.',
-    provider: 'openai-api', baseUrl: DS, model: 'deepseek-flash', ...(judge ? { judge } : {}),
-    cadence: { unit: 'day', every: 1 }, budgetUsd: 5, maxWallMs: 1_800_000,
-    writeScope: ['src/**'], goal: 'Change src/mod.mjs.', verdictType: 'soft-green',
-    closeDecl: {
-      genre: 'TYPES', lang: 'js',
-      stages: [
-        { name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes: ['src/'], requireNonEmpty: true } },
-        { name: 'no-suppressions', kind: noSupp.kind, params: { patterns: noSupp.params.patterns, extensions: noSupp.params.extensions } },
-        { name: 'docs-read-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'Every top-level function has a JSDoc block directly above it.' }] }, paths: ['src/spine.js'] } },
-      ],
-    },
-    tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
-  };
-  const wround = (o) => ({ costUsd: null, usage: USAGE, ...o });
-  const provider = scriptedProvider([
-    wround({ text: 'scout: nothing' }),
-    wround({ text: JSON.stringify(PLAN) }),
-    wround({ toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(workdir, 'src', 'mod.mjs'), content: 'export const x = 2;\n' } }] }),
-    wround({ text: 'done' }),
-  ]);
-  const judgeProvider = scriptedProvider([{ text: JSON.stringify(PASS_FACTS), costUsd: null, usage: JUDGE_USAGE }]);
-  /** @type {string[]} */ const errs = [];
-  let code = null;
-  try {
-    code = await startRun(spec, {
-      workdir, seed, spineName: 'customer-price-judged-bareloop', approve: jobSpecHash(spec),
-      deps: { provider, judgeProvider, env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
-    });
-  } catch (e) { code = `threw: ${e.message}`; }
-  const row = readRunList({ home }).rows[0];
-  const spine = row ? readFileSync(row.spine, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
-  return { code, errs: errs.join('\n'), spine, judgeCalls: judgeProvider.calls.length };
-}
-const judgeRounds = (spine) => spine.filter((r) => r.type === 'judge-round');
-
-/** a scratch home with the DeepSeek row (and, when given, the Anthropic row) priced as given */
-function judgeHome(t, { deepseek, anthropic, other }) {
-  const home = tmp(t);
-  const f = join(home, '.env');
-  writeFileSync(f, 'DEEPSEEK_API_KEY=sk-test-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nANTHROPIC_API_KEY=sk-ant-test-cccccccccccccccccccccccccccccccc\n' + (other ? 'OTHER_KEY=sk-test-dddddddddddddddddddddddddddddddddddd\n' : ''));
-  chmodSync(f, 0o600);
-  const keys = {};
-  if (deepseek) keys.DEEPSEEK_API_KEY = deepseek;
-  if (anthropic) keys.ANTHROPIC_API_KEY = anthropic;
-  if (other) keys.OTHER_KEY = other;
-  // the DeepSeek-shaped row always exists (the worker's endpoint); the others only when given
-  if (!keys.DEEPSEEK_API_KEY) keys.DEEPSEEK_API_KEY = {};
-  updateConfig({ keys: withDefaults(keys) }, { home });
-  return home;
-}
-
 test('a model line with no price, half a price or a bad price is NOT a usable model: the run refuses at $0 with the one sentence, no provider call, no run-list row, no spine', async (t) => {
   for (const fields of [{}, { priceInPerM: 0.006 }, { priceInPerM: -1, priceOutPerM: 1 }, { priceInPerM: 'cheap', priceOutPerM: 1 }]) {
     // eslint-disable-next-line no-await-in-loop
@@ -349,70 +250,6 @@ test('a model line with no price, half a price or a bad price is NOT a usable mo
     assert.equal(r.row, undefined, 'no run-list row');
     assert.deepEqual(r.spine, []);
   }
-});
-
-test('a judged close prices its judge rounds at the worker row when the judge is the worker\'s own provider, at the judge\'s own row when a signed judge names another, and at the guess with no price', async (t) => {
-  const workerPrice = { priceInPerM: 0.006, priceOutPerM: 1.2 };
-  const judgePrice = { priceInPerM: 0.8, priceOutPerM: 4 };
-
-  // (a) same provider: no signed judge -> the judge is deepseek-flash on the worker's row
-  const a = await runJudged(t, { home: judgeHome(t, { deepseek: workerPrice, anthropic: judgePrice }), judge: null });
-  // (b) a signed judge on the Anthropic row, which carries its own price
-  const b = await runJudged(t, { home: judgeHome(t, { deepseek: workerPrice, anthropic: judgePrice }), judge: { provider: 'anthropic-api', model: 'claude-haiku-4-5' } });
-  // (c) no price on any row
-  const c = await runJudged(t, { home: judgeHome(t, {}), judge: null });
-
-  for (const [name, r] of [['a', a], ['b', b], ['c', c]]) {
-    assert.ok(judgeRounds(r.spine).length > 0, `${name}: the judge ran (${r.code}) ${r.errs} ${JSON.stringify(r.spine).slice(0, 600)}`);
-    assert.equal(r.judgeCalls, judgeRounds(r.spine).length, `${name}: one judge-round per scripted judge call`);
-  }
-  const expectA = perRound(JUDGE_USAGE, workerPrice);
-  const expectB = perRound(JUDGE_USAGE, judgePrice);
-  for (const r of judgeRounds(a.spine)) assert.ok(Math.abs(r.costUsd - expectA) < 1e-12, `a: ${r.costUsd} vs ${expectA}`);
-  for (const r of judgeRounds(b.spine)) assert.ok(Math.abs(r.costUsd - expectB) < 1e-12, `b: ${r.costUsd} vs ${expectB}`);
-  assert.notEqual(expectA, expectB);
-  // the worker's own rounds stay on the worker's row in (b): the judge's price never leaks into them
-  const expectWorker = perRound(USAGE, workerPrice);
-  for (const r of workerRounds(b.spine)) assert.ok(Math.abs(r.costUsd - expectWorker) < 1e-12, `b worker: ${r.costUsd} vs ${expectWorker}`);
-  // (c) the guess: far above the customer price, and not the customer figure
-  for (const r of judgeRounds(c.spine)) {
-    assert.notEqual(r.costUsd, expectA);
-    assert.ok(r.costUsd > expectA * 10, `c: the guess ${r.costUsd} is far above the customer price ${expectA}`);
-  }
-  // (d) same provider, the signed judge's MODEL names a second priced row on the worker's endpoint:
-  // the judge is booked at that row (B), the worker still at its own (A)
-  const priceB = { priceInPerM: 9, priceOutPerM: 9 };
-  const d = await runJudged(t, {
-    home: judgeHome(t, { deepseek: workerPrice, other: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, ...priceB } }),
-    judge: { provider: 'openai-api', model: 'deepseek-pro' },
-  });
-  assert.ok(judgeRounds(d.spine).length > 0, `d: the judge ran (${d.code}) ${d.errs}`);
-  const expectD = perRound(JUDGE_USAGE, priceB);
-  for (const r of judgeRounds(d.spine)) assert.ok(Math.abs(r.costUsd - expectD) < 1e-12, `d: ${r.costUsd} vs ${expectD}`);
-  for (const r of workerRounds(d.spine)) assert.ok(Math.abs(r.costUsd - expectWorker) < 1e-12, `d worker: ${r.costUsd} vs ${expectWorker}`);
-  assert.notEqual(expectD, expectA);
-
-  console.log(`# judge round, same tokens (${JUDGE_USAGE.inputTokens} in / ${JUDGE_USAGE.outputTokens} out): worker-row price $${expectA.toFixed(9)} | judge-row price $${expectB.toFixed(9)} | guess $${judgeRounds(c.spine)[0].costUsd.toFixed(9)}; judge-round rateSource in a/b/c: ${[a, b, c].map((r) => JSON.stringify(judgeRounds(r.spine)[0].rateSource)).join('/')}`);
-});
-
-test('judgeRatesFor: same provider, the judge model names a second row on the worker endpoint -> that row; no model / an unmatched model -> the worker\'s price; another provider unchanged', () => {
-  const rows = rowsOf({ DEEPSEEK_API_KEY: { priceInPerM: 1, priceOutPerM: 2 }, OTHER_KEY: { name: 'deepseek-pro', priceInPerM: 9, priceOutPerM: 9 } }, ['DEEPSEEK_API_KEY', 'OTHER_KEY']);
-  const workerPrice = ratesFor('openai-api', DS, rows, 'deepseek-flash');
-  assert.equal(workerPrice?.envName, 'DEEPSEEK_API_KEY');
-  const j = (model) => judgeRatesFor({ provider: 'openai-api', model }, 'openai-api', DS, workerPrice, rows);
-  assert.equal(j('deepseek-pro')?.envName, 'OTHER_KEY');
-  assert.deepEqual(j('deepseek-pro')?.rates, { in: 9 / 1000, out: 9 / 1000 });
-  assert.deepEqual(j('deepseek-flash'), workerPrice);
-  assert.equal(j(undefined), workerPrice);
-  assert.equal(j('no-such-model'), workerPrice);
-  // no price on the worker's row: the guess (null) stands for an unmatched model
-  assert.equal(judgeRatesFor({ provider: 'openai-api', model: 'x' }, 'openai-api', DS, null, rows), null);
-  // a different provider resolves on its own row, as before
-  const withAnth = rowsOf({ ANTHROPIC_API_KEY: { name: 'claude-x', priceInPerM: 3, priceOutPerM: 4 } }, ['ANTHROPIC_API_KEY']);
-  assert.equal(judgeRatesFor({ provider: 'anthropic-api', model: 'claude-x' }, 'openai-api', DS, workerPrice, withAnth)?.envName, 'ANTHROPIC_API_KEY');
-  // half a price on the judge's row reads as no price (an unticked line), never a throw
-  const bad = rowsOf({ OTHER_KEY: { name: 'deepseek-pro', priceInPerM: 1 } }, ['OTHER_KEY']);
-  assert.equal(judgeRatesFor({ provider: 'openai-api', model: 'deepseek-pro' }, 'openai-api', DS, null, bad), null);
 });
 
 // ── the preview's copy-paste "To approve and run" line (F207 b): the key variable the run will really read,
@@ -438,27 +275,6 @@ test('the preview\'s approve line names the key variable the run reads, and carr
   assert.match(approveLine(named.outs), new RegExp(`--registry ${reg.replace(/[.\\/]/g, '\\$&')} --workflow my-flow --approve `));
   console.log(`# approve line (DeepSeek job, registry): ${approveLine(withReg.outs).trim()}`);
   console.log(`# approve line (plain OpenAI job): ${approveLine(plain.outs).trim()}`);
-});
-
-test('a judge round carries rateSource beside its cost: \'caller\' under a customer price, the worker rounds\' own guess label without one; the provenance readout counts the priced ones vouched, dollars unchanged (live run mup3h70u)', async (t) => {
-  const price = { priceInPerM: 0.006, priceOutPerM: 1.2 };
-  const priced = await runJudged(t, { home: judgeHome(t, { deepseek: price }), judge: null });
-  const guessed = await runJudged(t, { home: judgeHome(t, {}), judge: null });
-  for (const r of [priced, guessed]) assert.ok(judgeRounds(r.spine).length > 0, `the judge ran (${r.code}) ${r.errs}`);
-  for (const r of judgeRounds(priced.spine)) assert.equal(r.rateSource, 'caller', 'a customer-priced judge round is vouched');
-  const guessLabels = new Set(workerRounds(guessed.spine).map((r) => r.rateSource));
-  assert.equal(guessLabels.size, 1);
-  for (const r of judgeRounds(guessed.spine)) {
-    assert.ok(Object.hasOwn(r, 'rateSource'), 'the guess is stamped too');
-    assert.ok([...guessLabels].includes(r.rateSource), `judge ${r.rateSource} matches the worker rounds' ${[...guessLabels]}`);
-    assert.notEqual(r.rateSource, 'caller');
-  }
-  const { spendProvenance } = await import('../src/ledger.js');
-  const prov = spendProvenance(priced.spine);
-  assert.equal(prov.unknown.rounds, 0, 'no round is left without provenance');
-  assert.equal(prov.vouched.rounds, workerRounds(priced.spine).length + judgeRounds(priced.spine).length);
-  const expect = perRound(JUDGE_USAGE, price);
-  for (const r of judgeRounds(priced.spine)) assert.ok(Math.abs(r.costUsd - expect) < 1e-12, 'dollars unchanged');
 });
 
 test('endpointOf on an unparseable Base URL with 20000 slashes before a last character is linear (the trailing-slash regex was quadratic), and a real URL still drops its trailing slashes', () => {

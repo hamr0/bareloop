@@ -47,6 +47,9 @@ export const STATUS = Object.freeze({
   skipped: Object.freeze({ sign: '–', word: 'skipped' }),
 });
 
+/** a close stage the run's LATEST close never reached (it stops at the first red): the [·] sign, grey, never the precheck's old reading. Beside STATUS, not in it: it is a stage's standing, never a run's status */
+export const NOT_REACHED = Object.freeze({ sign: '·', word: 'not reached' });
+
 /**
  * The plain words a skipped run carries (the `settled` event's `words`, the Ended line), from CODE. They do NOT repeat the status word: every surface prints `skipped — <words>` from the table's word (the CLI line adds its own `skipped:`): the filter decision's own reason, never model-written.
  * `reason` is `decideTicket`'s ('closed' | 'priority P3, not P1' | 'no P1 label' | 'no bug label'); `filter` is the job's signed `ticketFilter`, which tells a missing

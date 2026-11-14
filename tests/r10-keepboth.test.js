@@ -12,7 +12,7 @@ import { CheckBlock } from '../src/checkblock.js';
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8');
 const { D2, D3 } = JSON.parse(fx('r10-keepboth-refused.json'));
 const CHANGELOG = fx('r10-keepboth-changelog.md');
-const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', 'exactly 3 list items', 'at most 80 words'] }];
+const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 list items', 'at most 80 words'] }]; // one rule in, one rule out: the final words of the two picked rules
 // the person's two picks, as the record carries them (a `maxWords` and a `listItems` on the line's two rules)
 const PICKS = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
 const opts = () => ({
@@ -27,7 +27,7 @@ const built = (/** @type {any} */ d, /** @type {any[]|null} */ picked = PICKS) =
   const facts = d.stages.filter((/** @type {any} */ s) => s.kind === 'rubric-step').flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.class === 'fact').flatMap((/** @type {any} */ p) => p.facts.map((/** @type {any} */ f) => ({ line: s.params.step, name: f.name, shape: f.shape, source: p.source, words: [f.phrase] }))));
   const count = d.stages.filter((/** @type {any} */ s) => s.kind === 'rubric-step').flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.count).map((/** @type {any} */ p) => p.count))[0];
   const b = new CheckBlock({ texts: { Changelog: CHANGELOG }, labels: ['Changelog'], asks: false });
-  b.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', ...(picked ? ['exactly 3 list items', 'at most 80 words'] : [])] }]);
+  b.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: picked ? ['exactly 3 list items', 'at most 80 words'] : ['exactly 3 bullets', 'under 80 words'] }]);
   b.addLook(facts);
   if (picked) b.carry({ picks: picked });
   if (count) b.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, ...count }] });
@@ -48,7 +48,7 @@ for (const [name, d] of [['D2', D2], ['D3', D3]]) {
     const [st] = stageOf(v);
     assert.equal(stageOf(v).length, 1);
     assert.deepEqual(st.params.parts.map((p) => p.class + ':' + (p.check ?? '')), ['fact:', 'countable:listItems', 'countable:maxWords']);
-    assert.deepEqual(st.params.parts.slice(1).map((p) => p.rules), [[1, 3], [2, 4]]);
+    assert.deepEqual(st.params.parts.slice(1).map((p) => p.rules), [[1], [2]]);
   });
 }
 
@@ -132,7 +132,7 @@ for (const [name, d] of [['D2', D2], ['D3', D3]]) {
 }
 
 test('the floor: a fact line whose only pick is a maxWords and whose file has NO text is red, not green', async () => {
-  const [st] = stageOf(chain(D3, [PICKS[1]]));
+  const [st] = stageOf(chain(D3, [{ ...PICKS[1], rule: 1 }]));
   assert.ok(st.params.parts.some((p) => p.check === 'maxWords') && !st.params.parts.some((p) => p.check === 'listItems'));
   const bytes = JSON.stringify({ results: [{ quote: QUOTE.D3, values: {} }] });
   const g = await gradeStep({ params: st.params, bytes, outputBytes: bytes, inputs: { Changelog: CHANGELOG }, factQuotes: {}, factMissing: [] }, { Changelog: sha });

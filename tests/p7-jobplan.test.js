@@ -27,7 +27,7 @@ const NEW_SPEC = {
     genre: 'types', lang: 'js', notes: ['looks nice is not checked'],
     stages: [
       { name: 'changed-from-seed', kind: 'files-changed', params: {} },
-      { name: 'flights-found', fromLine: [1], kind: 'judged-floor', params: {} },
+      { name: 'flights-found', fromLine: [1], kind: 'human-confirms', params: {} },
       { name: 'sorted-by-price', fromLine: [2], kind: 'command-exit', params: {} },
     ],
     refused: [{ line: 3, reason: 'no command can check a table layout' }],
@@ -78,7 +78,7 @@ test('planFromConfirm: the person\'s lines, the model\'s checks under the line e
   assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null, by: 'agent' }], [{ name: 'tests pass', cls: null, by: 'agent' }]]);
   assert.deepEqual(p.loose, [{ name: 'stray', cls: null, by: 'agent' }]);
   assert.deepEqual([p.notChecked, p.alwaysOn], [['style'], ['no-suppressions']]);
-  assert.equal(checkClassOfKind('judged-floor'), 'judge');
+  assert.equal(checkClassOfKind('human-confirms'), 'judge');
   assert.equal(checkClassOfKind('command-exit'), 'machine check');
   assert.equal(checkClassOfKind('nope'), null);
 });
@@ -165,7 +165,7 @@ test('Start route: Inputs lines 2+ are proven at $0 before a session — a miss 
 });
 
 test('a check that serves several job lines is shown under EACH line it serves (spec and confirm plan)', () => {
-  const spec = { ...NEW_SPEC, closeDecl: { ...NEW_SPEC.closeDecl, stages: [{ name: 'one-judge', fromLine: [1, 2, 3], kind: 'judged-floor', params: {} }], refused: undefined } };
+  const spec = { ...NEW_SPEC, closeDecl: { ...NEW_SPEC.closeDecl, stages: [{ name: 'one-judge', fromLine: [1, 2, 3], kind: 'human-confirms', params: {} }], refused: undefined } };
   const p = planFromSpec(spec);
   assert.deepEqual(p.lines.map((l) => l.checks.map((c) => c.name)), [['one-judge'], ['one-judge'], ['one-judge']]);
   const c = planFromConfirm([{ n: 1, text: 'a', rule: '' }, { n: 2, text: 'b', rule: '' }], { checkItems: [{ text: 'both', fromLine: [1, 2] }, { text: 'nowhere', fromLine: [7] }] });

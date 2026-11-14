@@ -41,12 +41,12 @@ export const BUNDLE_JOB = {
 /**
  * Export the fixture bundle into `outDir` (must not exist or be empty).
  * @param {string} outDir
- * @param {{job?: string}} [opts] `job` renames the exported job (a different slug is a different spec hash)
+ * @param {{job?: string, extra?: Record<string, any>}} [opts] `job` renames the exported job (a different slug is a different spec hash); `extra` adds spec fields
  * @returns {{dir: string, bundleHash: string, manifest: any}}
  */
 export function exportFixtureBundle(outDir, opts = {}) {
   const job = opts.job ?? BUNDLE_JOB.job;
-  const spec = { ...BUNDLE_JOB, job };
+  const spec = { ...BUNDLE_JOB, job, ...(opts.extra ?? {}) };
   const specHash = jobSpecHash(spec);
   const minted = mintBridge(
     { name: job, goal: spec.goal, specHash, closeStageNames: ['changed-from-seed', 'suite-green'], toolsUsed: ['read', 'grep', 'edit'] },

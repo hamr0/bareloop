@@ -96,16 +96,6 @@ test('run-author.mjs calls archiveGateAudit() from the finally block (every ordi
   assert.match(finallyBlock, /archiveGateAudit\(\);/, 'the finally block, reached by every ordinary exit AND the crash catch above it, archives the audit');
 });
 
-test('run-author.mjs also calls archiveGateAudit() before the judge-key throw new ExitSignal(2) — the one path that used to bypass finally under process.exit()', () => {
-  // PANEL-BUILD.md P0 — a library function never calls process.exit(); this
-  // site throws `ExitSignal(2)` instead, caught by main's own outer catch.
-  // Unlike process.exit(), the thrown signal DOES now reach the finally block
-  // below (which archives again — idempotent), but the explicit call here
-  // stays too: it never depends on the finally block running first.
-  const judgeKeyBlock = /if \(judgeKeyProblem\) \{[\s\S]*?throw new ExitSignal\(2\);\s*\n\s*\}/.exec(RUN_AUTHOR_SRC)?.[0];
-  assert.ok(judgeKeyBlock, 'the judge-key refusal block moved — this guard no longer reads the block it pins');
-  assert.match(judgeKeyBlock, /archiveGateAudit\(\);/, 'the explicit call here must never depend on the finally block running first');
-});
 
 // ── (b) run-u.mjs — pinned from source (a real launch needs a provider) ────
 

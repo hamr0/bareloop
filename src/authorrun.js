@@ -101,8 +101,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
-import { judgeRatesFor, judgeRowFor, keyNameFor, keyValueOf, ratesFor, ratesOfLine, resolveWorker, rowsForHome } from './providerrows.js';
-import { ConfigError } from './config.js';
+import { keyNameFor, keyValueOf, ratesFor, ratesOfLine, resolveWorker, rowsForHome } from './providerrows.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync,
 } from 'node:fs';
@@ -116,7 +115,6 @@ import {
 import {
   makeLoopGenerate, CONFIRM_MENU, confirmSystemFor,
 } from './authorflow.js';
-import { defaultJudgeLoop, resolveJobJudge } from './judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
@@ -125,15 +123,15 @@ import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
 import { ROW_EDIT_SYSTEM } from './rowedit.js';
 import { moveFile } from './movefile.js';
-import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
+import { GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
 import { commandFor } from './invoke.js';
 import { readSourceManifest, missingDependencies, nonRepoSourceMessage, isRubricFilesManifest } from './source.js';
 import { tallyCalls } from './text.js';
 import { splitReadNotes } from './pagedropwords.js';
 import {
-  declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText,
+  declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -484,38 +482,6 @@ export async function main(argv, deps = {}) {
   const baseUrl = W.baseUrl;
   const AUTHOR_ROW = W.row;
 
-  // THE JUDGE THIS RUN'S OWN WORKER RESOLVES TO (PRD item 32.1) — resolved ONCE,
-  // here, from the DRAFT, and reused for BOTH the compose-time stamp (the
-  // declaration-authoring call's own `judgeModel` argument, below) and the
-  // calibration gate (`prepareSigning`'s `judgeModel` argument, further down).
-  // `resolveJobJudge` is the one
-  // spelling of "the named provider's own `tiers.sonnet` defaults an absent
-  // model, then a signed `judge` override wins" that `scripts/run-u.mjs`
-  // applies at run time (`resolveWorkerModel` + `resolveJudge`) — spelling that
-  // composition twice by hand, once here at the wrong identity (the AUTHORING
-  // provider/model) and once at the gate, was the bug this fixes: a close
-  // calibrated against judge X got stamped with model Y, and only the run-time
-  // read (`scripts/run-u.mjs:1144`) used the job's real worker, so the mismatch
-  // surfaced as a recalibration refusal on the close's first real run.
-  // `assembleSpec` carries `provider`/`model`/`judge` from the draft into the
-  // spec untouched, so resolving again from the assembled spec below (where the
-  // identity is guaranteed valid, because `validateJob` has already passed by
-  // then) returns the byte-identical pair — one rule, read twice, not two rules.
-  //
-  // This first read runs BEFORE `validateJob` has seen the draft, so a draft
-  // naming an unresolvable provider or a malformed `judge` override THROWS here
-  // — caught, because that draft is going to red cleanly at `validateJob` a few
-  // lines below regardless, and the placeholder this falls back to is discarded
-  // unsigned the moment it does.
-  const resolveDraftJudge = (/** @type {any} */ d) => {
-    try {
-      return resolveJobJudge(d, PROVIDER_NAME, resolveWorkerModel);
-    } catch {
-      return { provider: PROVIDER_NAME, model: MODEL };
-    }
-  };
-  const draftJudge = resolveDraftJudge(draft);
-
   // Secrets load from the environment; they never enter argv (a command line is
   // world-readable on /proc) and they are never printed.
   // The key is the chosen row's own variable (P8: no built-in name). Names only.
@@ -538,15 +504,6 @@ export async function main(argv, deps = {}) {
     const al = ratesOfLine(W.line);
     authorPrice = al ? { ...al, envName: AUTHOR_ROW.envName } : null;
   }
-  /** The judge's key follows the RESOLVED judge provider's own env var, with
-   * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
-   * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
-   * judge IS the authoring provider this is the key already read above. */
-  const judgeRowOf = (/** @type {{provider: string, model?: string|null}} */ j) => judgeRowFor(keyCfg, j, PROVIDER_NAME, AUTHOR_ROW);
-  const judgeKeyFor = (/** @type {string} */ providerName) => (
-    env.JUDGE_API_KEY ?? (providerName === PROVIDER_NAME ? apiKey : keyValueOf(env, judgeRowFor(keyCfg, { provider: providerName }, PROVIDER_NAME, AUTHOR_ROW)?.envName))
-  );
-
   /** F6 — an unpriced call makes the TOTAL unknown, and unknown is reported as
    * UNKNOWN. `?? 0` launders unknown into $0, and a bare floor that reads as exact
    * is F6 in an honest coat, so the floor is marked `≥`.
@@ -577,17 +534,9 @@ export async function main(argv, deps = {}) {
   out(`  ${ceilingLine(CEILING_USD)}`);
   out('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-  // F190 (docs/wiki/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
-  // call, a duplicate of the SAME construction `buildRunnerProviders` already
-  // owns for `src/cli.js`. Routed through the one owner now: the judge half of
-  // this call is a THROWAWAY (`judgeProviderName`/`judgeModel`/`judgeBaseUrl` all
-  // equal the author's own identity, so `buildRunnerProviders`' own reuse check
-  // returns the SAME instance as `provider` rather than constructing a second
-  // one) — the real judge identity is not resolved until after `validateJob`,
-  // further down, where a second call takes only its `.judgeProvider`.
+  // F190 (docs/wiki/FINDINGS.md): the one owner of the provider construction (`buildRunnerProviders`), shared with src/cli.js.
   const { provider } = buildRunnerProviders({
     providerName: PROVIDER_NAME, apiKey, model: MODEL, baseUrl, legacyMaxTokens: AUTHOR_ROW.legacyMaxTokens,
-    judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: PROVIDER_NAME, judgeBaseUrl: baseUrl,
   });
   emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
@@ -868,13 +817,6 @@ export async function main(argv, deps = {}) {
     // `provider` drives the scout; `generate` is the declaration model boundary (one
     // bare-agent Loop per call, the tool wired to end the call it is used in).
     const authored = await authorCloseForJob({
-      // the judge that will certify this close's calibration set, if it composes a
-      // judged stage (PRD item 32.1). A DRAFT CAN carry a signed `judge` override
-      // already (`judge` is an OPERATOR field, not one of `AUTHORED_SPEC_FIELDS`) —
-      // `draftJudge`, resolved once above from the draft's own `provider`/`model`/
-      // `judge`, is what the spec will resolve to at run time (`scripts/run-u.mjs`),
-      // not this authoring run's own drafting identity.
-      judgeModel: draftJudge.model,
       answers,
       verdictType: VERDICT,
       repoPath: SOURCE,
@@ -997,15 +939,6 @@ export async function main(argv, deps = {}) {
         if (r.red) out(`  red: ${JSON.stringify(r.red)}`);
         for (const e of refusalEvents(r)) emit(e.type, e);
       }
-      // a refused rubric proposal reads in plain words FIRST (the same text the panel shows), the technical reds after
-      if (PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
-        out(`\n${proposalStopText({
-          stop: String(authored.stop), reds: authored.reds ?? [],
-          cases: authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null,
-          spend: authored.cost ? { knownUsd: authored.cost.knownUsd ?? null, spendComplete: authored.cost.spendComplete ?? null } : null,
-          source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
-        })}`);
-      }
       for (const red of authored.reds ?? []) {
         out(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
         emit('job-red', red);
@@ -1053,21 +986,6 @@ export async function main(argv, deps = {}) {
       // this block is otherwise reachable only after a paid scout and a paid model call,
       // and a readout no test can reach is a readout nothing checks.
       for (const l of declarationLines(spec)) out(l);
-      // …and, for a close that JUDGES, the two artifacts the judge is signed with.
-      // NAMED DEFERRAL, said out loud rather than implied: this script's ONE
-      // interactive seam is the confirm turn above (PRD item 33 M3 piece 4,
-      // step S4) — it does not ALSO offer the D5 fix step here, so the
-      // proposal is signed AS PROPOSED. The library seam exists
-      // (`authorCloseForJob({signerFix})`) and the interactive surface for IT
-      // is the interview's and the UI's (N6), which is the same split the
-      // guard battery already lives under here: shown, not edited at this surface.
-      const rubric = rubricLines(spec);
-      if (rubric.length) {
-        for (const l of rubric) out(l);
-        out(`  source     ${authored.judged?.source ?? 'unknown'}`
-          + (authored.judged?.source === 'proposal' ? '  (proposed and stored unedited — this script offers no fix step)' : ''));
-        for (const s of authored.judged?.scrubbed ?? []) out(`  MASKED     ${s.path} — the stored bytes differ from what was typed`);
-      }
       out(`written    ${specFile}`);
 
       // `shellCapUsd` COUPLES to the spec's own budget, exactly as run-u does it at the
@@ -1088,97 +1006,6 @@ export async function main(argv, deps = {}) {
       } else {
         // ── 3. D9's gates. Nothing here judges the close; it measures it. ────────
         //
-        // THE JUDGE SEAM, wired only when the close actually judges. It is a
-        // A SEPARATE provider instance for the judge: its tier is never the
-        // drafter's model and never agent-selectable, and §4.2's safety argument is
-        // worth exactly as much as the tier its injection evidence was measured on.
-        // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
-        // signing an ungraded ruler.
-        const judges = closeJudges(spec.closeDecl);
-        // THE JUDGE, RESOLVED (PRD item 32.1) — the job's OWN worker provider and
-        // model by default, a signed `judge` override when the spec names one.
-        // Resolved from the ASSEMBLED SPEC through the same `resolveJobJudge` call
-        // as `draftJudge` above; `provider`/`model`/`judge` reached here unchanged
-        // from the draft, so this is the identical pair — the calibration gate
-        // STAMPS the graded set with whatever this resolves to, so the identity
-        // that certifies the floor here must be the identity the close will later
-        // refuse to grade without (and the identity `scripts/run-u.mjs` resolves).
-        const judge = judges
-          ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
-          : null;
-        // the judge's price: the judge model's own row (`judgeRatesFor`) — on the author's endpoint when the
-        // judge is the same provider, else the row for the judge's own provider. A bad one refuses here,
-        // before the calibration gate spends anything — beside the judge-key check, the same door.
-        /** @type {ReturnType<typeof ratesFor>} */
-        let judgePrice = null;
-        if (judge) {
-          try {
-            judgePrice = judgeRatesFor(judge, PROVIDER_NAME, baseUrl, authorPrice, keyCfg);
-          } catch (e) {
-            if (!(e instanceof ConfigError)) throw e;
-            err(`${e.message} — refusing before the calibration gate spends anything`);
-            archiveGateAudit();
-            throw new ExitSignal(2);
-          }
-        }
-        // F181 — the judge key is required exactly when `judges` is true (this
-        // script has no presence check on it today; adding one is out of this
-        // finding's scope). What this door DOES owe, the same as the worker
-        // key above: a resolved value that IS present but carries a shape an
-        // HTTP header cannot refuses here, before the calibration gate spends
-        // anything, rather than crashing mid-call.
-        // `if (judge)` rather than `if (judges)`: identical at runtime (`judge`
-        // is non-null exactly when `judges` is true, by the ternary just above)
-        // but this form is what actually narrows `judge` for tsc below, honestly,
-        // rather than a cast past what it can prove.
-        if (judge) {
-          const judgeKeyValue = judgeKeyFor(judge.provider);
-          const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
-          if (judgeKeyProblem) {
-            const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : (judgeRowOf(judge)?.envName ?? judge.provider);
-            err(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
-            // F186 — the scout above already ran and may have left its own gate
-            // audit in the tree. Under `process.exit()` this path used to skip
-            // the finally block below entirely, so the audit was archived here
-            // explicitly. A thrown ExitSignal now DOES reach the finally block
-            // (unlike process.exit()) — archiveGateAudit() runs again there —
-            // but the call stays here too: it is idempotent (`gateAuditArchived`
-            // guards it), and this keeps the archive from ever depending on the
-            // finally block running first, the same defensive reasoning F186
-            // was written under.
-            archiveGateAudit();
-            throw new ExitSignal(2);
-          }
-        }
-        // F190 — `baseUrl` rides along only when the judge is the SAME provider
-        // as the author/worker: a spec's `baseUrl` is the AUTHOR's endpoint, and
-        // handing it to a different vendor's client is the silent-misconfiguration
-        // class `endpointKey` exists to prevent (a DeepSeek key sent to the
-        // openai-api default host, e.g.). Routed through `buildRunnerProviders`
-        // (the ONE owner of this construction — `src/cli.js` and, above,
-        // this file's own author provider) rather than a hand-rolled
-        // `makeProvider` call: the `providerName`/`apiKey`/`model`/`tierModels`/
-        // `baseUrl` half repeats the author's own identity (so its `provider`
-        // half of the return, unused here, is a throwaway — never a second live
-        // instance of the author's client), and the `judge*` half is this run's
-        // OWN resolved judge — the identical conditional `scripts/run-u.mjs`'s
-        // own call already applies.
-        // an if/else, not the equivalent ternary — the ternary's own ok-branch
-        // object literal did not narrow `judge` for tsc; this form does, the
-        // same real-narrowing reasoning as the `if (judge)` above.
-        let judgeProvider = null;
-        if (judge) {
-          judgeProvider = buildRunnerProviders({
-            providerName: PROVIDER_NAME, apiKey, model: MODEL, baseUrl, legacyMaxTokens: AUTHOR_ROW.legacyMaxTokens,
-            judgeApiKey: judgeKeyFor(judge.provider), judgeModel: judge.model, judgeProviderName: judge.provider,
-            judgeBaseUrl: judge.provider === PROVIDER_NAME ? baseUrl : (judgeRowOf(judge)?.baseUrl.trim() || undefined),
-            judgeLegacyMaxTokens: judge.provider === PROVIDER_NAME ? AUTHOR_ROW.legacyMaxTokens : (judgeRowOf(judge)?.legacyMaxTokens ?? false),
-          }).judgeProvider;
-        }
-        if (judge) {
-          out(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
-          out('  this is the only gate that spends money, and it runs after every free one.');
-        }
         // the end check: a rubric close with no real check is refused here, whatever the seed gate would say (the stop words are printed below from signingStopText)
         const signing = authored.hasBuiltCheck === false
           ? { ok: false, reds: [], refusal: null, specHash: null, seedRef: authored.seedRef, gates: { declaration: { ok: true, grounded: '-' }, precheck: null, seedVerdict: null }, work: [], guards: [], stops: [] }
@@ -1187,20 +1014,6 @@ export async function main(argv, deps = {}) {
           // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
           // the spec that just passed above would fail the gate that signs it
           shellCapUsd: spec.budgetUsd,
-          // …and the SAME operator ceiling the scout and the declaration loop ran under,
-          // with everything they spent folded in. The gate is this run's third and
-          // largest paid seam; without both halves the advertised budget and the
-          // enforced budget are two different numbers, and re-invoking a seam under one
-          // number would silently widen it.
-          ceilingUsd: CEILING_USD,
-          priorCalls: [...metered],
-          judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null, thinking: spec.thinking === true }) : null,
-          // the seam's other half (PRD item 32.1): the graded set is STAMPED with
-          // this, and the close later refuses to grade under any other identity.
-          judgeModel: judge?.model ?? null,
-          // the gate's spend joins the run's ONE metered list, under the judge call's
-          // own label — a close's calibration is money like any other money (F12)
-          onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
         });
         const signingFile = writeOut('signing.json', signing);
         emit('signing', { ok: signing.ok, specHash: signing.specHash, seedRef: signing.seedRef, gates: signing.gates });
@@ -1209,28 +1022,15 @@ export async function main(argv, deps = {}) {
         out('\ngates');
         out(`  1 declaration  ${g.declaration?.ok ? 'PASS' : 'FAIL'}  grounded=${g.declaration?.grounded ?? '-'}${g.declaration?.scoped ? `  scoped=${JSON.stringify(g.declaration.scoped)}` : ''}`);
         out(`  2 precheck     ${g.precheck === null ? 'not reached' : (g.precheck.ok ? 'PASS — every stage ran' : `FAIL — ${g.precheck.stops.length} stage(s) could not run`)}`);
-        // ruling 3: the judged-ONLY close clears this gate on its calibration, so the
-        // line says PASS and names the proof — printing FAIL beside a signable spec
-        // would be the readout disagreeing with the gate it reports on
         out(`  3 seed verdict ${g.seedVerdict === null
           ? 'not reached'
           : (g.seedVerdict.ok
             ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}`
-            : (g.seedVerdict.satisfiedBy === 'calibration'
-              ? 'PASS via the CALIBRATION gate — this close carries a judged stage'
-              : 'FAIL — no work stage is red at the seed'))}`);
+            : 'FAIL — no work stage is red at the seed')}`);
         if (g.seedVerdict) {
           out(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
           out(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
-          // ruling 3 (widened 2026-10-09): a close with a judged stage clears gate 3 on its calibration instead,
-          // and the surface SAYS which proof carried it rather than leaving a reader
-          // to wonder why an empty workRed list passed
-          if (g.seedVerdict.satisfiedBy === 'calibration') {
-            out('      a judged stage skips the seed read (ruling 8), so this close\'s proof that its judged stage CAN fail is');
-            out('      the graded calibration set below — signed cases it must red as well as ones it must pass.');
-          }
         }
-        if (judges) for (const l of calibrationLines(g.calibration)) out(l);
 
         /** the seed evidence a user READS to decide whether this close measures their
          * job. `value`/`baseline` print as `unknown` when absent — never as 0. */
@@ -1275,13 +1075,10 @@ export async function main(argv, deps = {}) {
         if (signing.specHash && signing.specHash !== hash) {
           out(`  NOTE  prepareSigning hashed ${signing.specHash} — the validator normalized the spec; sign the resolved one.`);
         }
-        // THE WHOLE RUN's spend, off the ONE metered list — which now has two
-        // populations in it. Gates 1-3 spend no tokens (they run commands); gate 4
-        // buys a real judge call per case, so a line saying "the gates spend no
-        // tokens" would have been false the moment a judged close reached here.
+        // THE WHOLE RUN's spend, off the ONE metered list. Gates 1-3 spend no tokens (they run commands).
         out(`authoring  ${costLine(authored.cost)}`);
         const totalCost = costSoFar();
-        out(`total cost ${costLine(totalCost)}${judges ? '   (includes the calibration gate\'s judge calls)' : '   (gates 1-3 spend no tokens — they run commands)'}`);
+        out(`total cost ${costLine(totalCost)}   (gates 1-3 spend no tokens — they run commands)`);
         // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — this
         // run's own known FLOOR (never $0 on an unpriced call, F6), handed to
         // the run-u command below as `--draft-spent-usd` so the SIGNED run's

@@ -160,9 +160,9 @@ test('validateJobCard: missing required fields refuse one at a time', () => {
     const r = validateJobCard(baseCard({ [field]: '' }));
     assert.equal(r.ok, false, `${field} empty must refuse`);
   }
-  assert.equal(validateJobCard(baseCard({ checkType: 'rubric' })).ok, false, 'rubric with no PASS:/FAIL: examples must refuse');
-  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', jobText: 'Write it\n~ PASS: quoted\n~ FAIL: invented' })).ok, true, 'a rubric with examples is fine');
-  assert.match(validateJobCard(baseCard({ jobText: 'Fix it\n~ PASS: x' })).error, /examples are for a Rubric check/, 'a deterministic job has no judge to read them');
+  const gone = 'PASS/FAIL examples are gone \u2014 write what you want as a ~ rule.';
+  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', jobText: 'Write it\n~ PASS: quoted\n~ FAIL: invented' })).error, gone, 'a rubric card with examples refuses');
+  assert.equal(validateJobCard(baseCard({ jobText: 'Fix it\n~ PASS: x' })).error, gone, 'so does a deterministic one');
   assert.match(validateJobCard(baseCard({ jobText: '~ nope\nFix it' })).error, /belongs to the numbered line above/);
   assert.match(validateJobCard(baseCard({ inputs: 'just-a-path' })).error, /Inputs, line 1: write it as "label: value"/);
 });

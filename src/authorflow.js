@@ -26,7 +26,7 @@
 // TWO CONSEQUENCES, NAMED RATHER THAN SMOOTHED:
 //
 //   1. A LOCKED KIND IS INEXPRESSIBLE IN TOOL MODE. The schema carries one branch
-//      per LIVE kind, so there is no way to spell `judged-floor` or
+//      per LIVE kind, so there is no way to spell
 //      `human-confirms` — which is the `check-passes(name)` move applied one
 //      level up (illegal becomes unsayable, not rejected late). The price is
 //      real: M2's `locked-kind` red is bareloop's DEMAND COUNTER for its own
@@ -77,8 +77,7 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS, MAX_JUDGED_PATHS } from './kinds.js';
-import { JUDGE_RULE_IDS } from './judged.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
@@ -90,7 +89,7 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -324,10 +323,10 @@ export const INPUTS_FIELD = Object.freeze({
     + '(e.g. `spec: docs/spec.md`) — git must track them.',
 });
 
-/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its examples). */
+/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its placeholder). */
 export const JOB_BLOCK_HELP = Object.freeze([
   'One line per thing the job must do — each plain line gets a number. A line starting with `~` is a rule for the',
-  'numbered line above it. For a rubric check, a `~ PASS: ...` and a `~ FAIL: ...` line are your examples.',
+  'numbered line above it (what you want checked, in your own words).',
 ]);
 
 /** Destination's wording when Source resolved to a git repo: the answer IS the
@@ -402,37 +401,14 @@ export const FIELD_LABELS = Object.freeze({
  * soft-green and hitl extensions below — computed, never hardcoded twice. */
 const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
 
-/** The soft-green quartet's own key for Judge Examples — exported so
- * `cardauthor.js` reads the SAME number this module files the answer under,
- * rather than a second, hand-typed "6"/"7". */
-export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
-
-/** The Judge Examples question — the signed table's own Holds text, verbatim
- * ("one pass, one fail, and why"), not the old worded Q7 ("Give one example
- * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
- * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
- * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
-export const JUDGE_EXAMPLES_QUESTION = 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number';
-
-/** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
-export const SOFTGREEN_FIELD_LABELS = Object.freeze({
-  ...FIELD_LABELS,
-  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: 'Judge examples',
-});
+/** {@link FIELD_LABELS} for the soft-green set: the same one label (the judge examples are gone). */
+export const SOFTGREEN_FIELD_LABELS = Object.freeze({ ...FIELD_LABELS });
 
 /**
- * THE SOFTGREEN SET — the green trio plus Judge Examples. A judged close needs
- * exactly this one more thing the green set cannot supply: a real pass/fail
- * pair in the person's own words, which module 4 (`cardauthor.js`) compiles
- * into the signed rubric card and the frozen calibration set. It rides in
- * `answers` and reaches the composer verbatim through the prompt's interview
- * block, exactly as every other free-text answer does — this module derives
- * nothing from it.
+ * THE SOFTGREEN SET — the green set again: a rubric job's whole job is the numbered lines of "The job" (its `~` rules
+ * become the check list); the PASS/FAIL judge examples are gone (hamr 2026-11-14).
  */
-export const SOFTGREEN_QUESTIONS = Object.freeze({
-  ...GREEN_QUESTIONS,
-  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: JUDGE_EXAMPLES_QUESTION,
-});
+export const SOFTGREEN_QUESTIONS = Object.freeze({ ...GREEN_QUESTIONS });
 
 /**
  * THE HITL SET (N4 slice 1, kept in code only — never offered in the form or
@@ -507,10 +483,8 @@ export const CLASS_STATEMENTS = Object.freeze({
   'soft-green': 'The person declared this job SOFT-GREEN: part of what "done" means here needs JUDGEMENT — reading '
     + 'the result and deciding whether it is any good — and no command can render it. Compose the mechanical part '
     + 'first: everything about this repository a command can decide is still a mechanical stage, exactly as it would '
-    + 'be for a green job. Then put ONE judged-floor stage AFTER them, carrying the few things the person said they '
-    + 'actually look for and the real files the work lands in (files the job may EDIT, inside the write fence, '
-    + 'because a finding on a file the run is fenced out of can never be fixed). A judged stage decides only the lines its card names, '
-    + 'so name each thing they look for as its own line, and leave nothing to be inferred.',
+    + 'be for a green job. Compose NO stage for the part that needs judgement: there is no judged stage to put it in '
+    + '(the old judge is gone), so leave that part out and say so in your notes; the person judges it at Accept.',
   // N4 slice 1. The mechanical-first composition law is stated as an ORDER
   // because first-red-wins makes the order the mechanism: the cheap stages shield
   // the expensive one, and the person is never the first filter.
@@ -649,10 +623,12 @@ export const GUARD_DESCRIPTIONS = Object.freeze({
  * close — one source, never a second hand-typed list — rendered through the
  * frozen line in {@link GUARD_DESCRIPTIONS}, plus the write fence (a real,
  * signed fence — {@link writeScopeBlock}'s own subject) when one is set.
- * @param {{verdictType: string, lang: string, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} o
+ * A rubric line's file is listed as carrying text ONLY when the close really puts a text-present check on it ({@link lineCarriesText}, derived from `closeDecl`; one owner): a facts-only line
+ * (results and no note) is listed without it, and with no close to read nothing is claimed about text.
+ * @param {{verdictType: string, lang: string, writeScope?: string[]|null, jobLines?: {n: number}[]|null, closeDecl?: any}} o
  * @returns {string[]}
  */
-export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null }) {
+export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null, closeDecl = null }) {
   const guards = classGuards({ verdictType, lang });
   const lines = guards.map((g) => {
     const desc = GUARD_DESCRIPTIONS[g.name];
@@ -668,7 +644,7 @@ export function confirmProtections({ verdictType, lang, writeScope = null, jobLi
   // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
   // JSON and has text — a fact of the close's shape (`rubric-step`), not a plan of the model's, so it is listed from code
   if (lang === RUBRIC_LANG && Array.isArray(jobLines)) {
-    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON, and carry text`);
+    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
   }
   return lines;
 }
@@ -790,39 +766,6 @@ export const PARAM_SCHEMAS = Object.freeze({
   extensions: { type: 'array', minItems: 1, items: { type: 'string' } },
   allowPrefixes: { type: 'array', minItems: 1, items: { type: 'string' } },
   requireNonEmpty: { const: true },
-  // SOFTGREEN's two. `rule` is an ENUM off the judge's own rulebook — where only a
-  // closed set can satisfy a field, the illegal value is made inexpressible rather
-  // than rejected after the fact (`check-passes(name)`, again) — and `text` is the
-  // only free string, carrying the signer's words so a red can be explained in them.
-  card: {
-    type: 'object',
-    description: 'the rubric, as enumerated items: one line per thing the person actually looks for, in the order '
-      + 'they look for them. The rule is SELECTED from the arbiter\'s own rulebook; the text is theirs.',
-    properties: {
-      items: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          type: 'object',
-          properties: {
-            rule: { enum: [...JUDGE_RULE_IDS], description: 'which owned rule this line asserts' },
-            text: { type: 'string', minLength: 1, description: 'what this line means, in the person\'s own words' },
-          },
-          required: ['rule', 'text'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['items'],
-    additionalProperties: false,
-  },
-  paths: {
-    type: 'array',
-    minItems: 1,
-    maxItems: MAX_JUDGED_PATHS,
-    items: { type: 'string' },
-    description: 'the AUTHORITATIVE artifacts to judge, repository-relative, read off the listing. One paid call each.',
-  },
   step: { type: 'integer', minimum: 1, description: 'the number of the job line this stage serves; its file is output/steps/<step>.json' },
   parts: {
     type: 'array',
@@ -2273,7 +2216,7 @@ export async function runConfirmTurn({
   // the prompt below so the model can check `notChecked` against it, and
   // reused (never recomputed) after the call so the shown, prompted, and
   // recorded protections are always the exact same list.
-  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines });
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : null });
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */
@@ -2358,12 +2301,16 @@ export async function runConfirmTurn({
     // a rubric job's turn keeps nothing but the goal of the model's plan: its checks, gaps and questions are the list's to make, so code discards any it sent
     if (goalOnly) r.plan = { ...r.plan, checks: [], notChecked: [], questions: [] };
     const notChecked = [...(r.plan.notChecked ?? [])];
-    for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
+    const lookRows = dropRows(facts?.look?.dropped).map((row) => ({ row, text: dropLine(row, jobLines, lineRules) }));
+    for (const { text } of lookRows) if (!notChecked.includes(text)) notChecked.push(text);
+    // ONE row per `~` rule on the CARD (hamr 2026-11-14, run mwgsl7zx): a rule the check list says Not checked is said by its row alone (its reason is the look's sentence, or the person's kept Drop, which wins),
+    // so the look's own line for that rule is not drawn beside it. `accepted.notChecked` below stays the full list the drafter is told.
+    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && l.row.rule !== undefined && block !== null && block.saysRule(l.row.line, l.row.rule)));
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
     const planFor = (/** @type {any} */ c) => ({
-      ...r.plan, ...(c === null ? {} : { checkItems: c.checkItems, checks: c.checkItems.map((/** @type {any} */ x) => x.text) }), protections, notChecked: c === null ? notChecked : [...new Set([...notChecked, ...c.notChecked])], ...(c?.notCheckedBy ? { notCheckedBy: c.notCheckedBy } : {}),
+      ...r.plan, ...(c === null ? {} : { checkItems: c.checkItems, checks: c.checkItems.map((/** @type {any} */ x) => x.text) }), protections, notChecked: [...new Set([...(c === null ? notChecked : shownNotChecked()), ...(c === null ? [] : c.notChecked)])], ...(c?.notCheckedBy ? { notCheckedBy: c.notCheckedBy } : {}),
       signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)),
       ...(block !== null && cardOf !== null ? { suggested: block.suggestedView(), editable: true } : {}),
     });
@@ -2741,7 +2688,7 @@ export async function authorClose({
   // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
   // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
   const checkDraft = (/** @type {any} */ d) => {
-    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs) });
     if (r.ok && lang === RUBRIC_LANG) {
       const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
       if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };

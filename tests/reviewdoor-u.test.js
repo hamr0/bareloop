@@ -252,19 +252,8 @@ test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provide
   // the `apiKey` arguments below carry a `/** @type {string} */` cast; the
   // patterns here are loosened to match that shape, never the substance.
   const src = readFileSync(ENGINE_SRC, 'utf8');
-  assert.match(src, /import \{ resolveJudge \} from '\.\/judged\.js';/,
-    'the identity is RESOLVED per job, never imported as a fixed tier');
-  assert.match(src, /const judge = resolveJudge\(\{ specJudge: spec\.judge, workerProvider: spec\.provider, workerModel: MODEL \}\);/,
-    'resolved from the signed spec\'s override, defaulting to the job\'s own worker');
-  assert.match(src, /judgeProvider/, 'the judge provider must be built');
-  assert.match(src, /judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: [^,]*judgeApiKey[^,]*, model: judge\.model/,
-    'built through the FACTORY off the resolved identity, never a hardcoded AnthropicProvider construction');
-  assert.ok(!/new AnthropicProvider\(/.test(src),
-    'no direct AnthropicProvider construction survives for the judge — that pin is exactly what item 32.2 removed');
-  assert.match(src, /judgeProvider,/, 'and it must reach runJob — a provider built and dropped grades nothing');
-  assert.match(src, /judgeModel: judge\.model,/, 'and so must the identity\'s OTHER half — the seam and the name travel together');
-  // the key rides the same way every other secret does here: out of the environment,
-  // never argv, never printed
+  // hamr 2026-11-14: the old judge is gone, so this runner builds no judge provider and demands no judge key
+  assert.doesNotMatch(src, /judgeProvider|resolveJudge|JUDGE_API_KEY/, 'no judge is wired any more');
   assert.doesNotMatch(src, /apiKey: ['"]/, 'a literal key must never appear in this runner');
 });
 

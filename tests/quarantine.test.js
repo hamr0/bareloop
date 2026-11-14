@@ -320,7 +320,6 @@ const softJob = () => {
       stages: [
         { name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes: ['src/'], requireNonEmpty: true } },
         { name: 'no-suppressions', kind: 'pattern-absent-in-diff', params: { patterns: noSuppressions.params.patterns, extensions: noSuppressions.params.extensions } },
-        { name: 'docs-read-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'Every exported function carries a JSDoc block.' }] }, paths: ['src/spine.js'] } },
       ],
     },
   });
