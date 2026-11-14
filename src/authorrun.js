@@ -534,17 +534,9 @@ export async function main(argv, deps = {}) {
   out(`  ${ceilingLine(CEILING_USD)}`);
   out('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-  // F190 (docs/wiki/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
-  // call, a duplicate of the SAME construction `buildRunnerProviders` already
-  // owns for `src/cli.js`. Routed through the one owner now: the judge half of
-  // this call is a THROWAWAY (`judgeProviderName`/`judgeModel`/`judgeBaseUrl` all
-  // equal the author's own identity, so `buildRunnerProviders`' own reuse check
-  // returns the SAME instance as `provider` rather than constructing a second
-  // one) — the real judge identity is not resolved until after `validateJob`,
-  // further down, where a second call takes only its `.judgeProvider`.
+  // F190 (docs/wiki/FINDINGS.md): the one owner of the provider construction (`buildRunnerProviders`), shared with src/cli.js.
   const { provider } = buildRunnerProviders({
     providerName: PROVIDER_NAME, apiKey, model: MODEL, baseUrl, legacyMaxTokens: AUTHOR_ROW.legacyMaxTokens,
-    judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: PROVIDER_NAME, judgeBaseUrl: baseUrl,
   });
   emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 

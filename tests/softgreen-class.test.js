@@ -49,21 +49,11 @@ const battery = () => [
   },
 ];
 
-const JUDGED = () => ({
-  name: 'docs-read-well',
-  kind: 'judged-floor',
-  params: {
-    card: { items: [{ rule: 'has-doc', text: 'Every exported function carries a JSDoc block.' }] },
-    paths: ['src/spine.js'],
-  },
-});
-
 /** a soft-green AUTHORED declaration: the mandatory guards, a mechanical work
  * stage, and the judged floor LAST */
 const softDecl = (/** @type {any[]} */ stages = [
   ...battery(),
   { name: 'typecheck-clean', kind: 'command-exit', params: { cmd: 'npx', args: ['tsc', '--noEmit'], expectExit: 0 } },
-  JUDGED(),
 ]) => ({ genre: 'TYPES', lang: 'js', stages });
 
 /** a plan-shape spec carrying that declaration */
@@ -124,16 +114,6 @@ test('module 3 admission — validateCloseDecl stops emitting class-battery-lock
   const unknown = validateCloseDecl(softDecl(), { deferListing: true, verdictType: 'chartreuse' });
   assert.equal(unknown.ok, false);
   assert.equal(unknown.reds.find((x) => x.code === 'class-absent').path, 'verdictType');
-});
-
-test('module 3 — the ceiling reads soft-green off the judged stage, and a green pick is still refused', () => {
-  const ceiling = closeCeiling(softDecl());
-  assert.equal(ceiling.class, 'soft-green');
-  assert.equal(ceiling.kind, 'judged-floor');
-  const r = validateDeclaration(softDecl(), declOpts({ verdictType: 'green' }));
-  const red = r.reds.find((x) => x.code === 'class-ceiling');
-  assert.equal(red.kindClass, 'soft-green');
-  assert.equal(red.picked, 'green', 'a judged ruler under a machine-checkable promise is still a fake-hard verdict');
 });
 
 // ── 2. the battery is INHERITED, not copied ─────────────────────────────────
@@ -238,59 +218,6 @@ test('module 3 — the CATALOGUE BLOCK and the whole prompt are filtered the sam
   }).includes('judged-floor'), 'and the soft-green composer is not offered the old judge either');
 });
 
-test('module 3 — the VALIDATOR keeps the whole catalogue: an above-ceiling pick is class-ceiling, never unknown-kind', () => {
-  // the menu is filtered; the rulebook is not. A model that names a kind it was
-  // never offered must be told WHICH rule it broke, not that the kind is a typo.
-  const r = validateDeclaration(softDecl(), declOpts({ verdictType: 'green' }));
-  assert.equal(r.reds.filter((x) => x.code === 'unknown-kind').length, 0, JSON.stringify(r.reds));
-  assert.ok(r.reds.some((x) => x.code === 'class-ceiling'));
-});
-
 // ── 5. composition: the judged stage sits AFTER the mechanical ones, once ───
 
-test('module 3 §4.5 — a judged stage BEFORE a mechanical one is refused', () => {
-  const r = validateDeclaration(softDecl([
-    ...battery(),
-    JUDGED(),
-    { name: 'typecheck-clean', kind: 'command-exit', params: { cmd: 'npx', args: ['tsc', '--noEmit'], expectExit: 0 } },
-  ]), declOpts());
-  const red = r.reds.find((x) => x.code === 'judged-stage-order');
-  assert.ok(red, JSON.stringify(r.reds));
-  assert.equal(red.stage, 'docs-read-well');
-  assert.equal(red.kind, 'judged-floor');
-});
-
-test('module 3 §4.5 — a SECOND judged stage is refused (at most once)', () => {
-  const second = { ...JUDGED(), name: 'docs-read-well-2' };
-  const r = validateDeclaration(softDecl([...battery(), JUDGED(), second]), declOpts());
-  const red = r.reds.find((x) => x.code === 'duplicate-kind' && x.kind === 'judged-floor');
-  assert.ok(red, JSON.stringify(r.reds));
-  assert.equal(red.twin, 'docs-read-well');
-  assert.equal(r.reds.filter((x) => x.code === 'judged-stage-order').length, 0,
-    'one problem, one red — the duplicate is not ALSO an ordering complaint');
-});
-
-test('module 3 §4.5 — the judged stage may still be followed by the human stage (mechanical, judge, person)', () => {
-  const r = validateDeclaration(softDecl([
-    ...battery(),
-    JUDGED(),
-    { name: 'signer-confirms', kind: 'human-confirms', params: { ask: 'Do these docs describe what the code does?' } },
-  ]), declOpts({ verdictType: 'hitl', guards: classGuards({ verdictType: 'hitl', lang: 'js' }) }));
-  assert.equal(r.reds.filter((x) => x.code === 'judged-stage-order').length, 0, JSON.stringify(r.reds));
-  assert.equal(r.reds.filter((x) => x.code === 'human-stage-not-last').length, 0);
-});
-
 // ── 6. the module 2 bridge ──────────────────────────────────────────────────
-
-test('module 3 bridge — a soft-green declaration carrying the judged stage validates END TO END at $0', () => {
-  const v = validateDeclaration(softDecl(), declOpts());
-  assert.deepEqual(v.reds, [], JSON.stringify(v.reds));
-  assert.equal(v.ok, true);
-  const gate = validateCloseDecl(softDecl(), {
-    listing: ['src/spine.js', 'src/index.js'], verdictType: 'soft-green',
-  });
-  assert.deepEqual(gate.reds, [], JSON.stringify(gate.reds));
-  assert.equal(gate.grounded, true);
-  const job = validateJob(spec('soft-green'));
-  assert.equal(job.ok, true, JSON.stringify(job.reds));
-});

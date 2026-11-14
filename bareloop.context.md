@@ -6,7 +6,7 @@
 > for a Tickets job (any other repo + rubric start refuses at $0: "A repo job uses a Deterministic check."). **The old judge is gone** (2026-11-14): the PASS/FAIL judge
 > examples, the judge-card compile (`src/cardauthor.js`), the 10-case calibration gate (`src/calibrate.js`, gate 4 of `prepareSigning`) and the fit check
 > (`src/fitcheck.js`) are removed, with their library exports (BREAKING). A `~ PASS:` / `~ FAIL:` line is refused ("PASS/FAIL examples are gone — write what you want as a
-> ~ rule."), and a signed spec that carries one, or a `judged-floor` stage, refuses at Reuse and at `bareloop run <bundle>` (`oldJobWords`, `src/job.js`: "draft it fresh").
+> ~ rule."), and a signed spec that carries one, or a `judged-floor` stage, refuses at Reuse, at `bareloop run <bundle>` and at `run-u --spec` (`oldJobWords`, `src/job.js`: "draft it fresh"). The old judge's RUNTIME engine is gone too (BREAKING, hamr 2026-11-14: "i don't need old runs in anything"): `src/judged.js` keeps only `resolveJudge` / `resolveJobJudge`, and the `judged-floor` kind, the locate call, `decide`, the calibration shape and the judge's paid seam (`judgeProvider` / `judgeModel` / `judgeRates`, `JUDGE_API_KEY`) no longer exist.
 > A soft-green pass mints its bridge row QUARANTINED: no reuse credit until an `accept` releases it, forward
 > only; a rerun records a disposition and its outcome is a NEW run's own row, born held
 > again. Every run ends at the signer's **review door** — `accept` / `rerun` / `pause` — which
@@ -86,8 +86,7 @@ A rubric or plain-folder job whose signed spec carries `mcp` (and flow type `tic
   `buildRunnerProviders`) and holds only the bare-agent client class and endpoint option name per shape; an unknown provider name THROWS there, it never falls
   back to a default. The request-key spelling is the ROW's tick, never a model-id table: a server that ignores `max_completion_tokens` (F149) does not bind
   the output cap until the "old max_tokens" box is ticked, and an output cap that does not bind is a money hazard, so tick it on that row before a paid run
-  (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for
-  (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because a model's default thinking can eat the 4000-token locate budget); the WORKER's per-call mode is decided in code from the phase and attempt (see "Thinking on" below). A plan step's
+  (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The WORKER's per-call mode is decided in code from the phase and attempt (see "Thinking on" below). A plan step's
   `model: "sonnet"` is a documented schema token meaning "this job's worker model" (`STEP_MODELS`), not a model id. `gemini-api` (PRD item 31.3) is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
   `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
@@ -101,15 +100,11 @@ A rubric or plain-folder job whose signed spec carries `mcp` (and flow type `tic
   mis-spelled endpoint is silently DROPPED rather than rejected. Your job spec keeps one
   field name, `baseUrl`; the translation happens once, inside `makeProvider`. Ollama is
   deliberately NOT admitted: it takes no key and bills nothing, so every round would price
-  at $0 through machinery that treats $0 as a real price. The JUDGE IS NO LONGER PINNED
-  (PRD item 32): `resolveJudge` (exported) resolves it per job — the spec's signed
+  at $0 through machinery that treats $0 as a real price. A job's `judge` identity
+  (PRD item 32) is resolved by `resolveJudge` (exported): the spec's signed
   `judge: {provider, model}` if it names one, else **this job's own worker provider and
-  model**, so a job on any provider judges on its own provider and needs no second
-  account. There is no library fall-back: a run that cannot name its judge has not wired
-  one, and the judged stage instrument-STOPS rather than grading under an identity nobody
-  chose. The old `JUDGE_MODEL` constant is gone (a vendor model id is not a public export).
-  The judge's key is the resolved judge row's own variable (the worker's row when the judge shares its shape), with `JUDGE_API_KEY`
-  as a role-named override in front of it. The bundle runner
+  model**; there is no library fall-back. Nothing calls a judge model any more (the old judge is gone), so this identity
+  only feeds the spec stamp and the workflow key. The bundle runner
   (`bareloop run`) is a door to this same engine (`src/bundlerun.js` → `src/userrun.js`), so it
   reads whatever key the bundle's provider names (keys file or env) and refuses a missing one
   at $0, exit 2, naming it.
@@ -189,7 +184,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `ticketFilter` | optional `{priority?: ['P0'..'P3'], labels?: [name]}`, at least one key, lists non-empty and without duplicates (labels compared case-blind, 1-100 characters) | which tickets run: pure matching on labels and state, no model per ticket. The drafter of a Tickets job may PROPOSE it (the authoring declaration offers an optional top-level `ticketFilter`, kept beside the close, never in it); the person signs it; a draft cannot carry it into a spec (`assembleSpec` refuses it). Needs `mcp`. Decided by code at run start (see "A skipped ticket" in Tickets); a signed filter is part of the hash and the workflow key |
 | `ticketWatch` | optional non-empty list of `'state'` \| `'labels'`, no duplicates | the ticket fields a schedule may watch for a change (typed values only). Needs `mcp`. Validated and signed in this build; the scheduler that reads it arrives with the schedule rung |
 | `readMap` | optional boolean | EXPERIMENTAL, default OFF: absent = off, `true` makes the FIRST `shell_read` of a file of 200+ lines (not a test file) in an ask return a map of the file's named parts instead of its bytes; the second read of that path in the ask is today's read (see "First-read map" below). Only `true`/`false` are legal (anything else is an `invalid-value` red). An old spec keeps the hash it always had; a present value is signed. Not shown in the panel |
-| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
+| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE identity (PRD item 32). Absent, it resolves to this job's own `provider`/`model` (`resolveJudge`). No model call reads it now (the old judge is gone, 2026-11-14); it stays because the spec stamp and the workflow key resolve through it. Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -306,8 +301,7 @@ supports** (a close is data, never code; verdict-class laundering is a named red
 `close-hierarchy`). The go-forward shape is the staged list above; a `predicate` object is
 legal shorthand for a one-stage list and the plan flow adapts it, but `gold`/`rubric`
 validate and then refuse at runtime (`close-unsupported`) regardless of verdict class — the
-plan flow has never executed an object close beyond `predicate`. `soft-green`'s judged floor
-is a STAGE (`judged-floor` inside a `closeDecl`) — never a close TYPE — so both OBJECT forms
+plan flow has never executed an object close beyond `predicate`. Both OBJECT forms
 below stay refused at runtime exactly as they were:
 
 | type | fields (exact — extras red) | legal class |
@@ -600,18 +594,18 @@ Every function and constant this section discusses by name is exported at the pa
 ```js
 import {
   authorClose, authorCloseForJob, AUTHORED_SPEC_FIELDS, AUTHOR_SCOUT_VERBS, assembleSpec,
-  buildSeedListing, CALIBRATION_SIZE, CLASS_BATTERIES, classGuards,
-  closeCeiling, decide, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens, expectedOf,
+  buildSeedListing, CLASS_BATTERIES, classGuards,
+  closeCeiling, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens,
   genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
-  JUDGE_ATTEMPTS, JUDGED_MARKER, JUDGE_RULE_IDS, JUDGE_RULES,
-  KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_JUDGED_PATHS, MAX_REVISIONS,
+  JUDGED_MARKER,
+  KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_REVISIONS,
   mechanicalStages, NEVER_OFFERED_KINDS, normalizeHumanRuling, prepareSigning,
   questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
   READ_SHIM_DIFF_STRATEGY, READ_SHIM_STRATEGY, refusalEvents, refuseLockedKind,
   requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runClose,
-  runDeclaredClose, runDeclaredStages, runInterview, runLocate, runStage, SCOUT_ATTEMPTS,
+  runDeclaredClose, runDeclaredStages, runInterview, runStage, SCOUT_ATTEMPTS,
   SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead,
-  STOP_FAULTS, validateCalibrationSet, validateCloseDecl, validateDeclaration,
+  STOP_FAULTS, validateCloseDecl, validateDeclaration,
   ACCOUNTED_ROUND_TYPES,
 } from 'bareloop';
 ```
@@ -630,8 +624,7 @@ everything else refuses honestly, and every refusal is COUNTED.
 **The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
 `verdictType` is a declared radio the preflight validates, never inferred:
 `MENU_CLASSES` = `green` | `soft-green`, with `LOCKED_CLASSES` = **empty** —
-`soft-green` shipped its judged floor in v0.12.0 (2026-08-23) and is fully admitted
-alongside `green`. The
+`soft-green` is fully admitted alongside `green` (its old judged floor is gone, 2026-11-14; it grades on the check list). The
 review door (`accept`/`rerun`/`pause`) is shipped and
 live — always on for `soft-green`, opt-in for `green` via `reviewDoor: true` /
 `--review-door`. A future LOCKED_CLASSES entry would still return a counted `request-red`
@@ -688,9 +681,8 @@ are asked after two failed drafts, about a job line.
 
 **Thinking on (per job; hamr 2026-10-11).** The New job card has a "Thinking on" tick under Model, unticked by default, saved in the SIGNED job as the optional
 boolean `thinking` (absent = off; an old spec and any unticked job keep the hash they would have had; a ticked job's `jobSpecHash` and `workflowKey` differ). It
-covers DRAFTING (scout, confirm, author, revise, structure retries) AND the rubric JUDGE, and as the think-everywhere override it makes every WORKER call think too (below). A Reuse card does not
-offer the tick: it never drafts and the judge follows the SIGNED value, so the run's grading uses the SIGNED tick
-(`defaultJudgeLoop({ ..., thinking })` is built in the one constructor left, the run; authoring builds no judge). bareloop keeps NO per-model thinking list and no
+covers DRAFTING (scout, confirm, author, revise, structure retries), and as the think-everywhere override it makes every WORKER call think too (below). A Reuse card does not
+offer the tick: it never drafts, so it follows the SIGNED value. No judge is built anywhere (the old judge is gone). bareloop keeps NO per-model thinking list and no
 vendor regex: bare-agent (>= 0.52) owns the request shapes, and `thinkingSupport(kind, model, { baseUrl })` (a pure lookup, no network) answers `true` (measured
 switchable), `false` (measured NOT switchable) or `'unverified'`. `src/thinking.js` is the ONE owner of what a call sends:
 
@@ -748,21 +740,14 @@ no model found, it moves no seed number, and a declaration that authors it itsel
 
 **The kind catalogue** (`KIND_CATALOGUE`, and it IS the whole vocabulary): `command-exit`,
 `count-not-worse`, `pattern-absent-in-diff`, `files-changed`, `human-confirms` and
-`judged-floor` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
+`rubric-step` are all live — `LOCKED_KINDS` is EMPTY today; `harness-loop` (TESTGEN) is ABSENT
 from v1 entirely (an unknown-kind typo, never counted demand). The locked-kind machinery is
 unchanged and is what a future entry arrives on: in tool mode a locked kind is INEXPRESSIBLE —
 the schema carries one branch per live kind — so that demand arrives through the interview
 layer instead (`refuseLockedKind(kind)`), whose "named but locked" wording is currently
 unreachable for exactly the reason above.
 
-**`judged-floor` is the old judge's kind, and it is retired for authoring** (2026-11-14, rubric vs deterministic split). No class menu offers it (`RETIRED_KINDS`,
-`classMenu`, `src/authoring.js`); a composed declaration that names it is refused at $0 as `judged-floor-gone` ("The old judge is gone. Write what you want checked as a ~ rule
-on the check list, or draft the job fresh."), and `prepareSigning` refuses a spec that carries one the same way (there is no gate 4: no rubric card, no calibration set, no
-paid signing gate). What stays is only the RUNTIME reading of an old signed spec: the kind in `KIND_CATALOGUE`/`src/kinds.js` and the engine in `src/judged.js`
-(`JUDGE_RULES`, `decide`, `runLocate`, `validateCalibrationSet`, `CALIBRATION_SIZE`, `JUDGE_ATTEMPTS`, `MAX_JUDGED_PATHS`) so an old spec still reads as what it is. An old
-job never comes back in: `oldJobWords(spec)` (`src/job.js`) refuses a spec with a `judged-floor` stage or a PASS/FAIL job-line rule, in plain words ("draft it fresh"), at
-the panel's Reuse (and so a scheduled fire) and at `bareloop run <bundle>`. Old runs are not repaired. A refused signing or draft still says WHY in plain words
-(`signingStopText`, `draftStopText` in `src/authorreadout.js`; the stop `judged-floor-gone` has its own head).
+**`judged-floor` is gone** (2026-11-14, hamr: "i don't need old runs in anything"). The kind, its runner, the locate call, the rulebook, `decide`, the calibration set's shape (`closeDecl.calibration`) and `RETIRED_KINDS` are deleted (BREAKING: the judge rulebook and its id list, the locate call, `decide`, the calibration validators and size, and the judged attempt and path ceilings are no longer exported; the CHANGELOG names each). A signed spec that carries a `judged-floor` stage or a PASS/FAIL job-line rule refuses in plain words ("draft it fresh") through `oldJobWords(spec)` (`src/job.js`), at the panel's Reuse (and so a scheduled fire), at `bareloop run <bundle>` and at `run-u --spec`. Old runs are not repaired.
 
 **`human-confirms` is the one kind that measures NOTHING** (N4 slice 1). Its whole parameter
 surface is `ask` — the plain question the signer answers — so it cannot spawn, cannot be
@@ -1146,7 +1131,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, judgeRates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 **`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
 AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
@@ -1842,7 +1827,7 @@ tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is reco
 VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
 **Where bareloop takes it from:** the CUSTOMER's own price on the model line in
 `~/.config/bareloop/config.json` (`models.<ENV NAME>[].inPerM` / `outPerM`, USD per 1M
-tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` (and `judgeRates`) as data and
+tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` as data and
 hand them to the one `Loop` that drives worker, scout and planner rounds; the run doors resolve
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
@@ -1851,8 +1836,7 @@ before. bareloop keeps no price list of its own, ever.
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
-(the guess). `judge-round` records carry it too (the judge Loop's per-call label, forwarded by
-`src/kinds.js` `onJudgeCost`): `'caller'` under your price on the judge's row, else the guess label. The
+(the guess). A `judge-round` record in an old spine carries it too. The
 exceptions read UNKNOWN provenance, correctly, and by the same rule that governs the archive: every
 round archived before the signal existed (judge rounds before this change included). The native
 per-turn `worker-turn` carries `null`, bareloop's OWN statement rather than a forwarded one: that
@@ -3222,7 +3206,7 @@ worktree, before the engine is ever reached.
 `src/cli.js`'s `main(argv, deps)`, exported from the package root as **`cliMain`**
 (`export { main as cliMain } from './cli.js'` — renamed on export so it never collides with
 some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
-integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
+integration seam: pass `deps.provider` (and optionally `providerFor`) and the
 real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
@@ -3894,8 +3878,7 @@ Two files in `~/.config/bareloop/`, outside any repo:
 a finite number 0 or more (0 / 0 typed is a chosen price), and a ticked line needs both (`modelsProblem`, `src/config.js`, the one rule). A line without both prices cannot be ticked, so it
 is never in Chat's menu and a run on it refuses at $0 (`<model> is not set up: …`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) reads the line's price (`ratesOfLine`);
 the run doors resolve the chosen line once, at $0, before the monthly claim and any worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker line
-prices worker, scout and planner rounds; the judge is priced at ITS model's own line — for a different provider its own row, for the worker's provider the row on the worker's endpoint
-with a line named for the judge's model (`judgeRatesFor`), falling back to the worker's price when the model names no line. A priced round is stamped `rateSource:'caller'`
+prices worker, scout and planner rounds; A priced round is stamped `rateSource:'caller'`
 (VOUCHED, see `spendProvenance`). The run preview and the run tail print `price    yours: in $0.006 / out $1.20 per 1M tokens (MY_KEY row)`; a 0 / 0 price is accepted but the
 line then ends `— WARNING: this price is $0, so spend and limits read $0`. **The price is yours, and it sets what the cap means:** the cap and the halts run on the dollars your
 price produces, so a price set too low weakens the cap. When a vendor lists two prices (for example a cache-hit and a cache-miss input rate) enter the higher one. bare-agent
@@ -4259,13 +4242,11 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
 
 - **Providers.** `provider` (shell-owned LLM binding for the `Loop`/API path),
   `nativeProvider` (a factory required for a `clipipe-subscription` job),
-  `providerFor(tier)` (per-step model-tier provider, forwarded to the plan flow), and
-  `judgeProvider` (SOFTGREEN's own seam — the provider a judged close stage runs its
-  locate-only call through; distinct from `provider`/`providerFor` because the judge tier
-  is fixed, never the worker's). All four are documented at `src/run.js:91-101`.
+  and `providerFor(tier)` (per-step model-tier provider, forwarded to the plan flow). The judge seam
+  (`judgeProvider`) is gone with the old judge. They are documented in `src/run.js`.
 - **Close stage kinds.** The catalogue is fixed and enumerated (`LIVE_KINDS`,
   `src/kinds.js:142`: `command-exit`, `count-not-worse`, `pattern-absent-in-diff`,
-  `files-changed`, `human-confirms`, `judged-floor`). An adopter's declaration SELECTS
+  `files-changed`, `human-confirms`, `rubric-step`). An adopter's declaration SELECTS
   from this menu; it never authors a new kind — a stage naming an unimplemented or unknown
   kind is a hard runtime stop (`src/kinds.js:1885-1888`), not a way to run adopter code
   inside the close.
@@ -4274,7 +4255,7 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
   signature can stand in as a custom sink, but it is write-only — nothing in bareloop reads
   the spine back, so a custom sink cannot feed anything into a run's own decisions.
 - **`rates` is data the run doors hand in, not a behaviour hook.** `runJob` / `runPlan` take
-  `rates` / `judgeRates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
+  `rates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
   row (`ratesFor`, `src/providerrows.js`); bareloop keeps no price table and never picks a price
   itself. A price is the customer's, and sets what the cap means.
 

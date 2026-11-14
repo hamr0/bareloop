@@ -76,91 +76,15 @@ test('makeProvider forwards baseUrl only when given', () => {
   assert.equal(withoutUrl.baseUrl, 'https://api.openai.com/v1', 'bare-agent\'s own OpenAIProvider default, untouched');
 });
 
-// ── buildRunnerProviders: the shared provider/providerFor/judgeProvider triple ──
-//
-// PRD item 32.1/32.2 removed the "judge is ALWAYS anthropic-api" pin this
-// suite used to assert. The judge now DEFAULTS to the worker's own provider
-// (`judgeProviderName = providerName`, PRD item 32.1's un-pinning applied at
-// this factory) and is built through the SAME `makeProvider` seam the worker
-// is, never a hardcoded `AnthropicProvider` — an operator names a DIFFERENT
-// provider for the judge only by passing `judgeProviderName` explicitly. The
-// three tests below are the three shapes that claim replaces: the default
-// (worker's own provider), the override (a deliberately different one), and
-// the reuse (identity match collapses to one instance, which is an economic
-// claim — a second instance against the same endpoint/model/key is a second
-// prompt-cache prefix — not merely a convenience).
+// ── buildRunnerProviders: the shared provider/providerFor pair (the judge half went with the old judge, 2026-11-14) ──
 
 test('buildRunnerProviders: providerFor(tier) is the job\'s own provider — the plan\'s one tier token means THIS job\'s worker model', () => {
   const { provider, providerFor } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    judgeApiKey: 'judge-key',
-    judgeModel: 'claude-haiku-4-5',
   });
   assert.equal(providerFor('sonnet'), provider, 'the SAME instance, not a rebuild');
-});
-
-test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAULTS to the worker\'s own provider (PRD item 32.1)', async () => {
-  const { OpenAIProvider } = await import('bare-agent/providers');
-  const { judgeProvider } = buildRunnerProviders({
-    providerName: 'openai-api',
-    apiKey: 'worker-key',
-    model: 'deepseek-flash',
-    judgeApiKey: 'judge-key',
-    judgeModel: 'claude-haiku-4-5',
-  });
-  assert.ok(judgeProvider instanceof OpenAIProvider,
-    'no override named -> the judge grades on the WORKER\'s own provider, never a fixed vendor');
-  assert.equal(judgeProvider.model, 'claude-haiku-4-5');
-  assert.equal(judgeProvider.apiKey, 'judge-key', 'the judge uses ITS OWN key, never the worker\'s');
-});
-
-test('buildRunnerProviders: an explicit judgeProviderName override builds THAT provider instead — a deliberate pin, not the default', async () => {
-  const { AnthropicProvider } = await import('bare-agent/providers');
-  const { provider, judgeProvider } = buildRunnerProviders({
-    providerName: 'openai-api',
-    apiKey: 'worker-key',
-    model: 'deepseek-flash',
-    judgeApiKey: 'judge-key',
-    judgeModel: 'claude-haiku-4-5',
-    judgeProviderName: 'anthropic-api',
-  });
-  assert.ok(judgeProvider instanceof AnthropicProvider, 'the named override, and only the named override, pins the judge');
-  assert.notEqual(judgeProvider, provider, 'a different provider is never the same instance as the worker\'s');
-  assert.equal(judgeProvider.model, 'claude-haiku-4-5');
-});
-
-test('buildRunnerProviders: the worker instance is REUSED when provider+model+key+baseUrl all match — never a second instance for the same identity', () => {
-  const { provider, judgeProvider } = buildRunnerProviders({
-    providerName: 'anthropic-api',
-    apiKey: 'shared-key',
-    model: 'claude-sonnet-5',
-    judgeApiKey: 'shared-key',
-    judgeModel: 'claude-sonnet-5',
-  });
-  assert.equal(judgeProvider, provider, 'identical identity on every axis -> ONE instance, ONE prompt-cache prefix');
-});
-
-test('buildRunnerProviders: reuse requires EVERY axis to match — a differing key alone still builds a second instance', () => {
-  const { provider, judgeProvider } = buildRunnerProviders({
-    providerName: 'anthropic-api',
-    apiKey: 'worker-key',
-    model: 'claude-sonnet-5',
-    judgeApiKey: 'a-different-account-key',
-    judgeModel: 'claude-sonnet-5',
-  });
-  assert.notEqual(judgeProvider, provider, 'same provider and model, different key -> still a SEPARATE instance');
-  assert.equal(judgeProvider.apiKey, 'a-different-account-key');
-});
-
-test('buildRunnerProviders: the row\'s old-max_tokens tick reaches the worker, and the judge takes its own row\'s tick (the worker\'s only when it shares the worker\'s shape)', () => {
-  const same = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j' });
-  assert.equal(same.provider.legacyMaxTokens, true);
-  assert.equal(same.judgeProvider.legacyMaxTokens, true, 'a judge on the worker\'s own shape and row follows the worker\'s tick');
-  const other = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j', judgeProviderName: 'openai-api', judgeLegacyMaxTokens: false });
-  assert.notEqual(other.judgeProvider.legacyMaxTokens, true, 'a judge row with its own tick OFF is not forced on by the worker\'s');
-  assert.notEqual(other.judgeProvider, other.provider);
 });
 
 // ── job-spec-level admission: provider + baseUrl ────────────────────────
@@ -544,3 +468,8 @@ test('checkProviderReachable: RED-PROOF — the returned object never carries th
 });
 
 // The thinking tests (judge, drafter, scout, the per-job tick) moved to tests/thinking-tick.test.js (P8 batch 5).
+
+test('buildRunnerProviders: the row\'s old-max_tokens tick reaches the worker', () => {
+  const { provider } = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true });
+  assert.equal(provider.legacyMaxTokens, true);
+});

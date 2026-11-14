@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { oldJobWords, OLD_JOB_WORDS } from '../src/job.js';
 import { createSession } from '../src/panel/authorsession.js';
 import { bundleMain } from '../src/bundlerun.js';
+import { main as userUMain } from '../src/userrun.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -57,4 +58,16 @@ test('an exported bundle of an old job refuses at the bundle door, before any ke
   assert.equal(code, 1);
   assert.ok(errs.join('\n').includes(WORDS), errs.join('\n'));
   assert.equal(outs.some((l) => /first run|bundleHash/.test(l)), false, 'nothing was shown or signed');
+});
+
+test('run-u --spec of an old job refuses in the exact words, at $0, before any prepared copy, key or model call', async () => {
+  const dir = tmp('old-job-spec-');
+  const specPath = join(dir, 'resolved-spec.json');
+  // judged-floor has left the kind list, so validateJob alone would say something else; the door must say the plain words first
+  writeFileSync(specPath, JSON.stringify({ schema: 'job-v1', job: 'old-job', goal: 'g', budgetUsd: 1, writeScope: ['src/**'], ...OLD_EXAMPLES }));
+  const errs = [];
+  const rc = await userUMain(['--spec', specPath], { env: {}, keysHome: dir, out: () => {}, err: (s) => errs.push(s) });
+  assert.equal(rc, 2);
+  assert.ok(errs.join('\n').includes(WORDS), errs.join('\n'));
+  assert.doesNotMatch(errs.join('\n'), /fails validateJob|prepared copy/);
 });

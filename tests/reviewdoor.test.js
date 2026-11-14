@@ -142,11 +142,10 @@ test('the door is ALWAYS ON for soft-green and OPT-IN for green — the class se
   assert.equal(doorOpens({ verdictType: 'soft-green' }, false), false, 'and can shut it — an explicit choice, never a silent default');
 });
 
-test('the door re-proves MECHANICAL stages only — a judged floor and a person are never re-run by an accept', () => {
+test('the door re-proves MECHANICAL stages only — a person is never re-run by an accept', () => {
   const stages = [
     { name: 'changed', kind: 'files-changed' },
     { name: 'verdict', kind: 'command-exit' },
-    { name: 'reads-well', kind: 'judged-floor' },
     { name: 'signer', kind: 'human-confirms' },
   ];
   assert.deepEqual(mechanicalStages(stages).map((s) => s.name), ['changed', 'verdict']);

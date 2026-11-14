@@ -129,10 +129,6 @@ export {
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
   HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling, resolveHumanRuling,
-  // SOFTGREEN module 2 — the judged stage's own arbiter-owned bounds. An adopter
-  // wiring `judgeProvider` needs both numbers to reason about what a judged close
-  // can cost: one paid call per artifact, at most one retry each.
-  JUDGE_ATTEMPTS, MAX_JUDGED_PATHS,
   // SOFTGREEN module 8 — the REVIEW DOOR's vocabulary: the record type a run
   // writes when it ends at the door, which terminals open one, which classes open
   // one unasked, and the mechanical-only rule an `accept` re-proves against.
@@ -145,24 +141,9 @@ export {
 // module 6's registry half, and refuses an expired door under the same 60-day TTL a
 // hitl checkpoint keeps. It never returns, writes or implies a verdict.
 export { answerReviewDoor } from './reviewdoor.js';
-// SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
-// integrating UI) genuinely needs: `resolveJudge` (PRD item 32.1 — WHICH model
-// grades a job: the spec's signed `judge` override, else the job's own worker
-// model, and no library fall-back; the old pinned-model constant is gone), the rulebook a card SELECTS from,
-// the card gate, and the two halves themselves so a calibration harness can
-// grade the whole pipe without running a close.
-// `defaultJudgeLoop` (src/judged.js) is the one spelling of how this repo drives a
-// judge; the runner reaches it through `runPlan`'s `judgeProvider`. It is internal:
-// the package root does not export it.
-export {
-  resolveJudge, JUDGE_RULES, JUDGE_RULE_IDS,
-  runLocate, decide,
-  // SOFTGREEN module 4 — what a legal SIGNED calibration set is. The SIZE is
-  // hamr's own ruling and a size change is a spec-level threshold change;
-  // `expectedOf` is the ONE reduction of a `decide()` result to the shape a case
-  // stores, so a calibration harness compares one shape rather than two.
-  CALIBRATION_SIZE, validateCalibrationSet, expectedOf,
-} from './judged.js';
+// WHICH model a job's judge names (PRD item 32.1: the spec's signed `judge` override, else the job's own worker model; no library fall-back). The old
+// judge's engine (the locate call, the rulebook, `decide`, the calibration shape) is gone (hamr 2026-11-14).
+export { resolveJudge } from './judged.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
 // guard batteries it must show the user under D5 and cannot let them remove).

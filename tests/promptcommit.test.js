@@ -404,7 +404,7 @@ test('evaluateCommits: multiple commits in a range, mixed compliance', () => {
     { sha: 'a1', message: 'unrelated change', files: ['README.md'] },
     { sha: 'a2', message: COMPLIANT, files: ['src/authorflow.js'] },
     // 'x' after Failure: has no run ref, on top of the pre-existing missing Addresses
-    { sha: 'a3', message: 'Failure: x\nAddresses:\nCorrects: z', files: ['src/judged.js'] },
+    { sha: 'a3', message: 'Failure: x\nAddresses:\nCorrects: z', files: ['src/pagemap.js'] },
     { sha: 'a4', message: 'touches two prompt files, no labels', files: ['src/tools.js', 'src/planrun.js'] },
   ];
   const { ok, offenders } = evaluateCommits(commits, isPromptFile);

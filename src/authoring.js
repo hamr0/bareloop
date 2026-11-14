@@ -72,8 +72,7 @@
 // flagged a `runClose` naming collision between the kind executor and
 // src/ralph.js; the public surface is settled once at M4, not piecemeal.
 
-import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
-import { JUDGE_RULE_IDS, validateCard } from './judged.js';
+import { normalizeParser } from './kinds.js';
 import { rubricStepShapeReds, checkRubricParts, checkRubricRules } from './rubricstep.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
@@ -195,10 +194,6 @@ export function closeCeiling(declaration, catalogue = KIND_CATALOGUE) {
   return top;
 }
 
-/** the kinds no composer is offered any more (hamr 2026-11-14: the old judge, its card and its calibration are gone). The VALIDATOR keeps them in the
- * catalogue so an old signed spec still reads as what it is; only the menu narrows. */
-export const RETIRED_KINDS = Object.freeze(['judged-floor']);
-
 /**
  * THE MENU A JOB OF THIS CLASS MAY EXPRESS — the ceiling rule, moved one step
  * EARLIER, to the moment the composer is handed its vocabulary.
@@ -233,7 +228,6 @@ export function classMenu(verdictType, catalogue = KIND_CATALOGUE) {
       + 'nobody made');
   }
   return names.filter((k) => {
-    if (RETIRED_KINDS.includes(k)) return false;
     const spec = catalogue[k];
     if (!spec || !Object.hasOwn(CLASS_RANK, spec.verdictClass)) {
       throw new Error(`[authoring] catalogue kind "${k}" declares no verdict class — every kind states the class of `
@@ -317,34 +311,6 @@ export const KIND_CATALOGUE = Object.freeze({
     pathParams: Object.freeze(['allowPrefixes']),
     shape: 'allowPrefixes: string[], requireNonEmpty: true',
     asserts: 'the set of files this run changed must be non-empty and must lie wholly inside allowPrefixes.',
-  }),
-  // LIVE at softgreen module 2, and the only kind that BUYS its measurement: a
-  // pinned toolless judge extracts facts WITH QUOTES from each named artifact and
-  // an arbiter-owned rulebook renders the verdict over them (src/judged.js). The
-  // judge never says whether anything passed — a model asked "did this pass?" is
-  // a model that can be argued with, and bareguard's A/B measured that
-  // `judgeLocate` is not injectable where `judgeVerdict` is.
-  //
-  // `card` is the signer's own rubric, compiled to ENUMERATED items: `rule`
-  // SELECTS from the rulebook we implement, so a rule we do not own is
-  // inexpressible rather than rejected late, and `text` is the signer's words —
-  // what a red is explained WITH, never what a red is decided BY. `paths` names
-  // the AUTHORITATIVE artifacts, selected from the seed listing like every other
-  // path, never the worker's summary of what it did.
-  //
-  // No `timeoutMs` and no `env`: this kind spawns nothing. Its own bounds are the
-  // arbiter's (the retry ladder and the artifact ceiling live in src/kinds.js),
-  // because a declaration that could widen them is a declaration that can spend.
-  'judged-floor': Object.freeze({
-    verdictClass: 'soft-green',
-    required: Object.freeze(['card', 'paths']),
-    optional: Object.freeze([]),
-    pathParams: Object.freeze(['paths']),
-    shape: `card: {items: [{rule: ${JUDGE_RULE_IDS.join('|')}, text: string}]}, paths: string[] (at most ${MAX_JUDGED_PATHS})`,
-    asserts: 'a pinned judge extracts facts and VERBATIM quotes from each named artifact, and an arbiter-owned rulebook '
-      + 'renders pass/fail per card item over those facts — first red wins, and anything it cannot be sure of is a red. '
-      + 'Name one card line per thing you actually look for, in the order you look for them, and name the real files the '
-      + 'work lands in. It is never offered to the agent as an in-run check.',
   }),
   // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES. One stage per numbered job
   // line, reading the one file that line leaves behind (output/steps/N.json). It measures nothing with a command and buys
@@ -1165,25 +1131,6 @@ function scopeOfJob(declaration, idx, guards) {
 }
 
 /**
- * Which of a judged stage's paths lie OUTSIDE the job's write fence? One owner of the rule "a check must be
- * free to edit every file it can report on", called from every door that validates a declaration. It uses
- * the shipped fence spelling (`globToPrefix`, the same containment reading plan.js's `insideFence` has) and
- * returns `[]` when there is no fence to compare against or the paths are not a string list (shape is the
- * schema walk's business).
- * @param {unknown} paths @param {string[]|null|undefined} writeScope
- * @returns {string[]}
- */
-export function judgedOutsideFence(paths, writeScope) {
-  if (!Array.isArray(writeScope) || writeScope.length === 0 || !Array.isArray(paths)) return [];
-  const fence = writeScope.filter(isNonEmptyString).map(globToPrefix);
-  if (fence.length === 0) return [];
-  return paths.filter(isNonEmptyString).filter((raw) => {
-    const n = normPrefix(raw);
-    return !fence.some((f) => f === '.' || n === f || n.startsWith(`${f}/`));
-  });
-}
-
-/**
  * Kinds a declaration may carry AT MOST ONCE, as data beside the catalogue.
  *
  * `files-changed` is the whole list and the reason is the catalogue's own
@@ -1201,7 +1148,7 @@ export function judgedOutsideFence(paths, writeScope) {
  * stage — applied to the one population that decides whether the law fires at
  * all.
  */
-const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed', 'human-confirms', 'judged-floor']);
+const AT_MOST_ONCE_KINDS = Object.freeze(['files-changed', 'human-confirms']);
 
 /** why each at-most-once kind is at most once, in the author's own terms. A map
  * rather than a chain of conditionals: a kind added to the list above with no
@@ -1215,20 +1162,12 @@ const AT_MOST_ONCE_REASON = Object.freeze({
   'human-confirms': (label, owner) => `stage "${label}" is a second human-confirms stage — "${owner}" already asks the `
     + 'person. One signer, one judge (ruling 4), asked ONCE at the end: a second door is a second verdict, and the run '
     + 'has no way to say which of them was the one it stopped for',
-  // softgreen module 3. The judged floor is the close's ONE judged ruler: two of
-  // them are two bars for one verdict class, each buying its own paid calls, and
-  // first-red-wins means the second only ever runs when the first was satisfied —
-  // so its only reachable effect is to spend money re-judging a tree that already
-  // cleared the bar the signer signed. One card, one calibration set, one ruler.
-  'judged-floor': (label, owner) => `stage "${label}" is a second judged-floor stage — "${owner}" is already this `
-    + 'close\'s judged ruler. One card and one calibration set decide one bar: a second judged stage is a second bar '
-    + 'for the same verdict, and it buys its own paid calls to re-judge a tree the first one already passed',
 });
 
 /** the kinds NO ONE runs as an in-run ruler — ruling 5's law, as data. A
  * declaration that offers one is a red rather than a normalization: the signer
  * must not read one thing and have the runner store another. */
-export const NEVER_OFFERED_KINDS = Object.freeze(['human-confirms', 'judged-floor']);
+export const NEVER_OFFERED_KINDS = Object.freeze(['human-confirms']);
 
 /** @param {any} v */
 const strArray = (v) => Array.isArray(v) && v.length > 0 && v.every(isNonEmptyString);
@@ -1280,13 +1219,11 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
+ *   verdictType?: string|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
  *   `inputLabels` — the labels of the person's inputs (Part 1a). Present, a rubric-step `cited` part must name one of them.
  *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
  *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
  *     rule is not run.
- *   `writeScope` — the job's signed write fence. Every path a judged stage judges must sit inside it
- *     ({@link judgedOutsideFence}); absent, the rule is not run (the plain-folder deferral has no fence).
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
  *   `guards` — the picked class's injected guards (`classGuards`).
  *   `verdictType` — the class the USER picked (`VERDICT_CLASSES`).
@@ -1303,7 +1240,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, writeScope = null, jobLines = null, inputLabels = null,
+    verdictType = null, jobLines = null, inputLabels = null,
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1446,18 +1383,6 @@ export function validateDeclaration(declaration, opts = {}) {
       } else kindOwners.set(s.kind, label);
     }
 
-    // A judged stage may only judge what the run can fix: a path outside the write fence is a
-    // finding the worker can never act on (run mv13ery3: bin/pulselog.js, fence src/**).
-    if (s.kind === JUDGED_FLOOR_KIND && isObj(s.params)) {
-      const outside = judgedOutsideFence(s.params.paths, writeScope);
-      if (outside.length > 0) {
-        red('judged-outside-write-scope', `${at}.params.paths`, `stage "${label}" judges ${outside.join(', ')}, but the `
-          + `job may only edit ${writeScope?.join(', ')}. A check that reports on a file the run is fenced out of can `
-          + 'never be satisfied — every finding on it is one the worker cannot fix. Name files inside the write fence',
-        { stage: label, outside, fence: (writeScope ?? []).map(globToPrefix) });
-      }
-    }
-
     // ── RULING 5, AS LAW: judged and human stages are `offer: false`, and the
     // law is checked rather than applied. `checkMenu` filters `offer !== false`,
     // so a declaration that says nothing is silent about a rule the runner
@@ -1483,31 +1408,6 @@ export function validateDeclaration(declaration, opts = {}) {
         + 'evidence package and the mechanical stages behind them would be silently deleted (the composition law: '
         + 'mechanical first, human last)', { kind: s.kind, stage: label, at: i, last: stages.length - 1 });
     }
-    // ── THE SAME LAW's judged half (design record 2026-08-17 §4.5: *mechanical
-    // stages FIRST, the judged stage AFTER, first-red-wins*). The human rule is
-    // stated as "last" because a person is the top of the hierarchy; the judged
-    // rule is stated as "after the mechanical ones", because a human stage may
-    // legally follow it — mechanical → judge → person is the full composition.
-    //
-    // What it costs to admit is the same both ways round: first-red-wins means a
-    // judged stage in front of a mechanical one BUYS PAID CALLS to grade a tree
-    // the free stages would have refused for nothing — and if the judge passes it
-    // the mechanical red still lands, so the money bought no verdict either.
-    // A SECOND judged stage is NOT this red (it is `duplicate-kind`, emitted
-    // above): one problem, one red, in one vocabulary.
-    if (s.kind === JUDGED_FLOOR_KIND) {
-      const behind = stages.slice(i + 1).filter((/** @type {any} */ x) => isObj(x) && isNonEmptyString(x.kind)
-        && catalogue[x.kind] && CLASS_RANK[catalogue[x.kind].verdictClass] < CLASS_RANK['soft-green']);
-      if (behind.length) {
-        red('judged-stage-order', `${at}.kind`, `stage "${label}" is judged and runs BEFORE the mechanical `
-          + `stage${behind.length > 1 ? 's' : ''} ${behind.map((/** @type {any} */ x) => `"${x.name}"`).join(', ')}. `
-          + 'The close is first-red-wins and a judged stage buys a paid call per artifact: put every stage a command '
-          + 'can decide in front of it, so the free rulers shield the expensive one (the composition law: mechanical '
-          + 'first, judge after)',
-        { kind: s.kind, stage: label, at: i, behind: behind.map((/** @type {any} */ x) => x.name) });
-      }
-    }
-
     const p = s.params;
     if (!isObj(p)) { red('missing-field', `${at}.params`, `an object carrying: ${spec.required.join(', ')}`); return; }
     for (const k of spec.required) {
@@ -1832,30 +1732,6 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
           + 'result — a human stage with nothing to ask is the bare "approve?" ruling 2 forbids');
       }
       break;
-    case 'judged-floor': {
-      // ONE spelling of what a card is, the JUDGE's own (`validateCard`, src/judged.js) —
-      // the same rule `normalizeParser` follows: the validator and the grader must agree
-      // about what a card MEANS, or the one that grades is the one nobody validated.
-      const cv = validateCard(p.card);
-      for (const detail of cv.reds) red('invalid-value', `${at}.params.card`, detail);
-      // the artifact list. The listing rule (`checkPaths`) judges whether each element
-      // EXISTS; this judges the shape and the bill — one paid call per artifact, so an
-      // unbounded list is a bill rather than a red (the MAX_TERMS sibling).
-      if (!strArray(p.paths)) {
-        red('invalid-value', `${at}.params.paths`, 'a non-empty array of repository-relative files to judge — the '
-          + 'AUTHORITATIVE artifacts, read off the seed listing, never the worker\'s summary of what it did');
-      } else if (new Set(p.paths.map(String)).size !== p.paths.length) {
-        // one artifact is one population, and a list naming it twice buys two paid
-        // calls over identical bytes — deduplicating it silently would leave the
-        // signer reading one list while the runner spent on another
-        red('invalid-value', `${at}.params.paths`, 'the same artifact is named twice — one artifact is one population, '
-          + 'and a duplicate buys a second paid call over identical bytes');
-      } else if (p.paths.length > MAX_JUDGED_PATHS) {
-        red('bounds', `${at}.params.paths`, `${p.paths.length} artifacts exceeds the ceiling of ${MAX_JUDGED_PATHS} — a `
-          + 'judged stage buys one call per artifact, and the ceiling is the arbiter\'s, not the declaration\'s');
-      }
-      break;
-    }
     default:
       red('unknown-kind', `${at}.kind`, `"${kind}" is in the catalogue but has no checker`, { kind });
   }

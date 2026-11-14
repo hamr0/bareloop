@@ -32,7 +32,7 @@ import { commitWork, removeWorktree, removePrRef } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
-import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf, oldJobWords } from './job.js';
 import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
 import { newestUnrunTicket } from './ticketnext.js';
@@ -54,25 +54,12 @@ import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, r
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
-import { normalizeHumanRuling, resolveHumanRuling, closeJudges, judgedStages } from './kinds.js';
-// SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
-// spelling here would be a second pin that can drift from the one the gate calibrated.
-import { resolveJudge } from './judged.js';
+import { normalizeHumanRuling, resolveHumanRuling } from './kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from './reuse.js';
-// PRD item 28's provider factory (src/providers.js): the WORKER provider's
-// ctor/param-gating come from here now (its key variable and price come from the
-// Settings row, src/providerrows.js) — one seam instead
-// of an `if (provider === …)` scattered across this script. PRD item 32.2
-// moved the JUDGE onto this SAME factory: it used to be separately pinned
-// below to a hardcoded Anthropic constructor at the judged tier because the
-// judge could only ever be Claude — now that its identity is RESOLVED
-// (`resolveJudge`, imported above) rather than pinned, building it through a
-// second bespoke constructor would be a second seam for the same job the
-// worker's already goes through. `tests/reviewdoor-u.test.js` greps this
-// file's own source to prove THIS runner actually wires the resolved judge
-// through `makeProvider` into `runJob` (not just that the library can).
+// PRD item 28's provider factory (src/providers.js): the WORKER provider's ctor/param-gating come from here (its key variable and price come from the
+// Settings row, src/providerrows.js) — one seam instead of an `if (provider === …)` scattered across this script.
 import { resolveProvider, makeProvider, probeWarningLines, apiKeyProblem } from './providers.js';
 import { loadRegistry, quarantinesCredit } from './bridges.js';
 import { HITL_PAUSE } from './declaredclose.js';
@@ -92,7 +79,7 @@ import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js
 import { ConfigError } from './config.js';
 import { learnAtRunEnd, handedHints, releaseRun } from './learnstore.js';
 import { commandFor } from './invoke.js';
-import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
+import { keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -247,7 +234,6 @@ class ExitSignal extends Error {
  *   check entirely, the same shape `src/cli.js`'s `main(argv, deps)` uses.
  * @property {(tier: string) => any} [providerFor]
  * @property {(url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} [fetchUrl] PART 1c - a test seam: how a web input is read at run start (production: barebrowse)
- * @property {any} [judgeProvider]
  * @property {typeof newestUnrunTicket} [newestUnrunTicket] R6 - a test seam: how a Tickets run that names no `--ticket` finds the newest unrun ticket (production: the real look, src/ticketnext.js)
  * @property {string} [mcpConfig] R6 - a test seam: the MCP config file that look reads (production: the person's own, found by src/mcpsources.js)
  * @property {string} [runlistHome] F196 — a test seam for `appendRun`'s
@@ -529,9 +515,7 @@ async function execute(ctx) {
   // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
   // present, wins outright; a --model flag naming a DIFFERENT id is refused
   // (never silently overridden) — resolveWorkerModel is the one decision, pure
-  // and tested apart from this script. The JUDGE's model is resolved separately
-  // (`resolveJudge`, below the key block): it defaults to this same resolved
-  // worker model and a signed `judge` override wins over it.
+  // and tested apart from this script.
   // There is no default model: a spec or flag that names none dies below with
   // REFUSE_NAME_MODEL (the model is one ticked in Settings). `spec.provider` is not validateJob'd until
   // runJob below, so an unrecognized value dies here with the same operator-
@@ -1032,7 +1016,7 @@ async function execute(ctx) {
   // the key from. Resolved ONCE here, at $0, before the preview, the monthly claim and any worktree or
   // spine, then handed down as data (`runJob`'s `rates`) — nothing deep in the run re-reads config. A bad
   // price refuses here; it never falls back to the built-in guess. No price set = `null` = no `rates` key
-  // passed anywhere, byte-identical to before. The judge's own row is resolved below, beside its key.
+  // passed anywhere, byte-identical to before.
   const keyCfg = cfgOn ? rowsForHome(cfgHome, env) : [];
   /** @type {ReturnType<typeof ratesFor>} */
   let workerPrice = null;
@@ -1453,50 +1437,9 @@ async function execute(ctx) {
   // so there is one place saying which row reads which variable) and is
   // ALWAYS required — the worker always runs.
   //
-  // The JUDGE's key is required only when the close actually judges
-  // (`closeJudges`, src/kinds.js — the ONE reading of that question), and since
-  // PRD item 32 the judge is no longer pinned to Anthropic: its identity is
-  // RESOLVED below, and its key follows that resolved provider's own env var with
-  // `JUDGE_API_KEY` as a role-named override in front. One variable used to do two
-  // jobs (worker key for an anthropic-api job AND judge key for every job), which
-  // was confusing while the judge was pinned and would be a plain lie now that it
-  // is not.
-  //
-  // A green anthropic-api job's behaviour is byte-identical to before: its
-  // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
-  const JUDGES = closeJudges(spec.closeDecl);
-  // WHICH MODEL GRADES THIS JOB (PRD item 32.1). Resolved, never pinned: the
-  // spec's signed `judge: {provider, model}` if it names one, else this job's own
-  // worker provider and model — so a DeepSeek or Gemini job judges on its own
-  // provider and needs no second account. `resolveJudge` throws on a malformed
-  // override rather than quietly falling back to the worker's; the spec validator
-  // has already redded that shape, so reaching the throw means a caller skipped
-  // validation. Resolved UNCONDITIONALLY (needs no key) — `judge.model` rides
-  // into runJob below whether this leg constructs a real judge provider or not.
-  const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
-  const judgeEntry = resolveProvider(judge.provider);
-  // …and the judge's price, from the judge MODEL's row (`judgeRatesFor`): on the worker's endpoint when the
-  // judge is the same provider (falling back to the worker's price when the model names no row), else the
-  // row for the judge's own provider. Only a judging close ever calls it, so only then can its row refuse the run.
-  /** @type {ReturnType<typeof ratesFor>} */
-  let judgePrice = null;
-  if (JUDGES) {
-    try {
-      judgePrice = judgeRatesFor(judge, spec.provider, baseUrl, workerPrice, keyCfg);
-    } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
-      throw new ExitSignal(2);
-    }
-  }
-  /** the row the judge's key (and endpoint) comes from: the worker's own row when the judge shares its provider, else the judge provider's row */
-  const judgeRow = judgeRowFor(keyCfg, judge, spec.provider, W && W.ok ? W.row : null);
-  // undefined, not null: both come straight off `env[...]` lookups below, which
-  // (like process.env) never produce null for a missing key.
+  // hamr 2026-11-14: there is no judge key any more — the old judge is gone, and a rubric job grades on the check list with no model call.
   /** @type {string|undefined} */
   let workerApiKey;
-  /** @type {string|undefined} */
-  let judgeApiKey;
   // TEST SEAM (constraint: `deps.provider` skips the real-key check entirely,
   // the same shape src/bundlerun.js's door uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
@@ -1504,8 +1447,7 @@ async function execute(ctx) {
     // P4b — the Settings row (keys file line) whose API shape + Base URL match this spec
     // supplies the key VARIABLE, standing in for the provider's built-in one; no matching
     // row = the built-in. Names only — values come from the
-    // env / keys file. The judge follows the worker's choice when it is the same provider
-    // (the same rule that gives it the worker's baseUrl below).
+    // env / keys file.
     refuseWorker();
     const workerKeyName = /** @type {NonNullable<typeof W> & {ok: true}} */ (W).row.envName;
     // A job's worker key is its Settings row's own variable — there is no built-in name.
@@ -1517,29 +1459,6 @@ async function execute(ctx) {
     // door, before any provider is constructed; never echo the value.
     const workerKeyProblem = apiKeyProblem(workerApiKey);
     if (workerKeyProblem) { err(`${workerKeyName} ${workerKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); throw new ExitSignal(2); }
-    // The judge's KEY follows the RESOLVED judge provider's own env var, with
-    // `JUDGE_API_KEY` as a role-named override in front of it (PRD item 32.3). The
-    // override matters most in the case this item exists for: a job whose worker and
-    // judge are the SAME provider but different accounts, and the anthropic case
-    // where one variable used to do two jobs.
-    judgeApiKey = env.JUDGE_API_KEY ?? keyValueOf(env, judgeRow?.envName);
-    if (JUDGES && !judgeApiKey) {
-      err(`This job's close JUDGES (${judgedStages(spec.closeDecl).length} judged stage(s)) and its judge is ${judge.model} on ${judge.provider}${spec.judge ? ' (signed override)' : " (this job's own worker model — no `judge` override signed)"}.`);
-      err(`Neither JUDGE_API_KEY nor ${judgeRow?.envName ?? `a key row for ${judge.provider}`} is set — secrets load from the environment, never the tree.`);
-      err('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
-      throw new ExitSignal(2);
-    }
-    // F181 — same door, second shape: a judge key that IS present can still be
-    // malformed (line break/control char/stray whitespace). Checked only when
-    // JUDGES (the key is only required then); never echoes the value.
-    if (JUDGES) {
-      const judgeKeyProblem = apiKeyProblem(/** @type {string} */ (judgeApiKey));
-      if (judgeKeyProblem) {
-        const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : (judgeRow?.envName ?? judge.provider);
-        err(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
-        throw new ExitSignal(2);
-      }
-    }
   }
 
   // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a; hamr 2026-09-30: "whoever runs first claims the limit and
@@ -1813,31 +1732,12 @@ async function execute(ctx) {
   // construction never runs (a scripted provider IS the run).
   let provider = deps.provider;
   let providerFor = deps.providerFor;
-  let judgeProvider = deps.judgeProvider ?? null;
   if (!provider) {
     const legacyMaxTokens = W && W.ok ? W.row.legacyMaxTokens : false;
     provider = makeProvider(spec.provider, { apiKey: /** @type {string} */ (workerApiKey), model: MODEL, baseUrl, legacyMaxTokens });
     // P: the per-step model factory. The ONLY tier a plan may name is the schema token `sonnet` (STEP_MODELS, src/plan.js — a
     // documented schema token, not a model id); it means THIS job's worker model, so every step's provider is the one above.
     providerFor = () => provider;
-    // SOFTGREEN — the JUDGED stage's own provider. Since PRD item 32.1 its identity is
-    // RESOLVED (`judge` above), not pinned: the spec's signed `judge` override, else this
-    // job's own worker model. It is still never a step knob and never agent-selectable —
-    // naming your own examiner is arbiter territory, and `judge` is a field the HUMAN
-    // signs into the hash. The `baseUrl` rides along only when the judge is the same
-    // provider as the worker: a spec's `baseUrl` is the WORKER's endpoint, and pointing a
-    // different vendor's client at it would be the silent-misconfiguration class
-    // `endpointKey` exists to prevent. Built only when `judgeApiKey` is present (PRD item
-    // 31.4 — the judge's key is demanded only when a judge is CALLED, so this construction
-    // is conditional on purpose, not unconditional): `runPlan` reads it only when a stage
-    // is `judged-floor`, and the alternative (deriving "does this close judge?" here) is a
-    // second reading of the declaration that can drift from the one the runner actually
-    // executes. Absent, a judged stage instrument-STOPS as a wiring gap, which is what
-    // every live softgreen run would have done: run-author wired this seam and this
-    // runner never did.
-    judgeProvider = judgeApiKey
-      ? makeProvider(judge.provider, { apiKey: /** @type {string} */ (judgeApiKey), model: judge.model, baseUrl: judge.provider === spec.provider ? baseUrl : (judgeRow && judgeRow.baseUrl.trim() !== '' ? judgeRow.baseUrl.trim() : undefined), legacyMaxTokens: judgeRow ? judgeRow.legacyMaxTokens : false })
-      : null;
   }
 
   const started = Date.now();
@@ -2076,9 +1976,9 @@ async function execute(ctx) {
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
       // collide the moment either one had already written a record).
-      approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model,
+      approvals, workdir: wd, provider, providerFor,
       // the customer's own price per key row (USD per 1K), or null = the built-in guess as before
-      rates: workerPrice?.rates ?? null, judgeRates: judgePrice?.rates ?? null, emit,
+      rates: workerPrice?.rates ?? null, emit,
       // F133 (run mtqwmb9l) — `closeTimeoutMs` is deliberately NOT passed here.
       // `RESOLVED_CLOSE_TIMEOUT_MS` above exists only to size the outside
       // watchdog before it spawns; feeding it back into `runJob` used to make
@@ -2764,6 +2664,9 @@ export async function main(argv, deps = {}) {
       try { spec = JSON.parse(/** @type {string} */ (raw)); } catch (e) {
         die(`--spec ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
       }
+      // hamr 2026-11-14: a job made with PASS/FAIL examples or the old judge refuses in plain words, ahead of every other check
+      const oldJob = oldJobWords(spec);
+      if (oldJob) die(`--spec ${specPath}: ${oldJob} Nothing spent.`);
       // validateJob'd HERE, at $0, before a single filesystem lookup for the
       // source manifest or a single line of the preview prints — a `--job` row's
       // spec is developer-authored and reaches this same check inside `runJob`

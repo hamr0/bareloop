@@ -3024,7 +3024,6 @@
       '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span>' + (detail.status && detail.status.word ? '<b class="st-word" data-testid="summary-status">' + escapeXml(detail.status.word) + '</b> &middot; ' : '') + '<b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
       '<div class="summary-row" data-testid="summary-model"><span class="sum-label">model:</span><span class="sum-val">' + escapeXml(modelLine(detail)) + '</span></div>' +
-      (detail.judgeModel ? '<div class="summary-row" data-testid="summary-judge"><span class="sum-label">judge:</span><span class="sum-val">' + escapeXml(detail.judgeModel) + '</span></div>' : '') +
       '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val">' + stepsText +
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +

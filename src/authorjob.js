@@ -99,7 +99,7 @@
 // in the stored declaration (forward-compat point 3), and the suite pins it.
 
 import { jobSpecHash, validateJob } from './job.js';
-import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, closeJudges, judgedStages } from './kinds.js';
+import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
 import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
@@ -929,18 +929,6 @@ export async function authorCloseForJob({
       : {}),
   };
 
-  // hamr 2026-11-14 (rubric vs deterministic split, piece 2): the old judge is gone. A composed close that judges (a
-  // `judged-floor` stage) needs a rubric card and a calibration set nothing compiles any more, so it is refused here,
-  // at $0, in plain words. (The class menu no longer offers the kind; this is the net for a model that names it anyway.)
-  if (closeJudges(closeDecl)) {
-    return {
-      ...base,
-      verdictType: picked, seedRef: seed, authoring: authored,
-      reds: [{ code: 'judged-floor-gone', path: 'closeDecl.stages', detail: JUDGED_FLOOR_GONE_WORDS }],
-      stop: 'judged-floor-gone', cost: authored.cost, interview,
-    };
-  }
-
   return {
     ok: true,
     refusal: null,
@@ -1097,9 +1085,6 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
   Object.entries(r).map(([k, v]) => [k, typeof v === 'string' ? redactSecrets(v) : v]),
 ));
 
-/** the plain words for a close that still names the old judge (`judged-floor`): refused at $0, never run (hamr 2026-11-14) */
-export const JUDGED_FLOOR_GONE_WORDS = 'The old judge is gone. Write what you want checked as a ~ rule on the check list, or draft the job fresh.';
-
 /**
  * D9, in code: *nothing JUDGES the close; three mechanical gates plus a
  * signature.* No LLM validates another LLM's close, here or anywhere.
@@ -1113,8 +1098,7 @@ export const JUDGED_FLOOR_GONE_WORDS = 'The old judge is gone. Write what you wa
  *      A close with NO work stage red at seed has nothing to do and is refused
  *      decision-ready — gate-2 round 2's arm B died exactly there, on a mypy that
  *      scanned nothing and therefore read clean.
- *   (There was a fourth, paid gate, the calibration gate of the old judge; it is gone with the old judge, 2026-11-14. A
- *   close that still carries a `judged-floor` stage is refused here, at $0, as `judged-floor-gone`.)
+ *   (There was a fourth, paid gate, the calibration gate of the old judge; it is gone with the old judge, 2026-11-14.)
  *
  * Gates 2 and 3 share ONE execution, and that is stated rather than hidden: at
  * job creation the tree IS the seed, so "does every stage run against the real
@@ -1193,7 +1177,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot
@@ -1241,7 +1225,7 @@ export async function prepareSigning({
   };
   if (stops.length) {
     // M2: a rubric job's readout never uses the code-job wording ("install, build and test commands")
-    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && (st.kind === 'rubric-step' || st.kind === 'judged-floor'));
+    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && st.kind === 'rubric-step');
     const reds = stops.map((s) => ({
       code: 'broken-close',
       ...(rubricJob ? { rubricJob: true } : {}),
@@ -1276,12 +1260,6 @@ export async function prepareSigning({
     greenAtSeed: rows.filter((r) => r.verdict === 'green').map((r) => r.stage),
     workRed: workRed.map((r) => r.stage),
   };
-
-  // hamr 2026-11-14: no gate 4 any more. A judged-floor stage (an old judged close) has no rubric card or calibration set to
-  // sign against; it is refused at $0 rather than waved through.
-  if (judgedStages(spec.closeDecl).length) {
-    return { ...base, work, guards, reds: [{ code: 'judged-floor-gone', path: 'closeDecl.stages', detail: JUDGED_FLOOR_GONE_WORDS }] };
-  }
 
   // D9.3 — nothing red at seed means nothing to do. Round 2's arm B read GREEN
   // with value 0 because mypy died on an unrelated broken fixture and scanned

@@ -2003,16 +2003,6 @@ function getRunDetailBody(runid, opts) {
   // the export row only for a run export would take — the one rule, `checkExportable`, never a copy of it
   const exportName = checkExportable(row, runName).ok ? runName : null;
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true, exportName);
-  // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
-  // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
-  // close's own paid judge seam, distinct from the worker `model` above.
-  // `null` whenever no judge-round was ever recorded (the common case —
-  // src/replay.js's own note: no real archived run measured against this
-  // build carries one yet), never guessed from the worker model.
-  const judgeRoundWithModel = rawSpineRecords.find(
-    (r) => r && typeof r === 'object' && r.type === 'judge-round' && typeof r.model === 'string' && r.model.length > 0,
-  );
-  const judgeModel = judgeRoundWithModel ? judgeRoundWithModel.model : null;
 
   /** @param {string|null} outcome @param {boolean} isLast */
   const stateFor = (outcome, isLast) => {
@@ -2149,7 +2139,6 @@ function getRunDetailBody(runid, opts) {
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
     provider: summary.provider,
-    judgeModel,
     budgetUsd: summary.budgetUsd,
     glyph: status.sign,
     status,

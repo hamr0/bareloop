@@ -924,7 +924,7 @@ function validatePlanShape(spec, red, reds) {
     // class the user picked (PRD v1.57 §2), so the gate cannot check D5 without
     // it. An unknown or locked class is refused there, on its own axis, beside
     // the counted `request-red` above.
-    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
+    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true, verdictType: spec.verdictType, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
     for (const r of cd.reds) reds.push(r);
     if (demanded !== undefined && !CLASS_BY_CLOSE.declared.includes(demanded)) {
       // the same laundering guard as the close-type hierarchy, one level up: a

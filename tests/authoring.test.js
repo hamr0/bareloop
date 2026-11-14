@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { LIVE_KINDS, regexGroups, MAX_JUDGED_PATHS } from '../src/kinds.js';
+import { LIVE_KINDS, regexGroups } from '../src/kinds.js';
 import { VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
 import { hasNestedQuantifier, scanSecrets } from '../src/validate.js';
 import {
@@ -691,13 +691,12 @@ test('battery: the CONTENTS come from the tool the declaration names, not from t
 // injected catalogue carrying a live non-green kind, because that is the only way
 // the rule can be watched firing without unlocking anything.
 
-/** a catalogue exactly like the shipped one, plus ONE LIVE soft-green kind */
+/** a catalogue exactly like the shipped one, plus ONE LIVE soft-green kind (a stub: the old judged-floor kind is gone, 2026-11-14) */
 const withLiveSoftKind = () => ({
   ...KIND_CATALOGUE,
-  'judged-floor': {
-    ...KIND_CATALOGUE['judged-floor'],
+  'soft-ruler': {
     locked: false,
-    required: [], optional: [], pathParams: [],
+    required: [], optional: [], pathParams: [], shape: '', asserts: '',
     verdictClass: 'soft-green',
   },
 });
@@ -711,10 +710,9 @@ test('ceiling: every catalogue kind carries the verdict class it can honestly re
   // human stage in a green spec is a class-ceiling red (tests/hitl.test.js)
   // the two kinds that MAKE the ceiling rule bite — a judge and a person — are
   // named here so the rest of the menu is asserted mechanical
-  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !['human-confirms', 'judged-floor'].includes(x))) {
+  for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !['human-confirms'].includes(x))) {
     assert.equal(KIND_CATALOGUE[k].verdictClass, 'green', k);
   }
-  assert.equal(KIND_CATALOGUE['judged-floor'].verdictClass, 'soft-green');
   assert.equal(KIND_CATALOGUE['human-confirms'].verdictClass, 'hitl');
 });
 
@@ -743,13 +741,13 @@ test('ceiling: a catalogue kind that states NO class THROWS — a kind whose hon
 test('ceiling: a declaration ABOVE the picked class is an honest red naming the kind that raised it', () => {
   const catalogue = withLiveSoftKind();
   const decl = goodDeclaration();
-  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'soft-ruler', params: {} });
 
   const res = validateDeclaration(decl, opts({ catalogue, verdictType: 'green' }));
   const red = at(res, 'class-ceiling')[0];
   assert.ok(red, `expected a class-ceiling red, got ${JSON.stringify(codes(res))}`);
   assert.equal(res.ok, false);
-  assert.equal(red.kind, 'judged-floor', 'the red NAMES the kind that raised the ceiling');
+  assert.equal(red.kind, 'soft-ruler', 'the red NAMES the kind that raised the ceiling');
   assert.equal(red.stage, 'reads-well');
   assert.equal(red.kindClass, 'soft-green');
   assert.equal(red.picked, 'green');
@@ -759,7 +757,7 @@ test('ceiling: a declaration ABOVE the picked class is an honest red naming the 
 test('ceiling: the SAME declaration under a matching pick is not a ceiling red — no silent downgrade either', () => {
   const catalogue = withLiveSoftKind();
   const decl = goodDeclaration();
-  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'soft-ruler', params: {} });
   // the battery is the picked class's, so a soft-green pick is validated against
   // a soft-green battery — the guards below are the green ones purely so this
   // test moves ONE axis (the pick) and nothing else
@@ -771,49 +769,12 @@ test('ceiling: the SAME declaration under a matching pick is not a ceiling red �
 test('ceiling: a LOCKED kind is refused as unavailable and never ALSO redded for its class — one problem, one red', () => {
   // by INJECTION: v1 ships nothing locked, and the rule must keep a real subject
   // rather than a vacuous loop that reads like a guard (see the catalogue test)
-  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
+  const catalogue = { ...KIND_CATALOGUE, 'soft-ruler': { locked: true, required: [], optional: [], pathParams: [], shape: '', asserts: '', verdictClass: 'soft-green' } };
   const decl = goodDeclaration();
-  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: {} });
+  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'soft-ruler', params: {} });
   const res = run(decl, { catalogue });
   assert.equal(at(res, 'locked-kind').length, 1);
   assert.deepEqual(at(res, 'class-ceiling'), []);
-});
-
-test('ceiling: the LIVE judged kind is class-gated instead — a soft-green ruler under a green promise is refused', () => {
-  // what replaces the locked-kind refusal for `judged-floor` now that it runs: the
-  // CEILING. The kind is live and the class it renders is not admitted yet, so a
-  // real declaration still cannot reach it — refused, never silently upgraded.
-  const decl = goodDeclaration();
-  decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } });
-  const res = run(decl);
-  assert.deepEqual(at(res, 'locked-kind'), [], 'the kind is not locked any more');
-  const red = at(res, 'class-ceiling')[0];
-  assert.ok(red, JSON.stringify(codes(res)));
-  assert.equal(red.kind, 'judged-floor');
-  assert.equal(red.kindClass, 'soft-green');
-  assert.equal(red.picked, 'green');
-});
-
-test('judged-floor params: the card SELECTS from the owned rulebook, and the artifact list is bounded', () => {
-  const withJudged = (params) => {
-    const decl = goodDeclaration();
-    decl.stages.splice(3, 0, { name: 'reads-well', kind: 'judged-floor', params });
-    return run(decl, { verdictType: 'soft-green' });
-  };
-  const ok = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] });
-  assert.deepEqual(at(ok, 'invalid-value'), [], JSON.stringify(ok.reds));
-
-  const unowned = withJudged({ card: { items: [{ rule: 'vibes', text: 'reads nicely' }] }, paths: ['src/email.js'] });
-  assert.match(at(unowned, 'invalid-value')[0].detail, /not a rule this arbiter implements/);
-
-  const invented = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/nope.js'] });
-  assert.ok(at(invented, 'path-not-in-listing').length > 0, 'an artifact is READ off the listing, never derived');
-
-  const twice = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js', 'src/email.js'] });
-  assert.match(at(twice, 'invalid-value')[0].detail, /named twice/, 'one artifact is one population');
-
-  const flood = withJudged({ card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: Array.from({ length: MAX_JUDGED_PATHS + 1 }, (_, i) => `src/f${i}.js`) });
-  assert.ok(at(flood, 'bounds').length > 0, 'one paid call per artifact — an unbounded list is a bill');
 });
 
 test('ceiling: the PICK is required — a validator with no pick cannot check the promise', () => {
@@ -906,8 +867,8 @@ test('validator: an unknown kind is a typo red', () => {
 test('validator: a LOCKED kind is a DISTINCT red carrying counted demand', () => {
   // INJECTED, for the reason the catalogue test states: v1 locks nothing today, and
   // a loop over an empty list would pass while proving nothing
-  const catalogue = { ...KIND_CATALOGUE, 'judged-floor': { ...KIND_CATALOGUE['judged-floor'], locked: true } };
-  for (const locked of ['judged-floor']) {
+  const catalogue = { ...KIND_CATALOGUE, 'soft-ruler': { locked: true, required: [], optional: [], pathParams: [], shape: '', asserts: '', verdictClass: 'soft-green' } };
+  for (const locked of ['soft-ruler']) {
     const decl = goodDeclaration();
     decl.stages[1] = { name: 'judge-it', kind: locked, params: {} };
     const res = run(decl, { catalogue });
@@ -1877,14 +1838,6 @@ test('job lines: without jobLines the coverage rule does not run (a spec that pr
 });
 
 // ── P7 follow-up: ONE check may serve SEVERAL job lines (fromLine is an array) ──────────────────────────────
-
-test('job lines: a rubric declaration whose ONE judged stage serves lines 1-3 is green (single-int fromLine forced refusals)', () => {
-  const lines3 = [{ n: 1, text: 'a' }, { n: 2, text: 'b' }, { n: 3, text: 'c' }];
-  const decl = goodDeclaration();
-  decl.stages = [decl.stages[0], decl.stages.at(-1), { name: 'reads-well', fromLine: [1, 2, 3], kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } }];
-  const res = run(decl, { verdictType: 'soft-green', jobLines: lines3 });
-  assert.equal(res.ok, true, JSON.stringify(res.reds));
-});
 
 test('job lines: fromLine must be a non-empty, duplicate-free array of real lines — empty, duplicate, bare integer and unknown numbers are each a red', () => {
   const bad = (v) => { const d = taggedDeclaration(); d.stages.find((s) => s.name === 'suite-green').fromLine = v; return at(run(d, { jobLines: JOB_LINES }), 'invalid-value').filter((r) => String(r.path).endsWith('.fromLine')); };

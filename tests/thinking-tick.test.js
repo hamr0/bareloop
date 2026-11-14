@@ -8,7 +8,6 @@ import { makeProvider } from '../src/providers.js';
 import {
   thinkingSupport, thinkingOptions, thinkingCallOptions, thinkingForLine, thinkingRowText, assertThinkingMode, THINKING_FIXED_SAY, THINKING_MODES,
 } from '../src/thinking.js';
-import { runLocate, defaultJudgeLoop, JUDGE_MAX_TOKENS } from '../src/judged.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { runAuthorScout } from '../src/authorscout.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
@@ -90,34 +89,6 @@ async function captureBodies(/** @type {string} */ shape, /** @type {string} */ 
 const THINK_KEYS = ['thinking', 'reasoning_effort', 'think'];
 const thinkingFields = (/** @type {any} */ b) => Object.fromEntries(THINK_KEYS.filter((k) => k in b).map((k) => [k, b[k]]));
 
-const CARD = { items: [{ rule: 'has-doc', text: 'Every top-level function has a JSDoc block directly above it.' }] };
-const ARTIFACT = '/** doc */\nexport function a() {}\n';
-/** one judge locate through the real `defaultJudgeLoop` with the job's SIGNED tick */
-const judgeBody = async (/** @type {string} */ shape, /** @type {string} */ model, /** @type {boolean} */ thinking, /** @type {any} */ opts = {}) => {
-  const [b] = await captureBodies(shape, model, (p) => runLocate({ artifactText: ARTIFACT, card: CARD, loopFactory: ({ system }) => defaultJudgeLoop({ provider: p, system, thinking }) }), opts);
-  assert.ok(b, 'the locate request reached the provider seam');
-  return b;
-};
-
-test('the JUDGE follows the signed tick: off = the bare-agent off shape, on = the on shape, per model; the 4000-token cap and the row\'s old-max_tokens spelling are untouched', async () => {
-  const off = await judgeBody('openai-api', 'deepseek-flash', false, { legacyMaxTokens: true });
-  assert.deepEqual(off.thinking, { type: 'disabled' });
-  assert.equal(JUDGE_MAX_TOKENS, 4000);
-  assert.equal(off.max_tokens, 4000, 'the ROW\'s tick (not a model-id sniff) gives the legacy max_tokens key (F149)');
-  const on = await judgeBody('openai-api', 'deepseek-flash', true, { legacyMaxTokens: true });
-  assert.equal('thinking' in on, false, 'on for a model that thinks by default needs no field');
-  assert.equal((await judgeBody('openai-api', 'deepseek-flash', false)).max_completion_tokens, 4000, 'with the row\'s tick OFF the modern key is used');
-  assert.equal((await judgeBody('openai-api', 'gpt-5', false)).reasoning_effort, 'minimal');
-  assert.equal((await judgeBody('openai-api', 'gpt-5', true)).reasoning_effort, 'medium');
-  assert.equal('thinking' in (await judgeBody('openai-api', 'gpt-5', false)), false, 'NEVER the raw thinking field');
-});
-
-test('a judge on a model measured NOT switchable gets nothing at either tick; an UNVERIFIED model is sent the off shape when unticked (bare-agent decides) and on when ticked', async () => {
-  for (const tick of [false, true]) assert.deepEqual(thinkingFields(await judgeBody('anthropic-api', 'claude-opus-5-5', tick)), {}, `tick=${tick}`);
-  assert.deepEqual(thinkingFields(await judgeBody('openai-api', 'some-local-model', false)), { reasoning_effort: 'none' });
-  assert.deepEqual(thinkingFields(await judgeBody('openai-api', 'some-local-model', true)), { reasoning_effort: 'medium' });
-});
-
 test('the DRAFTER follows the tick through makeLoopGenerate (default off), and the same instance\'s other calls are not touched', async () => {
   const call = (/** @type {any} */ mode) => (/** @type {any} */ p) => makeLoopGenerate(p, mode === undefined ? {} : { draftThinking: mode })([{ role: 'user', content: 'hi' }], [], {});
   const [none] = await captureBodies('openai-api', 'deepseek-flash', call(undefined));
@@ -170,11 +141,10 @@ const PRE_FEATURE_HASH = '2afe71c27a13230e9799a46cd14651b909c1783f98457577f49702
 
 // ── the three judge constructors and the worker (source-level pins, labelled as such: each is reached only through a real run) ────────
 
-test('source pins: the judge is built with the SIGNED tick in the one constructor left (the run); authoring builds none; the WORKER gets no thinking option', () => {
+test('source pins: no judge is built anywhere; the WORKER gets no thinking option', () => {
   const read = (/** @type {string} */ f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
-  assert.match(read('src/planrun.js'), /defaultJudgeLoop\(\{ provider: judgeProvider, system: o\.system, rates: judgeRates, thinking: job\.thinking === true \}\)/, 'the run');
-  // run-author and the panel's calibration gate built a judge too; the old judge (and its gate) are gone, 2026-11-14
-  for (const f of ['src/authorrun.js', 'src/panel/authorsession.js']) assert.ok(!/defaultJudgeLoop/.test(read(f)), `${f}: no judge is built at authoring any more`);
+  // the old judge (its loop, its gate and every judge construction) is gone, 2026-11-14
+  for (const f of ['src/planrun.js', 'src/authorrun.js', 'src/panel/authorsession.js']) assert.ok(!/defaultJudgeLoop/.test(read(f)), `${f}: no judge is built any more`);
   for (const f of ['src/userrun.js', 'src/providers.js']) assert.ok(!/thinkingMode|thinkingCallOptions/.test(read(f).replace(/\/\/.*$/gm, '')), `${f}: the worker\'s provider construction carries no thinking option`);
   for (const [f, re] of [['src/providers.js', /thinkingSupport|deepseek/i], ['src/thinking.js', /deepseek/i]]) assert.ok(!re.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')), `${f}: no vendor regex or per-model list`);
 });

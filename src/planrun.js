@@ -45,7 +45,6 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact, rateSourceFields } from './text.js';
-import { defaultJudgeLoop } from './judged.js';
 import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
@@ -848,21 +847,6 @@ ${scoutBlob || '(no scout notes)'}`;
  * @param {{in: number, out: number}|null} [opts.rates] the customer's own price for the worker's key row (USD per
  *   1K tokens, `ratesFor`) — handed to the one Loop that drives worker, scout and planner rounds, so they read
  *   `rateSource:'caller'`; null = bare-agent's built-in guess. Not applied to a native (CLI) session, which reports its own cost.
- * @param {{in: number, out: number}|null} [opts.judgeRates] the same, for the judge's Loop
- * @param {string|null} [opts.judgeModel] softgreen — WHICH model that judge provider drives
- *   (PRD item 32.1). Resolved by the CALLER (`resolveJudge`, src/judged.js: the spec's signed
- *   `judge` override, else the job's own worker model), never pinned in this library. It
- *   travels with `judgeProvider` or the judged stage stops as a wiring gap: a verdict whose
- *   grader cannot be named is a floor nobody can attribute.
- * @param {any} [opts.judgeProvider] softgreen — the provider a JUDGED close stage runs its
- *   locate call through, built by the CALLER from the RESOLVED judge identity (PRD item
- *   32.1: `resolveJudge`, src/judged.js — the spec's signed `judge` override, else the job's
- *   own worker provider and model), never pinned in this library. Separate
- *   from `provider`/`providerFor` on purpose: the judge tier is not a step knob and never
- *   agent-selectable, and the worker's binding is not a legal stand-in for it. Absent is not
- *   a fall-back — a judged stage with no seam instrument-STOPS as a wiring gap, the same
- *   answer a native job with no `nativeProvider` gets. A close with no judged stage never
- *   reads it.
  * @param {(type: string, data?: object) => object} opts.emit spine emitter (the caller's METERED emit)
  * @param {() => number} opts.remainingUsd the one wallet: what is left of the signed budget right now
  * @param {() => boolean} [opts.isUnpriced] has any round come back with a null cost? (F6) — the
@@ -1080,7 +1064,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1789,27 +1773,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // arbiter-owned fact reaches a stage: through the ctx, never through the
       // declaration. A command close has no human stage to hand it to.
       humanRuling: liveRuling,
-      // SOFTGREEN — the judged stage's paid seam and its meter, the same way: through
-      // the ctx, never the declaration. The seam is null unless the operator wired a
-      // pinned judge provider (a judged stage then STOPS as a wiring gap rather than
-      // grading on the worker's model). The meter emits a distinct `judge-round`
-      // record carrying the call's own honest cost — the SAME emit the worker rounds
-      // ride, so `runJob`'s ONE ledger accounts a close's spend exactly as it accounts
-      // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
-      // the same F6 pricing halt rather than being laundered into $0.
-      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgeRates, thinking: job.thinking === true }) : null,
-      // the seam's other half (PRD item 32.1) — WHICH model that loop drives. Passed
-      // through untouched: this module resolves no judge, exactly as it constructs no
-      // provider. `runJudgedFloor` stops as a wiring gap when it is absent rather than
-      // falling back to a library pin, so a null here is a stop and never a default.
-      ...(judgeModel === null ? {} : { judgeModel }),
-      // F152/PRD 30.4 — the judge's locate call carried NO time bound at all: a
-      // live endpoint that accepts and never answers hung the process forever
-      // (measured), because an open socket is an active handle and no backstop
-      // can fire on it. The SAME derivation every worker round already uses,
-      // handed through as the FUNCTION (not a snapshot) so a retried locate call
-      // re-reads the remaining time rather than reusing the first attempt's.
-      callBounds,
       // REPORT-ONLY: what a rubric-step stage's cited checks read (bareguard `full.evidence`), recorded as `rubric-evidence` for the Result
       // tab's highlights. No verdict, gap, governor or money path reads it. Masked HERE with the run's one `scrub`: the `text` is a quote from
       // the frozen page record, and the spine is append-only. Masking moves offsets, so an entry whose text changed keeps NO spans.
@@ -1823,15 +1786,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           return { ...x, text, spans };
         }),
         ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
-      }),
-      onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
-        stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
-        costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
-        // BA-21 provenance, through the SAME helper the worker rounds use — this record
-        // is on `spendProvenance`'s read list (src/ledger.js). The judge cost payload
-        // (src/kinds.js `onJudgeCost`) forwards the field when the judge Loop carried it
-        // (`defaultJudgeLoop`); a loop that metered no rate leaves the key absent (UNKNOWN).
-        ...rateSourceFields(c),
       }),
     })
     : runStages(stages, scrub, closeOpts));
@@ -2163,7 +2117,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     const listed = await seedListing(workdir, s.seedRef);
     const v = listed.stop === null
-      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null , inputLabels: inputLabelsOf(job.inputs) })
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null , inputLabels: inputLabelsOf(job.inputs) })
       : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
     emit('close-decl', {
       genre: job.closeDecl.genre,

@@ -72,30 +72,3 @@ test('numeric behaviour unchanged: mv117wde\'s real ladder (stage/value pairs) s
   assert.deepEqual(out.map((o) => o.noProgress), [0, 0, 1, 1, 2]);
   assert.equal(t.struckOut(), true);
 });
-
-test('END TO END: a real judged stage that is unsure twice yields the same redSet, a count of 1 through closeGrade, and strikes', async () => {
-  const wd = mkdtempSync(join(tmpdir(), 'judgedstrike-'));
-  mkdirSync(join(wd, 'bin'), { recursive: true });
-  writeFileSync(join(wd, 'bin', 'pulselog.js'), '#!/usr/bin/env node\nconsole.log("hi");\n');
-  const card = { items: [{ rule: 'has-doc', text: 'A doc comment sits directly above the function.' }] };
-  const st = { name: 'docs-judged-floor', kind: 'judged-floor', params: { card, paths: ['bin/pulselog.js'] } };
-  const judgeLoop = () => ({ run: async () => ({ text: JSON.stringify({ functions: [] }), stopReason: 'end_turn', error: null, metrics: { costUsd: 0.0004, unpricedRounds: 0 } }) });
-  const t = createTrend({ stageOrder: ['docs-judged-floor'] });
-  const seen = [];
-  for (let i = 0; i < 4; i += 1) {
-    const r = await runStage(st, { workdir: wd, seedRef: 'HEAD', gapKeep: 'close: ', judgeModel: JUDGE_MODEL, judgeLoop });
-    assert.equal(r.verdict, 'red');
-    assert.ok(Array.isArray(r.detail.redSet) && r.detail.redSet.length === 1, JSON.stringify(r.detail.redSet));
-    seen.push(r.detail.redSet);
-    // the number the governor reads comes from the REAL declared-close path (trendValueOf), never recomputed here
-    const v = await runDeclaredStages([st], (x) => x, { cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop });
-    assert.notEqual(v.verdict, 'satisfied', JSON.stringify(v).slice(0, 300));
-    assert.equal(v.declared, true);
-    assert.equal(v.trendValue, 1, 'a judged stage with one distinct red donates a count of 1 through runDeclaredStages');
-    t.record(closeGrade(v));
-  }
-  assert.deepEqual(seen[0], seen[3]);
-  assert.match(seen[0][0], /^bin\/pulselog\.js\|unsure\|/);
-  assert.equal(t.struckOut(), true);
-  assert.deepEqual(closeGrade({ declared: true, gap: 'g', stage: 's', trendValue: 3 }), { gap: 'g', stage: 's', value: 3 });
-});

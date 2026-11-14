@@ -160,7 +160,6 @@ export function bridgeRunDetail(g, facts) {
     checkTypeTitle: facts.checkTypeTitle,
     model: facts.model,
     provider: null,
-    judgeModel: null,
     budgetUsd: facts.budgetUsd,
     glyph: '✓',
     status: statusFor({ outcome: 'green' }),

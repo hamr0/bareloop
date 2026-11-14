@@ -26,7 +26,6 @@
 import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
-import { CALIBRATION_SIZE } from './judged.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -272,12 +271,6 @@ const PLAIN_MAX_BULLETS = 8;
 const RECORD_MAX_REDS = 40;
 const RECORD_STR_MAX = 600;
 
-// Each of these two finds its text on the FIRST line that has it, anchored to a line start: a lazy (.*?) that
-// fails runs to the end of its line, and the same pattern retried at every later start on that line fails the
-// same way (the later text is a part of the earlier one's), so retrying them only made the read quadratic.
-const MISSING_REDS_RE = /(?<=^|[\n\r\u2028\u2029])(?:(?!expected red\(s\) the pipe did not raise: )[^\n\r\u2028\u2029])*expected red\(s\) the pipe did not raise: (.*?)(?: — |\. The floor)/;
-const EXTRA_REDS_RE = /(?<=^|[\n\r\u2028\u2029])(?:(?!red\(s\) the pipe raised that nobody signed: )[^\n\r\u2028\u2029])*red\(s\) the pipe raised that nobody signed: (.*?)(?: — |\. The floor)/;
-
 /** a code-written sentence that carries the person's own words (a rubric-step sorting red): scrubbed and one line, bounded wide enough to stay whole
  * @param {unknown} s @returns {string} */
 function fullText(s) {
@@ -318,84 +311,15 @@ function rubricShapeSentence(r) {
 }
 
 /**
- * The ONE table of plain kinds → sentence builders. A builder gets the red, the
- * name of the case it lands on (when it lands on one) and the match of the
- * regex that picked it. `unmapped` is the only kind the table does not list.
+ * The ONE table of plain kinds → sentence builders. A builder gets the red. `unmapped` is the only kind the table does not list.
  * Order matters: the first matching entry wins.
- * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed, c: string, m: RegExpMatchArray|null) => string}[]}
+ * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed) => string}[]}
  */
 const PLAIN_TABLE = [
-  // ── the rubric card (validateCard, surfaced as code invalid-value at path "card") ──
-  { kind: 'card-not-object', when: (r) => r.code === 'invalid-value' && /^the card must be an object/.test(r.detail),
-    say: () => 'The model did not hand back a rubric in the expected shape.' },
-  { kind: 'card-empty', when: (r) => r.code === 'invalid-value' && /^the card must carry a non-empty/.test(r.detail),
-    say: () => 'The model\'s rubric has no rules in it.' },
-  { kind: 'card-line-bad', when: (r) => r.code === 'invalid-value' && /^card item \d+: must be an object/.test(r.detail),
-    say: (r) => `Rubric line ${cardLineNo(r)} is not a proper line.` },
-  { kind: 'card-line-no-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs a `rule`/.test(r.detail),
-    say: (r) => `Rubric line ${cardLineNo(r)} does not pick which rule it uses.` },
-  { kind: 'card-line-unknown-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is not a rule this arbiter implements/.test(r.detail),
-    say: (r, _c, _m) => `Rubric line ${cardLineNo(r)} names a rule bareloop does not have (${safeText(/`(.*?)` is not a rule/.exec(r.detail)?.[1] ?? '')}).` },
-  { kind: 'card-line-repeat', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is named twice/.test(r.detail),
-    say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
-  { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
-    say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
   // Part 1b live fix B3: the rubric-step reds are whole sentences already (src/rubricstep.js); a shape red on its parameters is worded here
   { kind: 'rubric-red', when: (r) => r.code.startsWith('rubric-'), say: (r) => fullText(r.detail) },
   { kind: 'rubric-shape', when: isRubricShape, say: (r) => rubricShapeSentence(r) },
-  { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',
-    say: () => 'The model\'s answer was not a rubric plus practice cases.' },
-  // ── the practice-case set as a whole ──
-  { kind: 'set-no-rules', when: (r) => r.code === 'calibration-cardless',
-    say: () => 'The rubric has no rules, so the practice cases had nothing to be checked against.' },
-  { kind: 'set-not-list', when: (r) => r.code === 'calibration-size' && !('declared' in r),
-    say: () => `The practice cases did not come back as a list of ${CALIBRATION_SIZE}.` },
-  { kind: 'set-size', when: (r) => r.code === 'calibration-size',
-    say: (r) => `The model gave ${r.declared} practice case${r.declared === 1 ? '' : 's'}; exactly ${r.required ?? CALIBRATION_SIZE} are needed.` },
-  { kind: 'set-one-sided', when: (r) => r.code === 'calibration-polarity',
-    say: (r) => `The practice cases were ${r.passes} pass and ${r.reds} fail; the set needs at least one of each, or it cannot tell a working judge from one that always gives the same answer.` },
-  // ── one practice case ──
-  { kind: 'case-not-object', when: (r) => r.code === 'calibration-case' && /^calibration\.cases\[\d+\]$/.test(r.path),
-    say: (_r, c) => `${c} is not a proper case.` },
-  { kind: 'case-name-repeat', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path) && /declared twice/.test(r.detail),
-    say: (_r, c) => `Two practice cases share the name ${c}.` },
-  { kind: 'case-name-bad', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path),
-    say: (_r, c) => `${c} has no usable name (a short name in lowercase letters, digits and hyphens is needed).` },
-  { kind: 'case-code-repeat', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path) && /used twice/.test(r.detail),
-    say: (_r, c) => `${c} reuses the same sample code as another case.` },
-  { kind: 'case-code-missing', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path),
-    say: (_r, c) => `${c} has no sample code to look at.` },
-  { kind: 'case-impossible-no-doc', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /expects has-doc red on/.test(r.detail),
-    say: (r, c) => {
-      const fn = safeText(/expects has-doc red on (\S+?),/.exec(r.detail)?.[1] ?? 'a function');
-      return `${c} says "fail: no doc comment" on ${fn}, but ${fn} has a doc comment right above it.`;
-    } },
-  { kind: 'case-pass-lists-fails', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a PASS case expects no reds/.test(r.detail),
-    say: (_r, c) => `${c} is marked as a pass but also lists things that fail.` },
-  { kind: 'case-fail-lists-nothing', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a RED case names WHICH/.test(r.detail),
-    say: (_r, c) => `${c} is marked as a fail but does not say which rule or function fails.` },
-  { kind: 'case-fails-not-list', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path),
-    say: (_r, c) => `${c} does not give its expected failures as a list.` },
-  { kind: 'case-no-expected', when: (r) => r.code === 'calibration-case' && /\.expect$/.test(r.path),
-    say: (_r, c) => `${c} has no expected result.` },
-  { kind: 'case-verdict-bad', when: (r) => r.code === 'calibration-case' && /\.expect\.verdict$/.test(r.path),
-    say: (_r, c) => `${c} expects a result that is neither pass nor fail.` },
-  { kind: 'case-fail-malformed', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path) && /^an expected red is/.test(r.detail),
-    say: (_r, c) => `${c} has an expected failure that is not written as a rule and a function.` },
-  { kind: 'case-fail-repeat', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path),
-    say: (_r, c) => `${c} lists the same failure twice.` },
-  { kind: 'case-fail-rule-foreign', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path) && typeof r.rule === 'string',
-    say: (r, c) => `${c} expects a failure from the rule "${safeText(r.rule)}", which this rubric does not use.` },
-  { kind: 'case-fail-rule-missing', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path),
-    say: (_r, c) => `${c} has an expected failure with no rule named.` },
-  { kind: 'case-fail-fn-missing', when: (r) => r.code === 'calibration-case' && /\.fn$/.test(r.path),
-    say: (_r, c) => `${c} has an expected failure with no function named.` },
 ];
-
-/** @param {PlainRed} r the 1-based rubric line a card red lands on @returns {number} */
-function cardLineNo(r) {
-  return Number(/^card item (\d+):/.exec(r.detail)?.[1] ?? -1) + 1;
-}
 
 /**
  * Every plain kind the table can emit — the list the test enumerates against.
@@ -410,18 +334,13 @@ export function plainKinds() {
  * An unknown code is NEVER dropped: it becomes a generic sentence that still
  * quotes the code and path, under the kind `unmapped`.
  * @param {PlainRed[]} reds
- * @param {{cases?: any}} [o] the proposed cases, to name a case by its own id
  * @returns {PlainReason[]}
  */
-export function plainReasons(reds, { cases = null } = {}) {
+export function plainReasons(reds) {
   return (Array.isArray(reds) ? reds : []).map((red) => {
     const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
-    const idx = /^calibration\.cases\[(\d+)\]/.exec(r.path)?.[1];
-    const given = idx !== undefined && Array.isArray(cases) ? cases[Number(idx)]?.id : undefined;
-    const caseName = idx === undefined ? 'A case'
-      : typeof given === 'string' && given.trim() !== '' ? `Case "${safeText(given)}"` : `Case ${Number(idx) + 1}`;
     const hit = PLAIN_TABLE.find((e) => e.when(r));
-    if (hit) return { kind: hit.kind, sentence: hit.say(r, caseName, null), red: r };
+    if (hit) return { kind: hit.kind, sentence: hit.say(r), red: r };
     return {
       kind: 'unmapped',
       sentence: `The model's proposal failed a check that has no plain wording yet ("${safeText(r.code)}" at ${safeText(r.path)}).`,
@@ -508,7 +427,6 @@ export const STOP_HEADS = {
   'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
   refused: 'Drafting stopped: something in the job or its inputs is not allowed.',
   'interview-incomplete': 'Drafting stopped: the job form was not complete, so there was nothing to draft from.',
-  'judged-floor-gone': 'Drafting stopped: the old judge is gone, so a check that needs it could not be built.',
   'broken-close': 'Drafting stopped: the final check the model wrote could not run.',
   'plan-red': 'Drafting stopped: the plan code built from your checks did not pass its own gate. That is a fault in the build, not in your job.',
   'listing-absent': 'Drafting stopped: the list of your files was not available, so the checks could not name any.',
@@ -524,7 +442,6 @@ export const STOP_HEADS = {
 const STOP_TODO = /** @type {Record<string, string>} */ ({
   refused: 'change what the message above names, then draft again.',
   'interview-incomplete': 'fill in every line of the job form, then draft again.',
-  'judged-floor-gone': 'write what you want checked as a ~ rule on the check list, then draft again.',
   'non-code-source': 'point the job at a code repo, or use a folder or file job instead.',
   'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
   'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',
@@ -576,8 +493,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
 
 // ── THE SIGNING GATES' REFUSAL, in plain words (hamr, 2026-10-09) ──────────────────────────
 //
-// `prepareSigning` (src/authorjob.js) can refuse with a list of reds from four gates. The panel used to say
-// `signing gates failed — calibration-miswrite, calibration-miswrite, calibration-miswrite, injection-leak`.
+// `prepareSigning` (src/authorjob.js) can refuse with a list of reds from three gates (the old fourth, the calibration gate, is gone).
 // Same principle as the proposal text above ("a user should get a reason that they can understand and do
 // something about"): one owner, written by code, the structured reds travel beside it in the drafting log.
 //
@@ -589,10 +505,6 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
 //   gate 1a/1b (the declaration; validateJob + validateCloseDecl): DECLARATION_CODES below, plus seed-unreadable
 //     and listing-unreadable (authorjob.js)
 //   gate 2 (precheck): broken-close
-//   gate 4 (calibration; calibrate.js + authorjob.js calibrationGate): calibration-missing, no-judge-seam,
-//     cap-halt, pricing-red, provider-red, artifact-red (the casualty axes), calibration-miswrite,
-//     injection-leak, and the invalid-set reds (invalid-value at `card`, calibration-case / -size / -polarity /
-//     -cardless / -orphan) which the proposal table above already words
 //   gate 3 refuses with NO red at all (refusal only: the close already passes at the seed)
 // An unknown code is never dropped: it becomes a generic sentence that quotes the code.
 
@@ -600,76 +512,16 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
 export const DECLARATION_CODES = Object.freeze([
   'bounds', 'class-absent', 'class-battery-locked', 'class-ceiling', 'cmd-denied', 'duplicate-kind', 'duplicate-name',
   'env-ownership-absent', 'genre-env-missing', 'genre-env-ungrounded', 'genre-owned-env', 'guard-missing',
-  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'job-line-uncovered', 'judged-outside-write-scope', 'judged-stage-order',
+  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'job-line-uncovered',
   'listing-absent', 'listing-conflict', 'locked-kind', 'missing-field', 'missing-required', 'one-population',
   'path-not-in-listing', 'secret-literal', 'unknown-field', 'unknown-kind',
 ]);
-
-/** the rulebook rules in the words of a person: what the rule flags */
-const RULE_FLAGS = Object.freeze({
-  'has-doc': 'there is no doc comment',
-  'says-what': 'the doc only repeats the function\'s name',
-  params: 'a parameter is missing from the doc, or the doc names one that does not exist',
-  returns: 'the return value is not documented',
-});
-
-/** @param {unknown} rule @returns {string} */
-const ruleFlag = (rule) => (typeof rule === 'string' && Object.hasOwn(RULE_FLAGS, rule)
-  ? /** @type {Record<string,string>} */ (RULE_FLAGS)[rule] : `the rule "${safeText(rule)}" applies`);
-
-/** "says-what · initCache; params · initCache" to [{rule, fn}] @param {string} list */
-const ruleFns = (list) => list.split(';').map((x) => x.trim()).filter(Boolean).map((x) => {
-  const [rule, fn] = x.split('·').map((t) => t.trim());
-  return { rule, fn: fn ?? '' };
-});
-
-/**
- * A calibration-miswrite red as plain sentences: what the practice case expected against what the check found,
- * read off the red's own detail (the compareExpectation pieces calibrate.js writes).
- * @param {PlainRed} r @returns {string[]}
- */
-function miswriteSentences(r) {
-  const who = `Case "${safeText(r.caseId ?? /^case "(.*?)" was graded/.exec(r.detail)?.[1] ?? '')}"`;
-  const missing = MISSING_REDS_RE.exec(r.detail)?.[1];
-  const extra = EXTRA_REDS_RE.exec(r.detail)?.[1];
-  /** @type {string[]} */
-  const out = [];
-  for (const { rule, fn } of missing ? ruleFns(missing) : []) {
-    out.push(`${who}${fn ? ` (${safeText(fn)})` : ''}: the practice case says ${ruleFlag(rule)}, but the check passed it.`);
-  }
-  for (const { rule, fn } of extra ? ruleFns(extra) : []) {
-    out.push(`${who}${fn ? ` (${safeText(fn)})` : ''}: the check says ${ruleFlag(rule)}, but the practice case did not expect that.`);
-  }
-  if (out.length === 0) {
-    const m = /signed "(\w+)", the pipe rendered "(\w+)"/.exec(r.detail);
-    out.push(m
-      ? `${who}: the practice case says ${m[1] === 'red' ? 'fail' : 'pass'}, but the check said ${m[2] === 'red' ? 'fail' : 'pass'}.`
-      : `${who}: the practice case and the check disagree.`);
-  }
-  return out;
-}
 
 /**
  * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed) => string[], todo: string}[]}
  * Order matters; the first match wins. `todo` is the one thing the person can do.
  */
 const SIGNING_TABLE = [
-  { kind: 'miswrite', when: (r) => r.code === 'calibration-miswrite', say: miswriteSentences, todo: 'draft again' },
-  { kind: 'injection-leak', when: (r) => r.code === 'injection-leak',
-    say: (r) => [`A test file tried to trick the judge ("${safeText(r.style ?? '')}"), and what the judge pointed at changed, so the judge could not be shown to resist it.`],
-    todo: 'draft again' },
-  { kind: 'calibration-missing', when: (r) => r.code === 'calibration-missing',
-    say: () => ['The rubric came without practice cases, so the check was never tried out.'], todo: 'draft again' },
-  { kind: 'no-judge', when: (r) => r.code === 'no-judge-seam',
-    say: () => ['No judge model was set up to try out the rubric, so it was never graded.'], todo: 'check the judge model and its key in Settings, then try again' },
-  { kind: 'cap-halt', when: (r) => r.code === 'cap-halt',
-    say: () => ['The spending cap ran out while the practice cases were being graded. Nothing says the rubric is wrong.'], todo: 'raise the cap, then draft again' },
-  { kind: 'pricing-red', when: (r) => r.code === 'pricing-red',
-    say: () => ['A model call could not be priced, so the cap could not be applied; bareloop stopped rather than spend blind.'], todo: 'set the price for this model in Settings, then try again' },
-  { kind: 'provider-red', when: (r) => r.code === 'provider-red',
-    say: () => ['The judge model could not be reached or was cut off while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again in a few minutes' },
-  { kind: 'artifact-red', when: (r) => r.code === 'artifact-red',
-    say: () => ['The judge model answered with something bareloop could not read while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again' },
   // M2: a rubric job's check has no install/build/test commands to blame — its own wording, never the code-job one
   { kind: 'broken-close-rubric', when: (r) => r.code === 'broken-close' && r.rubricJob === true,
     say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) could not run, so nothing it reported could be trusted.`],
@@ -681,22 +533,12 @@ const SIGNING_TABLE = [
     say: () => ['bareloop could not read the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
   { kind: 'listing-unreadable', when: (r) => r.code === 'listing-unreadable',
     say: () => ['bareloop could not list the files of the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
-  { kind: 'judged-outside-fence', when: (r) => r.code === 'judged-outside-write-scope',
-    say: (r) => [`The rubric check looks at ${listText(r.outside)}, but the job may only edit ${listText(r.fence)} — so the run could never fix what it finds.`],
-    todo: 'draft again' },
   // Part 1a: the rubric-step sorting reds are already whole sentences in the person's words (src/rubricstep.js `checkRubricParts`)
   { kind: 'rubric-part', when: (r) => r.code.startsWith('rubric-'), say: (r) => [fullText(r.detail)], todo: 'draft again, or reword that line' },
   { kind: 'rubric-shape', when: isRubricShape, say: (r) => [rubricShapeSentence(r)], todo: 'draft again, or reword that line' },
-  { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
+  { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code),
     say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
 ];
-
-/** a red's string list as plain text, each entry scrubbed and bounded
- * @param {unknown} v @returns {string} */
-const listText = (v) => {
-  const items = (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string' && x !== '').slice(0, 4).map((x) => safeText(x));
-  return items.length ? items.join(', ') : 'files outside the edit area';
-};
 
 /** the sentence when the gates refuse with no red at all (the close already passes on the untouched repository) */
 const SEED_GREEN_SENTENCE = 'Nothing in the close fails on the repository as it is, so there is nothing for a run to do.';
@@ -706,19 +548,18 @@ const NO_CHECK_SENTENCE = 'This job has no check that can fail: no `~` rule, and
 const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "under 80 words"), or answer the question with what the output must contain';
 
 /**
- * Plain sentences for the reds of a refused signing, one or more per red. Card and practice-case reds reuse the
- * proposal table; an unknown code is a generic sentence that quotes the code.
- * @param {PlainRed[]} reds @param {{cases?: any}} [o]
+ * Plain sentences for the reds of a refused signing, one or more per red. An unknown code is a generic sentence that quotes the code.
+ * @param {PlainRed[]} reds
  * @returns {{kind: string, sentence: string, todo: string, red: PlainRed}[]}
  */
-export function signingReasons(reds, { cases = null } = {}) {
+export function signingReasons(reds) {
   /** @type {{kind: string, sentence: string, todo: string, red: PlainRed}[]} */
   const out = [];
   for (const red of Array.isArray(reds) ? reds : []) {
     const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
     const hit = SIGNING_TABLE.find((e) => e.when(r));
     if (hit) { for (const sentence of hit.say(r)) out.push({ kind: hit.kind, sentence, todo: hit.todo, red: r }); continue; }
-    const [pr] = plainReasons([r], { cases });
+    const [pr] = plainReasons([r]);
     if (pr && pr.kind !== 'unmapped') { out.push({ kind: pr.kind, sentence: pr.sentence, todo: 'draft again', red: r }); continue; }
     out.push({
       kind: 'unmapped',
@@ -738,12 +579,12 @@ export function signingKinds() {
 
 /**
  * THE MESSAGE a person reads when the signing gates refuse. The panel's failed step and the CLI print exactly this.
- * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, noCheck?: boolean,
+ * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, noCheck?: boolean,
  *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o `noCheck` = the check block has no built check (block.hasBuiltCheck() is false): the stop is the end check's own words
  * @returns {string}
  */
-export function signingStopText({ reds, refusal = null, cases = null, spend = null, noCheck = false }) {
-  const reasons = signingReasons(reds, { cases });
+export function signingStopText({ reds, refusal = null, spend = null, noCheck = false }) {
+  const reasons = signingReasons(reds);
   if (reasons.length === 0) {
     reasons.push({ kind: 'seed-green', sentence: noCheck ? NO_CHECK_SENTENCE : SEED_GREEN_SENTENCE,
       todo: noCheck ? NO_CHECK_TODO : 'check that the close measures the right thing, or describe a sharper problem',
@@ -755,9 +596,6 @@ export function signingStopText({ reds, refusal = null, cases = null, spend = nu
   const lines = [`The checks before signing did not all pass, so nothing was signed. Spent so far: ${spent ?? 'unknown'}.`, 'What was wrong:'];
   for (const s of shown) lines.push(` • ${s}`);
   if (unique.length > shown.length) lines.push(` • …and ${unique.length - shown.length} more.`);
-  if (reasons.some((x) => x.kind === 'miswrite' || x.kind === 'injection-leak')) {
-    lines.push('The practice cases and the check disagree; either one can be the one that is wrong, so this is not necessarily your doing or the model\'s.');
-  }
   lines.push(`What to do: ${reasons[0].todo}${reasons[0].todo === 'draft again' && spent ? ` (about ${spent} to reach here)` : ''}.`);
   return lines.join('\n');
 }
@@ -765,13 +603,13 @@ export function signingStopText({ reds, refusal = null, cases = null, spend = nu
 /**
  * The reds as the drafting log keeps them: every structured field, the plain
  * sentence beside it, every string secret-scrubbed and bounded, the list capped.
- * @param {PlainRed[]} reds @param {{cases?: any, signing?: boolean}} [o] `signing`: the reds are the signing gates', worded by signingReasons
+ * @param {PlainRed[]} reds @param {{signing?: boolean}} [o] `signing`: the reds are the signing gates', worded by signingReasons
  * @returns {Record<string, any>[]}
  */
-export function redsRecord(reds, { cases = null, signing = false } = {}) {
+export function redsRecord(reds, { signing = false } = {}) {
   /** @param {unknown} s */
   const cut = (s) => { const t = redactSecrets(String(s ?? '')); return t.length > RECORD_STR_MAX ? `${t.slice(0, RECORD_STR_MAX)}…` : t; };
-  return (signing ? signingReasons(reds, { cases }) : plainReasons(reds, { cases })).slice(0, RECORD_MAX_REDS).map(({ kind, sentence, red }) => {
+  return (signing ? signingReasons(reds) : plainReasons(reds)).slice(0, RECORD_MAX_REDS).map(({ kind, sentence, red }) => {
     /** @type {Record<string, any>} */
     const out = { kind, plain: sentence };
     for (const [k, v] of Object.entries(red)) {

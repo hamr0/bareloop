@@ -1132,7 +1132,6 @@ export function createSession(card, deps = {}) {
 
     const { provider } = buildRunnerProviders({
       providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
-      judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed

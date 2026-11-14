@@ -26,7 +26,7 @@
 // TWO CONSEQUENCES, NAMED RATHER THAN SMOOTHED:
 //
 //   1. A LOCKED KIND IS INEXPRESSIBLE IN TOOL MODE. The schema carries one branch
-//      per LIVE kind, so there is no way to spell `judged-floor` or
+//      per LIVE kind, so there is no way to spell
 //      `human-confirms` — which is the `check-passes(name)` move applied one
 //      level up (illegal becomes unsayable, not rejected late). The price is
 //      real: M2's `locked-kind` red is bareloop's DEMAND COUNTER for its own
@@ -77,8 +77,7 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS, MAX_JUDGED_PATHS } from './kinds.js';
-import { JUDGE_RULE_IDS } from './judged.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
@@ -765,39 +764,6 @@ export const PARAM_SCHEMAS = Object.freeze({
   extensions: { type: 'array', minItems: 1, items: { type: 'string' } },
   allowPrefixes: { type: 'array', minItems: 1, items: { type: 'string' } },
   requireNonEmpty: { const: true },
-  // SOFTGREEN's two. `rule` is an ENUM off the judge's own rulebook — where only a
-  // closed set can satisfy a field, the illegal value is made inexpressible rather
-  // than rejected after the fact (`check-passes(name)`, again) — and `text` is the
-  // only free string, carrying the signer's words so a red can be explained in them.
-  card: {
-    type: 'object',
-    description: 'the rubric, as enumerated items: one line per thing the person actually looks for, in the order '
-      + 'they look for them. The rule is SELECTED from the arbiter\'s own rulebook; the text is theirs.',
-    properties: {
-      items: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          type: 'object',
-          properties: {
-            rule: { enum: [...JUDGE_RULE_IDS], description: 'which owned rule this line asserts' },
-            text: { type: 'string', minLength: 1, description: 'what this line means, in the person\'s own words' },
-          },
-          required: ['rule', 'text'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['items'],
-    additionalProperties: false,
-  },
-  paths: {
-    type: 'array',
-    minItems: 1,
-    maxItems: MAX_JUDGED_PATHS,
-    items: { type: 'string' },
-    description: 'the AUTHORITATIVE artifacts to judge, repository-relative, read off the listing. One paid call each.',
-  },
   step: { type: 'integer', minimum: 1, description: 'the number of the job line this stage serves; its file is output/steps/<step>.json' },
   parts: {
     type: 'array',
@@ -2716,7 +2682,7 @@ export async function authorClose({
   // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
   // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
   const checkDraft = (/** @type {any} */ d) => {
-    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs) });
     if (r.ok && lang === RUBRIC_LANG) {
       const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
       if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };

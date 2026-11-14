@@ -169,41 +169,20 @@ export function makeProvider(providerName, { apiKey, model, baseUrl, legacyMaxTo
 }
 
 /**
- * Build the `{provider, providerFor, judgeProvider}` triple both authoring runners need (`src/authorrun.js` and
- * `src/panel/authorsession.js` call it) — ONE seam instead of two copies of the same construction. `model` is the
- * already-RESOLVED worker model id (the caller picked the Settings line).
- *
- * THE JUDGE IS NOT PINNED (PRD item 32.2): it is constructed through this same factory from a `judgeProviderName`/`judgeModel`
- * pair the CALLER resolved. `judgeApiKey` stays a SEPARATE argument: the judge may be a different provider from the worker,
- * and each key is read by the caller from its own row.
+ * Build the `{provider, providerFor}` pair both authoring runners need (`src/authorrun.js` and `src/panel/authorsession.js` call it) — ONE seam
+ * instead of two copies of the same construction. `model` is the already-RESOLVED worker model id (the caller picked the Settings line).
  * @param {object} args
  * @param {string} args.providerName the worker's API shape id
  * @param {string|undefined} args.apiKey the WORKER's key, read from its row's env name
  * @param {string} args.model the already-resolved worker model id
  * @param {string|undefined} [args.baseUrl] the worker row's Base URL
  * @param {boolean} [args.legacyMaxTokens] the worker row's old max_tokens tick
- * @param {string|undefined} args.judgeApiKey the judge's own key
- * @param {string} args.judgeModel the resolved judge model id
- * @param {string} [args.judgeProviderName] the resolved judge shape; defaults to `providerName`
- * @param {string|undefined} [args.judgeBaseUrl] the judge row's endpoint
- * @param {boolean} [args.judgeLegacyMaxTokens] the judge row's old max_tokens tick (defaults to the worker's when the judge shares its provider)
  */
-export function buildRunnerProviders({
-  providerName, apiKey, model, baseUrl, legacyMaxTokens = false, judgeApiKey, judgeModel,
-  judgeProviderName = providerName, judgeBaseUrl = undefined, judgeLegacyMaxTokens = undefined,
-}) {
+export function buildRunnerProviders({ providerName, apiKey, model, baseUrl, legacyMaxTokens = false }) {
   const provider = makeProvider(providerName, { apiKey, model, baseUrl, legacyMaxTokens });
   // a plan step's `model` is the one schema token `sonnet` (STEP_MODELS, src/plan.js): it means THE JOB'S worker model
   const providerFor = (/** @type {string} */ _tier) => provider;
-  // the judge goes through the SAME table as the worker. Reusing the worker instance when the identity matches exactly is not an
-  // optimisation for its own sake: a second instance against the same endpoint/model is a second prompt-cache prefix, and cache
-  // writes are ~41% of the bill.
-  const judgeLegacy = judgeLegacyMaxTokens ?? (judgeProviderName === providerName ? legacyMaxTokens : false);
-  const judgeProvider = (judgeProviderName === providerName && judgeModel === model && judgeApiKey === apiKey
-    && judgeBaseUrl === baseUrl && judgeLegacy === legacyMaxTokens)
-    ? provider
-    : makeProvider(judgeProviderName, { apiKey: judgeApiKey, model: judgeModel, baseUrl: judgeBaseUrl, legacyMaxTokens: judgeLegacy });
-  return { provider, providerFor, judgeProvider };
+  return { provider, providerFor };
 }
 
 /**
