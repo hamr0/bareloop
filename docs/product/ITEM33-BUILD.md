@@ -4460,3 +4460,44 @@ Change:
 5. The signed record (picks, list rows) stores the final rule only.
 
 Fail-first tests: Agree on "~ exactly 3 bullets" proposing "exactly 3 list items" leaves ONE rule, "exactly 3 list items", in the job text, the rows and the signed rows. Typed words replace the same way. A re-draft from that job text asks nothing for that rule (count asks = 0). A flights "~ not a red-eye" Agree leaves only the departure-time rule. Old F318/follower tests are rewritten or deleted (listed in the commit).
+
+## Addendum 2026-11-14 (c): every rubric check on the one list; the try-3 question replaces (signed by hamr in chat)
+
+Goal (hamr, 2026-11-14): one path for every job — URL, sheet, doc, and later repo. One list per job:
+
+- `~ [you]` rules the person writes.
+- `! [agent]` checks the AI proposes after reading the input.
+- `$ [default]` checks code adds per input type.
+
+Code decides, built on bareguard, and is honest about what it cannot check (Not checked + reason). Any clarification, substitution, Add or Drop replaces or removes a row on that one list. One rule, one check. No other judges. Labels on every screen read `~ [you]`, `! [agent]`, `$ [default]`. Order: rubric gaps first (this addendum), then repo jobs join the same list (own spec, $0 test on saved repo drafts first).
+
+Why: a read-only audit of v0.57.0 found the list (`src/checkblock.js`, rubric only, :5) has checks beside it.
+
+- The `$floor` row is built and graded but hidden (`checkblock.js:140`, filtered at renderCard :61).
+- Mandatory guards (`MECHANICAL_GUARDS`, `src/authoring.js:817-835`) show in a separate "Always checked" box (`GUARD_DESCRIPTIONS` / `confirmProtections`, `src/authorflow.js:607-650`).
+- The Result tab (`src/panel/server.js` checksOf ~:1542, rubricStagesOf ~:1238), the Job tab (successFromSpec ~:3365) and the prose/Not-checked notes (`proseNotCheckedItems` `src/rubricstep.js:935`, confirm-card notChecked merge `src/authorflow.js:2304-2310`, `closeDecl.notes` `src/authorjob.js:918`) are built from close stages or AI free text, not list rows.
+- The Audit gives one verdict per stage, so every row of a line shares one result (`src/panel/jobplan.js:186`).
+- A model's try-3 question answer is appended as a new `~` rule beside existing ones (`src/panel/authorsession.js` ~:1265, `q.source !== 'look'`).
+
+### Build (one commit per piece, each with a real fail-first test)
+
+1. The floor shows. The `$floor` row is drawn on every line as `$ [default]`. The separate "line N file — must exist, be complete JSON, and carry text" note (`authorflow.js:644-646`) folds into it: one row, not two.
+2. Guards are `$ [default]` rows, ONCE for the whole job, not per line (hamr's pick a). The separate "Always checked" box goes away for rubric jobs. The write fence line stays as is.
+3. Every view reads only the list's rows: plan card, Job tab, Result tab, Audit, the CLI print (`src/authorrun.js:725-726`). Prose "you judge it at Accept" lines and Not checked notes come from rows only. Nothing a view shows exists outside the list.
+4. Each check gets its own pass/fail (hamr's pick b). The close records a result per row (for example which claim's quote or number failed). The Result tab and the Audit show a pass or fail mark per row, not one shared result per line.
+5. The try-3 question replaces (option B).
+   - The drafter tags each question with the rule it is about (`rule` = that line's `~` rule number) or `new`.
+   - Code checks the tag in normalizeQuestions (`src/authorflow.js` ~:169). A named rule that exists: the answer replaces it. `new`: it is added as a new `~` rule. A named rule that does not exist: the question is dropped with its reason, and that is logged.
+   - The question box shows "This replaces: <old words>" or "This adds a new rule to line N".
+   - The answer reaches the list through the same one-owner path as the check-list answers (syncJobLines / onJobLines), and the list is rebuilt from the new lines.
+   - Try-3 questions are logged under their own draft-log kind so they can be counted.
+
+### Not in this build
+
+- "A guard covers line N" (guardLines) goes to the repo spec.
+- Ticket filter/watch as rows comes from fwd M17's release tag.
+- Run stops stay stops with plain words, not checks: place rule finds nothing, input sha changed, step file too big.
+
+### Proof
+
+First a $0 test on saved rubric drafts: every rule shows once, nothing a view shows comes from outside the list, signed greens stay green and reds stay red. Then build, then the full gate (typecheck, build:types, npm test). Then live: one page job and one Tickets job on DeepSeek direct deepseek-flash, about 10 cents. Live proof decides done.
