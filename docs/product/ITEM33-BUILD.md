@@ -4391,3 +4391,37 @@ Job "List 3 flights from Boston to Chicago" with `~ under $450` and `~ departure
 Seen, NOT fixed (record only): after the drop, a new suggestion "must say 12 results returned" (a page status line) appeared under Suggested. It is legal under the rules and off unless added.
 
 2026-11-13 (orchestrator): hamr ruled A on the Audit write fence row: it shows the gate's own record of the run (`held · N writes blocked`, N = write/edit attempts the gate denied; a missing gate record says so, never "held"). Q2 (the drafting-table duplicate check list removed) and Q3 (the Checks fold starts closed) were accepted by the orchestrator.
+
+## Addendum 2026-11-14 — rubric vs deterministic split: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (signed by hamr in chat)
+
+Rulings (hamr, 2026-11-14):
+
+- PASS/FAIL judge examples are removed everywhere (panel and CLI). The `~` / `!` / `$` check list, with Drop and Add, covers what the examples did.
+- Calibration (the 10-case, 10/10 judge practice gate) is removed. It existed only for the PASS/FAIL judged-repo path, an old ruling from before the check list existed.
+- The fit check (`src/fitcheck.js`, v0.45.0, "I found N of M of your asks") is removed. One place for all checks: consistent, lightweight, in proper order.
+- Deterministic means anything a machine can check (tests, lint, errors), including PR and ticket jobs that lint or test. A repo job is Deterministic.
+- Rubric means read-and-act work: read something, check it, prepare it, close or route a ticket. Rubric on a repo is allowed ONLY for a Tickets job. Rubric never pretends to be deterministic.
+- A ticket action (close, route, reply) is prepared by the run and applied only at Accept. That is NOT in this build. It is the next step.
+- The Audit shows only the latest close everywhere (fold, Result tab, summary line). Stages the latest close did not reach read "not reached". Already built on this branch: 789aa6e9, 15edc428 (live run mwg3pov1).
+
+Why the old path existed: the soft-green judged floor on a repo (a judge card plus 10 practice cases from the person's PASS/FAIL examples) shipped in v0.12.0 to grade wording on code that tests cannot check. The check list (v0.56.0) supersedes it.
+
+POC evidence (n=1 smoke each, preregistered before any paid step):
+
+- Round 1 (bar sha256 `00748e4dedcae91c619520980ca0d7b48b5103dae94a02033042a1caaf8406c1`): a Tickets + rubric draft on hamr0/hol-guard #19 reached the plan card with no PASS/FAIL ask, no calibration, and checks quoting the ticket ("r7 live test: fix sum", "open"). PASS on the bar. Signing then refused with spec-invalid (inputs[0].n expected 1): the POC kept the ticket line's card number 2.
+- Round 2 (bar sha256 `bde3e8d029cc3892ac4afa8865374e0ed91a55d010118dda27c8f0ac44a36079`): with the ticket input renumbered to 1, draft, Sign & run, green. Run mwg70fd7: the frozen input is the real GitHub MCP reply for #19, step outputs quote the title and the state, $0.0099 run + $0.0023 drafting, no calibration lines in the draft log. PASS.
+- What the POC showed the build needs: in a Tickets + rubric job the ticket line is the only input, renumbered from 1 in ONE place (where INPUTS is built, `src/panel/authorsession.js` ~:505). `buildReuseSpec` (~:361) must do the same or Reuse hits the same red. The drafting-time ticket read uses the product's own newest-unrun lookup (`newestUnrunTicket`, `src/ticketnext.js:23`) plus `readTicket`, never a ticket-number box (dropped, as in fwd v0.28.0).
+
+Build plan, one commit per piece, each with a real fail-first test:
+
+1. Remove PASS/FAIL. A `~ PASS:` / `~ FAIL:` line is refused at $0 in plain words: "PASS/FAIL examples are gone — write what you want as a ~ rule." Remove the hint text from the panel and CLI (JOB_BLOCK_HELP, `authorflow.js`), the example logic in `jobBlockFitsCheck`, `renderExamples` and the judge-examples answer key.
+2. Remove calibration and the old judge: the judge-card compile (`src/cardauthor.js`), calibration (`src/calibrate.js` and its gate), and the judged-repo floor path, including their library exports in `src/index.js`. Rubric (soft-green) jobs keep working on the check list. CHANGELOG marks it BREAKING (exports removed).
+3. Remove the fit check (`src/fitcheck.js` and its caller). "A run needs at least one check" stays, from the check list.
+4. Repo + rubric is refused at $0 unless the flow is Tickets: "A repo job uses a Deterministic check."
+5. Tickets + rubric goes through the check-list path (RUBRIC_FILES): ticket text as the quoted input, ticket as input line 1, renumbered in one place including Reuse, newest ticket at drafting.
+6. Old jobs that used PASS/FAIL or the old judge (Reuse, bundles) refuse in plain words: "draft it fresh". Old runs are not repaired.
+7. Docs: README "calibration 10/10" claim, `bareloop.context.md` (verdict types, exports, interview), PRD tick, CHANGELOG.
+
+Proof: full gate (typecheck, build:types, npm test), then one live Tickets + rubric draft and run, and one live page rubric (flights) draft and run, on the real branch. Live proof decides done.
+
+Not in this build: ticket actions applied at Accept (next step).

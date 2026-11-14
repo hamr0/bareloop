@@ -2275,3 +2275,14 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - Open: F330 (agreed checks lost at the last-try drop), F332 (an action word counted as a page ask), Destination buttons not seen live, phone width unchecked.
 
 **Backlog (PARKED until after the check-ledger release): Old-run stats scan, then delete old runs** — a one-time $0 script (no AI) reads every archived run record (spines in `~/PycharmProjects/bareloop-patients`, `~/.config/bareloop/panel-sessions`, and the few under the bareloop repo) and writes one stats file with several views: by job, by provider/model, verdict, cost, wall time, failure kinds, tries to green. hamr reads it and says if it is enough; then `bareloop-patients` and old panel runs are deleted and hamr's own `!` line trims `~/.config/bareloop/runs.jsonl` with a backup first. Saved winning plans (`bareloop-patients/bridges`, `bundles`) are kept or moved into `~/.config/bareloop`, never deleted. The pinned `~/PycharmProjects/bareloop-close` stays. Agreed by hamr 2026-11-13; code goes to a sonnet builder.
+
+### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (v1.134 — 2026-11-14)
+
+- [ ] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
+- [ ] Calibration (10-case judge gate) and the old judge-card path removed, with their exports (BREAKING); rubric jobs run on the check list.
+- [ ] Fit check (`src/fitcheck.js`) removed; "a run needs at least one check" stays.
+- [ ] Deterministic = anything a machine checks (a repo job is Deterministic); Rubric on a repo only for a Tickets job, else refused at $0.
+- [ ] Tickets + rubric on the check list: ticket is input line 1, numbered in one place (incl. Reuse), newest ticket at drafting.
+- [ ] Old PASS/FAIL or judge-card jobs refuse in plain words ("draft it fresh"); old runs not repaired.
+- Audit shows only the latest close everywhere (done on this branch). Pointer: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-14.
+- Next: ticket actions prepared by the run, applied at Accept.
