@@ -130,8 +130,10 @@ export const MAX_QUESTIONS = 3;
  * word anywhere in it (a test greps this): the machine, not the prompt, bounds the count.
  */
 export const QUESTIONS_DESCRIPTION = 'Optional. Add a question only if a refusal in the measured results names a job line that cannot be drafted '
-  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question}: '
-  + '"line" is the number of the job line it is about. If the refusals can be fixed without asking, fix them and leave this out. '
+  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question} plus the tag that says what the answer does: '
+  + '"line" is the number of the job line it is about; "rule" is the number of that line\'s own rule the question is about (the answer then replaces that rule) '
+  + 'or "new": true when it is about nothing the line already says (the answer is added as a new rule). Name a rule only if the line really has it, and tag each question with a rule or with new, never with a mix. '
+  + 'If the refusals can be fixed without asking, fix them and leave this out. '
   + 'Never ask about a budget, a cap or a time limit (the person signs those). Still deliver the complete corrected declaration.';
 
 /**
@@ -162,13 +164,14 @@ export function linesNamedByReds(reds, declaration, lineNums) {
 }
 
 /**
- * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
- * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
- * @param {any} raw @param {number[]} failedLines
- * @returns {{kept: {line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
+ * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named, its text is non-blank, at most {@link MAX_QUESTIONS}, and its TAG is sound
+ * (Addendum 2026-11-14 (c) piece 5): the drafter names the `rule` the question is about (a `~` rule number the line really has: the answer REPLACES it) or says `new` (the answer is added as a new rule).
+ * A rule the line does not have, a question with neither tag and one with both are dropped; code never guesses which the drafter meant. Every drop comes back with its reason, for the draft's log.
+ * @param {any} raw @param {number[]} failedLines @param {{n: number, rules?: string[], rule?: string}[]|null} [jobLines] the person's numbered lines (their rules are what a tag may name)
+ * @returns {{kept: {line: number, question: string, rule?: number, new?: true, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
  */
-export function normalizeQuestions(raw, failedLines) {
-  /** @type {{line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
+export function normalizeQuestions(raw, failedLines, jobLines = null) {
+  /** @type {{line: number, question: string, rule?: number, new?: true, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
   const kept = [];
   /** @type {{reason: string, raw: any}[]} */
   const dropped = [];
@@ -178,11 +181,15 @@ export function normalizeQuestions(raw, failedLines) {
     if (!q || typeof q !== 'object' || !Number.isInteger(q.line)) { dropped.push({ reason: 'no line', raw: q }); continue; }
     if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
     if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
+    const named = Number.isInteger(q.rule);
+    if (named && q.new === true) { dropped.push({ reason: `line ${q.line}: the question names both a rule and new`, raw: q }); continue; }
+    if (!named && q.new !== true) { dropped.push({ reason: `line ${q.line}: the question names neither a rule nor new`, raw: q }); continue; }
+    if (named && !(q.rule >= 1 && q.rule <= lineRules((jobLines ?? []).find((/** @type {any} */ l) => l?.n === q.line)).length)) { dropped.push({ reason: `line ${q.line} has no rule ${q.rule}`, raw: q }); continue; }
     if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
     kept.push({
       line: q.line, question: redactSecrets(q.question.trim()),
       // PRD v1.106 Part 5 Q3: a code-forced question (the early look ask) names the `~` rule it is about and says so; a model's question has neither
-      ...(Number.isInteger(q.rule) ? { rule: q.rule } : {}), ...(typeof q.source === 'string' ? { source: q.source } : {}),
+      ...(named ? { rule: q.rule } : { new: /** @type {const} */ (true) }), ...(typeof q.source === 'string' ? { source: q.source } : {}),
       // PRD v1.107 Part 5b: the kind of a code-forced ask, and (reading asks) the plain words `agree` writes as the `~` rule
       ...(q.ask === 'reading' || q.ask === 'cant-check' ? { ask: q.ask } : {}), ...(q.ask === 'reading' && typeof q.reading === 'string' ? { reading: redactSecrets(q.reading) } : {}),
     });
@@ -967,7 +974,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
           type: 'array',
           items: {
             type: 'object',
-            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 } },
+            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 }, rule: { type: 'integer', minimum: 1 }, new: { type: 'boolean' } },
             required: ['line', 'question'],
           },
           description: QUESTIONS_DESCRIPTION,
@@ -2794,7 +2801,7 @@ export async function authorClose({
         // `questions` is never part of the declaration: stripped before validation, kept only through the machine's filter
         const { questions: rawQuestions, ...rest } = ask.declaration;
         ask.declaration = rest;
-        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines));
+        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines), jobLines);
         askedQuestions = nq.kept;
         droppedQuestions = nq.dropped;
       }

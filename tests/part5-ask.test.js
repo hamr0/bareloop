@@ -55,7 +55,7 @@ test('T2: at most MAX_QUESTIONS are asked, the rest are logged as dropped, never
   const lines = [1, 2, 3, 4].map((n) => ({ n, text: `l${n}`, rule: `r${n}`, rules: [`r${n}`] }));
   const cands = askableFromLook({ facts: [] }, lines);
   assert.equal(cands.length, 4);
-  const kept = normalizeQuestions(cands, [1, 2, 3, 4]);
+  const kept = normalizeQuestions(cands, [1, 2, 3, 4], lines);
   assert.equal(kept.kept.length, MAX_QUESTIONS);
   assert.equal(kept.dropped.length, 1);
   assert.deepEqual(kept.kept.map((q) => [q.line, q.rule, q.source]), [[1, 1, 'look'], [2, 1, 'look'], [3, 1, 'look']], 'line order, rule and source survive the cap');

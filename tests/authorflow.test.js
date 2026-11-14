@@ -2546,7 +2546,7 @@ const greenDecl = (/** @type {string} */ note) => {
   d.notes = [note];
   return d;
 };
-const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question });
+const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question, new: true });
 const offeredAt = (/** @type {any[]} */ calls) => calls.map((c) => Boolean(c.tools[0]?.parameters?.properties?.questions));
 
 test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 3 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {

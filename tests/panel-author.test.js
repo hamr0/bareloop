@@ -1270,6 +1270,51 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
   assert.match(log, /questions-dropped/, 'a dropped question is logged');
 });
 
+test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES that rule (one in, one out), a `new` question adds one; the ask says which, and each is logged as try3-question', async () => {
+  /** @type {any[]} */ const legs = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    legs.push({ jobLines: JSON.parse(JSON.stringify(o.jobLines)), answers1: o.answers[1] });
+    if (legs.length === 1) {
+      return {
+        ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
+        questions: [{ line: 2, rule: 1, question: 'which dependencies?' }, { line: 1, new: true, question: 'which folder?' }],
+        iterations: [], cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+      };
+    }
+    return fakeAuthorFn()();
+  };
+  const sessionsRoot = tmp('panel-author-sess-try3-');
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-replace', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn, prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer');
+  const say = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
+  assert.equal(session.state.pendingAsk.replaces, 'no new deps', 'the ask carries the old words of the rule it replaces');
+  assert.match(say(), /which dependencies\? This replaces: no new deps/);
+  assert.match(session.state.pendingAsk.box.line, /About job line 2.*This replaces: no new deps/);
+  session.send('pin every dependency');
+  await untilTrue(() => /\(2 of 2\)/.test(say()));
+  assert.equal(session.state.pendingAsk.adds, true);
+  assert.match(say(), /which folder\? This adds a new rule to line 1/);
+  session.send('src/date');
+  await untilTrue(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule, l.rules]), [[1, 'src/date', ['src/date']], [2, 'pin every dependency', ['pin every dependency']]],
+    'line 2: the rule was REPLACED, not joined with the old one; line 1: the new rule was added');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: pin every dependency$/m);
+  const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'pin every dependency']);
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'try3-question');
+  assert.deepEqual(log.map((e) => [e.line, e.rule ?? null, e.new ?? null, e.how, e.ruleText ?? null]), [[2, 1, null, 'replaced', 'no new deps'], [1, null, true, 'added', null]]);
+  assert.equal(log[0].answer, 'pin every dependency');
+});
+
 test('P7 item 6: ANY drafting stop says why in plain words on the card — a provider-red names the provider fault, the spend and what to do (not the bare code)', async () => {
   const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-stopreason' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-stop-'),

@@ -28,7 +28,7 @@ const keysHome = () => { const d = tmp('look-ask-home-'); writeFileSync(join(d, 
 const LINES = [{ n: 1, text: 'Find the last 3 releases', rule: 'released in October; one per week', rules: ['released in October', 'one per week'] }];
 
 test('the existing caps apply: at most MAX_QUESTIONS are kept, each on a line the look named', () => {
-  const cands = [1, 2, 3, 4].map((n) => ({ line: n, question: `Line ${n}, rule 1 - "r": what do you mean by it?` }));
+  const cands = [1, 2, 3, 4].map((n) => ({ line: n, new: true, question: `Line ${n}, rule 1 - "r": what do you mean by it?` }));
   const kept = normalizeQuestions(cands, [1, 2, 3, 4]);
   assert.equal(kept.kept.length, MAX_QUESTIONS);
   assert.equal(kept.dropped.length, 1);

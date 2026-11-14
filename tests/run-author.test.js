@@ -888,9 +888,12 @@ test('F175 open half: the signing readout also prints the questions the person A
 test('run-author.mjs\'s ask seam has a `kind: \'answer\'` branch (F175 open half) that shows the question, its index/total, and reads free text', () => {
   const branch = /if \(step\.kind === 'answer'\) \{[\s\S]*?\n {4}\}/.exec(SRC)?.[0];
   assert.ok(branch, 'no kind: "answer" branch found in the ask seam');
-  assert.match(branch, /step\.question/);
-  assert.match(branch, /step\.index/);
-  assert.match(branch, /step\.total/);
+  // the printed words live in `answerPromptLines` (a pure function the branch calls; Addendum 2026-11-14 (c) piece 5 adds what the answer does)
+  assert.match(branch, /answerPromptLines\(step\)/);
+  const lines = /export function answerPromptLines\(step\) \{[\s\S]*?\n\}/.exec(SRC)?.[0] ?? '';
+  assert.match(lines, /step\.question/);
+  assert.match(lines, /step\.index/);
+  assert.match(lines, /step\.total/);
   assert.match(branch, /readFreeText\(false\)/, 'a blank answer must re-ask, same as every other required free-text step');
 });
 

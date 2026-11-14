@@ -74,7 +74,7 @@ import {
   parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
-import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
+import { boxFor, offersOf, panelQuestionText, answerEffectWords, refuseChoice, resolveChoice } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
 
@@ -682,7 +682,7 @@ export function createSession(card, deps = {}) {
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
     } else if (step.kind === 'answer' && (step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
-    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}`);
+    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}${answerEffectWords(/** @type {any} */ (step)) === null ? '' : ` ${answerEffectWords(/** @type {any} */ (step))}`}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -1221,7 +1221,10 @@ export function createSession(card, deps = {}) {
         /** the button the person used for this question (src/questionbox.js), or null when they typed words (the CLI, an old page): a typed choice decides, never the words */
         let via = null;
         for (;;) {
-          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q) } : {}) });
+          // a try-3 question (the drafter's own) says what its answer does: it REPLACES the rule it names, or ADDS a new one (Addendum 2026-11-14 (c) piece 5); a look question has its own words
+          const asked = q.source === 'look' ? null : jobLines.find((l) => l.n === q.line);
+          const replaces = asked && Number.isInteger(q.rule) ? asked.rules[/** @type {number} */ (q.rule) - 1] : undefined;
+          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q) } : {}), ...(typeof replaces === 'string' ? { replaces } : {}), ...(q.source !== 'look' && /** @type {any} */ (q).new === true ? { adds: true } : {}) });
           if (a === null) return null;
           via = takeChoice();
           // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
@@ -1256,8 +1259,14 @@ export function createSession(card, deps = {}) {
         }
         // one rule in, one rule out (hamr 2026-11-14): an answer about a rule of the check list REPLACES that rule, and the list is the one owner (the caller rebuilds the job text from it: `onJobLines`).
         // Only an answer that is not about a list row (a model's own try-3 question) is still added word for word as a new `~` rule on its line.
+        // A try-3 question (the drafter's own) names the rule it is about (the answer REPLACES it, one in one out) or says `new` (the answer is added); the draft log counts each under its own kind
         const line = jobLines.find((l) => l.n === q.line);
-        if (q.source !== 'look' && line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (q.source !== 'look' && line) {
+          const old = Number.isInteger(q.rule) ? line.rules[/** @type {number} */ (q.rule) - 1] : undefined;
+          if (typeof old === 'string') line.rules[/** @type {number} */ (q.rule) - 1] = text; else line.rules.push(text);
+          line.rule = line.rules.join('; ');
+          appendDraftLog(outDir, { kind: 'try3-question', no: Math.max(0, state.steps.length - 1), line: q.line, ...(typeof old === 'string' ? { rule: q.rule, ruleText: redactSecrets(old) } : { new: true }), how: typeof old === 'string' ? 'replaced' : 'added', question: redactSecrets(q.question), answer: redactSecrets(text), at: new Date().toISOString() });
+        }
       }
       const said = left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.';
       // a check-list ask (every question carries a list key): the list has not yet replaced the asked rules, so the message waits for the rebuilt lines (`onJobLines`) and is drawn from them

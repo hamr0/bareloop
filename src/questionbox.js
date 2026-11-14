@@ -42,9 +42,20 @@ export function panelQuestionText(q) {
 }
 
 /**
+ * What a try-3 answer DOES, in the words the ask shows (Addendum 2026-11-14 (c) piece 5): `replaces` = the old words of the `~` rule the answer replaces; `adds` = the answer is a new rule of the line.
+ * Null when the question says neither (a code-forced look question has its own words). ONE owner: the panel's box, its chat line and the CLI print it.
+ * @param {{replaces?: unknown, adds?: unknown, line?: unknown}} step @returns {string|null}
+ */
+export function answerEffectWords(step) {
+  if (typeof step.replaces === 'string' && step.replaces !== '') return `This replaces: ${step.replaces}`;
+  if (step.adds === true && Number.isInteger(step.line)) return `This adds a new rule to line ${step.line}`;
+  return null;
+}
+
+/**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
  * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
- * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string}} step
+ * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
  * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
@@ -64,7 +75,7 @@ export function boxFor(step) {
   if (step.offers?.drop) choices.push({ choice: 'drop', label: 'Drop it' });
   return {
     head: before ? 'A question before drafting' : `A question the plan raised (${step.index ?? 1} of ${step.total ?? 1})`,
-    line: Number.isInteger(step.line) ? `About job line ${step.line}` : '',
+    line: `${Number.isInteger(step.line) ? `About job line ${step.line}` : ''}${answerEffectWords(step) === null ? '' : `${Number.isInteger(step.line) ? '. ' : ''}${answerEffectWords(step)}`}`,
     text: panelQuestionText({ question: step.question, source: step.source, ...(Number.isInteger(step.line) ? { line: step.line } : {}) }),
     choices,
     orLabel: choices.length > 0 ? 'Or type a new rule:' : 'Type your answer:',

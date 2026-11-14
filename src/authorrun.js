@@ -129,6 +129,7 @@ import { commandFor } from './invoke.js';
 import { readSourceManifest, missingDependencies, nonRepoSourceMessage, isRubricFilesManifest } from './source.js';
 import { tallyCalls } from './text.js';
 import { splitReadNotes } from './pagedropwords.js';
+import { answerEffectWords } from './questionbox.js';
 import {
   declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
   openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText,
@@ -159,6 +160,20 @@ class ExitSignal extends Error {
  *   `'bareloop author'` so a person who typed that is told to re-run THAT,
  *   never a script path they never invoked and may not have on disk.
  */
+
+/**
+ * The lines the CLI prints for one question the plan raised: the ask, then (try-3 question, Addendum 2026-11-14 (c) piece 5) what the answer does, in the panel's own words ("This replaces: ..." or
+ * "This adds a new rule to line N"). Pure.
+ * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean}} step @returns {string[]}
+ */
+export function answerPromptLines(step) {
+  const effect = answerEffectWords(step);
+  return [
+    `Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can be signed (pick "Start over" or "Fix" instead if you cannot answer it):`,
+    `  ? ${step.question}`,
+    ...(effect === null ? [] : [`  ${effect}`]),
+  ];
+}
 
 /** the tag of a row by its kind, one spelling with the panel: `~ [you]`, `! [agent]`, `$ [default]` (a check with no row kind says nothing) @param {unknown} by @returns {string} */
 const rowTag = (by) => (by === 'you' ? '~ [you]' : by === 'agent' ? '! [agent]' : by === 'default' ? '$ [default]' : '');
@@ -772,9 +787,7 @@ export async function main(argv, deps = {}) {
       // "Confirm"/"Type the goal yourself" cannot proceed until it is
       // answered, right here, with no extra model call. A blank line re-asks
       // the same question ("Start over" or "Fix" are the ways out).
-      out(`Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can `
-        + 'be signed (pick "Start over" or "Fix" instead if you cannot answer it):');
-      out(`  ? ${step.question}`);
+      for (const l of answerPromptLines(step)) out(l);
       return readFreeText(false);
     }
     if (step.kind === 'goal') {
