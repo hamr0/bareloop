@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- panel: the Audit's checks fold (and the Result tab's checks box) show ONLY the run's latest close (the last `outer-close` or fix-loop `close-verdict`), not the `outer-close` precheck that runs before the fix loop; a run that went green in the fix loop no longer shows failed rows, and a stage the latest close never reached (it stops at its first red) reads grey "not reached" instead of the precheck's old result (live run mwg3pov1).
+
 ### Changed
 
 - bareguard ^0.36.0 (check helpers, ruling #82; existing rubric fingerprints and verdicts unchanged — peer-tested on 90 saved plans and 35 verdicts).

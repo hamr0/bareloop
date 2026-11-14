@@ -74,7 +74,7 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS,
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
@@ -1534,13 +1534,14 @@ function stepChecksOf(records, spec) {
 }
 
 /**
- * The generic Result tab's "The checks" box, from the run's LAST `outer-close` record: each stage's plain question ({@link stageQuestionText}'s one
+ * The generic Result tab's "The checks" box, from the run's FINAL close record (the last `outer-close` or fix-loop staged `close-verdict`): each stage's plain question ({@link stageQuestionText}'s one
  * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. A run the close never reached
  * falls back to the checks its steps ran ({@link stepChecksOf}); `null` when neither exists.
  * @param {any[]} records @param {any} spec
  */
 function checksOf(records, spec) {
-  const oc = records.findLast((r) => r && r.type === 'outer-close' && Array.isArray(r.stages));
+  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1)
+  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
   if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
@@ -1555,9 +1556,16 @@ function checksOf(records, spec) {
     };
   });
   const ok = stages.filter((/** @type {any} */ s) => s.passed).length;
+  // a stage the signed close declares but this LATEST close never reached (it stops at the first red) is "not reached" — never the precheck's old reading
+  const ran = new Set(stages.map((/** @type {any} */ s) => s.name));
+  const unreached = [...(kindMeta ?? new Map())].filter(([n]) => !ran.has(n)).map(([name, m]) => ({
+    name, question: m.question, passed: false, notReached: true, status: NOT_REACHED,
+    value: null, baseline: null, direction: m.direction, baselineKind: m.baselineKind, notes: null,
+  }));
+  const shown = kindMeta ? [...kindMeta.keys()].map((n) => stages.find((/** @type {any} */ s) => s.name === n) ?? unreached.find((u) => u.name === n)).concat(stages.filter((/** @type {any} */ s) => !kindMeta.has(s.name))) : stages;
   return {
-    head: `${ok} of ${stages.length} passed · the close ran them after the worker stopped`,
-    passed: ok, total: stages.length, allPassed: ok === stages.length, stages,
+    head: `${ok} of ${stages.length} passed${unreached.length ? ` · ${unreached.length} not reached` : ''} · the close ran them after the worker stopped`,
+    passed: ok, total: stages.length, notReached: unreached.length, allPassed: ok === stages.length, stages: shown,
     notes: stages.filter((/** @type {any} */ s) => s.notes).map((/** @type {any} */ s) => ({ name: s.name, text: s.notes })),
   };
 }
@@ -3430,9 +3438,9 @@ function auditChecksFor(row, records, spec, opts) {
     } catch { guards = []; }
   }
   const got = checksOf(records, spec);
-  const results = got ? new Map(got.stages.map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
+  const results = got ? new Map(got.stages.filter((/** @type {any} */ x) => !x.notReached).map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
   const rows = scopedAuditRows(row, records);
-  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows));
+  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows), got !== null && got.notReached !== undefined);
 }
 
 /**

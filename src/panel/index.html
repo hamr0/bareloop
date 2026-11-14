@@ -3845,7 +3845,7 @@
   }
   // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
   function auditCheckRowHtml(r){
-    var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
+    var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : r.result === "not-reached" ? ["grey", r.word || "not reached"] : ["grey", "no result recorded"];
     return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
   }
   // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
@@ -3861,7 +3861,8 @@
     var all = (ac.checks || []).concat(ac.always || []);
     var nPass = all.filter(function(r){ return r.result === "passed" || r.result === "held"; }).length;
     var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
-    var head = "checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
+    var nUnreached = all.filter(function(r){ return r.result === "not-reached"; }).length;
+    var head = "checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + (nUnreached ? " &middot; " + nUnreached + " not reached" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn audit-part-toggle";
@@ -4413,7 +4414,7 @@
     var rows = k.stages.map(function(s){
       var num = stageNumberText(s);
       return '<div class="rs-check" data-testid="result-check"><span class="rs-q">' + escapeXml(stageQuestionText(s)) + '</span><span class="rs-num hint" data-testid="result-check-num">' +
-        (num ? escapeXml(num) : "") + escapeXml(stageTriedText(s)) + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + '</span></div>';
+        (num ? escapeXml(num) : "") + escapeXml(stageTriedText(s)) + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : s.notReached ? "grey" : "red", s.status.word, "result-check-state") + '</span></div>';
     }).join("");
     var notes = k.notes.length ? '<details data-testid="result-close-notes"><summary>the close\'s own notes</summary><div class="ro-value" style="white-space:pre-wrap">' +
       k.notes.map(function(n){ return escapeXml(n.text); }).join("\n") + '</div></details>' : "";
@@ -4498,7 +4499,7 @@
     if(!k) return "checks: the close did not run any check for this run";
     var bits = k.stages.map(function(s){
       var num = stageNumberText(s);
-      return s.passed ? escapeXml(stageQuestionText(s)) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "") + escapeXml(stageTriedText(s));
+      return s.passed ? escapeXml(stageQuestionText(s)) : s.notReached ? gridGlyph("·") + " " + escapeXml(stageQuestionText(s)) + " — " + escapeXml(s.status.word) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "") + escapeXml(stageTriedText(s));
     });
     return "checks: " + k.passed + " of " + k.total + " " + (k.allPassed ? gridGlyph("✓") : "") + (bits.length ? " &middot; " : "") + bits.join(" &middot; ");
   }

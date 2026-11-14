@@ -88,10 +88,13 @@ test('a FAILED run (mvy0cx24, escalated) has the tab too: what it changed and wh
   assert.equal(getRunDetail('mvy0cx24', opts).hasResult, true);
   const r = getRunResult('mvy0cx24', opts);
   assert.equal(r.kind, 'generic');
-  assert.equal(r.checks.head, '6 of 7 passed · the close ran them after the worker stopped');
-  const bad = r.checks.stages.filter((s) => !s.passed);
-  assert.deepEqual(bad.map((s) => [s.name, s.status.word]), [['no-suppressions', 'failed']]);
-  assert.equal(bad[0].question, 'no casts or silencers added?');
+  // hamr 2026-11-14: ONLY the latest close — the fix loop's close stopped at its first red, so the precheck's readings of the stages after it are not shown
+  assert.equal(r.checks.head, '1 of 2 passed · 5 not reached · the close ran them after the worker stopped');
+  assert.deepEqual(r.checks.stages.map((s) => [s.name, s.status.word]), [
+    ['changed-from-seed', 'passed'], ['typecheck-target-zero-errors', 'failed'], ['typecheck-outside-not-worse', 'not reached'], ['tests-kept', 'not reached'],
+    ['suite-green', 'not reached'], ['suite-zero-failing-tests', 'not reached'], ['no-suppressions', 'not reached'],
+  ]);
+  assert.equal(r.checks.stages.find((s) => s.name === 'no-suppressions').question, 'no casts or silencers added?');
   assert.equal(r.changed.edits, 4);
   assert.match(r.changed.head, /^1 file · src\/checks\.js · \+\d+ −\d+ lines over 4 edits$/);
   assert.match(r.run.steps, /^3 steps \(.*\), 1 replan$/);
@@ -169,7 +172,8 @@ test('a resumed run (two closes): the checks are the LAST close\'s stages', () =
   });
   const k = getRunResult('mvkj03w7', { home: w.home }).checks;
   assert.equal(k.total, 1);
-  assert.equal(k.head, '0 of 1 passed · the close ran them after the worker stopped');
+  assert.equal(k.head, '0 of 1 passed · 6 not reached · the close ran them after the worker stopped');
+  assert.equal(k.notReached, 6);
 });
 
 test('a run whose close has rubric stages but is not labelled soft-green wears the generic tab, never the rubric payload', () => {
