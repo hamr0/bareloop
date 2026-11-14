@@ -47,3 +47,24 @@ test('A one owner: the sync read agrees with the look\'s own dry read (the real 
     assert.equal(phraseInNoResult(TEXT, money, w), dry.dropped.length === 1, w);
   }
 });
+
+test('A Drop then Add: a ledger-suggested "Rome" re-Added from Suggested stays Not checked in the row, the card, signedRows() and the close', () => {
+  const b = new CheckBlock({ texts: { flights: TEXT }, labels: ['flights'], asks: false });
+  b.fromJob([{ n: 1, text: 'Read the flights page', rules: [] }, { n: 2, text: 'list 3 flights from Madrid to Rome', rules: [] }]);
+  b.addLook([price({ forRule: undefined, reading: undefined })], []);
+  b.reconcile();
+  b.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: [{ op: 'add', line: 2, kind: 'phrase', name: 'Rome', words: ['Rome'], source: 'flights' }] });
+  b.reconcile();
+  b.rowChoice('L2.phrase.rome', 'drop');
+  b.reconcile();
+  b.rowChoice('L2.phrase.rome', 'add');
+  const close = b.reconcile();
+  const sentence = '"Rome" is on the page but in none of its results, so it is not checked.';
+  const row = b.rows.find((r) => r.key === 'L2.phrase.rome');
+  assert.equal(row?.state, 'not-checked');
+  assert.equal(row?.reason, sentence);
+  assert.equal(b.card().some((c) => c.key === 'L2.phrase.rome' && c.state === 'built'), false);
+  const signed = b.signedRows().filter((r) => r.key === 'L2.phrase.rome');
+  assert.equal(signed.some((r) => r.state === 'built'), false);
+  assert.equal(close.parts.flatMap((/** @type {any} */ p) => p.facts ?? []).some((/** @type {any} */ f) => f.phrase === 'Rome'), false);
+});
