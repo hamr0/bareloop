@@ -36,7 +36,7 @@ Like a CNC machine, bareloop builds the thing that does the work, then lets a ga
 
 **Guide rails, not just guardrails.** Guardrails stop the agent going off the road: a money cap, a time cap, and a read/write fence it can't move. Guide rails keep it on the road: each new worker hears what earlier tries read, searched and changed, diffs included; two misses redraw the plan; past lessons go to the planner; an unclear job gets up to 3 questions, not a guess.
 
-**Verification.** The check sits outside the agent's loop: code first, a judge only where code can't decide, and the judge only points while code makes the call. A red goes back with the real error to be fixed, until it's green or out of budget.
+**Verification.** The check sits outside the agent's loop: code decides. Anything code can't check is listed as Not checked, and you judge it at Accept. A red goes back with the real error to be fixed, until it's green or out of budget.
 
 **Evidence.** Every call, every allowed or blocked read and write, every check result and every cent is recorded. You can audit it in the panel and replay it at $0. Research facts are quoted from saved sources.
 
@@ -45,7 +45,7 @@ Like a CNC machine, bareloop builds the thing that does the work, then lets a ga
 **Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. If no check exists yet, say what you need and the agent builds that check first.
 > *"Fix the lint errors."* · *"Add doc comments to every function."* · *"Split this 3,000-line file without breaking a test."*
 
-**Rubric (research)**: it searches, collects, compares and hands you a report where every fact is quoted from a saved copy of its source. A judge only points at the quotes, and fixed rules decide.
+**Rubric (research)**: it searches, collects, compares and hands you a report where every fact is quoted from a saved copy of its source. An AI only points at the page's own words, and fixed rules in code decide.
 > *"Find flights LAX→SFO under $400, nonstop, no red-eye."* · *"Compare these 5 laptops on price, weight and warranty."*
 
 ## What it won't do

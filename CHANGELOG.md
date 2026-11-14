@@ -24,6 +24,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- docs (hamr 2026-11-14, piece 7): `bareloop.context.md` (header, verdict classes, interview set, job block, rubric-on-files section, retired `judged-floor` note, Tickets + rubric section, exports list) and the README verification lines say what the code now does (no calibration, no judge decides, no fit check, no PASS/FAIL examples); PRD v1.134 contract lines ticked.
 - **An old job (PASS/FAIL examples or the old judge) is not reused or bundled (hamr 2026-11-14, piece 6).** A signed spec with a `~ PASS:` / `~ FAIL:` job-line rule or a `judged-floor` stage refuses in plain words ("This job was made with PASS/FAIL examples or the old judge, which are gone. Draft it fresh.") at Reuse (the panel route and the session), at a scheduled fire (it is a Reuse), and at `bareloop run <bundle>`, before any key, repo or copy is touched. One reader: `oldJobWords` (`src/job.js`). Old runs are not repaired.
 - **Rubric on a repo is refused at $0 (hamr 2026-11-14, piece 4).** A Deterministic check is anything a machine can check, so a repo job is Deterministic; Rubric on a repo is allowed only for a Tickets job. A rubric card whose Inputs line 1 is a repo, and a `soft-green` pick at the CLI interview (it always takes a repo), are refused before anything is made or asked: "A repo job uses a Deterministic check."
 - bareguard ^0.36.0 (check helpers, ruling #82; existing rubric fingerprints and verdicts unchanged — peer-tested on 90 saved plans and 35 verdicts).

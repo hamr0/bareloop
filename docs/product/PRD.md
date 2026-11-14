@@ -2278,11 +2278,12 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 ### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (v1.134 — 2026-11-14)
 
-- [ ] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
-- [ ] Calibration (10-case judge gate) and the old judge-card path removed, with their exports (BREAKING); rubric jobs run on the check list.
-- [ ] Fit check (`src/fitcheck.js`) removed; "a run needs at least one check" stays.
-- [ ] Deterministic = anything a machine checks (a repo job is Deterministic); Rubric on a repo only for a Tickets job, else refused at $0.
-- [ ] Tickets + rubric on the check list: ticket is input line 1, numbered in one place (incl. Reuse), newest ticket at drafting.
-- [ ] Old PASS/FAIL or judge-card jobs refuse in plain words ("draft it fresh"); old runs not repaired.
+- [x] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
+- [x] Calibration (10-case judge gate) and the old judge-card path removed, with their exports (BREAKING); rubric jobs run on the check list.
+- [x] Fit check (`src/fitcheck.js`) removed; "a run needs at least one check" stays.
+- [x] Deterministic = anything a machine checks (a repo job is Deterministic); Rubric on a repo only for a Tickets job, else refused at $0.
+- [x] Tickets + rubric on the check list: ticket is input line 1, numbered in one place (incl. Reuse), newest ticket at drafting.
+- [x] Old PASS/FAIL or judge-card jobs refuse in plain words ("draft it fresh"); old runs not repaired.
 - Audit shows only the latest close everywhere (done on this branch). Pointer: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-14.
+- Built 2026-11-14 on fix/after-0.56, one commit per piece (pieces 1-7); `docs/product/ITEM33-BUILD.md` Addendum 2026-11-14. The live Tickets + rubric draft/run and the live page-rubric (flights) draft/run are still to be done by hamr; ticks are build ticks, not live proof.
 - Next: ticket actions prepared by the run, applied at Accept.
