@@ -48,18 +48,19 @@ const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSr
 test('the Audit lists Checks, Not checked and Always checked, each row tagged, with its recorded result (real run mwenvde5)', () => {
   const ac = getRunDetail('mwenvde5', { home: runHome() }).auditChecks;
   assert.ok(ac, 'the run detail carries the Audit check list');
-  assert.equal(ac.checks.length, 6);
+  assert.equal(ac.checks.length, 7, 'six checks and the line\'s `$` floor row (one list, Addendum 2026-11-14 (c) piece 1)');
   assert.ok(ac.checks.every((c) => c.result === 'passed'), JSON.stringify(ac.checks));
-  assert.deepEqual(ac.checks.map((c) => c.by), ['you', 'you', 'agent', 'agent', 'agent', 'agent']);
+  assert.deepEqual(ac.checks.map((c) => c.by), ['you', 'you', 'agent', 'agent', 'agent', 'agent', 'default']);
+  assert.match(ac.checks[6].text, /^line 1 · its file output\/steps\/1\.json must exist, be complete JSON/);
   assert.match(ac.checks[0].text, /^line 1 · fact · price/);
   assert.equal(ac.notChecked.length, 1);
   assert.equal(ac.notChecked[0].by, 'default');
   assert.equal(ac.notChecked[0].result, 'not-checked');
   assert.match(ac.notChecked[0].text, /every claim quotes its input — this line finds facts, so it has no text to quote/);
-  assert.equal(ac.always.length, 3);
-  assert.deepEqual(ac.always.map((g) => g.text.split(' — ')[0]), ['changed-from-seed', 'write fence', 'line 1 file']);
+  assert.equal(ac.always.length, 2, 'the "line 1 file" note folded into the floor row');
+  assert.deepEqual(ac.always.map((g) => g.text.split(' — ')[0]), ['changed-from-seed', 'write fence']);
   assert.ok(ac.always.every((g) => g.by === 'default'));
-  assert.deepEqual(ac.always.map((g) => g.result), ['passed', 'held', 'passed'], 'the write fence reads the gate\'s own record of this run');
+  assert.deepEqual(ac.always.map((g) => g.result), ['passed', 'held'], 'the write fence reads the gate\'s own record of this run');
   assert.equal(ac.always[1].word, 'held · 0 writes blocked', 'the real gate audit of mwenvde5 records 1 allowed write and no denial');
   assert.match(rowHtml(ac.always[0]), /\[default\]<\/span>.*<b class="st-word">passed<\/b>/);
   assert.match(rowHtml(ac.always[1]), /<b class="st-word">held · 0 writes blocked<\/b>/);
@@ -72,7 +73,7 @@ test('a guard that failed in the close reads failed, and so does the line it gua
     ? { ...r, verdict: 'unsatisfied', stages: r.stages.map((s) => (s.name === 'changed-from-seed' ? { ...s, verdict: 'unsatisfied' } : s)) } : r)));
   const ac = getRunDetail('mwenvde5', { home }).auditChecks;
   assert.equal(ac.always[0].result, 'failed');
-  assert.equal(ac.always[2].result, 'passed');
+  assert.equal(ac.checks[6].result, 'passed', 'the floor row reads its own line stage');
   assert.match(rowHtml(ac.always[0]), /<b class="st-word">failed<\/b>/);
 });
 
@@ -80,7 +81,8 @@ test('a run whose close recorded nothing says no result recorded for every row, 
   const home = runHome((recs) => recs.filter((r) => !['outer-close', 'check-run', 'exit-eval', 'close-verdict', 'step-end'].includes(r.type)));
   const ac = getRunDetail('mwenvde5', { home }).auditChecks;
   assert.ok(ac.checks.every((c) => c.result === 'none'), JSON.stringify(ac.checks));
-  assert.deepEqual(ac.always.map((g) => g.result), ['none', 'held', 'none'], 'the fence row reads the gate record, which this run has');
+  assert.equal(ac.checks[6].result, 'none');
+  assert.deepEqual(ac.always.map((g) => g.result), ['none', 'held'], 'the fence row reads the gate record, which this run has');
 });
 
 test('the page draws the three sections with bold headings and no second check list in the drafting table', () => {

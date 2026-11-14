@@ -643,8 +643,10 @@ export function confirmProtections({ verdictType, lang, writeScope = null, jobLi
   }
   // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
   // JSON and has text — a fact of the close's shape (`rubric-step`), not a plan of the model's, so it is listed from code
+  // (one list, Addendum 2026-11-14 (c) piece 1: a close whose signed list already holds a line's `$` floor row says it THERE, once; only an older close with no floor row keeps this note)
   if (lang === RUBRIC_LANG && Array.isArray(jobLines)) {
-    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
+    const floors = Array.isArray(closeDecl?.list) ? closeDecl.list.filter((/** @type {any} */ r) => r && r.kind === 'floor' && r.state === 'built').map((/** @type {any} */ r) => r.line) : [];
+    for (const l of jobLines) if (!floors.includes(l.n)) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
   }
   return lines;
 }

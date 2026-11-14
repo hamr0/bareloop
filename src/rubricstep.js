@@ -989,6 +989,18 @@ export function lineCarriesText(closeDecl, n) {
 }
 
 /**
+ * The words of a line's `$` floor row (Addendum 2026-11-14 (c) piece 1), written by code from the signed close: the line's file must exist and be complete JSON, and carry text only when the close
+ * really puts a text check on it ({@link lineCarriesText}); a facts-only line says it has none. ONE owner: the card, the Job tab and the Audit read it.
+ * @param {any} closeDecl @param {number} n @returns {string}
+ */
+export function floorText(closeDecl, n) { return floorWords(n, lineCarriesText(closeDecl, n)); }
+
+/** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @returns {string} */
+export function floorWords(n, carriesText) {
+  return `its file ${stepFileRel(n)} must exist, be complete JSON${carriesText ? ', and carry text' : '; this line finds facts, so it has no text check'}`;
+}
+
+/**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
@@ -1010,8 +1022,13 @@ export function checksOfClose(closeDecl) {
     const r = list.find((/** @type {any} */ x) => x.line === line && x.kind === 'count' && isRec(x.part) && x.part.part === pi);
     return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
   };
+  // the `$` floor of a line (piece 1): its signed row, built; the words are code's (floorText). A close with no list (an older job) has no floor row to read, so none is drawn
+  const floorOf = (/** @type {any} */ st) => {
+    const r = list.find((/** @type {any} */ x) => x.kind === 'floor' && x.line === st.params.step);
+    return r ? [{ line: st.params.step, text: floorText(closeDecl, st.params.step), by: /** @type {'default'} */ ('default'), key: String(r.key) }] : [];
+  };
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
-    ? st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+    ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
@@ -1022,7 +1039,7 @@ export function checksOfClose(closeDecl) {
         const own = i < facts.length ? factBy(st.params.step, facts[i]?.name) : countBy(st.params.step, pi);
         return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
       });
-    })
+    }), ...floorOf(st)]
     : []));
 }
 

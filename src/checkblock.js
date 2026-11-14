@@ -8,7 +8,7 @@ import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult } from './pagedry.js';
-import { boundInWords, rubricStepShapeReds, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, floorWords, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -58,9 +58,10 @@ export const REASON = Object.freeze({
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
 export function renderCard(rows) {
-  return rows.filter((r) => r.kind !== 'floor' && r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
+  return rows.filter((r) => r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
     let body;
-    if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
+    if (r.kind === 'floor') body = floorWords(r.line, r.carriesText !== false);
+    else if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
     else if (r.kind === 'count') body = `${CARD_T.count} ${r.min ?? ''}-${r.max ?? ''}`;
     else if (r.kind === 'cited') body = `${CARD_T.cited} "${r.source ?? CARD_T.theInput}"`;
     else if (r.kind === 'note') body = defaultNoteText(r.line);
@@ -329,6 +330,8 @@ export class CheckBlock {
       /** @type {string[][]} */ const lineRows = [];
       this.buildLine(l, lineParts, lineRows, factLines);
       if (lineParts.length) stages.push({ name: `line-${l.n}`, kind: 'rubric-step', fromLine: [l.n], params: { step: l.n, parts: lineParts } });
+      // the line's `$` floor row says whether its file carries text (a facts-only line has no text check): code's own reading of the parts just built
+      for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
         map.push({ part: parts.length, line: l.n, rows: lineRows[i] ?? [], origin: 'code' });
