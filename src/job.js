@@ -248,6 +248,25 @@ export function flowTypeOf(spec) {
   return spec?.mcp ? 'tickets' : 'plain';
 }
 
+/** hamr 2026-11-14 (rubric vs deterministic split, piece 6): the words for a job made with PASS/FAIL examples or the old judge, which are gone. Old runs are not repaired. */
+export const OLD_JOB_WORDS = 'This job was made with PASS/FAIL examples or the old judge, which are gone. Draft it fresh.';
+
+/**
+ * Is this signed spec an OLD job: one that carries a `judged-floor` stage (the old judge) or a job line with a `PASS:` / `FAIL:` rule (the old examples)?
+ * ONE reader for every door that takes a signed spec back in (Reuse, a scheduled fire, an exported bundle).
+ * @param {Record<string, any>} spec @returns {string|null} the plain refusal, or null when the spec is not an old job
+ */
+export function oldJobWords(spec) {
+  /** @type {any[]} */
+  const stages = Array.isArray(spec?.closeDecl?.stages) ? spec.closeDecl.stages : [];
+  if (stages.some((st) => st && st.kind === 'judged-floor')) return OLD_JOB_WORDS;
+  /** @type {any[]} */
+  const lines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  const isExample = (/** @type {unknown} */ r) => typeof r === 'string' && /^(PASS|FAIL):/i.test(r.trim());
+  if (lines.some((l) => l && ((Array.isArray(l.rules) && l.rules.some(isExample)) || isExample(l.rule)))) return OLD_JOB_WORDS;
+  return null;
+}
+
 /** the shape of an MCP server or tool name in a job (the bridge names a tool `<server>_<tool>`) */
 const MCP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 

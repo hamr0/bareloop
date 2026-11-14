@@ -51,7 +51,7 @@ import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptio
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
-import { FLOW_TYPES, flowTypeOf } from '../job.js';
+import { FLOW_TYPES, flowTypeOf, oldJobWords } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
@@ -854,6 +854,9 @@ export function createSession(card, deps = {}) {
     const keyProblem = apiKeyProblem(apiKey);
     if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
 
+    // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused; old runs are not repaired. Before any copy or read.
+    const oldJob = deps.reuse ? oldJobWords(deps.reuse.spec) : null;
+    if (oldJob !== null) { refuse(`${oldJob} Nothing spent.`); return; }
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(SOURCE);

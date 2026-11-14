@@ -30,7 +30,7 @@ import { createSession, ticketRubricInputs, validateJobCard, validateReuseCard, 
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
-import { validateJob, flowTypeOf } from '../job.js';
+import { validateJob, flowTypeOf, oldJobWords } from '../job.js';
 import { ticketAnyway } from './tickets.js';
 import { cardScheduleOf } from '../cardschedule.js';
 
@@ -167,6 +167,9 @@ export function createAuthorRoutes(opts) {
     // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
     const rubric = reuse ? reuse.spec?.verdictType === 'soft-green' : card?.checkType === 'rubric';
     if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
+    // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused, nor fired by a schedule; old runs are not repaired
+    const oldJob = reuse ? oldJobWords(reuse.spec) : null;
+    if (oldJob !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: `${oldJob} Nothing spent.` });
     // piece 8: the card's Flow type and MCP pick, decided at $0 before any session (a reuse keeps the signed spec's own MCP). Nothing is started: the pick reads the check log.
     /** @type {ReturnType<typeof resolveFlowCard>} */
     const flow = reuse
