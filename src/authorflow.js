@@ -2301,12 +2301,16 @@ export async function runConfirmTurn({
     // a rubric job's turn keeps nothing but the goal of the model's plan: its checks, gaps and questions are the list's to make, so code discards any it sent
     if (goalOnly) r.plan = { ...r.plan, checks: [], notChecked: [], questions: [] };
     const notChecked = [...(r.plan.notChecked ?? [])];
-    for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
+    const lookRows = dropRows(facts?.look?.dropped).map((row) => ({ row, text: dropLine(row, jobLines, lineRules) }));
+    for (const { text } of lookRows) if (!notChecked.includes(text)) notChecked.push(text);
+    // ONE row per `~` rule on the CARD (hamr 2026-11-14, run mwgsl7zx): a rule the check list says Not checked is said by its row alone (its reason is the look's sentence, or the person's kept Drop, which wins),
+    // so the look's own line for that rule is not drawn beside it. `accepted.notChecked` below stays the full list the drafter is told.
+    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && l.row.rule !== undefined && block !== null && block.saysRule(l.row.line, l.row.rule)));
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
     const planFor = (/** @type {any} */ c) => ({
-      ...r.plan, ...(c === null ? {} : { checkItems: c.checkItems, checks: c.checkItems.map((/** @type {any} */ x) => x.text) }), protections, notChecked: c === null ? notChecked : [...new Set([...notChecked, ...c.notChecked])], ...(c?.notCheckedBy ? { notCheckedBy: c.notCheckedBy } : {}),
+      ...r.plan, ...(c === null ? {} : { checkItems: c.checkItems, checks: c.checkItems.map((/** @type {any} */ x) => x.text) }), protections, notChecked: [...new Set([...(c === null ? notChecked : shownNotChecked()), ...(c === null ? [] : c.notChecked)])], ...(c?.notCheckedBy ? { notCheckedBy: c.notCheckedBy } : {}),
       signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)),
       ...(block !== null && cardOf !== null ? { suggested: block.suggestedView(), editable: true } : {}),
     });

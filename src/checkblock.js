@@ -119,6 +119,8 @@ export class CheckBlock {
   /** @param {number} line @param {string} [kind] */
   rowsOn(line, kind) { return this.rows.filter((r) => r.line === line && (kind === undefined || r.kind === kind)); }
   ruleRows(/** @type {number} */ line) { return this.rows.filter((r) => r.kind === 'rule' && r.line === line); }
+  /** does a `~` rule's own row say it is Not checked? Then its row is the ONE place the rule is said (its reason: the look's sentence, or the person's Drop) @param {number} line @param {number} rule */
+  saysRule(line, rule) { return this.rows.some((r) => r.kind === 'rule' && r.line === line && r.rule === rule && r.state === 'not-checked' && typeof r.reason === 'string' && r.reason !== ''); }
   /** every word the person wrote on a line: the line and its `~` rules */
   said(/** @type {number} */ line) { return [this.lines.find((l) => l.n === line)?.text ?? '', ...this.ruleRows(line).map((r) => r.text)].join(' '); }
   /** @param {Row} r @returns {Row} the row as stored (a repeated key gets `#2`) */
