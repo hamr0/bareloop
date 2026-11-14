@@ -68,3 +68,18 @@ test('A Drop then Add: a ledger-suggested "Rome" re-Added from Suggested stays N
   assert.equal(signed.some((r) => r.state === 'built'), false);
   assert.equal(close.parts.flatMap((/** @type {any} */ p) => p.facts ?? []).some((/** @type {any} */ f) => f.phrase === 'Rome'), false);
 });
+
+// /branch-review finding on 637e76ad: matchBang's money filter had `&&`/`||` ungrouped, so a source-carrying add ignored the line and money test.
+test('A source-carrying add on a line with NO money fact builds, though another line has one; on the money line it is still refused', () => {
+  const run = (/** @type {number} */ line) => {
+    const b = new CheckBlock({ texts: { flights: TEXT }, labels: ['flights'], asks: false });
+    b.fromJob([{ n: 1, text: 'Read the flights page', rules: [] }, { n: 2, text: 'list 3 flights from Madrid to Rome', rules: [] }]);
+    b.addLook([price({ forRule: undefined, reading: undefined })], []);
+    b.reconcile();
+    b.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: [{ op: 'add', line, kind: 'phrase', name: 'Rome', words: ['Rome'], source: 'flights' }] });
+    b.reconcile();
+    return b.rows.find((r) => r.key === `L${line}.phrase.rome`);
+  };
+  assert.equal(run(1)?.state, 'built');
+  assert.equal(run(2)?.state, 'not-checked');
+});

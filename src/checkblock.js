@@ -312,7 +312,7 @@ export class CheckBlock {
     // fwdloop run walk-m16-flights run-1: "Rome" was on the page (search box, toggles) but in no result row, so no run could pass it. When the line's look reads result rows (a money fact), a phrase in none of them is refused with the look's own sentence (one owner: pagedry.js + pagedropwords.js)
     // (a look fact already went through the same dry read in pagemap.js, so only the AI's own adds are read here)
     if (r.from === 'agent' && (r.shape ?? 'phrase') === 'phrase') {
-      const money = this.lookFacts.filter((/** @type {any} */ f) => f.line === r.line && f.shape === 'money' && !r.source || !f.source || f.source === r.source);
+      const money = this.lookFacts.filter((/** @type {any} */ f) => f.line === r.line && f.shape === 'money' && (!r.source || !f.source || f.source === r.source));
       if (phraseInNoResult(text, money, provedWords[0])) { r.can = { ok: false, why: dropSentence({ line: r.line, fact: r.name ?? provedWords[0], other: provedWords[0], reason: 'phrase-no-result' }) }; return; }
     }
     r.can = { ok: true, how: 'bang', word: provedWords[0] };
