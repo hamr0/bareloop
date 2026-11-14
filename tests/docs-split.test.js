@@ -28,7 +28,8 @@ test('PRD: the v1.134 contract ticks are checked, with the pointer', () => {
   const p = read('docs/product/PRD.md');
   const at = p.indexOf('### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed');
   assert.ok(at > 0);
-  const section = p.slice(at);
+  const end = p.indexOf('\n### ', at + 1);
+  const section = p.slice(at, end < 0 ? undefined : end); // this section only: a later addendum (v1.135) has its own ticks
   const ticks = section.split('\n').filter((l) => /^- \[[ x]\]/.test(l));
   assert.equal(ticks.length, 6);
   assert.deepEqual(ticks.filter((l) => l.startsWith('- [ ]')), [], 'every contract line is ticked');

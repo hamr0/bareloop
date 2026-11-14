@@ -19,7 +19,7 @@ const tmp = (p = 'r10-panel-') => { const d = mkdtempSync(join(tmpdir(), p)); ma
 const keysHome = () => { const d = tmp('r10-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
 
-test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree writes the plain words as a ~ rule; the picks reach the drafter; the draft log holds the call and each pick', async () => {
+test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree REPLACES the asked rule with the plain words; the picks reach the drafter; the draft log holds the call and each pick', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } };
@@ -54,9 +54,9 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.deepEqual(menuPlan.lines[0].picked, ['at most 80 words']);
   assert.equal(session.signPrepare().ok, true);
   assert.ok(await until(() => legs.length === 1));
-  assert.deepEqual(legs[0].jobLines[0].rules, ['under 80 words', 'be nice', 'at most 80 words']);
-  // ruling 1 (2026-11-12): agree writes a `~` line into the signed job lines AND a row with the SAME rule number; the agreed rule's row carries the pick (no aiProposal)
-  assert.deepEqual(legs[0].block.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'under 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true], [3, 'at most 80 words', null, false]]);
+  assert.deepEqual(legs[0].jobLines[0].rules, ['at most 80 words', 'be nice']);
+  // one rule in, one rule out (2026-11-14): agree REPLACES the asked rule in the signed job lines and its row; that row carries the pick (no aiProposal)
+  assert.deepEqual(legs[0].block.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true]]);
   const log = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.ok(log.some((e) => e.kind === 'call' && e.label === 'check-suggest' && e.costUsd === 0.0009), 'the suggestion call is booked like a drafting call');
   const picks = log.filter((e) => e.kind === 'check-pick');
