@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- bareguard ^0.36.0 (check helpers, ruling #82; existing rubric fingerprints and verdicts unchanged — peer-tested on 90 saved plans and 35 verdicts).
+
 ## [0.56.0] - 2026-11-13
 
 ### Added
