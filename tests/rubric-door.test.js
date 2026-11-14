@@ -292,7 +292,7 @@ test('createSession with the REAL prepareSigning on a rubric job on a file: reac
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
   const signing = JSON.parse(readFileSync(join(session.state.outDir, 'signing.json'), 'utf8'));
   assert.equal(signing.ok, true);
-  assert.equal(signing.gates.calibration, null, 'no calibration: zero judge rounds');
+  assert.equal('calibration' in signing.gates, false, 'no calibration gate any more');
   assert.deepEqual(signing.gates.seedVerdict.workRed, ['line-1']);
   assert.equal(session.state.draftSpentUsd, 0.0005, 'only the confirm round was booked: signing added no judge round');
   assert.equal(session.state.steps.some((s) => s.id === 'calibrate'), false, 'no calibrating line in the progress list');

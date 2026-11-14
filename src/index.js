@@ -163,27 +163,6 @@ export {
   // stores, so a calibration harness compares one shape rather than two.
   CALIBRATION_SIZE, validateCalibrationSet, expectedOf,
 } from './judged.js';
-// SOFTGREEN module 4 — the COMPILE. Q6 becomes the rubric card and Q7 becomes the
-// frozen calibration set, both on the D5 shown-and-fixed path: the LLM proposes
-// through `proposeJudgedArtifacts`, an integrating UI shows the proposal, the
-// SIGNER's fix goes through `signJudgedArtifacts`, and `foldJudgedArtifacts`
-// enumerates both into the closeDecl — where the spec hash covers them, so a card
-// line or a case is a re-sign like every other spec edit.
-export {
-  proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts,
-} from './cardauthor.js';
-// SOFTGREEN module 5 — THE CALIBRATION GATE. `runCalibration` grades the whole
-// pipe (locate + decide) over the signed ten and the five arbiter-owned injection
-// artifacts; `prepareSigning` runs it and refuses on anything short of all of
-// them. Exported because an integrating UI has to be able to RUN and RENDER the
-// gate — the graded rows are what a signer reads before giving a signature — and
-// because the battery is evidence a reader may want to inspect rather than take
-// on trust. `INJECTION_LOCATE_BATTERY` and `INJECTION_CARD` are ARBITER-OWNED
-// constants: no signer authors them and nothing stores them in a spec.
-export {
-  runCalibration,
-  INJECTION_LOCATE_BATTERY, CASUALTY_AXES,
-} from './calibrate.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
 // guard batteries it must show the user under D5 and cannot let them remove).

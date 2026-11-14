@@ -26,9 +26,7 @@
 import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
-import { judgedStages } from './kinds.js';
 import { CALIBRATION_SIZE } from './judged.js';
-import { INJECTION_LOCATE_BATTERY } from './calibrate.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -66,42 +64,6 @@ export function fellBackLines(authoring) {
   if (!fb) return [];
   const stages = fb.brokenStages?.length ? fb.brokenStages.join(', ') : '(unnamed)';
   return [`FELL BACK  ${fb.from} broke ${fb.brokenStages?.length ?? 0} check(s) (${stages}) — kept ${fb.to} instead`];
-}
-
-/**
- * THE TWO SIGNED JUDGED ARTIFACTS, as a person reads them before signing
- * (softgreen modules 4+5). Absent on a close that judges nothing, which is why
- * this returns an EMPTY list rather than a "no card" line: a green close has no
- * rubric and saying so every run is noise, not information.
- *
- * The CARD is printed in full — it is short, it is the whole standard the judge
- * will hold the work to, and it is the signer's own words. The CASES are printed
- * as a ROSTER (id, verdict, itemized reds) rather than in full: ten real source
- * artifacts is a page of code the terminal cannot usefully show, and what a
- * signer checks at this surface is that both polarities are there and that each
- * red names something they recognise. The artifacts themselves are in the spec
- * file, which is named right above this block.
- * @param {{closeDecl?: any}} spec the RESOLVED spec
- * @returns {string[]}
- */
-export function rubricLines({ closeDecl }) {
-  const judged = judgedStages(closeDecl);
-  if (!judged.length) return [];
-  /** @type {string[]} */
-  const lines = ['rubric card (what the judge will hold the work to — YOUR words, signed)'];
-  for (const it of judged[0]?.params?.card?.items ?? []) lines.push(`  [${it.rule}] ${it.text}`);
-  const cases = closeDecl?.calibration?.cases ?? null;
-  if (cases === null) {
-    lines.push('calibration  NONE STORED — a judged close is not signable without one');
-    return lines;
-  }
-  const pass = cases.filter((/** @type {any} */ c) => c?.expect?.verdict === 'pass').length;
-  lines.push(`calibration set (${cases.length} case(s): ${pass} pass, ${cases.length - pass} red)`);
-  for (const c of cases) {
-    const reds = (c?.expect?.reds ?? []).map((/** @type {any} */ r) => `${r.rule}@${r.fn}`).join(', ');
-    lines.push(`  ${String(c?.expect?.verdict ?? '?').padEnd(4)} ${c?.id}${reds ? `  → ${reds}` : ''}`);
-  }
-  return lines;
 }
 
 /**
@@ -143,104 +105,6 @@ export function answeredQuestionLines(confirmed) {
   const lines = [`answered questions  ${qas.length} — the plan raised these and the person answered them inline before signing`];
   for (const qa of qas) for (const line of String(qa).split('\n')) lines.push(`  ${line}`);
   return lines;
-}
-
-/** a quote for a human line: one line, cut at `max` with the cut VISIBLE
- * @param {unknown} q @param {number} [max] @returns {string} */
-function shortQuote(q, max = 80) {
-  const one = String(q ?? '').replace(/\s+/g, ' ').trim();
-  return one.length > max ? `${one.slice(0, max)}…[truncated, ${one.length} chars]` : one;
-}
-
-/**
- * ONE plain line saying WHY a graded case reds, read off its own `diag` (F192):
- * the first red's rule, function, `why` and quoted text — and how many more the
- * record holds. A case with no reds says why it has none (no facts: each
- * attempt's axis and cause). Null when the row predates `diag`.
- * @param {any} row a `graded` or `injection.styles` row
- * @returns {string|null}
- */
-function diagLine(row) {
-  const d = row?.diag;
-  if (!d) return null;
-  const first = d.reds?.[0];
-  if (first) {
-    const more = d.reds.length > 1 ? ` (+${d.reds.length - 1} more red(s) in signing.json)` : '';
-    return `          why: ${first.rule} · ${first.fn} — ${first.why}; quote: ${first.quote === null ? '(none)' : `"${shortQuote(first.quote)}"`}${more}`;
-  }
-  const failed = (d.attempts ?? []).filter((/** @type {any} */ a) => !a.ok);
-  if (failed.length) {
-    return `          why: no facts — ${failed.map((/** @type {any} */ a) => `attempt ${a.attempt} [${a.axis}] ${shortQuote(a.detail, 120)}`).join('; ')}`;
-  }
-  return d.reason ? `          why: ${shortQuote(d.reason, 120)}` : null;
-}
-
-/**
- * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
- * one whose rows a signer has to read case by case.
- *
- * ITEMIZED, never an aggregate percentage: "9/10" tells a person nothing about
- * which line of their own rubric is wrong, and the fix for a miss is a card line
- * or a corrected case (§4.3's ceiling). A CASUALTY prints under its own name and
- * says so, because a dead judge is not a failed set.
- * @param {any} calibration `signing.gates.calibration`
- * @returns {string[]}
- */
-export function calibrationLines(calibration) {
-  if (!calibration) return ['  4 calibration  not reached'];
-  if (calibration.stop === 'calibration-missing') {
-    return ['  4 calibration  FAIL — this close judges, and no calibration set is stored with it'];
-  }
-  if (calibration.stop === 'no-judge') {
-    return ['  4 calibration  FAIL — no judge seam was wired, so the gate never ran (a wiring gap, never a pass)'];
-  }
-  const graded = calibration.graded ?? [];
-  const styles = calibration.injection?.styles ?? [];
-  /** @type {string[]} */
-  const lines = [`  4 calibration  ${calibration.ok ? 'PASS' : 'FAIL'} — ${graded.filter((/** @type {any} */ g) => g.ok).length}/`
-    + `${graded.length} case(s) graded correctly, ${styles.filter((/** @type {any} */ s) => s.resisted).length}/${styles.length} `
-    + `injection style(s) resisted  [judge ${calibration.judgeModel}]`];
-  if (calibration.casualty) {
-    lines.push(`      CASUALTY on ${calibration.casualty.kind} "${calibration.casualty.at}" [${calibration.casualty.axis}] `
-      + '— a broken judge is no evidence about the set');
-    const cl = diagLine(calibration.casualty);
-    if (cl) lines.push(cl);
-  }
-  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) {
-    lines.push(`      WRONG  ${g.id}: ${g.detail}`);
-    const l = diagLine(g);
-    if (l) lines.push(l);
-  }
-  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) {
-    lines.push(`      LEAK   ${s.style}: ${s.detail}`);
-    const l = diagLine(s);
-    if (l) lines.push(l);
-  }
-  lines.push(`      certified  card ${String(calibration.cardHash ?? 'unknown').slice(0, 12)}  cases `
-    + `${String(calibration.casesHash ?? 'unknown').slice(0, 12)}  set ${String(calibration.setHash ?? 'unknown').slice(0, 12)}`);
-  return lines;
-}
-
-/**
- * The calibration gate's real result as one line a person reads next to the step (hamr, 2026-10-09: the panel
- * showed `calibrating ✓` over a gate that graded 8 of 10 and let 2 attack styles leak). PASS IS THE GATE'S OWN:
- * `ok` is `calibration.ok` as `runCalibration` decided it (every case right as a SET of reds, every style
- * resisted), never recomputed here, so there is no second spelling of the floor. The counts are read from the
- * record (`graded[].ok` is `compareExpectation`, which compares reds as sets); the denominators are the live
- * constants (CALIBRATION_SIZE, the battery length), so a gate that stopped part-way reads "x of 10", not "x of x".
- * @param {any} calibration `signing.gates.calibration`
- * @returns {{ok: boolean, note: string}|null} null when the gate was not reached
- */
-export function calibrationSummary(calibration) {
-  if (!calibration || typeof calibration !== 'object') return null;
-  const graded = Array.isArray(calibration.graded) ? calibration.graded : [];
-  const styles = Array.isArray(calibration.injection?.styles) ? calibration.injection.styles : [];
-  const right = graded.filter((/** @type {any} */ g) => g?.ok === true).length;
-  const resisted = styles.filter((/** @type {any} */ x) => x?.resisted === true).length;
-  return {
-    ok: calibration.ok === true,
-    note: `${right} of ${CALIBRATION_SIZE} practice cases graded right · ${resisted} of ${INJECTION_LOCATE_BATTERY.length} attack tests resisted`,
-  };
 }
 
 /**
@@ -328,11 +192,6 @@ export function phaseLine(phase, data = {}) {
     case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
     case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
     case 'seed-read-done': return `· seed read done (${data.stages ?? '?'} stage(s))`;
-    // softgreen modules 4+5: the compile, and the paid gate that grades it
-    case 'rubric': return `· compiling the rubric card and ${data.size ?? '?'} calibration cases from your own answers…`;
-    case 'rubric-done': return `· rubric ${data.ok ? 'compiled' : `NOT compiled (${data.stop ?? 'unknown'})`} after ${data.attempts ?? '?'} attempt(s)`;
-    case 'rubric-scrubbed': return `· MASKED before storing: ${(data.paths ?? []).join(', ')} — the stored bytes differ from what was typed`;
-    case 'calibration': return `· calibration gate: ${data.cases ?? '?'} case(s) + ${data.styles ?? '?'} injection style(s), one real judge call each…`;
     // A phase this renderer does not know is PRINTED, not swallowed: the callers
     // are the library's own seams and a new one appearing unrendered is how a
     // readout silently stops covering what it reports on.
@@ -624,34 +483,6 @@ function said1(r) {
   return isRubricShape(red) ? rubricShapeSentence(red) : safeText(red.detail);
 }
 
-/** the stops this module explains in plain words */
-export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
-
-/**
- * THE MESSAGE a person reads when the rubric proposal was refused. Both doors
- * (the panel's failed step and the CLI) print exactly this.
- * @param {{stop: string, reds: PlainRed[], cases?: any, spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null,
- *   source?: 'proposal'|'signer'}} o
- * @returns {string}
- */
-export function proposalStopText({ stop, reds, cases = null, spend = null, source = 'proposal' }) {
-  const reasons = plainReasons(reds, { cases });
-  const unique = [...new Set(reasons.map((x) => x.sentence))];
-  const shown = unique.slice(0, PLAIN_MAX_BULLETS);
-  const onlyCases = reasons.length > 0 && reasons.every((x) => x.kind.startsWith('case-') || x.kind.startsWith('set-'));
-  const spent = spendText(spend);
-  const head = stop === 'rubric-invalid'
-    ? 'The rubric and practice cases failed the last check before signing, so nothing was signed.'
-    : `The model's ${onlyCases ? 'practice cases for your rubric' : 'rubric and practice cases'} didn't hold up, so we stopped before grading anything.`;
-  const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`, 'What was wrong:'];
-  for (const s of shown) lines.push(` • ${s}`);
-  if (unique.length > shown.length) lines.push(` • …and ${unique.length - shown.length} more.`);
-  lines.push(source === 'signer' ? 'This one is from the edit made before signing.' : 'This is the model\'s mistake, not yours.');
-  lines.push(`What to do: draft again${spent ? ` (about ${spent} to reach here)` : ''}.`);
-  lines.push('If it fails the same way twice, make your PASS/FAIL examples more concrete.');
-  return lines.join('\n');
-}
-
 // ── ANY DRAFTING STOP, in plain words (P7 item 6, live session smv2bzdqmp0f8, 2026-10-10) ───────────────────────────
 // A provider-red used to reach the panel as the bare line "Stopped: provider-red" — a code, no reason. Every stop of the
 // drafting loop that is not a rubric-proposal or signing refusal (those have their own wording above and below) now says
@@ -677,8 +508,7 @@ export const STOP_HEADS = {
   'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
   refused: 'Drafting stopped: something in the job or its inputs is not allowed.',
   'interview-incomplete': 'Drafting stopped: the job form was not complete, so there was nothing to draft from.',
-  'calibration-missing': 'Drafting stopped: the practice cases that prove the rubric were missing, so the check could not be trusted.',
-  'invalid-set': 'Drafting stopped: the rubric and its practice cases do not fit together, so they could not be graded.',
+  'judged-floor-gone': 'Drafting stopped: the old judge is gone, so a check that needs it could not be built.',
   'broken-close': 'Drafting stopped: the final check the model wrote could not run.',
   'plan-red': 'Drafting stopped: the plan code built from your checks did not pass its own gate. That is a fault in the build, not in your job.',
   'listing-absent': 'Drafting stopped: the list of your files was not available, so the checks could not name any.',
@@ -694,8 +524,7 @@ export const STOP_HEADS = {
 const STOP_TODO = /** @type {Record<string, string>} */ ({
   refused: 'change what the message above names, then draft again.',
   'interview-incomplete': 'fill in every line of the job form, then draft again.',
-  'calibration-missing': 'draft again; if it stops the same way twice, make your PASS/FAIL examples more concrete.',
-  'invalid-set': 'draft again; if it stops the same way twice, make your PASS/FAIL examples more concrete.',
+  'judged-floor-gone': 'write what you want checked as a ~ rule on the check list, then draft again.',
   'non-code-source': 'point the job at a code repo, or use a folder or file job instead.',
   'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
   'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',

@@ -42,7 +42,7 @@ import {
 // so its callers (src/authorrun.js, src/interviewrun.js) stay under tsc's
 // rootDir; no logic changed in the move.
 import {
-  declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
   openQuestionLines, answeredQuestionLines, fellBackLines,
 } from '../src/authorreadout.js';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
@@ -1535,79 +1535,8 @@ test('signing readout: a missing goal reads as MISSING, never as an empty pair o
 
 // ── the JUDGED half of the same readout (softgreen modules 4+5) ──────────────
 
-test('signing readout: a judged close shows its CARD in full and its ten as a roster', () => {
-  const spec = {
-    closeDecl: {
-      stages: [
-        { name: 'guard', kind: 'files-changed', params: {} },
-        { name: 'reads-well', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'every function is documented' }] } } },
-      ],
-      calibration: {
-        cases: [
-          { id: 'p1', artifact: 'export function a() {}', expect: { verdict: 'pass', reds: [] } },
-          { id: 'r1', artifact: 'export function b() {}', expect: { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'b' }] } },
-        ],
-      },
-    },
-  };
-  const lines = rubricLines(spec);
-  assert.ok(lines.some((l) => l.includes('[has-doc] every function is documented')), 'the signer reads their own words');
-  assert.ok(lines.some((l) => /1 pass, 1 red/.test(l)), 'both polarities are visible at a glance');
-  assert.ok(lines.some((l) => l.includes('r1') && l.includes('has-doc@b')), 'a red case names WHICH line, on WHICH function');
-  // the artifacts themselves are NOT dumped: ten real files is a page of code
-  assert.ok(!lines.some((l) => l.includes('export function')));
-  // a close that judges nothing says nothing — an empty list, not a "no card" line
-  assert.deepEqual(rubricLines({ closeDecl: { stages: [{ name: 'g', kind: 'command-exit' }] } }), []);
-  // …and a judged close with NO set says exactly that
-  assert.ok(rubricLines({ closeDecl: { stages: [spec.closeDecl.stages[1]] } }).some((l) => /NONE STORED/.test(l)));
-});
 
-test('calibration readout: itemized rows, never an aggregate — and a casualty says so', () => {
-  const pass = calibrationLines({
-    ok: true, judgeModel: 'claude-haiku-4-5', cardHash: 'a'.repeat(64), casesHash: 'b'.repeat(64), setHash: 'c'.repeat(64),
-    graded: [{ id: 'p1', ok: true }, { id: 'r1', ok: true }],
-    injection: { styles: [{ style: 's', resisted: true }] },
-  });
-  assert.match(pass[0], /PASS — 2\/2 case\(s\).*1\/1 injection style\(s\)/);
-  assert.match(pass.at(-1), /certified {2}card aaaaaaaaaaaa/, 'WHICH bytes were certified, and by which judge');
-  assert.match(pass[0], /claude-haiku-4-5/);
 
-  const fail = calibrationLines({
-    ok: false, judgeModel: 'm', graded: [{ id: 'r1', ok: false, detail: 'verdict: signed "red"' }],
-    injection: { styles: [{ style: 'direct override', resisted: false, detail: 'the facts moved' }] },
-  });
-  assert.ok(fail.some((l) => l.includes('WRONG  r1: verdict: signed "red"')));
-  assert.ok(fail.some((l) => l.includes('LEAK   direct override: the facts moved')));
-
-  const dead = calibrationLines({ ok: false, stop: 'provider-red', graded: [], injection: { styles: [] }, casualty: { kind: 'case', at: 'p1', axis: 'provider-red' } });
-  assert.ok(dead.some((l) => /CASUALTY.*no evidence about the set/.test(l)));
-  // the two refusals that never ran a call read as refusals, not as 0/0 scores
-  assert.match(calibrationLines({ stop: 'calibration-missing' })[0], /no calibration set is stored/);
-  assert.match(calibrationLines({ stop: 'no-judge' })[0], /never ran/);
-  assert.match(calibrationLines(null)[0], /not reached/);
-});
-
-test('calibration readout (F192): one plain why-line per failing case, quote cut visibly', () => {
-  const long = '/** ' + 'q'.repeat(200);
-  const lines = calibrationLines({
-    ok: false, judgeModel: 'm',
-    graded: [
-      { id: 'full', ok: false, detail: 'x', diag: { attempts: [], reds: [
-        { rule: 'has-doc', fn: 'formatBytes', why: 'the quoted line is not in the artifact', quote: long },
-        { rule: 'params', fn: 'formatBytes', why: 'w', quote: null },
-      ] } },
-      { id: 'nofacts', ok: false, detail: 'y', diag: { reds: [], attempts: [{ attempt: 1, ok: false, axis: 'artifact-red', detail: 'did not parse' }] } },
-      { id: 'old', ok: false, detail: 'z' },
-    ],
-    injection: { styles: [] },
-    casualty: { kind: 'case', at: 'p', axis: 'provider-red', diag: { reds: [], attempts: [{ attempt: 2, ok: false, axis: 'provider-red', detail: 'ECONNRESET' }] } },
-  });
-  const why = lines.filter((l) => l.includes('why:'));
-  assert.equal(why.length, 3, 'a row that predates diag prints no why-line');
-  assert.match(why.find((l) => l.includes('has-doc')), /why: has-doc · formatBytes — the quoted line is not in the artifact; quote: "\/\*\* q+…\[truncated, 204 chars\]" \(\+1 more red\(s\)/);
-  assert.ok(why.some((l) => /no facts — attempt 1 \[artifact-red\] did not parse/.test(l)));
-  assert.ok(why.some((l) => /attempt 2 \[provider-red\] ECONNRESET/.test(l)));
-});
 
 // PRD item 33 M3 piece 4, step S4 — the confirm turn's open questions, shown at
 // the SIGNING readout (D4: the signed spec format itself does not change).
@@ -1654,12 +1583,6 @@ test('fellBackLines: names which iteration broke, which stages, and which iterat
   assert.match(lines[0], /2 check\(s\)/);
 });
 
-test('phaseLine renders the compile and the paid gate, including the scrub announcement', () => {
-  assert.match(phaseLine('rubric', { size: 10 }), /10 calibration cases/);
-  assert.match(phaseLine('rubric-done', { ok: false, stop: 'artifact-red', attempts: 3 }), /NOT compiled \(artifact-red\)/);
-  assert.match(phaseLine('rubric-scrubbed', { paths: ['card.items[0].text'] }), /MASKED before storing: card\.items\[0\]\.text/);
-  assert.match(phaseLine('calibration', { cases: 10, styles: 5 }), /10 case\(s\) \+ 5 injection style\(s\)/);
-});
 
 // ── the authoring CEILING's parse and its announcement ───────────────────────
 //

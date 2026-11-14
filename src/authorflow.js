@@ -402,11 +402,6 @@ export const FIELD_LABELS = Object.freeze({
  * soft-green and hitl extensions below — computed, never hardcoded twice. */
 const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
 
-/** The old judge-examples key and question. DEAD: the PASS/FAIL examples are gone (hamr 2026-11-14) and no set carries them;
- * only `cardauthor.js` still reads these two names, and it is deleted with the old judge (piece 2 of the same addendum). */
-export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
-export const JUDGE_EXAMPLES_QUESTION = 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number';
-
 /** {@link FIELD_LABELS} for the soft-green set: the same one label (the judge examples are gone). */
 export const SOFTGREEN_FIELD_LABELS = Object.freeze({ ...FIELD_LABELS });
 
@@ -489,10 +484,8 @@ export const CLASS_STATEMENTS = Object.freeze({
   'soft-green': 'The person declared this job SOFT-GREEN: part of what "done" means here needs JUDGEMENT — reading '
     + 'the result and deciding whether it is any good — and no command can render it. Compose the mechanical part '
     + 'first: everything about this repository a command can decide is still a mechanical stage, exactly as it would '
-    + 'be for a green job. Then put ONE judged-floor stage AFTER them, carrying the few things the person said they '
-    + 'actually look for and the real files the work lands in (files the job may EDIT, inside the write fence, '
-    + 'because a finding on a file the run is fenced out of can never be fixed). A judged stage decides only the lines its card names, '
-    + 'so name each thing they look for as its own line, and leave nothing to be inferred.',
+    + 'be for a green job. Compose NO stage for the part that needs judgement: there is no judged stage to put it in '
+    + '(the old judge is gone), so leave that part out and say so in your notes; the person judges it at Accept.',
   // N4 slice 1. The mechanical-first composition law is stated as an ORDER
   // because first-red-wins makes the order the mechanism: the cheap stages shield
   // the expensive one, and the person is never the first filter.

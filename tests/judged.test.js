@@ -38,7 +38,6 @@ import {
   JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
   SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE, expectedOf,
 } from '../src/judged.js';
-import { compareExpectation } from '../src/calibrate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const POC = join(HERE, '..', 'poc', 'softgreen-judge');
@@ -909,12 +908,6 @@ const LIVE = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0nrwe.
 const liveGot = (/** @type {string} */ id) =>
   expectedOf(decide(LIVE.cases[id].facts, LIVE.card, { artifactText: LIVE.cases[id].artifact }));
 
-test('live replay: the ten real cases grade 9 of 10; the one miss is the case, not the rule', () => {
-  const wrong = Object.keys(LIVE.cases).filter((id) => !compareExpectation(liveGot(id), LIVE.cases[id].expect).ok);
-  assert.deepEqual(wrong, ['tag-names-wrong-parameter-on-destructured']);
-  // and the rule is right to pass it: a destructured parameter documented under a root name is normal JSDoc
-  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
-});
 
 test('says-what: no doc block at all is has-doc\'s red alone (one red per absence)', () => {
   const got = liveGot('no-doc-block-at-all');
@@ -948,13 +941,6 @@ test('says-what: prefix matching, shorter word at least 4 letters (init/initiali
   assert.equal(reds('initCache', 'Initialize the cache with the default size.'), 0);
 });
 
-test('the case-proposal prompt tells the model a destructured parameter may be documented under any name (F192, live buildQuery)', async () => {
-  const { cardCasesPrompt } = await import('../src/cardauthor.js');
-  const p = cardCasesPrompt({ answers: {}, questions: {} });
-  assert.match(p, /destructured parameter[^]*ANY root name[^]*never a\s+params red|destructured parameter[^]*ANY root name[^]*never a params red/);
-  // and the rule itself is untouched: `@param options` for `{ table, limit = 10 }` passes
-  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
-});
 
 // ── F192 item 6 (hamr ruling A, 2026-10-09): the fields of a destructured parameter, and the second live session ──
 // smv0o4mex8ddj: renderPoint({ x, y }) documented with `@param x` only was signed a params red and the old rule
@@ -963,19 +949,6 @@ test('the case-proposal prompt tells the model a destructured parameter may be d
 const LIVE2 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0o4mex.json'), 'utf8'));
 const redSet = (/** @type {any} */ g) => g.reds.map((/** @type {any} */ r) => `${r.rule}·${r.fn}`).sort().join(',');
 
-test('live replay 2: the ten smv0o4mex8ddj cases grade 10 of 10 as SETS, and every injection style resists', async () => {
-  const { factsResist, INJECTION_LOCATE_BATTERY, INJECTION_CARD } = await import('../src/calibrate.js');
-  for (const [id, c] of Object.entries(LIVE2.cases)) {
-    const got = expectedOf(decide(c.facts, LIVE2.card, { artifactText: c.artifact }));
-    assert.equal(redSet(got), redSet(c.expect), id);
-    assert.equal(got.verdict, c.expect.verdict, id);
-  }
-  for (const b of INJECTION_LOCATE_BATTERY) {
-    const f = LIVE2.injection[b.id].facts;
-    assert.equal(factsResist(f, b.expectFacts, b.artifact).ok, true, b.id);
-    assert.equal(compareExpectation(expectedOf(decide(f, INJECTION_CARD, { artifactText: b.artifact })), b.expect).ok, true, b.id);
-  }
-});
 
 /** the params rule alone, on a real artifact function */
 const paramsReds = (/** @type {string} */ art, /** @type {any} */ f) =>
@@ -1015,10 +988,6 @@ test('params: destructured fields, bare or dotted, defaults and renames; nested 
   assert.match(run('{ x, y }', ['x', 'y', 'bogus', 'other'])[0], /names no parameter/);
 });
 
-test('the case-proposal prompt tells the model that naming SOME fields of a destructured parameter requires naming all', async () => {
-  const { cardCasesPrompt } = await import('../src/cardauthor.js');
-  assert.match(cardCasesPrompt({ answers: {}, questions: {} }), /EVERY field must be named/);
-});
 
 test('a destructured parameter followed by 200000 spaces is read in linear time (the patternFields regex was quadratic), and a real pattern still reads', () => {
   const t0 = performance.now();

@@ -170,11 +170,11 @@ const PRE_FEATURE_HASH = '2afe71c27a13230e9799a46cd14651b909c1783f98457577f49702
 
 // ── the three judge constructors and the worker (source-level pins, labelled as such: each is reached only through a real run) ────────
 
-test('source pins: the judge is built with the SIGNED tick in all three constructors (the run, run-author, the panel\'s calibration gate); the WORKER gets no thinking option', () => {
+test('source pins: the judge is built with the SIGNED tick in the one constructor left (the run); authoring builds none; the WORKER gets no thinking option', () => {
   const read = (/** @type {string} */ f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   assert.match(read('src/planrun.js'), /defaultJudgeLoop\(\{ provider: judgeProvider, system: o\.system, rates: judgeRates, thinking: job\.thinking === true \}\)/, 'the run');
-  assert.match(read('src/authorrun.js'), /defaultJudgeLoop\(\{ provider: judgeProvider, system: o\.system, rates: judgePrice\?\.rates \?\? null, thinking: spec\.thinking === true \}\)/, 'run-author');
-  assert.match(read('src/panel/authorsession.js'), /defaultJudgeLoop\(\{ provider: judgeProvider, system: o\.system, rates: judgePrice\?\.rates \?\? null, thinking: spec\.thinking === true \}\)/, 'the calibration gate — the same tick as the later grading');
+  // run-author and the panel's calibration gate built a judge too; the old judge (and its gate) are gone, 2026-11-14
+  for (const f of ['src/authorrun.js', 'src/panel/authorsession.js']) assert.ok(!/defaultJudgeLoop/.test(read(f)), `${f}: no judge is built at authoring any more`);
   for (const f of ['src/userrun.js', 'src/providers.js']) assert.ok(!/thinkingMode|thinkingCallOptions/.test(read(f).replace(/\/\/.*$/gm, '')), `${f}: the worker\'s provider construction carries no thinking option`);
   for (const [f, re] of [['src/providers.js', /thinkingSupport|deepseek/i], ['src/thinking.js', /deepseek/i]]) assert.ok(!re.test(read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')), `${f}: no vendor regex or per-model list`);
 });

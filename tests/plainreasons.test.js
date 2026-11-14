@@ -10,8 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { validateJudgedArtifacts, validateCalibrationSet, CALIBRATION_SIZE } from '../src/judged.js';
-import { signJudgedArtifacts, PROPOSAL_TOOL_NAME } from '../src/cardauthor.js';
-import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES, calibrationSummary } from '../src/authorreadout.js';
+import { plainReasons, plainKinds, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -77,38 +76,8 @@ const SITES = (() => {
   return rows;
 })();
 
-test('every red the proposal validators can raise has a plain sentence (none unmapped), and every kind is reachable', () => {
-  const hit = new Set();
-  for (const [kind, card, cases] of SITES) {
-    const v = validateJudgedArtifacts({ card, cases });
-    const reasons = plainReasons(v.reds, { cases });
-    assert.ok(reasons.length > 0, `${kind}: the mutation raised no red`);
-    assert.ok(reasons.some((r) => r.kind === kind), `${kind}: got ${JSON.stringify(reasons.map((r) => r.kind))} from ${JSON.stringify(v.reds)}`);
-    for (const r of reasons) { assert.notEqual(r.kind, 'unmapped', JSON.stringify(r.red)); hit.add(r.kind); }
-  }
-  // the signer-side red (signJudgedArtifacts on a non-object)
-  const s = signJudgedArtifacts({ proposal: null });
-  for (const r of plainReasons(s.reds)) { assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind); }
-  // Part 1b live fix B3: the rubric-step kinds (fixtures for every rubric code live in tests/rubric-plain.test.js)
-  for (const r of plainReasons([{ code: 'rubric-step-twice', path: 'stages[3].params.step', detail: 'line 2: two stages.' }, { code: 'invalid-value', path: 'stages[1].params.parts[0].facts[4].until', detail: 'x' }])) {
-    assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind);
-  }
-  assert.deepEqual([...hit].sort(), plainKinds().sort(), 'a kind with no fixture here is a sentence nothing proves');
-});
 
-test('TRIPWIRE: a new red site in the validators fails here until it is mapped and given a fixture above', () => {
-  const src = readFileSync(join(HERE, '..', 'src', 'judged.js'), 'utf8');
-  assert.equal((src.match(/red\('calibration-/g) ?? []).length, 20, 'validateCalibrationSet red sites changed — map the new reason in src/authorreadout.js and add a SITES row');
-  const card = src.slice(src.indexOf('export function validateCard('), src.indexOf('// ── THE CALIBRATION SET'));
-  assert.equal((card.match(/reds\.push\(|reds: \[/g) ?? []).length, 7, 'validateCard red sites changed — map the new reason and add a SITES row');
-});
 
-test('an unknown code is never dropped: a generic sentence that still quotes the code', () => {
-  const [r] = plainReasons([{ code: 'brand-new-red', path: 'somewhere', detail: 'x' }]);
-  assert.equal(r.kind, 'unmapped');
-  assert.match(r.sentence, /"brand-new-red" at somewhere/);
-  assert.equal(r.red.detail, 'x');
-});
 
 /** the REAL mub2nboo shape: two name-echo cases expecting a has-doc red on documented functions, inside a legal-size set */
 const mubSet = () => {
@@ -118,38 +87,8 @@ const mubSet = () => {
   return x;
 };
 
-test('REAL SHAPE: the mub2nboo set is refused and the message names the case and the function in plain words', () => {
-  const cases = mubSet();
-  const v = validateJudgedArtifacts({ card: CARD(), cases });
-  assert.equal(v.ok, false);
-  const text = proposalStopText({ stop: 'proposal-invalid', reds: v.reds, cases, spend: { knownUsd: 0.0805, spendComplete: true } });
-  assert.match(text, /Case "name-echo-denies-purpose" says "fail: no doc comment" on parseDate, but parseDate has a doc comment right above it\./);
-  assert.match(text, /Case "name-echo-and-no-returns" says "fail: no doc comment" on slugify/);
-  assert.match(text, /Spent so far: \$0\.08\./);
-  assert.match(text, /This is the model's mistake, not yours\./);
-  assert.match(text, /What to do: draft again \(about \$0\.08 to reach here\)\./);
-  assert.doesNotMatch(text, /proposal-invalid|calibration-case|invalid-value/, 'no raw code reaches the person');
-});
 
-test('spend: unknown stays unknown, an unpriced call says "at least", and the clause is dropped when there is no figure', () => {
-  const reds = validateCalibrationSet(GOOD().slice(0, 9), { card: CARD() }).reds;
-  const none = proposalStopText({ stop: 'proposal-invalid', reds, spend: null });
-  assert.match(none, /Spent so far: unknown\./);
-  assert.match(none, /What to do: draft again\./);
-  assert.doesNotMatch(none, /to reach here/);
-  const floor = proposalStopText({ stop: 'proposal-invalid', reds, spend: { knownUsd: 0.1, spendComplete: false } });
-  assert.match(floor, /Spent so far: at least \$0\.10\./);
-  const tiny = proposalStopText({ stop: 'proposal-invalid', reds, spend: { knownUsd: 0.001, spendComplete: true } });
-  assert.match(tiny, /Spent so far: \$0\.0010\./);
-});
 
-test('the set-size sentence reads the live constant, and the one-sided sentence the real counts', () => {
-  const size = plainReasons(validateCalibrationSet(GOOD().slice(0, 9), { card: CARD() }).reds)[0].sentence;
-  assert.equal(size, `The model gave 9 practice cases; exactly ${CALIBRATION_SIZE} are needed.`);
-  const one = GOOD(); one[0].expect = { verdict: 'pass', reds: [] };
-  const side = plainReasons(validateCalibrationSet(one, { card: CARD() }).reds)[0].sentence;
-  assert.match(side, new RegExp(`${CALIBRATION_SIZE} pass and 0 fail`));
-});
 
 test('redsRecord keeps every structured field, scrubs a secret and bounds a long string', () => {
   const cases = GOOD();
@@ -172,90 +111,12 @@ const git = (/** @type {string} */ dir, /** @type {string[]} */ args) => execFil
   env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
 });
 
-test('PANEL: a proposal-invalid stop shows the plain message under the failed step and writes the full reds to draft-log.jsonl', async (t) => {
-  const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plainreasons-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
-  const home = mk();
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
-  const repo = mk();
-  git(repo, ['init', '-q', '-b', 'main']);
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
-  mkdirSync(join(repo, 'src'));
-  writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
-  git(repo, ['add', '-A']);
-  git(repo, ['commit', '-q', '-m', 'seed']);
-  const cases = mubSet();
-  const reds = validateJudgedArtifacts({ card: CARD(), cases }).reds;
-  const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-reasons-job', jobText: 'document things\n~ documented functions only', inputs: `repo: ${repo}`,
-    destination: 'src/', capUsd: 2,
-  }, {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
-    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
-    // the REAL proposal path: the model's tool call delivers the mub2nboo-shaped set, proposeJudgedArtifacts validates it
-    generate: async (/** @type {any} */ _m, /** @type {any} */ tools) => {
-      await tools.find((/** @type {any} */ x) => x.name === PROPOSAL_TOOL_NAME).execute({ card: CARD(), cases });
-      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.08, unpricedRounds: 0 } };
-    },
-    confirmGenerate: async (_c, tools) => {
-      const plan = { goal: 'document things', checks: ['docs'], questions: [], notChecked: [] };
-      if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
-      return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
-    },
-    authorFn: async () => ({
-      ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
-      declaration: { stages: [{ name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/mod.js'] } }], notes: [] },
-    }),
-  });
-  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
-  assert.equal(session.signPrepare().ok, true);
-  for (let i = 0; i < 500 && !['refused', 'abandoned'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
-  assert.equal(session.state.phase, 'refused', String(session.state.error));
-  const failed = session.state.steps.find((/** @type {any} */ x) => x.status === 'failed');
-  assert.ok(failed, 'a failed step carries the message');
-  assert.equal(failed.detail, session.state.error);
-  assert.match(failed.detail, /Case "name-echo-denies-purpose" says "fail: no doc comment" on parseDate/);
-  assert.match(failed.detail, /Spent so far: \$0\.08\./);
-  assert.doesNotMatch(failed.detail, /Stopped: proposal-invalid/);
-  // the same text the CLI prints (one function, two doors)
-  assert.equal(failed.detail, proposalStopText({
-    stop: 'proposal-invalid', reds, cases, spend: { knownUsd: session.state.draftSpentUsd, spendComplete: true },
-  }));
-  assert.equal(session.state.draftSpentUsd, 0.0805, 'the figure shown is the session\'s own metered tally');
-  const log = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const rec = log.find((e) => e.kind === 'step-reds');
-  assert.ok(rec, 'the reds are in the record');
-  assert.equal(rec.stop, 'proposal-invalid');
-  assert.equal(rec.reds.length, reds.length);
-  assert.equal(rec.reds[0].code, 'calibration-case');
-  assert.match(rec.reds[0].path, /^calibration\.cases\[\d\]\.expect\.reds$/);
-  assert.match(rec.reds[0].detail, /has-doc red on parseDate/);
-  assert.match(rec.reds[0].plain, /parseDate/);
-  const end = log.find((e) => e.kind === 'step-end' && e.status === 'failed');
-  assert.ok(end && rec.no === end.no, 'the reds sit on the same step that failed');
-});
 
-test('CLI door: the run-author path prints the same function', () => {
-  const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
-  assert.match(src, /PLAIN_PROPOSAL_STOPS\.includes\(String\(authored\.stop\)\)[\s\S]{0,200}proposalStopText\(/);
-});
 
 // ── the SIGNING gates' refusal (F192, 2026-10-09 live panel session smv0nrwe3l8y2) ──
 
 const LIVE = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0nrwe.json'), 'utf8'));
 
-test('SIGNING: the three real miswrites and the injection leak read in plain words, honest about whose fault', () => {
-  const text = signingStopText({ reds: LIVE.signingReds, spend: { knownUsd: 0.0912, spendComplete: true } });
-  assert.doesNotMatch(text, /calibration-miswrite|injection-leak/);
-  assert.match(text, /Spent so far: \$0\.09\./);
-  assert.match(text, /Case "no-doc-block-at-all" \(resetCounters\): the check says the doc only repeats the function's name, but the practice case did not expect that\./);
-  assert.match(text, /Case "name-echo-plus-untagged-param" \(initCache\): the practice case says the doc only repeats the function's name, but the check passed it\./);
-  assert.match(text, /Case "tag-names-wrong-parameter-on-destructured" \(buildQuery\): the practice case says a parameter is missing from the doc, or the doc names one that does not exist, but the check passed it\./);
-  assert.match(text, /A test file tried to trick the judge \("fake system marker"\)/);
-  assert.match(text, /The practice cases and the check disagree; either one can be the one that is wrong/);
-  assert.doesNotMatch(text, /model's mistake/);
-  assert.match(text, /What to do: draft again \(about \$0\.09 to reach here\)\./);
-  assert.match(signingStopText({ reds: LIVE.signingReds, spend: null }), /Spent so far: unknown\./);
-});
 
 test('SIGNING: no red at all (the close already passes at the seed) has its own sentence', () => {
   assert.match(signingStopText({ reds: [], refusal: LIVE.signingRefusal }), /Nothing in the close fails on the repository as it is/);
@@ -321,58 +182,6 @@ test('SIGNING redsRecord: the signing sentence rides beside every structured fie
   assert.equal(rec[1].caseId, 'name-echo-plus-untagged-param');
 });
 
-test('PANEL: a signing-gates refusal shows the plain message and writes the full reds to draft-log.jsonl', async (t) => {
-  const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plainsign-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
-  const home = mk();
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
-  const repo = mk();
-  git(repo, ['init', '-q', '-b', 'main']);
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
-  mkdirSync(join(repo, 'src'));
-  writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
-  git(repo, ['add', '-A']);
-  git(repo, ['commit', '-q', '-m', 'seed']);
-  const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', jobText: 'document things\n~ documented functions only', inputs: `repo: ${repo}`,
-    destination: 'src/', capUsd: 2,
-  }, {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
-    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
-    generate: async (/** @type {any} */ _m, /** @type {any} */ tools) => {
-      await tools.find((/** @type {any} */ x) => x.name === PROPOSAL_TOOL_NAME).execute({ card: LIVE.card, cases: Object.entries(LIVE.cases).map(([id, c]) => ({ id, artifact: c.artifact, expect: c.expect })) });
-      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.08, unpricedRounds: 0 } };
-    },
-    confirmGenerate: async (_c, tools) => {
-      const plan = { goal: 'document things', checks: ['docs'], questions: [], notChecked: [] };
-      if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
-      return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
-    },
-    authorFn: async () => ({
-      ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
-      declaration: { stages: tagLine1(LIVE.liveStages), notes: LIVE.liveNotes },
-    }),
-    prepareSigningFn: async () => ({ ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: LIVE.signingReds, refusal: LIVE.signingRefusal, gates: {} }),
-  });
-  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
-  assert.equal(session.signPrepare().ok, true);
-  for (let i = 0; i < 500 && !['refused', 'abandoned'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
-  assert.equal(session.state.phase, 'refused', String(session.state.error));
-  const failed = session.state.steps.find((/** @type {any} */ x) => x.status === 'failed');
-  assert.ok(failed);
-  assert.doesNotMatch(failed.detail, /signing gates failed/);
-  assert.match(failed.detail, /Case "name-echo-plus-untagged-param" \(initCache\)/);
-  assert.equal(failed.detail, signingStopText({
-    reds: LIVE.signingReds, refusal: LIVE.signingRefusal, spend: { knownUsd: session.state.draftSpentUsd, spendComplete: session.state.draftSpendComplete },
-  }));
-  const log = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const rec = log.find((e) => e.kind === 'step-reds');
-  assert.ok(rec, 'the reds are in the record');
-  assert.equal(rec.stop, 'signing-gates-failed');
-  assert.equal(rec.reds.length, 4);
-  assert.equal(rec.reds[3].code, 'injection-leak');
-  const end = log.find((e) => e.kind === 'step-end' && e.status === 'failed');
-  assert.ok(end && rec.no === end.no, 'the reds sit on the same step that failed');
-});
 
 test('CLI door: the run-author signing refusal prints the same function', () => {
   const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
@@ -389,19 +198,6 @@ const passingCalibration = () => ({
   injection: { ...LIVE2.calibration.injection, styles: LIVE2.calibration.injection.styles.map((/** @type {any} */ x) => ({ ...x, resisted: true })) },
 });
 
-test('calibrationSummary: the real smv0o4mex8ddj result reads 8 of 10 and 3 of 5 and fails; a passing record reads 10 of 10 and 5 of 5', () => {
-  const bad = calibrationSummary(LIVE2.calibration);
-  assert.ok(bad);
-  assert.equal(bad.ok, false);
-  assert.equal(bad.note, '8 of 10 practice cases graded right · 3 of 5 attack tests resisted');
-  const good = calibrationSummary(passingCalibration());
-  assert.ok(good);
-  assert.equal(good.ok, true);
-  assert.equal(good.note, '10 of 10 practice cases graded right · 5 of 5 attack tests resisted');
-  assert.equal(calibrationSummary(null), null);
-  // a gate that stopped part-way reads x of 10, not x of x
-  assert.match(calibrationSummary({ ok: false, graded: [{ ok: true }], injection: { styles: [] } })?.note ?? '', /^1 of 10 .* 0 of 5 /);
-});
 
 /** @param {any} calibration @param {import('node:test').TestContext} t */
 async function panelWithCalibration(calibration, t) {
@@ -443,26 +239,4 @@ async function panelWithCalibration(calibration, t) {
   return session;
 }
 
-test('PANEL: the calibrating line shows the gate\'s real result: x when it failed (8 of 10, 3 of 5), done when it passed', async (t) => {
-  const bad = await panelWithCalibration(LIVE2.calibration, t);
-  const cal = bad.state.steps.find((/** @type {any} */ x) => x.id === 'calibrate');
-  assert.ok(cal, 'the calibrating line exists');
-  assert.equal(cal.status, 'failed');
-  assert.equal(cal.detail, '8 of 10 practice cases graded right · 3 of 5 attack tests resisted');
-  const good = await panelWithCalibration(passingCalibration(), t);
-  const cal2 = good.state.steps.find((/** @type {any} */ x) => x.id === 'calibrate');
-  assert.ok(cal2);
-  assert.equal(cal2.status, 'done');
-  assert.equal(cal2.detail, '10 of 10 practice cases graded right · 5 of 5 attack tests resisted');
-  // the later gates line still fails on its own
-  assert.equal(good.state.steps.find((/** @type {any} */ x) => x.id === 'gates')?.status, 'failed');
-});
 
-test('SIGNING: a miswrite detail repeating the expected-reds phrase 10000 times with no ending on its line reads in linear time, and a normal one still reads', () => {
-  const t0 = performance.now();
-  const long = { code: 'calibration-miswrite', path: 'calibration.cases.c', caseId: 'c', detail: 'case "c" was graded WRONG by the whole pipe — ' + 'expected red(s) the pipe did not raise: a'.repeat(10000) };
-  assert.equal(signingReasons([long]).length, 1);
-  const normal = { code: 'calibration-miswrite', path: 'calibration.cases.c', caseId: 'c', detail: 'case "c" was graded WRONG by the whole pipe — expected red(s) the pipe did not raise: has-doc (f) — x. The floor is 10/10' };
-  assert.equal(signingReasons([normal])[0].sentence, 'Case "c": the practice case says the rule "has-doc (f)" applies, but the check passed it.');
-  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
-});

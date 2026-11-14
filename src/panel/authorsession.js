@@ -20,8 +20,7 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
-import { judgePick, judgeRatesFor, judgeRowFor, keyValueOf, modelChoiceFor, ratesOfLine, rowsForHome } from '../providerrows.js';
-import { ConfigError } from '../config.js';
+import { judgePick, keyValueOf, modelChoiceFor, ratesOfLine, rowsForHome } from '../providerrows.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
 } from 'node:fs';
@@ -47,9 +46,8 @@ import {
 import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
 } from '../providers.js';
-import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
+import { resolveJobJudge } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
-import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
@@ -66,7 +64,7 @@ import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
+import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText,
@@ -95,7 +93,6 @@ export const STEP_LABELS = Object.freeze({
   listing: 'listing files',
   confirm: 'confirming plan',
   draft: 'drafting',
-  calibrate: 'calibrating',
   gates: 'checking signing gates',
   hash: 'generating hash',
   signed: 'signed hash',
@@ -139,9 +136,6 @@ export const PHASE_STEP = Object.freeze({
   listing: 'listing',
   'listing-done': 'listing',
   author: 'draft',
-  rubric: 'calibrate',
-  'rubric-done': 'calibrate',
-  'rubric-scrubbed': 'calibrate',
 });
 
 export { thinkingRowText };
@@ -1019,53 +1013,13 @@ export function createSession(card, deps = {}) {
         return;
       }
       state.phase = 'signing-gates';
-      stepStart('gates', 'gates 1–3 cost $0; gate 4 only for a rubric');
-      const judges = closeJudges(spec.closeDecl);
-      const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
-      let judgeProvider = null;
-      /** @type {import('../providerrows.js').PriceResult} */
-      let judgePrice = null;
-      if (judge) {
-        const judgeRow = judgeRowFor(keyCfg, judge, modelChoice.provider, keyCfg.find((r) => r.envName === modelChoice.envName) ?? null);
-        try {
-          judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
-        } catch (e) {
-          if (!(e instanceof ConfigError)) throw e;
-          refuse(`${e.message} — refusing before gate 4 spends anything`);
-          return;
-        }
-        const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? apiKey : keyValueOf(env, judgeRow?.envName));
-        const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
-        if (!judgeKeyValue || judgeKeyProblem) {
-          refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
-          return;
-        }
-        judgeProvider = buildRunnerProviders({
-          providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
-          judgeApiKey: judgeKeyValue, judgeModel: judge.model, judgeProviderName: judge.provider,
-          judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : (judgeRow?.baseUrl.trim() || undefined),
-          judgeLegacyMaxTokens: judge.provider === modelChoice.provider ? modelChoice.legacyMaxTokens : (judgeRow?.legacyMaxTokens ?? false),
-        }).judgeProvider;
-      }
+      stepStart('gates', 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
         spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
-        shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
-        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null, thinking: spec.thinking === true }) : null,
-        judgeModel: judge?.model ?? null,
-        onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
+        shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
-      // The `calibrating` line is the rubric phase the person watched; its ✓ was set long before the gate graded
-      // anything. Once the gate has a result, the line says THAT, on its own line (hamr, 2026-10-09).
-      const calSum = calibrationSummary(signing.gates?.calibration);
-      const calStep = latestStep(state.steps, 'calibrate');
-      if (calSum && calStep) {
-        calStep.status = calSum.ok ? 'done' : 'failed';
-        calStep.detail = calSum.note;
-        logSteps();
-      }
-
       if (!signing.ok) {
         // plain words for the person (src/authorreadout.js, the one owner the CLI prints too); the full reds go into
         // the drafting log on the failed step, so the cause survives the session
@@ -1146,9 +1100,6 @@ export function createSession(card, deps = {}) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
     }
 
-    const draftJudge = (() => {
-      try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: modelChoice.name }; }
-    })();
     const { provider } = buildRunnerProviders({
       providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
@@ -1292,7 +1243,6 @@ export function createSession(card, deps = {}) {
     // the internal resolved tier model string (MODEL) or the raw provider
     // name — the same id the Model field's own dropdown showed.
     const authored = await authorCloseForJob({
-      judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
       jobLines, inputs: INPUTS,
@@ -1322,23 +1272,6 @@ export function createSession(card, deps = {}) {
       ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),
     });
 
-    if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
-      // a refused rubric proposal: the person gets the reason in plain words (src/authorreadout.js, the one owner the
-      // CLI prints too), and the full reds go into the drafting log on the failed step so the cause survives the session
-      const cases = authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null;
-      const reds = authored.reds ?? [];
-      const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
-      appendDraftLog(outDir, {
-        kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: authored.stop,
-        reds: redsRecord(reds, { cases }), at: new Date().toISOString(),
-      });
-      refuse(proposalStopText({
-        stop: String(authored.stop), reds, cases,
-        spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
-        source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
-      }));
-      return;
-    }
     if (!authored.ok) {
       // ITEM 6 (P7): every drafting stop says WHY in plain words (the reds travel into the drafting log beside it) — the bare
       // "Stopped: provider-red" of live session smv2bzdqmp0f8 carried a code and no reason.

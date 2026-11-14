@@ -8,8 +8,7 @@
 // rule applies to, and this file's own doc-comment is where a human reads it.
 //
 // The inventory is FILE-scoped, not const-scoped. Several of the files below
-// hold more than one named prompt const, and at least two (authorscout.js,
-// cardauthor.js) also build a model-facing prompt INLINE inside a function
+// hold more than one named prompt const, and at least one (authorscout.js) also build a model-facing prompt INLINE inside a function
 // (template literals, not a top-level const) rather than assembling one from a
 // named export. A const-scoped check would silently miss those; a file-scoped
 // one does not, because the whole file is in scope once it appears here. The
@@ -20,7 +19,7 @@
 // consts that read as model-facing instruction text, and separately for inline
 // template-literal prompts built inside a function). Files checked and found to
 // carry NO prompt content: src/plan.js, src/validate.js, src/kinds.js,
-// src/text.js, src/declaredclose.js, src/calibrate.js, src/index.js (the last
+// src/text.js, src/declaredclose.js, src/index.js (the last
 // is the barrel export only).
 
 /**
@@ -56,10 +55,6 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/judged.js', name: 'PROMPT_TAIL' }),
   Object.freeze({ file: 'src/judged.js', name: 'JUDGE_RULES[*].ask (per-rule fragments)' }),
   Object.freeze({ file: 'src/judged.js', name: 'locatePrompt() (inline template, not a const)' }),
-
-  // src/cardauthor.js — compiles a person's own words into a judged rubric
-  Object.freeze({ file: 'src/cardauthor.js', name: 'COMPILE_SYSTEM' }),
-  Object.freeze({ file: 'src/cardauthor.js', name: 'cardCasesPrompt() (inline template, not a const)' }),
 
   // src/pagemap.js - the page-word map call (idea A core): the AI names the page's own words for the person's job
   Object.freeze({ file: 'src/pagemap.js', name: 'MAP_SYSTEM' }),

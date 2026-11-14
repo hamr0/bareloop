@@ -195,6 +195,10 @@ export function closeCeiling(declaration, catalogue = KIND_CATALOGUE) {
   return top;
 }
 
+/** the kinds no composer is offered any more (hamr 2026-11-14: the old judge, its card and its calibration are gone). The VALIDATOR keeps them in the
+ * catalogue so an old signed spec still reads as what it is; only the menu narrows. */
+export const RETIRED_KINDS = Object.freeze(['judged-floor']);
+
 /**
  * THE MENU A JOB OF THIS CLASS MAY EXPRESS — the ceiling rule, moved one step
  * EARLIER, to the moment the composer is handed its vocabulary.
@@ -229,6 +233,7 @@ export function classMenu(verdictType, catalogue = KIND_CATALOGUE) {
       + 'nobody made');
   }
   return names.filter((k) => {
+    if (RETIRED_KINDS.includes(k)) return false;
     const spec = catalogue[k];
     if (!spec || !Object.hasOwn(CLASS_RANK, spec.verdictClass)) {
       throw new Error(`[authoring] catalogue kind "${k}" declares no verdict class — every kind states the class of `

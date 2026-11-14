@@ -52,7 +52,7 @@ test('a close with a judged-floor stage DOES judge, and the stages come back in 
   assert.deepEqual(judgedStages(decl).map((s) => s.name), ['a', 'b'], 'declaration order, not filter-and-sort');
 });
 
-test('the returned stages are the SAME objects, not copies — foldJudgedArtifacts mutates them in place', () => {
+test('the returned stages are the SAME objects, not copies — the fold mutated them in place', () => {
   const stage = judgedStage();
   const decl = { stages: [stage] };
   assert.equal(judgedStages(decl)[0], stage, 'identity, not a structural clone');
@@ -157,7 +157,7 @@ test('no module open-codes the judged-stage filter any more — the six duplicat
   // a per-stage branch inside a loop over one stage, not a declaration-level
   // question about whether a close judges at all.
   const files = [
-    'src/cardauthor.js', 'src/authorjob.js', 'src/authoring.js',
+    'src/authorjob.js', 'src/authoring.js',
     // PANEL-BUILD.md P0 — scripts/run-u.mjs and scripts/run-author.mjs are
     // now thin adapters (no logic of their own left to open-code anything
     // in); scripts/author-readout.mjs moved to src/authorreadout.js

@@ -203,9 +203,9 @@ test('module 3 — classMenu hands over the kinds at or below the picked class, 
   assert.ok(!green.includes('judged-floor'), 'a judged ruler is above a green promise');
   assert.ok(!green.includes('human-confirms'));
   const soft = classMenu('soft-green');
-  assert.ok(soft.includes('judged-floor'));
+  assert.ok(!soft.includes('judged-floor'), 'the old judge is gone (2026-11-14): no class menu offers it');
   assert.ok(!soft.includes('human-confirms'), 'a person is above a judged promise');
-  assert.deepEqual([...classMenu('hitl')].sort(), Object.keys(KIND_CATALOGUE).sort(), 'the top class sees everything');
+  assert.deepEqual([...classMenu('hitl')].sort(), Object.keys(KIND_CATALOGUE).filter((k) => k !== 'judged-floor').sort(), 'the top class sees everything the menu still offers');
   assert.throws(() => classMenu('chartreuse'), /chartreuse/);
 });
 
@@ -215,15 +215,15 @@ test('module 3 — the DECLARATION SCHEMA a green job is handed cannot SPELL jud
   assert.ok(!text.includes('human-confirms'));
   assert.ok(text.includes('command-exit'));
   const soft = JSON.stringify(declarationSchema(KIND_CATALOGUE, { verdictType: 'soft-green' }));
-  assert.ok(soft.includes('judged-floor'), 'the class that CAN render a judged verdict is offered it');
+  assert.ok(!soft.includes('judged-floor'), 'no class is offered the old judge any more (2026-11-14)');
   assert.ok(!soft.includes('human-confirms'));
   const hitl = JSON.stringify(declarationSchema(KIND_CATALOGUE, { verdictType: 'hitl' }));
-  assert.ok(hitl.includes('judged-floor') && hitl.includes('human-confirms'));
+  assert.ok(!hitl.includes('judged-floor') && hitl.includes('human-confirms'), 'the top class keeps the person stage, not the old judge');
 });
 
 test('module 3 — the CATALOGUE BLOCK and the whole prompt are filtered the same way', () => {
   assert.ok(!catalogueBlock(KIND_CATALOGUE, { verdictType: 'green' }).includes('judged-floor'));
-  assert.ok(catalogueBlock(KIND_CATALOGUE, { verdictType: 'soft-green' }).includes('judged-floor'));
+  assert.ok(!catalogueBlock(KIND_CATALOGUE, { verdictType: 'soft-green' }).includes('judged-floor'));
   const args = {
     answers: { 1: 'a' },
     facts: {},
@@ -233,9 +233,9 @@ test('module 3 — the CATALOGUE BLOCK and the whole prompt are filtered the sam
   };
   assert.ok(!authorPrompt({ ...args, verdictType: 'green' }).includes('judged-floor'),
     'the green composer is never shown the kind whose pick would red late');
-  assert.ok(authorPrompt({
+  assert.ok(!authorPrompt({
     ...args, verdictType: 'soft-green', guards: classGuards({ verdictType: 'soft-green', lang: 'js' }),
-  }).includes('judged-floor'));
+  }).includes('judged-floor'), 'and the soft-green composer is not offered the old judge either');
 });
 
 test('module 3 — the VALIDATOR keeps the whole catalogue: an above-ceiling pick is class-ceiling, never unknown-kind', () => {

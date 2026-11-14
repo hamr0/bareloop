@@ -117,14 +117,6 @@ const ANSWERS = {
     + '   rule: do not touch the tests; it counts as worse if the complaints only went quiet because something was told to look the other way.',
 };
 
-/** the same interview, for the class that buys a THIRD paid seam (the rubric and
- * calibration compile). Key 4 is soft-green's own Judge Examples question. */
-const JUDGED_ANSWERS = {
-  ...ANSWERS,
-  2: 'line 1 PASS: a documented function\nline 1 FAIL: an undocumented function — whether every exported function reads '
-    + 'like somebody meant it to be read.',
-};
-
 /** a declaration carrying a judged stage — what makes the compile seam reachable */
 const JUDGED_STAGES = () => [
   { name: 'judged', kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } },
@@ -1137,7 +1129,7 @@ test('THE GENRE REFUSAL MOVED TO THE COMPOSER: a language the catalogue cannot m
   assert.deepEqual(occs.map((o) => [o.class, o.lib, o.verb]), [['request-red', REFUSAL_LIB, 'genre-other']]);
 });
 
-test('THE CEILING is ONE operator number and it reaches ALL THREE paid seams', async (t) => {
+test('THE CEILING is ONE operator number and it reaches ALL THE paid seams', async (t) => {
   const p = makePatient(t);
   /** @type {any} */
   const seen = { scout: 'never called', author: 'never called' };
@@ -1154,14 +1146,10 @@ test('THE CEILING is ONE operator number and it reaches ALL THREE paid seams', a
   assert.equal(seen.author, 0.25, 'and so is the declaration loop — one ceiling, not two');
   assert.equal(r.stop, 'cap-halt', 'and the governance stop travels up as itself');
 
-  // …and the THIRD seam: the rubric/calibration compile, which only a judged close
-  // buys. It is bounded through the BOOK (the same object the ceiling is read off),
-  // and the declaration loop's own calls are absorbed into it first, so what the
-  // compile sees is the remaining balance rather than a fresh allowance.
-  /** @type {any} */
-  const compile = { ceiling: 'never called', absorbed: null };
-  await authorCloseForJob({
-    verdictType: 'soft-green', answers: JUDGED_ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+  // 2026-11-14: the rubric/calibration compile (a third paid seam) is gone with the old judge. A composed declaration that
+  // carries a judged-floor stage is refused in plain words, at $0, and buys nothing more.
+  const gone = await authorCloseForJob({
+    verdictType: 'soft-green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     ceilingUsd: 0.25,
     scoutFn: async () => SURVEY(p.dir),
     authorFn: async () => ({
@@ -1172,14 +1160,11 @@ test('THE CEILING is ONE operator number and it reaches ALL THREE paid seams', a
       genreEnv: { applied: {} },
       cost: { costUsd: 0.1, knownUsd: 0.1, spendComplete: true, calls: [{ label: 'author', costUsd: 0.1, unpricedRounds: 0 }] },
     }),
-    proposeFn: async (/** @type {any} */ o) => {
-      compile.ceiling = o.book.ceilingUsd;
-      compile.absorbed = o.book.report().costUsd;
-      return { ok: false, proposal: null, reds: [], stop: 'artifact-red', attempts: 1 };
-    },
   });
-  assert.equal(compile.ceiling, 0.25, 'the compile is a paid seam and is bounded by the same number');
-  assert.equal(compile.absorbed, 0.1, 'with the declaration loop\'s spend already folded in — never a fresh allowance');
+  assert.equal(gone.ok, false);
+  assert.equal(gone.stop, 'judged-floor-gone');
+  assert.match(gone.reds[0].detail, /The old judge is gone/);
+  assert.equal('judged' in gone, false);
 });
 
 // the FOURTH place the same number has to reach is `prepareSigning`'s calibration

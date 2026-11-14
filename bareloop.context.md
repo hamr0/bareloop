@@ -600,17 +600,17 @@ Every function and constant this section discusses by name is exported at the pa
 ```js
 import {
   authorClose, authorCloseForJob, AUTHORED_SPEC_FIELDS, AUTHOR_SCOUT_VERBS, assembleSpec,
-  buildSeedListing, CALIBRATION_SIZE, CASUALTY_AXES, CLASS_BATTERIES, classGuards,
+  buildSeedListing, CALIBRATION_SIZE, CLASS_BATTERIES, classGuards,
   closeCeiling, decide, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens, expectedOf,
-  foldJudgedArtifacts, genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
-  INJECTION_LOCATE_BATTERY, JUDGE_ATTEMPTS, JUDGED_MARKER, JUDGE_RULE_IDS, JUDGE_RULES,
+  genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
+  JUDGE_ATTEMPTS, JUDGED_MARKER, JUDGE_RULE_IDS, JUDGE_RULES,
   KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_JUDGED_PATHS, MAX_REVISIONS,
   mechanicalStages, NEVER_OFFERED_KINDS, normalizeHumanRuling, prepareSigning,
-  proposeJudgedArtifacts, questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
+  questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
   READ_SHIM_DIFF_STRATEGY, READ_SHIM_STRATEGY, refusalEvents, refuseLockedKind,
-  requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runCalibration, runClose,
+  requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runClose,
   runDeclaredClose, runDeclaredStages, runInterview, runLocate, runStage, SCOUT_ATTEMPTS,
-  SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead, signJudgedArtifacts,
+  SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead,
   STOP_FAULTS, validateCalibrationSet, validateCloseDecl, validateDeclaration,
   ACCOUNTED_ROUND_TYPES,
 } from 'bareloop';

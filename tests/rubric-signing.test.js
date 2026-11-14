@@ -51,22 +51,14 @@ test('a soft-green rubric-step close validates as a job with NO calibration set 
   assert.equal(v.ok, true);
 });
 
-test('prepareSigning on a rubric-step close: signs on the $0 gates, the calibration gate never runs, and the judge seam is never touched', async () => {
+test('prepareSigning on a rubric-step close: signs on the $0 gates (the old calibration gate is gone)', async () => {
   const prep = await frozen();
   const spec = assembleSpec(DRAFT, { closeDecl: DECL(), verdictType: 'soft-green' });
-  let judgeCalls = 0;
-  let costEvents = 0;
   const r = await prepareSigning({
     spec, workdir: prep.tree, seedRef: prep.manifest.seed, timeoutMs: 30_000,
-    judgeLoop: async () => { judgeCalls += 1; throw new Error('the judge must never be called to sign a rubric-step close'); },
-    judgeModel: 'would-be-judge',
-    onJudgeCost: () => { costEvents += 1; },
-    calibrateFn: async () => { throw new Error('calibration must never run for a close with no judged stage'); },
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(r.gates.calibration, null, 'no calibration record: the gate did not run');
-  assert.equal(judgeCalls, 0);
-  assert.equal(costEvents, 0, 'zero judge-round records');
+  assert.equal('calibration' in r.gates, false, 'no calibration gate any more');
   assert.deepEqual(r.gates.declaration.ok, true);
   assert.equal(r.gates.precheck.ok, true);
   assert.deepEqual(r.gates.seedVerdict.workRed, ['line-1'], 'the line is red at the seed (no step file yet), so the close has work to do');
@@ -107,7 +99,7 @@ test('M2: a prose line after a fact line signs as a NORMAL seed red (no step fil
   };
   const spec = assembleSpec(draft, { closeDecl: decl, verdictType: 'soft-green' });
   const r = await prepareSigning({ spec, workdir: prep.tree, seedRef: prep.manifest.seed, timeoutMs: 30_000,
-    judgeLoop: async () => { throw new Error('no judge'); }, calibrateFn: async () => { throw new Error('no calibration'); } });
+    });
   assert.deepEqual(r.reds.filter((x) => x.code === 'broken-close'), [], JSON.stringify(r.reds));
   assert.equal(r.gates.precheck.ok, true, 'the precheck ran every stage');
   assert.ok(r.gates.seedVerdict.workRed.includes('line-2'), 'line 2 is an ordinary seed red');
@@ -129,7 +121,7 @@ test('M2: a rubric job whose check truly cannot run (input bytes changed after f
   };
   const spec = assembleSpec({ ...DRAFT, jobLines: [{ n: 1, text: 'List the last 3 releases', rule: '' }] }, { closeDecl: decl, verdictType: 'soft-green' });
   const r = await prepareSigning({ spec, workdir: prep.tree, seedRef: prep.manifest.seed, timeoutMs: 30_000,
-    judgeLoop: async () => { throw new Error('no judge'); }, calibrateFn: async () => { throw new Error('no calibration'); } });
+    });
   assert.equal(r.ok, false);
   const broken = r.reds.filter((x) => x.code === 'broken-close');
   assert.equal(broken.length, 1, JSON.stringify(r.reds));

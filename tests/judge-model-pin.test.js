@@ -25,9 +25,7 @@
 // FIVE PROMISES, and they are five different layers on purpose — the same
 // split the calibration set itself already lives under:
 //
-//   - THE FOLD STORES IT. `foldJudgedArtifacts` writes the HANDED-IN identity
-//     beside `cases`, inside the spec, so `jobSpecHash` covers it by
-//     construction. No default: an absent identity throws (item 32.1).
+//   - (THE FOLD, `foldJudgedArtifacts`, went with the old judge's card compile, 2026-11-14.)
 //   - THE HASH MOVES. Two specs differing in nothing but that field hash
 //     differently — which is what makes a bump a RE-SIGN rather than a silent
 //     re-read.
@@ -62,7 +60,6 @@ import { resolveJudge } from '../src/judged.js';
 const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
 
 import { validateCloseDecl, declaredStages } from '../src/declaredclose.js';
-import { foldJudgedArtifacts } from '../src/cardauthor.js';
 import { jobSpecHash } from '../src/job.js';
 
 const CARD = {
@@ -133,28 +130,6 @@ const decl = (judgeModel = JUDGE_MODEL) => ({
     cases: [{ id: 'pass-1', artifact: ARTIFACT, expect: { verdict: 'pass', reds: [] } }],
     ...(judgeModel === null ? {} : { judgeModel }),
   },
-});
-
-// ── 1. THE FOLD ──────────────────────────────────────────────────────────────
-
-test('the fold stores the HANDED-IN judge identity beside the cases — never a library import', () => {
-  // the fold is asked with a model that is NOT `JUDGE_MODEL`, on purpose — the
-  // only way to prove the stored value is the caller's resolved identity and
-  // not a silent read of the constant is to hand in something else and see it
-  // come back unchanged.
-  const out = foldJudgedArtifacts(
-    { genre: 'types', lang: 'js', stages: [{ name: 'docs-read-well', kind: 'judged-floor', params: {} }] },
-    { card: CARD, cases: [{ id: 'pass-1', artifact: ARTIFACT, expect: { verdict: 'pass', reds: [] } }], judgeModel: 'deepseek-flash' },
-  );
-  assert.equal(out.calibration.judgeModel, 'deepseek-flash', 'the resolved identity, not the constant');
-  assert.equal(out.calibration.cases.length, 1, 'and the cases still land where they always did');
-});
-
-test('the fold REFUSES with no judgeModel — there is no library pin to fall back to (PRD item 32.1)', () => {
-  assert.throws(() => foldJudgedArtifacts(
-    { genre: 'types', lang: 'js', stages: [{ name: 'docs-read-well', kind: 'judged-floor', params: {} }] },
-    { card: CARD, cases: [{ id: 'pass-1', artifact: ARTIFACT, expect: { verdict: 'pass', reds: [] } }] },
-  ), /needs the resolved judgeModel/);
 });
 
 // ── 2. THE HASH ──────────────────────────────────────────────────────────────

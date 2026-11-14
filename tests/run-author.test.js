@@ -344,17 +344,6 @@ test('the reporters never take down the run they report on', () => {
 /** the `prepareSigning` call, from its opening to its closing paren */
 const SIGN = /const signing = (?:authored\.hasBuiltCheck === false\n[^\n]*\n\s*: )?await prepareSigning\(\{[\s\S]*?\n {8}\}\);/.exec(SRC)?.[0];   // R10: the end check may sit in front of the call (a no-check close is refused before it)
 
-test('the calibration gate runs under the OPERATOR\'s ceiling, with prior spend folded in', () => {
-  assert.ok(SIGN, 'the prepareSigning call moved — this guard no longer reads the code it guards');
-  assert.ok(!/authorCloseForJob/.test(SIGN), 'SIGN ran past the signing call into the flow around it');
-  assert.match(SIGN, /ceilingUsd: CEILING_USD/, 'the gate must run under the same operator number as the other two seams');
-  // …and the fold. A ceiling that starts this seam's tally at zero is a second
-  // ceiling wearing the first one's number, and re-invoking it would widen it.
-  assert.match(SIGN, /priorCalls: \[\.\.\.metered\]/, 'the run\'s spend so far must be folded into the gate\'s ceiling');
-  // the fold reads the ONE metered list this runner already keeps — never a second
-  // hand-spelled total (the pair this file has paid for once already)
-  assert.ok(!/priorCalls: \[\{/.test(SIGN), 'priorCalls must be the run\'s own call list, not a hand-built one');
-});
 
 // ── the twin: the extracted bytes, actually signalled ────────────────────────
 
@@ -520,20 +509,6 @@ const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 // line proves the call site spends it rather than the old `MODEL`).
 const AUTHOR_JUDGE_ARG = /\n {6}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
 
-test('the judge-identity block is still BOUNDED — the twin below reads exact statements, not the rest of the file', () => {
-  assert.ok(PROVIDER_BLOCK, 'the authoring provider resolution moved or was reworded');
-  assert.match(PROVIDER_BLOCK, /resolveProvider\(draft\?\.provider\)/, 'the provider must be resolved from the DRAFT, never a hardcoded literal (item 34 L17)');
-  assert.ok(!/'anthropic-api'/.test(PROVIDER_BLOCK), 'a forced anthropic-api literal is back in the provider resolution');
-  assert.ok(DRAFT_JUDGE, 'the draft-judge resolution moved — this guard no longer reads the code it guards');
-  assert.match(DRAFT_JUDGE, /resolveJobJudge\(d, PROVIDER_NAME, resolveWorkerModel\)/, 'the compose-time identity must be resolved from the DRAFT, not the authoring identity');
-  assert.match(DRAFT_JUDGE, /resolveDraftJudge\(draft\)/, 'and it must actually be called on the operator\'s draft');
-  assert.ok(GATE_JUDGE, 'the calibration gate\'s judge resolution moved — this guard no longer reads the code it guards');
-  assert.match(GATE_JUDGE, /resolveJobJudge\(spec, PROVIDER_NAME, resolveWorkerModel\)/, 'the gate must resolve from the assembled SPEC through the same function the stamp uses');
-  assert.ok(AUTHOR_JUDGE_ARG, 'the authorCloseForJob call\'s judgeModel argument moved — this guard no longer reads the line it guards');
-  assert.equal(AUTHOR_JUDGE_ARG.trim(), 'judgeModel: draftJudge.model,',
-    'the compose-time CALL SITE must actually spend the resolved draftJudge, not the authoring MODEL — computing the right '
-    + 'identity above and then not using it at the call site is exactly how this defect happened the first time');
-});
 
 /**
  * Actually RUN `draftJudge`'s resolution and the gate's `judge` resolution,
@@ -576,44 +551,6 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
   });
 });
 
-test('a non-anthropic worker: the compose-time stamp and the calibration gate agree with EACH OTHER and with the job\'s real worker', async () => {
-  const draft = { provider: 'openai-api', model: 'some-model' }; // no judge override — a job carries its own model (P8: no provider default exists)
-  const { stamp, gate } = await judgeTwin(draft);
-  // the job's own worker is the draft's own model on the draft's own provider —
-  // NOT a fixed vendor's model, which is what the old hardcoded PROVIDER_NAME/MODEL
-  // stamped regardless of the draft's own provider.
-  assert.deepEqual(stamp, { provider: 'openai-api', model: 'some-model' });
-  assert.deepEqual(gate, stamp, 'the calibration gate must certify the SAME identity the stamp promised — a mismatch is exactly the recalibration refusal this fixes');
-});
-
-test('the draft\'s model is what both sites stamp (there is no provider default to fall back to)', async () => {
-  const draft = { provider: 'openai-api', model: 'deepseek-reasoner' };
-  const { stamp, gate } = await judgeTwin(draft);
-  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-reasoner' });
-  assert.deepEqual(gate, stamp);
-});
-
-test('a signed judge override wins at both sites, regardless of the worker', async () => {
-  const draft = { provider: 'anthropic-api', model: 'm-worker', judge: { provider: 'gemini-api', model: 'a-judge-model' } };
-  const { stamp, gate } = await judgeTwin(draft);
-  assert.deepEqual(stamp, { provider: 'gemini-api', model: 'a-judge-model' });
-  assert.deepEqual(gate, stamp);
-});
-
-test('the resolved identity matches what scripts/run-u.mjs itself resolves at run time — not just self-agreement', async () => {
-  // Mirrors the run engine's worker-model resolution and its judge resolution directly (imported live, not re-typed): the
-  // spec's own model, then resolveJudge over spec.judge. If the twin above agreed with itself but NOT with this, the close would
-  // still be born mismatched from the runner that actually grades it.
-  const { resolveWorkerModel } = await import('../src/job.js');
-  const { resolveJudge } = await import('../src/judged.js');
-  const draft = { provider: 'openai-api', model: 'some-model' };
-  const { model } = resolveWorkerModel({ specModel: draft.model, flagModel: undefined });
-  const expected = resolveJudge({ specJudge: undefined, workerProvider: draft.provider, workerModel: model });
-
-  const { stamp, gate } = await judgeTwin(draft);
-  assert.deepEqual(stamp, expected);
-  assert.deepEqual(gate, expected);
-});
 
 // ── F190: the judge provider was built without the job's baseUrl ───────────
 //
@@ -652,14 +589,6 @@ const JUDGE_PROVIDER_ARG = /let judgeProvider = null;\n[\s\S]*?\n {8}\}\n/.exec(
 // this finding never named as broken.
 const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s\S]*?\n {2}\}\);/.exec(SRC)?.[0];
 
-test('the judge-provider construction statement is still BOUNDED, and the author provider line is untouched', () => {
-  assert.ok(JUDGE_PROVIDER_ARG, 'the judgeProvider construction moved or was reworded — this guard no longer reads the code it guards');
-  assert.match(JUDGE_PROVIDER_ARG, /buildRunnerProviders\(\{/, 'the judge provider must be routed through the one owner, not a hand-rolled makeProvider call');
-  assert.match(JUDGE_PROVIDER_ARG, /judgeBaseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : /,
-    'the same-provider conditional (mirroring scripts/run-u.mjs) is gone from the judge provider construction');
-  assert.ok(AUTHOR_PROVIDER_LINE, 'the author provider construction line moved or was reworded — F190 must not have touched this call site');
-  assert.match(AUTHOR_PROVIDER_LINE, /buildRunnerProviders\(\{/, 'the author provider must also be routed through the one owner (F190, 2026-09-21)');
-});
 
 /**
  * Actually CONSTRUCT a judge provider through the real `judgeProvider`
@@ -707,25 +636,7 @@ const providerTwin = ({
   });
 });
 
-test('F190: same-provider judge receives the AUTHOR\'s baseUrl (the mu4hec9u defect, fixed)', async () => {
-  const { baseUrl } = await providerTwin({
-    judgeProvider: 'openai-api', judgeModel: 'deepseek-flash', providerName: 'openai-api',
-    authorBaseUrl: 'https://api.deepseek.com/v1',
-  });
-  assert.equal(baseUrl, 'https://api.deepseek.com/v1',
-    'same-provider judge must receive the author\'s own baseUrl — this is the exact live defect (run mu4hec9u): '
-    + 'without it, a DeepSeek key was sent to openai-api\'s default host');
-});
 
-test('F190: a DIFFERENT judge provider never inherits the author\'s baseUrl — it gets its OWN default host', async () => {
-  const { baseUrl } = await providerTwin({
-    judgeProvider: 'gemini-api', judgeModel: 'gemini-2.5-flash', providerName: 'anthropic-api',
-    authorBaseUrl: 'https://api.deepseek.com/v1',
-  });
-  assert.notEqual(baseUrl, 'https://api.deepseek.com/v1',
-    'a different vendor must never be pointed at the author\'s endpoint — this is the exact silent-misconfiguration endpointKey exists to prevent');
-  assert.match(baseUrl, /^https:\/\/.*google/i, 'gemini-api\'s own default host, untouched by the author\'s baseUrl');
-});
 
 // ── --provider comes from the DRAFT, at $0, before any paid call ────────────
 //
