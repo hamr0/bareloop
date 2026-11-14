@@ -119,7 +119,8 @@ import { runPageMap, tooManyAsksText } from './pagemap.js';
 import { CheckBlock } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
-import { scopedRules, codeScope, plainWords } from './checkpick.js';
+import { renderJobLines } from './jobblock.js';
+import { scopedRules, codeScope, plainWords, obviousCheck } from './checkpick.js';
 import { matchRecord, entriesFromAnswers, KEPT_WORDS } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
 import { runLedgerSuggest, ledgerRecord } from './checklist.js';
@@ -426,7 +427,7 @@ function composerRefusal(reds) {
  * one-genre-at-a-time law is untouched.
  *
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
- *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   jobLines?: {n: number, text: string, rule?: string, rules?: string[]}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
@@ -438,7 +439,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -481,6 +482,8 @@ export async function authorCloseForJob({
   ledgerGenerate = null,
   // 2026-11-14 (b): the note question (src/noteask.js), asked ONLY when a rubric line is facts-only; ABSENT = never asked (every older caller and test)
   noteFn = null,
+  // one rule in, one rule out: called with the job lines rebuilt from the check list after an answer (the seam that shows the job text updates itself); ABSENT = nothing shows it
+  onJobLines = null,
   // the row-edit turn's own model boundary (src/rowedit.js ROW_EDIT_SYSTEM); a test that replaces `generate` need not bring one
   editGenerate = null,
   // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
@@ -673,13 +676,10 @@ export async function authorCloseForJob({
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
+    // a rule whose words already are its check is settled by the block as written (no ask, no suggestion call)
+    matched.askRules = matched.askRules.filter((r) => !obviousCheck(r.text));
     carried = { kept: matched.kept };
-    block.carry({ picks: matched.picks, left: matched.left }, matched.askRules);
-    // a rule the record folded into another ask (a broken pair's partner) is neither asked nor given the old check: Not checked, in the pick path's own words
-    for (const r of scoped) {
-      const row = block.ruleRows(r.line).find((x) => x.rule === r.rule);
-      if (row && !matched.askRules.some((a) => a.line === r.line && a.rule === r.rule) && !row.pick && !row.cantAsked && !row.left && !row.parent) row.folded = true;
-    }
+    block.carry({ picks: matched.picks, left: matched.left });
     block.reconcile();
     // the pick call: one suggestion per counting rule the record did not keep; each kept suggestion is a `pick` edit
     if (answerQuestions && pickGenerate && matched.askRules.length > 0) {
@@ -734,12 +734,19 @@ export async function authorCloseForJob({
         answered.picks.push(...(Array.isArray(updated.picks) ? updated.picks : []));
         answered.left.push(...(Array.isArray(updated.left) ? updated.left : []));
         const refused = applyChoices(block, Array.isArray(updated.choices) ? updated.choices : []);
+        // one rule in, one rule out (hamr 2026-11-14): the list replaced each answered rule, so the job text is rebuilt FROM the list (its one owner) and handed back to the seam that shows it
+        const rebuilt = block.jobLinesView(jobLines);
+        jobLines = rebuilt;
+        interview.answers = { ...interview.answers, 1: renderJobLines(rebuilt) };
+        if (typeof onJobLines === 'function') onJobLines(rebuilt);
         if (refused.length === 0) break;
       }
       // the record this draft hands on, written whether or not anything was asked (a draft that kept every pick still carries them forward): the picks it kept, as they were, and the picks just answered, keyed by words
       if (scoped.length > 0) {
+        // the record keeps the FINAL words of each rule (an answer replaced the rule it was asked about), numbered on this card
+        const finalRules = jobLines.flatMap((l) => (l.rules ?? []).map((t, i) => ({ line: l.n, rule: i + 1, text: t })));
         onPicks({
-          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, scoped, answered.picks, answered.left.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
+          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, finalRules, answered.picks, answered.left.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
           kept: carried.kept.map((k) => ({ line: k.line, rule: k.rule, entry: k.entry })),
         });
       }

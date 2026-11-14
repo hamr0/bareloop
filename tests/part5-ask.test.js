@@ -44,7 +44,7 @@ test('T2: a rule no kept fact carries is asked (line, rule, code-owned words); t
   const qs = askableFromLook(untied, spec.jobLines);
   assert.equal(qs.length, 1);
   assert.deepEqual([qs[0].line, qs[0].rule, qs[0].source], [1, 3, 'look']);
-  assert.equal(qs[0].question, `Your line 1 says "nonstop". I can't check this on the page. Drop it? Answer "${DROP_IT}", or type how to check it (your answer is added as a new ~ rule on line 1).`);
+  assert.equal(qs[0].question, `Your line 1 says "nonstop". I can't check this on the page. Drop it? Answer "${DROP_IT}", or type how to check it (your answer replaces that ~ rule on line 1).`);
   const twice = [{ n: 1, text: 'x', rule: 'nonstop; nonstop', rules: ['nonstop', 'Nonstop'] }];
   assert.equal(askableFromLook({ facts: [] }, twice).length, 1, 'the same guardrail on the same line is asked once');
   assert.deepEqual(askableFromLook({ facts: [] }, [{ n: 1, text: 'x' }]), [], 'a line with no ~ rule asks nothing');

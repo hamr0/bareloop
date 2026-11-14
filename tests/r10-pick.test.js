@@ -72,27 +72,27 @@ test('the asks (questionsOfBlock): fwd\'s words, `counted` only for "I can\'t ch
   b.applyDelta({ label: 'pre', pre: true, edits: [{ op: 'pick', line: 1, rules: [1], check: { rule: 'maxWords', value: 80 } }] });
   b.reconcile();
   const [a, c] = questionsOfBlock(b, [{ line: 1, rule: 1 }, { line: 1, rule: 2 }]);
-  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words. Answer "agree" to use it, or type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.');
-  assert.equal(c.question, `Line 1, guardrail "be nice": ${CANT_CHECK_WORDS} Type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.`);
+  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
+  assert.equal(c.question, `Line 1, guardrail "be nice": ${CANT_CHECK_WORDS} Type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.`);
   assert.deepEqual([a.counted, c.counted, a.ask, c.ask, a.source], [false, true, 'check', 'no-check', 'look']);
   assert.equal(rowsFromAnswer([{ line: 1, rule: 1, text: 'x' }], { checks: [] })[0].why, 'no entry');
 });
 
 // ---- settle + apply -----------------------------------------------------------------------------------------------------------------------------
 const RULES = [{ line: 1, rule: 1, text: 'under 80 words' }, { line: 1, rule: 2, text: 'be nice' }, { line: 1, rule: 3, text: 'no jargon' }];
-const LINES_AFTER = [{ n: 1, text: 'Summarise', rule: 'x', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }];
+const LINES_AFTER = [{ n: 1, text: 'Summarise', rule: 'x', rules: ['at most 80 words', 'be very nice', 'no jargon'] }];
 const draftWith = (parts, refused = []) => ({ stages: [{ name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts } }], refused });
 test('picks on the block: the pick is the line\'s only shape check, carries the guardrail and its added ~ rule; the others are Not checked with the reason; nothing the drafter could write is left to drop', () => {
   const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'], asks: false });
-  b.fromJob([{ n: 1, text: 'Summarise', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }]);
+  b.fromJob([{ n: 1, text: 'Summarise', rules: ['at most 80 words', 'be very nice', 'no jargon'] }]);
   b.addLook([]);
-  b.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }, { line: 1, rule: 2, check: null, added: 'be very nice', own: true }], left: [{ line: 1, rule: 3 }] });
+  b.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 } }, { line: 1, rule: 2, check: null, own: true }], left: [{ line: 1, rule: 3 }] });
   const c = b.reconcile();
   const parts = c.stages.flatMap((st) => st.params.parts);
   assert.deepEqual(parts.map((p) => p.check), ['maxWords', 'cited']);
-  assert.deepEqual(parts[0], { text: 'under 80 words', class: 'countable', check: 'maxWords', value: 80, rules: [1, 4] });
+  assert.deepEqual(parts[0], { text: 'at most 80 words', class: 'countable', check: 'maxWords', value: 80, rules: [1] });
   const refused = b.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => [r.rule, r.reason.slice(0, 21)]);
-  assert.deepEqual(refused, [[2, 'Your own words are on'], [3, 'You chose to leave it'], [5, 'Your own words are on']]);
+  assert.deepEqual(refused, [[2, 'Your own words are on'], [3, 'You chose to leave it']]);
   const row = cardOfClose({ closeDecl: { genre: 'text', lang: 'text', stages: c.stages, list: b.signedRows(), refused: b.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason) })) }, jobLines: [{ n: 1, text: 'Summarise', rule: 'x', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }] });
   assert.ok(row.checkItems.some((x) => x.text === 'the text is at most 80 words'));
   assert.ok(row.notChecked.some((n) => /^line 1: "no jargon" — You chose to leave it Not checked/.test(n)));
@@ -132,7 +132,7 @@ test('authorClose with picks: exactly the picked check reaches the plan (a draft
   assert.equal(proved.ok, true);
   if (!proved.ok) return;
   const prep = proved.prep;
-  const line = { n: 1, text: 'Summarise the latest release', rule: 'under 80 words; be nice; no jargon; at most 80 words', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words'] };
+  const line = { n: 1, text: 'Summarise the latest release', rule: 'at most 80 words; be nice; no jargon', rules: ['at most 80 words', 'be nice', 'no jargon'] };
   /** @type {string[]} */ const prompts = [];
   const generate = async (m, tools) => {
     prompts.push(m[0].content);
@@ -143,7 +143,7 @@ test('authorClose with picks: exactly the picked check reaches the plan (a draft
   const block = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'], asks: false });
   block.fromJob([line]);
   block.addLook([]);
-  block.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }], left: [{ line: 1, rule: 2 }, { line: 1, rule: 3 }] });
+  block.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 } }], left: [{ line: 1, rule: 2 }, { line: 1, rule: 3 }] });
   block.reconcile();
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
@@ -154,7 +154,7 @@ test('authorClose with picks: exactly the picked check reaches the plan (a draft
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   const parts = r.declaration.stages[1].params.parts;
   assert.deepEqual(parts.filter((p) => p.check !== 'cited').map((p) => [p.check, p.value]), [['maxWords', 80]], 'only the pick; a drafter pick edit of 79 on a settled rule is refused ("already on the list" would be the proposal of an asked rule)');
-  assert.deepEqual(parts[0].rules, [1, 4]);
+  assert.deepEqual(parts[0].rules, [1]);
   assert.deepEqual(r.declaration.refused.map((x) => x.rule).sort(), [2, 3]);
   assert.doesNotMatch(prompts[0].split('INPUT "Changelog"')[0], /SETTLED BY CODE|THE LIST OF CHECKS/, 'no injected text restates what code settled');
 });
@@ -182,7 +182,8 @@ async function doorWorld(lines, { answer, suggest, look = { facts: [], prose: []
         if (a === 'drop it') { left.push({ line: q.line, rule: q.rule }); continue; }
         const text = a === 'agree' && q.ask === 'check' ? plainWords(q.check) : a;
         picks.push({ line: q.line, rule: q.rule, check: a === 'agree' && q.ask === 'check' ? q.check : null, added: text, ...(a === 'agree' && q.ask === 'check' ? {} : { own: true }) });
-        jl[0].rule += `; ${text}`; jl[0].rules.push(text);
+        // one rule in, one rule out: the answer REPLACES the asked rule (the seam's job text is rebuilt from the check list afterwards)
+        jl[0].rules[q.rule - 1] = text; jl[0].rule = jl[0].rules.join('; ');
       }
       const choices = o.questions.map((q) => { const a = answer(q); return a === 'drop it' ? { key: q.key, choice: 'drop', text: a } : (a === 'agree' && q.ask === 'check' ? { key: q.key, choice: 'agree', text: '' } : { key: q.key, choice: 'rule', text: a }); });
       return { jobLines: jl, answers: { 1: 'ans' }, left, picks, choices };
@@ -198,9 +199,9 @@ test('the door: a proposal and a "can\'t check" are asked before any draft; agre
   assert.deepEqual(w.order.filter((x) => ['check-suggest', 'check-ask', 'authorFn'].includes(x)), ['check-suggest', 'check-ask', 'authorFn']);
   assert.deepEqual(w.asked[0].map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1], ['no-check', 1, 2]]);
   const ruleRows = w.seen.block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(ruleRows.map((r) => [r.rule, r.pick?.rule ?? null, r.text]), [[1, 'maxWords', 'under 80 words'], [2, null, 'be nice'], [3, null, 'at most 80 words'], [4, null, 'be gentle']]);
+  assert.deepEqual(ruleRows.map((r) => [r.rule, r.pick?.rule ?? null, r.text]), [[1, 'maxWords', 'at most 80 words'], [2, null, 'be gentle']]);
   assert.equal(ruleRows[1].cantAsked, true, 'the asked rule is settled by the person\'s own words (a typed row holds them)');
-  assert.equal(w.seen.jobLines[0].rules.at(-1), 'be gentle');
+  assert.deepEqual(w.seen.jobLines[0].rules, ['at most 80 words', 'be gentle']);
   assert.deepEqual(w.survey.calls.map((c) => c.label), ['check-suggest'], 'the call\'s spend joins the survey\'s, so the one ceiling holds it');
 });
 test('the cap: proposals never count; the look\'s asks plus "I can\'t check this" asks over MAX_QUESTIONS stop at $0 with the list and ask nothing', async () => {

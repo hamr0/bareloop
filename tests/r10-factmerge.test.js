@@ -11,7 +11,7 @@ import { draftStopText } from '../src/authorreadout.js';
 
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8');
 const { D5 } = JSON.parse(fx('r10-factmerge-refused.json'));
-const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', 'exactly 3 list items', 'at most 80 words'] }];
+const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 list items', 'at most 80 words'] }];
 const opts = () => ({
   catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
   envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines, inputLabels: ['Changelog'],

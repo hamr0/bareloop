@@ -15,7 +15,7 @@ export function builtFrom(d, text, { picked = PICKS, rules = ['exactly 3 bullets
   const facts = steps.flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.class === 'fact').flatMap((/** @type {any} */ p) => p.facts.map((/** @type {any} */ f) => ({ line: s.params.step, name: f.name, shape: f.shape, source: p.source ?? label, words: [f.phrase ?? f.anchor].filter(Boolean) }))));
   const count = steps.flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.count).map((/** @type {any} */ p) => p.count))[0];
   const block = new CheckBlock({ texts: { [label]: text }, labels: [label], asks: false });
-  block.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: [...rules, ...(picked ? picked.map((/** @type {any} */ p) => p.added) : [])] }]);
+  block.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: picked ? picked.map((/** @type {any} */ p) => p.added) : rules }]); // one rule in, one rule out: an agreed pick's rule IS its final words, there is no pair partner line
   block.addLook(facts);
   if (picked) block.carry({ picks: picked });
   if (count) block.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, ...count }] });

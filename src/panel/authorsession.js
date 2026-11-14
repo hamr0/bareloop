@@ -59,7 +59,7 @@ import { readTicket } from '../ticket.js';
 import { readRunList } from '../runlist.js';
 import { fetchPageText } from '../pagefetch.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
-import { plainWords, SUGGEST_SYSTEM, sameRuleWords } from '../checkpick.js';
+import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
@@ -493,7 +493,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -1193,6 +1193,14 @@ export function createSession(card, deps = {}) {
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
     // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
     // signed `jobLines`, the answers text and the plan card all read the same words.
+    /** the job text as the draft shows and signs it: the signed lines, the card's box, the answers text and one message (the check list's rebuilt lines, or the lines a try-3 answer added) */
+    const syncJobLines = (/** @type {any[]} */ lines, /** @type {string|null} */ say = null, /** @type {any} */ confirmed = null) => {
+      draft.jobLines = signedJobLines(lines);
+      // the card's job box holds the rules as they now are (an answer replaced the rule it was asked about), so a Revise reopens the boxes with them
+      state.card = { ...state.card, jobText: jobBoxText(lines) };
+      answers[1] = renderJobLines(lines);
+      if (say !== null) state.messages.push({ ...planMessage({ ...(confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, lines), text: say });
+    };
     const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, ruleText?: string, check?: Record<string, any>}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
@@ -1230,31 +1238,23 @@ export function createSession(card, deps = {}) {
         const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'no-check' || q.ask === 'check') && Number.isInteger(q.rule);
         if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
-        // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
-        // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
-        let agreedPick = false;
+        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked; anything else
+        // is the person's own words, which replace the asked rule word for word (no check unless the words are the check: they judge it at Accept)
         const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
-        // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
-        const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
-        if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
+        if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && agrees;
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
-          agreedPick = agreed === true;
           if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
-          picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
+          picks.push({ line: q.line, rule: /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, ...(agreed ? {} : { own: true }) });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
         }
+        // one rule in, one rule out (hamr 2026-11-14): an answer about a rule of the check list REPLACES that rule, and the list is the one owner (the caller rebuilds the job text from it: `onJobLines`).
+        // Only an answer that is not about a list row (a model's own try-3 question) is still added word for word as a new `~` rule on its line.
         const line = jobLines.find((l) => l.n === q.line);
-        if (line && pair !== null) { line.rules[/** @type {number} */ (q.rule) - 1] = text; line.rule = line.rules.join('; '); }
-        // F318: agreeing to words the line already holds as a ~ rule adds no second line (the pick cites the rule that is there); different words still add one
-        else if (line && !(agreedPick && line.rules.some((/** @type {string} */ t) => sameRuleWords(t, text)))) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (q.source !== 'look' && line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
-      draft.jobLines = signedJobLines(jobLines);
-      // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
-      state.card = { ...state.card, jobText: jobBoxText(jobLines) };
-      answers[1] = renderJobLines(jobLines);
-      state.messages.push({ ...planMessage({ ...(o.confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      syncJobLines(jobLines, left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.', o.confirmed);
       return { jobLines, answers, left, picks, choices };
     };
 
@@ -1278,7 +1278,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => syncJobLines(lines), editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {

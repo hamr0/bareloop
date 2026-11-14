@@ -74,7 +74,7 @@ test('reading ask: the real "not a red-eye" rule (bound not in the person\'s wor
   assert.equal(qs.length, 1, '"under $450" and "nonstop" are carried by page words');
   assert.deepEqual([qs[0].line, qs[0].rule, qs[0].source, qs[0].ask], [1, 2, 'look', 'reading']);
   assert.equal(qs[0].reading, AGREED);
-  assert.equal(qs[0].question, `Your line 1 says "not a red-eye". I read it as: ${AGREED}. Agree? Answer "agree", or type your own reading (your answer is added as a new ~ rule on line 1).`);
+  assert.equal(qs[0].question, `Your line 1 says "not a red-eye". I read it as: ${AGREED}. Agree? Answer "agree", or type your own reading (your answer replaces that ~ rule on line 1).`);
   assert.deepEqual(askableFromLook(lookOf(rawReal), spec.jobLines), [], 'no reading on the fact and the rule tied: a page rule, nothing asked');
 });
 
@@ -101,7 +101,7 @@ test('can\'t check: a rule no kept fact carries is asked "Drop it?" in code-owne
   const look = { ...full, facts: full.facts.filter((f) => f.forRule !== 3) };
   const qs = askableFromLook(look, spec.jobLines);
   assert.deepEqual(qs.map((q) => [q.rule, q.ask]), [[2, 'reading'], [3, 'cant-check']]);
-  assert.equal(qs[1].question, 'Your line 1 says "nonstop". I can\'t check this on the page. Drop it? Answer "drop it", or type how to check it (your answer is added as a new ~ rule on line 1).');
+  assert.equal(qs[1].question, 'Your line 1 says "nonstop". I can\'t check this on the page. Drop it? Answer "drop it", or type how to check it (your answer replaces that ~ rule on line 1).');
   const order = askableFromLook({ facts: [] }, [{ n: 1, text: 'x', rules: ['a', 'a'] }, { n: 2, text: 'y', rules: ['b'] }]);
   assert.deepEqual(order.map((q) => [q.line, q.ruleText]), [[1, 'a'], [2, 'b']]);
 });
@@ -159,7 +159,7 @@ function sessionOver({ lookFacts, jobText, confirmCalls = [] }) {
 }
 const JOB = '1. List 3 flights from Boston to Chicago\n~ under $450\n~ not a red-eye\n~ nonstop';
 
-test('session: "agree" writes the reading as a `~` rule in plain words next to the original (nothing is rewritten) and the answer is recorded as typed', async () => {
+test('session: "agree" writes the reading as a `~` rule in plain words IN PLACE of the original (one rule in, one rule out) and the answer is recorded as typed', async () => {
   const { session, legs, sessionDir } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'look');
@@ -168,7 +168,7 @@ test('session: "agree" writes the reading as a `~` rule in plain words next to t
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   session.signPrepare();
   assert.ok(await until(() => legs.length === 1));
-  assert.deepEqual(legs[0].jobLines[0].rules, ['under $450', 'not a red-eye', 'nonstop', AGREED]);
+  assert.deepEqual(legs[0].jobLines[0].rules, ['under $450', AGREED, 'nonstop']);
   const human = readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'human');
   assert.deepEqual(human.map((h) => [h.source, h.line, h.answer]), [['look', 1, 'agree']]);
 });
@@ -180,7 +180,7 @@ test('session: a typed answer becomes the `~` rule instead; "drop it" on a readi
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   session.signPrepare();
   assert.ok(await until(() => legs.length === 1));
-  assert.equal(legs[0].jobLines[0].rules.at(-1), 'departs between 05:00 and 22:00');
+  assert.equal(legs[0].jobLines[0].rules[1], 'departs between 05:00 and 22:00', 'the typed words replaced the asked rule 2');
 });
 
 test('F240 session: "yes, <own reading>" signs the reading without the leading "yes,"; the log keeps the answer as typed', async () => {
@@ -190,7 +190,7 @@ test('F240 session: "yes, <own reading>" signs the reading without the leading "
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   session.signPrepare();
   assert.ok(await until(() => legs.length === 1));
-  assert.equal(legs[0].jobLines[0].rules.at(-1), 'check it as departure between 05:00 and 21:59');
+  assert.equal(legs[0].jobLines[0].rules[1], 'check it as departure between 05:00 and 21:59');
   const human = readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'human');
   assert.equal(human[0].answer, 'yes, check it as departure between 05:00 and 21:59');
 });
@@ -205,7 +205,7 @@ test('F240 session: "yes, drop it" on a can\'t-check ask drops it like "drop it"
   assert.ok(await until(() => survey.session.state.pendingAsk?.kind === 'menu'));
   survey.session.signPrepare();
   assert.ok(await until(() => survey.legs.length === 1));
-  assert.deepEqual(survey.legs[0].jobLines[0].rules, ['under $450', 'not a red-eye', 'nonstop', AGREED]);
+  assert.deepEqual(survey.legs[0].jobLines[0].rules, ['under $450', AGREED, 'nonstop']);
 });
 
 test('session: "drop it" on a can\'t-check ask adds no rule and the rule lands on the look\'s Not checked list', async () => {
@@ -218,7 +218,7 @@ test('session: "drop it" on a can\'t-check ask adds no rule and the rule lands o
   assert.ok(await until(() => survey.session.state.pendingAsk?.kind === 'menu'));
   survey.session.signPrepare();
   assert.ok(await until(() => survey.legs.length === 1));
-  assert.deepEqual(survey.legs[0].jobLines[0].rules, ['under $450', 'not a red-eye', 'nonstop', AGREED], 'only the agreed reading was added; "drop it" added nothing');
+  assert.deepEqual(survey.legs[0].jobLines[0].rules, ['under $450', AGREED, 'nonstop'], 'the agreed reading REPLACED "not a red-eye" (one in, one out); "drop it" changed nothing');
 });
 
 test('session: MORE than the cap (4 asks) asks nothing, makes no confirm call, drafts nothing, and stops with the list of every ask and its reading', async () => {
