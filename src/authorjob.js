@@ -700,7 +700,7 @@ export async function authorCloseForJob({
   // THE CHECK BLOCK of a rubric job (src/checkblock.js; hamr 2026-11-12: "one flow one place ai suggestes ! code adds $ and code decides what worked/doable"). It is made once here, after the look:
   // the person's `~` rules and `$` defaults, then the look's facts (a fact tied to a `~` rule is a link on that row), then the last draft's picks Revise keeps (am17/am18/am21). The AI's two
   // helpers (the pick call for count rules, the call for extra `!` checks) send ROW EDITS through the SAME door as the drafter's reply (`applyDelta`). Code then asks (cap 3) about what it
-  // cannot settle and applies the person's CHOICE (agree | drop | their own words) with `applyAnswer`. Every check comes from the rows; no other store holds one.
+  // cannot settle and applies the person's CHOICE (agree | drop, buttons only) with `applyAnswer`. Every check comes from the rows; no other store holds one.
   /** @type {import('./checkblock.js').CheckBlock|null} */
   let block = null;
   /** the picks the person made (kept and answered) this draft, as the picks record carries them */

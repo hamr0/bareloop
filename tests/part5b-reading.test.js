@@ -10,7 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession } from '../src/panel/authorsession.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
-import { askableFromLook, parseMapAnswer, tooManyAsksText, isAgree, stripAgreeLead, mapPrompt } from '../src/pagemap.js';
+import { askableFromLook, parseMapAnswer, tooManyAsksText, isAgree, mapPrompt } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { lookFactOf } from '../src/inputlook.js';
 import { checkRubricRules } from '../src/rubricstep.js';
@@ -74,7 +74,7 @@ test('reading ask: the real "not a red-eye" rule (bound not in the person\'s wor
   assert.equal(qs.length, 1, '"under $450" and "nonstop" are carried by page words');
   assert.deepEqual([qs[0].line, qs[0].rule, qs[0].source, qs[0].ask], [1, 2, 'look', 'reading']);
   assert.equal(qs[0].reading, AGREED);
-  assert.equal(qs[0].question, `Your line 1 says "not a red-eye". I read it as: ${AGREED}. Agree? Answer "agree", or type your own reading (your answer replaces that ~ rule on line 1).`);
+  assert.equal(qs[0].question, `Your line 1 says "not a red-eye". I read it as: ${AGREED}. Agree?`);
   assert.deepEqual(askableFromLook(lookOf(rawReal), spec.jobLines), [], 'no reading on the fact and the rule tied: a page rule, nothing asked');
 });
 
@@ -101,7 +101,7 @@ test('can\'t check: a rule no kept fact carries is asked "Drop it?" in code-owne
   const look = { ...full, facts: full.facts.filter((f) => f.forRule !== 3) };
   const qs = askableFromLook(look, spec.jobLines);
   assert.deepEqual(qs.map((q) => [q.rule, q.ask]), [[2, 'reading'], [3, 'cant-check']]);
-  assert.equal(qs[1].question, 'Your line 1 says "nonstop". I can\'t check this on the page. Drop it? Answer "drop it", or type how to check it (your answer replaces that ~ rule on line 1).');
+  assert.equal(qs[1].question, 'Your line 1 says "nonstop". I can\'t check this on the page. Drop it?');
   const order = askableFromLook({ facts: [] }, [{ n: 1, text: 'x', rules: ['a', 'a'] }, { n: 2, text: 'y', rules: ['b'] }]);
   assert.deepEqual(order.map((q) => [q.line, q.ruleText]), [[1, 'a'], [2, 'b']]);
 });
@@ -109,16 +109,6 @@ test('can\'t check: a rule no kept fact carries is asked "Drop it?" in code-owne
 test('isAgree: agree / yes, any case, a closing stop; a typed reading is not agreement', () => {
   for (const a of ['agree', 'Agree.', ' YES ', 'yes!']) assert.equal(isAgree(a), true, a);
   for (const a of ['agree, but 7am', 'no', 'drop it', '']) assert.equal(isAgree(a), false, a);
-});
-
-test('F240 stripAgreeLead: a leading agree word + comma or colon goes, the rest stays word for word; bare, stop-closed and mid-sentence yes are untouched', () => {
-  const real = 'yes, check it as departure between 05:00 and 21:59';
-  assert.equal(stripAgreeLead(real), 'check it as departure between 05:00 and 21:59');
-  assert.equal(stripAgreeLead('Yes, Departs by 7am'), 'Departs by 7am');
-  assert.equal(stripAgreeLead('AGREE: departs by 7am'), 'departs by 7am');
-  assert.equal(stripAgreeLead('Yes,drop it'), 'drop it');
-  assert.equal(stripAgreeLead('yes, drop it'), 'drop it');
-  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am', 'yes departs by 7am', 'agree with the shown price', 'yes or no questions only', 'yes-no questions only', 'agree-ment on price', 'yes - departs by 7am', 'yes \u2014 the outbound', 'yes\u2013the outbound', 'yesterday, the price']) assert.equal(stripAgreeLead(a), a, a);
 });
 
 test('tooManyAsksText lists EVERY ask and its reading, in code-owned words; a secret is masked; draftStopText prints it whole', () => {

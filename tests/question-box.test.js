@@ -36,7 +36,7 @@ test('the static markup: head, line, question, the labelled one-line box, an ale
   assert.match(PAGE, /<div class="hint q-err" id="chat-q-error"[^>]*role="alert"><\/div>/);
   assert.match(PAGE, /<button class="btn primary wide" type="button" id="chat-q-send"[^>]*>Send<\/button>/);
   assert.match(PAGE, /placeholder="Your answer, on one line"/);
-  assert.match(PAGE, /<div class="chat-input-row">/, 'the chat input stays for the asks that have no box');
+  assert.match(PAGE, /<div class="chat-input-row" hidden>/, 'the chat input stays for the asks that have no box');
   assert.ok(PAGE.indexOf('id="chat-question"') < PAGE.indexOf('class="chat-input-row"'), 'the box sits where the chat input is');
   assert.match(PAGE, /\.chat-question\{[^}]*box-sizing:border-box/);
   assert.match(PAGE, /\.chat-question \.q-text\{[^}]*overflow-wrap:anywhere/);
@@ -69,18 +69,17 @@ function boxHarness() {
 }
 const ASK = (text, over = {}) => ({ pendingAsk: { kind: 'answer', index: 1, source: 'look', box: { head: 'A question the plan raised (1 of 2)', line: 'About job line 1', text, choices: [], orLabel: 'Type your answer:' }, ...over } });
 
-test('page: an open question shows the box and takes the chat input\'s place; closing brings the chat input back', () => {
+test('page: an open question shows the box and takes the chat input\'s place; closing brings the main button back', () => {
   const { e, render } = boxHarness();
   render(ASK('Which one?'));
   assert.equal(e.qBox.hidden, false);
-  assert.equal(e.row.hidden, true, 'the chat input is hidden while the box is open');
+  assert.equal(e.row.hidden, true, 'the chat input row is renderMain\'s (hidden beside a box, and when nothing asks to be typed); renderQuestionBox leaves it alone');
   assert.equal(e.mainBtn.hidden, true, 'the box has its own Send');
   assert.equal(e.qHead.textContent, 'A question the plan raised (1 of 2)');
   assert.equal(e.qLine.textContent, 'About job line 1');
   assert.equal(e.qText.textContent, 'Which one?');
   render({ pendingAsk: { kind: 'menu' } });
   assert.equal(e.qBox.hidden, true);
-  assert.equal(e.row.hidden, false);
   assert.equal(e.mainBtn.hidden, false);
   render(null);
   assert.equal(e.qBox.hidden, true);

@@ -63,7 +63,7 @@ const seen = (/** @type {any} */ msg) => JSON.stringify(msg);
 test('Agree on "not a red-eye": every view the person sees holds the agreed words, none holds the old ones', async () => {
   const { session, legs, sessionDir } = sessionOver(JOB);
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
-  session.send('agree');
+  session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   // the answers message
   const answered = session.state.messages.filter((x) => /Your answers are in/.test(x.text ?? ''));
@@ -89,7 +89,7 @@ test('Agree on "not a red-eye": every view the person sees holds the agreed word
 test('Revise after Agree reopens with the agreed words and a re-draft from them asks nothing for that rule', async () => {
   const first = sessionOver(JOB);
   assert.ok(await until(() => first.session.state.pendingAsk?.kind === 'answer'));
-  first.session.send('agree');
+  first.session.send('', 'agree');
   assert.ok(await until(() => first.session.state.pendingAsk?.kind === 'menu'));
   const reopened = first.session.state.card.jobText;
   assert.doesNotMatch(reopened, /red-eye/);

@@ -675,10 +675,10 @@ export class CheckBlock {
   hasOpenQuestions() { return this.open.length > 0; }
   hasPendingDelta() { return this.queue.length > 0; }
 
-  // 6. the person's answer: a row edit from the typed CHOICE (agree | drop | rule). ONE rule in, ONE rule out (hamr 2026-11-14, superseding the 2026-11-12 ruling that an agreed answer is a new `~` line):
-  // the answer REPLACES the asked rule, same line and same rule number; this list is the one owner (the job text is rebuilt from it, `jobLinesView`).
-  /** @param {string} qKey @param {string} choice @param {string} [text] @returns {{ok: true} | {ok: false, why: string}} */
-  applyAnswer(qKey, choice, text) {
+  // 6. the person's answer: a row edit from the typed CHOICE (agree | drop), buttons only (hamr 2026-11-15: a typed own-words answer is retired; a rule is changed by Revise). ONE rule in, ONE rule out (hamr 2026-11-14):
+  // an agreed answer REPLACES the asked rule, same line and same rule number; this list is the one owner (the job text is rebuilt from it, `jobLinesView`).
+  /** @param {string} qKey @param {string} choice @returns {{ok: true} | {ok: false, why: string}} */
+  applyAnswer(qKey, choice) {
     const q = this.open.find((x) => x.key === qKey);
     const r = q ? this.rows.find((x) => x.key === q.rowKey) : undefined;
     if (!q || !r) return { ok: false, why: 'out of date' };
@@ -695,13 +695,6 @@ export class CheckBlock {
       return { ok: true };
     }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
-    if (choice === 'rule') {
-      const said = String(text ?? '').replace(/\s+/g, ' ').trim();
-      if (!said) return { ok: false, why: 'an answer is needed' };
-      // the person's own words are the rule now (typed); a counting rule is judged again as written (settled when its words are the proposal), any other stays the person's to judge
-      r.text = said; r.origin = 'typed'; r.cantAsked = !isCountable(said);
-      return { ok: true };
-    }
     return { ok: false, why: 'not one of the choices' };
   }
 
@@ -861,7 +854,7 @@ export class CheckBlock {
   // 8. whole-list reconcile, every time
   reconcile() { this.match(); const c = this.build(); this.ask(); return c; }
 
-  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice, text} or null (a person who did not answer) */
+  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice} or null (a person who did not answer) */
   drive({ answer }) {
     this.unanswered = [];
     this.reconcile();
@@ -869,7 +862,7 @@ export class CheckBlock {
       const q = this.open.find((x) => !this.unanswered.includes(x.key));
       if (q) {
         const a = answer(q);
-        const res = a ? this.applyAnswer(q.key, a.choice, a.text) : { ok: false };
+        const res = a ? this.applyAnswer(q.key, a.choice) : { ok: false };
         if (!res.ok) { this.unanswered.push(q.key); continue; }
         this.reconcile();
         continue;

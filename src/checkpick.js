@@ -291,9 +291,6 @@ export function rowsFromAnswer(scoped, args) {
 }
 
 // ---- the asks (words are item 4's) -------------------------------------------------------------------------------------------------------
-/** how every answer is told, once (fwd am2 item 2's words) */
-export const HOW_TO_ANSWER = (/** @type {number} */ line, /** @type {boolean} */ agree) => `${agree ? 'Answer "agree" to use it, or type your own words' : 'Type your own words'} (your answer replaces that ~ rule on line ${line}), or answer "drop it" to leave it Not checked.`;
-
 /** a part of a rubric-step stage, from a pick: the check's own fields, the rule's words, and the `~` rule numbers it carries out @param {Record<string, any>} check @param {string} text @param {number[]} rules */
 export function partOfPick(check, text, rules) {
   const { rule, ...fields } = check;

@@ -1,8 +1,8 @@
 // The questions of the check block, as the answer gate reads them (`answerQuestions`, src/questionbox.js): ONE spelling of the question words, written by code from a row that
-// code could not settle (reading | check), A rule no check can prove has no question: it is Not checked at once (src/checkblock.js).
+// code could not settle (reading | check), BUTTONS ONLY (hamr 2026-11-15: Agree, and Drop it on a proposed check). A rule no check can prove has no question: it is Not checked at once (src/checkblock.js).
 // The block's `open` list is the source; the person's CHOICE (agree | drop) goes back through `block.applyAnswer`.
 import { readingQuestion } from './pagemap.js';
-import { plainWords, HOW_TO_ANSWER } from './checkpick.js';
+import { plainWords } from './checkpick.js';
 
 /** @typedef {{key: string, rowKey: string, line: number, rule: number, source: 'look', ask: 'reading'|'check', ruleText: string, question: string, counted: boolean, reading?: string, check?: Record<string, any>}} BlockAsk */
 
@@ -18,19 +18,19 @@ export function questionsOfBlock(block) {
     const base = { key: q.key, rowKey: q.rowKey, line: q.line, rule, source: /** @type {'look'} */ ('look'), ruleText: String(q.ruleText) };
     if (q.ask === 'reading') return { ...base, ask: /** @type {'reading'} */ ('reading'), counted: true, reading: String(q.proposal), question: readingQuestion(q.line, String(q.ruleText), String(q.proposal)) };
     const words = plainWords(q.proposal);
-    return { ...base, ask: /** @type {'check'} */ ('check'), counted: false, reading: words, check: q.proposal, question: `Line ${q.line}, guardrail "${q.ruleText}": I propose ${words}. ${HOW_TO_ANSWER(q.line, true)}` };
+    return { ...base, ask: /** @type {'check'} */ ('check'), counted: false, reading: words, check: q.proposal, question: `Line ${q.line}, guardrail "${q.ruleText}": I propose ${words}.` };
   }).sort((a, b) => rank[a.ask] - rank[b.ask]);
 }
 
 /**
  * The person's choices back into the block, one by one (the choice decides, never the words). A choice the block refuses is returned with its plain reason; the question stays open.
- * @param {import('./checkblock.js').CheckBlock} block @param {{key: string, choice: string, text?: string}[]} choices @returns {{key: string, why: string}[]}
+ * @param {import('./checkblock.js').CheckBlock} block @param {{key: string, choice: string}[]} choices @returns {{key: string, why: string}[]}
  */
 export function applyChoices(block, choices) {
   /** @type {{key: string, why: string}[]} */
   const refused = [];
   for (const c of choices) {
-    const r = block.applyAnswer(c.key, c.choice, c.text);
+    const r = block.applyAnswer(c.key, c.choice);
     if (!r.ok) refused.push({ key: c.key, why: r.why });
   }
   block.reconcile();

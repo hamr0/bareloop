@@ -199,50 +199,28 @@ export async function runPageMap({
 export const DROP_IT = 'drop it';
 /** @param {unknown} text @returns {boolean} */
 export const isDropIt = (text) => String(text ?? '').trim().replace(/\.$/, '').toLowerCase() === DROP_IT;
-/** the answers that accept the code's reading of a rule; anything else the person types is their own reading */
+/** the answers that accept the code's reading of a rule (the Result tab's "(you confirmed)" reads an old typed one) */
 const AGREE_WORDS = ['agree', 'yes'];
 /** @param {unknown} text @returns {boolean} */
 export const isAgree = (text) => AGREE_WORDS.includes(String(text ?? '').trim().replace(/[.!]$/, '').toLowerCase());
-/**
- * F240: an answer that opens with an agree word IMMEDIATELY followed by a comma or a colon (spaces allowed only after it) and more text
- * ("yes, check it as ...", "agree: the outbound flight") is the person's own reading with a courtesy word in front: the word and the
- * comma/colon go, the rest stays word for word. No hyphen or dash of any kind and no bare space counts, so "yes-no questions only",
- * "agree-ment on price", "yes - departs", "yes departs" and "yesterday, ..." are kept whole. A bare "yes"/"agree" (isAgree) and a text that
- * only contains the word later are returned untouched.
- * @param {string} text @returns {string}
- */
-export const stripAgreeLead = (text) => {
-  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})[,:]\\s*(\\S[\\s\\S]*)$`, 'i'));
-  return m ? m[1].trim() : String(text ?? '');
-};
-
 /** @typedef {{line: number, rule: number, source: 'look', question: string, ask: 'reading'|'cant-check'|'check'|'no-check', ruleText: string, reading?: string}} LookAsk
  *   `reading` = the plain words an `agree` writes as a `~` rule (a reading ask only) */
 
 /** the words of a reading ask: the ONE spelling, and {@link readingOfQuestion} reads it back (the Result tab's "(you confirmed)") */
 const READING_HEAD = ' I read it as: ';
 const READING_ASKED = '. Agree?';
-/** the part of a reading ask that tells the CLI's typed words (the panel's question box shows the question without it: src/questionbox.js) */
-const READING_ANSWER = ' Answer "agree"';
-const READING_TAIL = `${READING_ASKED}${READING_ANSWER}`;
-/** @param {number} n @returns {string} the rest of a reading ask after its answer words */
-const readingRest = (n) => `, or type your own reading (your answer replaces that ~ rule on line ${n}).`;
-/** @param {number} n @returns {string} the answer words a reading ask ends with (said once, here, and cut in the panel) */
-export const readingTail = (n) => `${READING_ANSWER}${readingRest(n)}`;
-/** @param {number} n @returns {string} the answer words a can't-check ask ends with (said once, here, and cut in the panel) */
-export const cantCheckTail = (n) => ` Answer "${DROP_IT}", or type how to check it (your answer replaces that ~ rule on line ${n}).`;
-/** @param {number} n @param {string} rule @param {string} reading @returns {string} */
-export const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_TAIL}${readingRest(n)}`;
+/** @param {number} n @param {string} rule @param {string} reading @returns {string} a reading ask: the question only (hamr 2026-11-15: buttons only, so no answer words; a rule is changed by Revise) */
+export const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_ASKED}`;
 /** @param {unknown} q a recorded question @returns {string|null} the reading a reading ask proposed, or null when it was another kind of question */
 export function readingOfQuestion(q) {
   const s = String(q ?? '');
   const a = s.indexOf(READING_HEAD);
-  const b = s.indexOf(READING_TAIL);
+  const b = s.indexOf(READING_ASKED, a + 1);
   return a >= 0 && b > a ? s.slice(a + READING_HEAD.length, b) : null;
 }
 
 /** @param {number} n @param {string} rule @returns {string} the can't-check ask of a rule the page cannot check */
-export const cantCheckQuestion = (n, rule, where = ' on the page') => `Your line ${n} says "${rule}". I can't check this${where}. Drop it?${cantCheckTail(n)}`;
+export const cantCheckQuestion = (n, rule, where = ' on the page') => `Your line ${n} says "${rule}". I can't check this${where}. Drop it?`;
 
 /**
  * PRD v1.107 Part 5b ("the look reads, code asks"): the early asks CODE forces before any paid drafting, from the look's own result. Every `~` rule is

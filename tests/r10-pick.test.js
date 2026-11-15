@@ -74,7 +74,7 @@ test('the asks (questionsOfBlock): fwd\'s words for a proposal, not counted; a r
   const asks = questionsOfBlock(b);
   assert.equal(asks.length, 1);
   const [a] = asks;
-  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
+  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
   assert.deepEqual([a.counted, a.ask, a.source], [false, 'check', 'look']);
   assert.equal(b.rows.find((r) => r.kind === 'rule' && r.rule === 2)?.reason, REASON.noRule);
   assert.equal(rowsFromAnswer([{ line: 1, rule: 1, text: 'x' }], { checks: [] })[0].why, 'no entry');

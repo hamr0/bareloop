@@ -58,7 +58,9 @@ test('an answer with no choice is refused in the signed words; nothing is logged
   }
   assert.equal(logOf(session), before, 'nothing logged');
   assert.equal(session.state.pendingAsk, asked, 'the same question is still open');
-  const ok = post({ text: 'under 60 words', choice: 'rule' });
+  const typed = post({ text: 'under 60 words', choice: 'rule' });
+  assert.equal(typed.status, 400, 'the box\'s own words are retired for a check question (hamr 2026-11-15)');
+  const ok = post({ choice: 'agree' });
   assert.equal(ok.status, 200, JSON.stringify(ok.out));
   assert.ok(await until(() => session.state.pendingAsk?.kind !== 'answer' || session.state.pendingAsk !== asked));
 });

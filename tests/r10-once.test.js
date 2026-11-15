@@ -62,7 +62,7 @@ test('D3: round-4 draft 9 (the suggest call said none for "exactly 3 bullets"): 
   const { asks } = asksOf(['exactly 3 bullets', 'under 80 words']);
   const [a, b] = asks;
   assert.deepEqual([a.ask, a.counted, a.check], ['check', false, { rule: 'listItems', value: 3 }]);
-  assert.equal(a.question, 'Line 1, guardrail "exactly 3 bullets": I propose exactly 3 list items. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
+  assert.equal(a.question, 'Line 1, guardrail "exactly 3 bullets": I propose exactly 3 list items.');
   assert.deepEqual([b.ask, b.check], ['check', { rule: 'maxWords', value: 80 }]);
   assert.ok(!asks.some((x) => x.question.includes("I can't check this")));
 });

@@ -1058,7 +1058,7 @@
             <button class="btn primary wide" type="button" id="chat-q-send" data-testid="chat-q-send">Send</button>
           </div>
 
-          <div class="chat-input-row">
+          <div class="chat-input-row" hidden>
             <label for="chat-msg" style="display:none">Message</label>
             <textarea id="chat-msg" rows="2" placeholder="Answer here when the draft asks you a question…" data-testid="chat-msg"></textarea>
           </div>
@@ -5468,6 +5468,8 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
+    // hamr 2026-11-15: the chat's typing box is shown only while something asks to be typed (the language, the goal); a check question has buttons and no box (renderQuestionBox), and with no ask the box is not drawn dimmed
+    var chatRowEl = document.querySelector(".chat-input-row");
     var qBox = document.getElementById("chat-question");
     var qHead = document.getElementById("chat-q-head");
     var qLine = document.getElementById("chat-q-line");
@@ -5756,7 +5758,7 @@
       document.getElementById("jf-cap-time").parentNode.hidden = false;
       document.getElementById("chat-clear-btn").hidden = false;
       ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = false; });
-      document.querySelector(".chat-input-row").hidden = false;
+      document.querySelector(".chat-input-row").hidden = true;
     }
     function openNewCard(){
       card.hidden = false;
@@ -6204,6 +6206,7 @@
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
+      chatRowEl.hidden = !open || !!(st.pendingAsk && st.pendingAsk.box);
       msgInput.disabled = !open;
       if(!open) msgInput.value = "";
       var b = mainButtonFor(st, !msgInput.value.trim(), reusePathNow() || verdictValue() === "reuse");
@@ -6299,7 +6302,6 @@
       var ask = state && state.pendingAsk;
       var b = ask && ask.box ? ask.box : null;
       qBox.hidden = b === null;
-      document.querySelector(".chat-input-row").hidden = b !== null;
       mainBtn.hidden = b !== null; mainHint.hidden = b !== null;
       if(b === null){ qKey = null; return; }
       var key = String(sessionId) + ":" + String(ask.index) + ":" + String(ask.source) + ":" + b.text;

@@ -1,9 +1,9 @@
 // The question box of the drafting chat (hamr 2026-11-12, as fwdloop M10 am29/am30/am31): a question asked while drafting gets its own box in the panel, with the question,
-// its own buttons where the question offers choices (the person's intent is a typed choice, never words read), and one line to type in. This file is the ONE owner of what the
+// its own buttons (the person's intent is a typed choice, never words read). A check question (a look's reading, a proposed check) is BUTTONS ONLY (hamr 2026-11-15): no box to type in; a rule is changed by Revise.
+// The drafter's own try-3 questions and the Destination question have no button to answer with, so they keep one line to type in. This file is the ONE owner of what the
 // panel shows for a pending question and of which choices a question offers (the page draws it, never works it out). The CLI (src/authorrun.js) is a sibling caller of the same
 // questions and keeps typing words; the stored question text never changes, only the panel's copy of it is cut.
-import { readingTail, cantCheckTail, DROP_IT } from './pagemap.js';
-import { HOW_TO_ANSWER } from './checkpick.js';
+import { DROP_IT } from './pagemap.js';
 import { DEST_ANSWER } from './destpoint.js';
 
 /** the door's refusals, word for word (fwd am31); a refusal leaves the question open and writes nothing */
@@ -11,34 +11,31 @@ export const CHOICE_SAYS = Object.freeze({
   bad: 'That answer is not one of the choices. Nothing was saved.',
   notOffered: 'That choice is not offered for this question. Nothing was saved.',
   outOfDate: 'This page is out of date. Reload it and answer again. Nothing was saved.',
-  noRule:'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Agree, or type your own words. Nothing was saved.',
+  noRule:'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Nothing was saved.',
   blank: 'An answer is needed here — there is no skip. Type it in the box and press Send.',
 });
 
 /**
  * Which buttons a look question offers. Agree only when it carries a proposal (a reading ask with its reading, a check-pick ask with its check); Drop it only where "drop it" leaves
- * one of the person's own `~` rules Not checked (a can't-check ask or a check-pick ask about a rule number).
+ * one of the person's own `~` rules Not checked (a check-pick ask about a rule number). A rule with nothing to agree to is not asked at all (src/checkblock.js).
  * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown}} q @returns {{agree: boolean, drop: boolean}}
  */
 export function offersOf(q) {
   const look = q.source === 'look';
   const agree = look && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== null && typeof q.check === 'object'));
-  const drop = look && Number.isInteger(q.rule) && (q.ask === 'cant-check' || q.ask === 'check' || q.ask === 'no-check');
+  const drop = look && Number.isInteger(q.rule) && q.ask === 'check';
   return { agree, drop };
 }
 
 /**
- * A look question as the PANEL shows it: the code's own answer words (`Answer "agree"...` / `Answer "drop it"...`) cut off the end, because the buttons and the box say it.
- * Only the known tails are cut, matched exactly as a suffix (never a pattern over the prose); a question that ends in none of them is returned whole.
+ * A question as the PANEL shows it: the Destination question's own typed-answer words (`DEST_ANSWER`) cut off the end, because its buttons and box say it. A look question carries no answer words
+ * (its buttons say it); it is returned whole. Only the known tail is cut, matched exactly as a suffix (never a pattern over the prose).
  * @param {{question: string, line?: number, source?: string}} q @returns {string}
  */
 export function panelQuestionText(q) {
   const text = String(q.question);
   if (q.source === 'dest-point') return text.endsWith(DEST_ANSWER) ? text.slice(0, text.length - DEST_ANSWER.length) : text;
-  if (q.source !== 'look' || !Number.isInteger(q.line)) return text;
-  const n = /** @type {number} */ (q.line);
-  const hit = [readingTail(n), cantCheckTail(n), ` ${HOW_TO_ANSWER(n, true)}`, ` ${HOW_TO_ANSWER(n, false)}`].find((t) => text.endsWith(t));
-  return hit === undefined ? text : text.slice(0, text.length - hit.length);
+  return text;
 }
 
 /**
@@ -73,18 +70,20 @@ export function boxFor(step) {
   const choices = [];
   if (step.offers?.agree) choices.push({ choice: 'agree', label: 'Agree' });
   if (step.offers?.drop) choices.push({ choice: 'drop', label: 'Drop it' });
+  const buttonsOnly = step.source === 'look';
   return {
     head: before ? 'A question before drafting' : `A question the plan raised (${step.index ?? 1} of ${step.total ?? 1})`,
     line: `${Number.isInteger(step.line) ? `About job line ${step.line}` : ''}${answerEffectWords(step) === null ? '' : `${Number.isInteger(step.line) ? '. ' : ''}${answerEffectWords(step)}`}`,
     text: panelQuestionText({ question: step.question, source: step.source, ...(Number.isInteger(step.line) ? { line: step.line } : {}) }),
     choices,
-    orLabel: choices.length > 0 ? 'Or type a new rule:' : 'Type your answer:',
+    // a check question is buttons only (no box); the drafter's own question has no button, so it keeps the one line to type in
+    orLabel: buttonsOnly ? null : 'Type your answer:',
     sendChoice: 'rule',
   };
 }
 
-/** the choices each kind of question's typed answer may name */
-const CHOICES = { look: ['agree', 'drop', 'rule'], 'dest-point': ['yes', 'no', 'path'] };
+/** the choices each kind of question's answer may name: a check question has its buttons only (hamr 2026-11-15); the drafter's own question and the Destination question keep typed words */
+const CHOICES = { look: ['agree', 'drop'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
 
 /**
  * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
@@ -92,8 +91,8 @@ const CHOICES = { look: ['agree', 'drop', 'rule'], 'dest-point': ['yes', 'no', '
  */
 export function refuseChoice(step, choice) {
   if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
-  const own = /** @type {string[]|undefined} */ (/** @type {Record<string, string[]>} */ (CHOICES)[step.source === 'dest-point' ? step.source : 'look']);
-  if (typeof choice !== 'string' || !(own ?? CHOICES.look).includes(choice)) return CHOICE_SAYS.bad;
+  const own = step.source === 'dest-point' ? CHOICES['dest-point'] : step.source === 'look' ? CHOICES.look : CHOICES.typed;
+  if (typeof choice !== 'string' || !own.includes(choice)) return CHOICE_SAYS.bad;
   if (step.source === 'dest-point') return null;
   if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
   if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;

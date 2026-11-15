@@ -58,7 +58,6 @@ import { newestUnrunTicket } from '../ticketnext.js';
 import { readTicket } from '../ticket.js';
 import { readRunList } from '../runlist.js';
 import { fetchPageText } from '../pagefetch.js';
-import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
 import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
@@ -76,7 +75,7 @@ import {
   parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
-import { boxFor, offersOf, panelQuestionText, answerEffectWords, refuseChoice, resolveChoice } from '../questionbox.js';
+import { boxFor, offersOf, panelQuestionText, answerEffectWords, refuseChoice, resolveChoice, CHOICE_SAYS } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
 
@@ -1218,12 +1217,12 @@ export function createSession(card, deps = {}) {
       const left = [];
       /** R10: the picks the person made (fwd am16): the check agreed to, or their own words with no check @type {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}[]} */
       const picks = [];
-      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string, text: string}[]} */
+      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string}[]} */
       const choices = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
-        /** the button the person used for this question (src/questionbox.js), or null when they typed words (the CLI, an old page): a typed choice decides, never the words */
+        /** the button the person used for this question (src/questionbox.js); null only for the drafter's own typed question: a typed choice decides, never the words */
         let via = null;
         for (;;) {
           // a try-3 question (the drafter's own) says what its answer does: it REPLACES the rule it names, or ADDS a new one (Addendum 2026-11-14 (c) piece 5); a look question has its own words
@@ -1237,23 +1236,14 @@ export function createSession(card, deps = {}) {
           if (text) break;
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
-        // PRD v1.107 Part 5b: a code-forced look question about a `~` rule. A can't-check ask answered "drop it" adds NO rule; the caller puts that
-        // rule on the look's Not checked list. A reading ask answered "agree" adds the code's reading, in plain words, as the `~` rule (so the
-        // bound is now the person's own words); anything else typed is the person's own rule, word for word.
-        // F240: "yes, check it as ..." is the person's own words minus the leading "yes,"
-        // a choice from the question box decides what the answer does; the box's own words (`rule`) are kept whole, even when they read "agree" or "drop it"
-        if (q.source === 'look' && via === null) text = stripAgreeLead(text);
-        const agrees = via === 'agree' || (via === null && isAgree(text));
-        const dropsIt = via === 'drop' || (via === null && isDropIt(text));
+        // a code-forced look question about a `~` rule is answered by a BUTTON only (hamr 2026-11-15; `send` refuses words for it): `agree` writes the code's reading (a reading ask) or the proposed check (a check ask)
+        // as the rule, `drop` leaves a proposed-check rule Not checked. The choice decides, never the words.
+        const agrees = via === 'agree';
+        const dropsIt = via === 'drop';
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
-        // the person's CHOICE, for the check block (the choice decides, never the words): agree only where agree is offered, drop only where drop is
-        const canAgree = q.source === 'look' && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== undefined && q.check !== null));
-        const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'no-check' || q.ask === 'check') && Number.isInteger(q.rule);
-        if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
-        if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
-        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked; anything else
-        // is the person's own words, which replace the asked rule word for word (no check unless the words are the check: they judge it at Accept)
-        const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
+        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : 'agree' });
+        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked
+        const isPick = q.source === 'look' && q.ask === 'check' && Number.isInteger(q.rule);
         if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && agrees;
@@ -1385,6 +1375,8 @@ export function createSession(card, deps = {}) {
       if (!state.pendingAsk) return { ok: false, error: 'nothing is being asked right now' };
       if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run for a plan, never Send — the chat can never sign or pick a plan action' };
       if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
+      // a check question (a look's reading, a proposed check) is answered by its button only (hamr 2026-11-15): typed words with no choice are refused and the question stays open
+      if (choice === undefined && state.pendingAsk.kind === 'answer' && state.pendingAsk.source === 'look') return { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.bad };
       if (choice !== undefined) {
         // hamr 2026-11-12 (fwd am29/am31): the question box posts a typed choice. A refusal leaves the question open: nothing said, nothing logged, nothing resolved.
         const no = refuseChoice(state.pendingAsk, choice);

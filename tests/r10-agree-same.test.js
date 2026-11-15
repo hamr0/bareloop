@@ -18,7 +18,7 @@ const tmp = (p = 'r10-same-') => { const d = mkdtempSync(join(tmpdir(), p)); mad
 const keysHome = () => { const d = tmp('r10-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
 
-/** @param {string} rule the job's one ~ rule @param {{send?: string|null, jobText?: string}} [o] `send`: the answer typed (null = nothing is asked and the draft goes straight to the menu) */
+/** @param {string} rule the job's one ~ rule @param {{send?: string|null, jobText?: string}} [o] `send`: the button pressed (null = nothing is asked and the draft goes straight to the menu) */
 async function draftWith(rule, { send = 'agree', jobText = `1. Summarise the latest release\n~ ${rule}` } = {}) {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
@@ -44,7 +44,7 @@ async function draftWith(rule, { send = 'agree', jobText = `1. Summarise the lat
   if (send !== null) {
     assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
     asked = 1;
-    session.send(send);
+    session.send('', send);
   }
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error} / ${JSON.stringify(session.state.pendingAsk)}`);
   assert.equal(session.signPrepare().ok, true);
@@ -62,11 +62,22 @@ test('agree to different words REPLACES the rule: one rule in the job text, the 
   assert.deepEqual(leg.block.signedRows().filter((r) => r.kind === 'rule').map((r) => [r.rule, r.state]), [[1, 'built']]);
 });
 
-test('typed words replace the asked rule the same way: one rule, the typed one', async () => {
-  const { leg, session } = await draftWith('under 80 words', { send: 'at most 60 words' });
-  assert.deepEqual(leg.jobLines[0].rules, ['at most 60 words']);
-  assert.equal(session.state.card.jobText, '1. Summarise the latest release\n~ at most 60 words');
-  assert.deepEqual(leg.block.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.text]), [[1, 'at most 60 words']]);
+test('typed words are retired (hamr 2026-11-15): the question takes its button only; the person changes a rule by Revise', async () => {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } };
+  const session = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'r10-same-typed', jobText: '1. Summarise the latest release\n~ under 80 words', inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1 }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('r10-sess-'), generate: async () => { throw new Error('no model call'); }, lookFn: async () => survey,
+    pickGenerate: async (_m, tools) => { await tools[0].execute({ checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.0009, unpricedRounds: 0 } }; },
+    confirmGenerate: async (_c, tools) => { await tools[0].execute({ goal: 'g', checks: [], notChecked: [], questions: [] }); return { text: '', error: null, cost: 0.0005 }; },
+    authorFn: async () => ({ ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+  });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
+  assert.equal(session.send('at most 60 words', 'rule').ok, false, 'the box\'s own words are not a choice');
+  assert.equal(session.send('at most 60 words').ok, false, 'typed words with no choice are refused too');
+  assert.equal(session.state.pendingAsk?.kind, 'answer', 'the question stays open');
+  assert.deepEqual(session.state.pendingAsk.box.choices.map((c) => c.choice), ['agree', 'drop']);
+  assert.equal(session.state.pendingAsk.box.orLabel, null, 'no typing box');
 });
 
 test('no obvious asks: a rule whose own words are the check (in another case, spacing, with a full stop) asks nothing and is built as written', async () => {
