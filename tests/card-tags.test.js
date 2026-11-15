@@ -32,8 +32,8 @@ for (const which of /** @type {const} */ (['A', 'B'])) {
     assert.equal(byOf(card.checkItems, /^fact · destination /), 'agent');
     assert.equal(byOf(card.checkItems, /^fact · results — /), 'agent');
     const html = renderJobPlan(planFromConfirm(d.jobLines, { ...card, checks: card.checkItems.map((c) => c.text), protections: [] }));
-    assert.match(html, /check · fact · price [^<]*<span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span>/);
-    assert.match(html, /check · fact · origin [^<]*<span class="by" data-testid="plan-by" data-by="agent">\[agent\]<\/span>/);
+    assert.match(html, /check · fact · price [^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span>/);
+    assert.match(html, /check · fact · origin [^<]*<span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span>/);
     assert.doesNotMatch(html, /the AI's own reading|you picked/);
     assert.match(html, /<summary>Not checked · \d/);
   });
@@ -49,8 +49,8 @@ test('draft B: Not checked rows carry their tag: the rule the person wrote [you]
   const cited = card.notChecked.find((t) => /every claim quotes its input/.test(t));
   assert.equal(card.notCheckedBy[cited], 'default');
   const html = renderJobPlan(planFromConfirm(d.jobLines, { ...card, checks: [], protections: [] }));
-  assert.match(html, /nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/li>/);
-  assert.match(html, /every claim quotes its input[^<]*<span class="by" data-testid="plan-by" data-by="default">\[default\]<\/span><\/li>/);
+  assert.match(html, /nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/li>/);
+  assert.match(html, /every claim quotes its input[^<]*<span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span><\/li>/);
 });
 
 test('the signed card and the Job tab (planFromSpec over the signed close) tag the same way, and the Result tab tags its Not checked list', async () => {
@@ -64,7 +64,7 @@ test('the signed card and the Job tab (planFromSpec over the signed close) tag t
   const refused = plan.lines[0].refused.find((t) => /nonstop is not mandatory/.test(t));
   assert.ok(refused, JSON.stringify(plan.lines[0].refused));
   assert.equal(plan.notCheckedBy?.[refused], 'you');
-  assert.match(renderJobPlan(plan), /not checked · [^<]*nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">\[you\]/);
+  assert.match(renderJobPlan(plan), /not checked · [^<]*nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]/);
   assert.match(resultNotChecked('Not checked', [refused], 't', plan.notCheckedBy), /\[you\]/);
   assert.doesNotMatch(resultNotChecked('Not checked', [refused], 't'), /\[you\]/, 'no map, no tag (an older run)');
 });
