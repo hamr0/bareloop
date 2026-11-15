@@ -49,7 +49,7 @@ import {
 import { resolveJobJudge } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal, cardOfClose, signedFactNames, carriesOneList } from '../rubricstep.js';
+import { rubricGoal, cardOfClose, signedFactNames, carriesOneList, stageNameOfKey } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { FLOW_TYPES, flowTypeOf, oldJobWords } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
@@ -1346,17 +1346,24 @@ export function createSession(card, deps = {}) {
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy, protections: authored.confirmed?.protections ?? [], signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef, authored.hasBuiltCheck ?? null);
+    if (state.phase === 'prepared') finalCtx = { spec, seedRef: authored.seedRef, tree: prep.tree, repo: !RUBRIC_FILES };
     if (state.finalPlan && state.phase === 'prepared') {
       // The confirm turn's plan bubble (and a try-3 "answers are in" one) is the DRAFTER's wording of the checks, written before
       // any close existed. Once the close is signed-ready its card is the only plan the person sees: the earlier ones are
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [] }, jobLines),
+        ...finalPlanMessage(),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }
   }
+
+  /** the signed-ready card as a chat message; a repo job's agent rows can be Dropped on it (the person shapes the spec they sign: `dropStage`) */
+  const finalPlanMessage = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : {}) }, jobLines);
+  /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean}|null} the spec the final card shows and the seed it was gated against */
+  let finalCtx = null;
+  let dropping = false;
 
   // fire-and-forget — the caller (src/panel/server.js) never awaits this; it
   // polls `state` instead. A crash anywhere in `run()` is caught here so it
@@ -1433,6 +1440,42 @@ export function createSession(card, deps = {}) {
       if (Array.isArray(r.choices)) { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: r.choices }); } catch { /* a convenience */ } }
       appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op, key: redactSecrets(String(key)), at: new Date().toISOString() });
       return { ok: true };
+    },
+    /**
+     * Drop on a repo `! [agent]` stage row of the FINAL card (hamr 2026-11-15, spec 2 pick b): the person shaping the spec they are about to sign. The stage and its list row leave a COPY of the spec; the $0 signing gates (the validator and the seed read)
+     * run again on it and the hash is recomputed before the card is drawn again. A gate that refuses (a line left with no check, no work stage red at the seed) refuses the Drop in plain words and nothing changes. Add: a repo has no Suggested rows, so there is none.
+     * @param {unknown} key @returns {Promise<{ok: true}|{ok: false, error: string, refused: string}>}
+     */
+    dropStage: async (key) => {
+      if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || !finalCtx.repo || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped right now' };
+      const name = stageNameOfKey(key);
+      const rowOk = name !== '' && Array.isArray(finalCtx.spec.closeDecl?.list) && finalCtx.spec.closeDecl.list.some((/** @type {any} */ r) => r && r.key === key && r.kind === 'stage' && r.state === 'built');
+      if (!rowOk) return { ok: false, refused: 'bad-row', error: 'only a check the agent added can be dropped' };
+      dropping = true;
+      try {
+        const spec = structuredClone(finalCtx.spec);
+        spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
+        spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
+        const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
+        if (signing === null || !signing.ok) {
+          const why = signing === null
+            ? jv.reds.map((/** @type {any} */ r) => r.code).join(', ')
+            : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+          return { ok: false, refused: 'gates', error: `Dropping that check is refused: ${why}` };
+        }
+        writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
+        writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
+        state.specHash = signing.specHash;
+        finalCtx = { ...finalCtx, spec };
+        const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines, ledger: readDraftLedger(outDir) });
+        state.finalPlan = { ...state.finalPlan, checkItems: rec.checkItems, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy };
+        const at = state.messages.findLastIndex((/** @type {any} */ m) => m.kind === 'plan');
+        const msg = { ...finalPlanMessage(), text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.' };
+        if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
+        appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op: 'drop', key: redactSecrets(String(key)), at: new Date().toISOString() });
+        return { ok: true };
+      } finally { dropping = false; }
     },
     /** click 1 — the confirm pick. Never signs on its own. */
     signPrepare: () => {

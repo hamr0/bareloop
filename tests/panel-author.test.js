@@ -1570,3 +1570,55 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   assert.match(cli, /\$ \[default\] write fence/);
   assert.match(cli, /you asked for these, but nothing checks them:\n    · line 1: "keep it small"/);
 });
+
+/** a repo session driven to the FINAL card with two work stages; `signing(n)` answers the n-th signing-gates call (1 = the draft's own) */
+async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ signing) {
+  const repo = makeRepo();
+  const g = fakeDeclaration().stages;
+  const decl = { stages: [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
+  let n = 0;
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ keep it small' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('never called'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),
+    authorFn: async () => ({ ok: true, declaration: decl, genreEnv: null, cost: { costUsd: 0.002, knownUsd: 0.002, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+    prepareSigningFn: async (/** @type {any} */ o) => { n += 1; return signing(n, o.spec); },
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  session.signPrepare();
+  for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  return session;
+}
+const okSigning = (/** @type {string} */ hash) => ({ ok: true, specHash: hash, seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} });
+
+test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its row leave the spec, the $0 signing gates run again, the hash is the new one and the card is drawn again', async () => {
+  const session = await finalRepoSession((n) => okSigning(`hash${n}`));
+  const card0 = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
+  assert.equal(card0.editable, true, 'the final repo card offers Drop on the agent\'s rows');
+  assert.equal(session.state.specHash, 'hash1');
+  const r = await session.dropStage('S.verdict-2');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(session.state.specHash, 'hash2', 'the hash is recomputed by the gates');
+  const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(spec.closeDecl.stages.map((s) => s.name).filter((x) => x.startsWith('verdict')), ['verdict']);
+  assert.equal(spec.closeDecl.list.some((x) => x.key === 'S.verdict-2'), false);
+  const card = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
+  assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict']);
+  assert.equal(session.state.messages.filter((m) => m.kind === 'plan').length, 1);
+});
+
+test('Drop refused by the gates: plain words, and the plan, the spec file and the hash stay as they were; only an agent stage row can be dropped', async () => {
+  const session = await finalRepoSession((n) => (n === 1 ? okSigning('hash1') : { ok: false, reds: [], refusal: null, specHash: null }));
+  const before = readFileSync(session.state.resolvedSpecPath, 'utf8');
+  const r = await session.dropStage('S.verdict');
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, 'gates');
+  assert.match(r.error, /^Dropping that check is refused: /);
+  assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
+  assert.equal(session.state.specHash, 'hash1');
+  assert.deepEqual(session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan.lines[0].checks.map((c) => c.key), ['S.verdict', 'S.verdict-2']);
+  assert.equal((await session.dropStage('J.$guard.changed-from-seed')).refused, 'bad-row');
+  assert.equal((await session.dropStage('S.nope')).refused, 'bad-row');
+});
