@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The draft readout's one owner (`buildReadout`, `READOUT_HEADS`, `readoutHeadIndexes` in `src/authorreadout.js`; hamr 2026-11-15, copied from fwdloop v0.34.0).** Pure plain text of what the person is about to sign, built from the signed spec through the card's own readers (`cardOfClose` rows and `[you]/[agent]/[default]` tags, `fenceRowText`, `refusedOf`), masked by `redactSecrets`; display only, never signed or stored. Not shown anywhere yet (the panel and CLI wire-up follow).
 - **Regression test for Add/Drop on a Suggested phrase through the panel's `rowEdit` (test only).** `tests/checklist-door.test.js`: before Add the phrase is Suggested with the cited default and the count Not checked (true reason); Add on the phrase gives a facts line and offers the count; Add on the count builds it; Drop returns to the first state.
 - **A result count's Not-checked reason is true when its fact is only Suggested (live run `mwi76vh8`).** The Audit said "a result count needs a fact to count; this line has none" while the line's fact sat under Suggested. With a Suggested fact on the line the reason now reads "a result count needs a fact to count; add the suggested fact on this line to count its results" (`REASON.countNeedsSuggested`, picked by code); a line with no fact keeps the old words.
 - **The Audit Checks header's word "checks" matches the row result words (hamr 2026-11-15).** It now uses the `.st-word` look at the same 12px as the "passed" below it. Display only.

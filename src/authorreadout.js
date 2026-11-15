@@ -26,6 +26,8 @@
 import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
+import { cardOfClose, fenceOfClose, fenceRowText, refusedOf, stepFileRel, lineRules, FENCE_KEY } from './rubricstep.js';
+import { ticketFilterWords } from './ticketfilter.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -621,4 +623,84 @@ export function redsRecord(reds, { signing = false } = {}) {
     }
     return out;
   });
+}
+
+/** The draft readout's section headings: the ONE list (fwd v0.34.0 `READOUT_HEADS`). `buildReadout` writes them from here and `readoutHeadIndexes` finds them by it, so the panel's bold and the text cannot drift. */
+export const READOUT_HEADS = Object.freeze({
+  inputs: 'INPUTS',
+  steps: 'STEPS',
+  fence: 'WRITE FENCE',
+  notChecked: 'REFUSED / NOT CHECKED',
+  jobLines: 'JOB LINES',
+  answers: 'YOUR ANSWERS',
+});
+
+/** Zero-based indexes of the heading lines in a readout's text (split on "\n"): the panel draws those bold. @param {string} text @returns {number[]} */
+export function readoutHeadIndexes(text) {
+  const heads = new Set(Object.values(READOUT_HEADS));
+  /** @type {number[]} */
+  const idx = [];
+  String(text).split('\n').forEach((l, i) => { if (heads.has(/** @type {any} */ (l))) idx.push(i); });
+  return idx;
+}
+
+/** @param {number|null|undefined} ms the signed time cap in words; an absent one reads unbounded, never 0 @returns {string} */
+function capTimeWords(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return 'no time cap set';
+  return ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`;
+}
+
+/**
+ * The plain-text readout of the draft the person is about to sign (hamr 2026-11-15, copied from fwdloop v0.34.0 `buildReadout`; ASKS, SEND TARGET, flows root and grants are fwd-only and not here).
+ * DISPLAY ONLY: built from the signed resolved spec, the draft log and the session's own figures; never signed, never stored, never part of the hash. Pure. The check rows are `cardOfClose`'s (the same reader and tags the card draws),
+ * the fence is `fenceRowText`'s, the Not checked rows are `ruleNotCheckedItems`'s plus the `refusedOf` rows it leaves out. The whole text goes through `redactSecrets`.
+ * @param {{spec: any, name?: string, modelId?: string|null, rounds: number, costUsd: number|null, spendComplete?: boolean, specHash?: string|null, source?: string, destination?: string,
+ *   humans?: {question: string, answer: string, line?: number}[], ledger?: {key: string, words: string[]}[]|null}} o
+ *   `costUsd` = the known drafting spend; `spendComplete` false = a provider call was unpriced, so it reads "at least"
+ * @returns {string}
+ */
+export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spendComplete = true, specHash = null, source = '', destination = '', humans = [], ledger = null }) {
+  const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  const closeDecl = spec?.closeDecl;
+  const card = cardOfClose({ closeDecl, jobLines, ledger });
+  const out = [];
+  out.push(`DRAFT READOUT \u2014 NOT SIGNED \u2014 job ${name ?? spec?.job ?? '?'}`, '');
+  const cost = typeof costUsd === 'number' ? (spendComplete === false ? `at least ${panelMoney2(costUsd)} (a provider call is unpriced)` : panelMoney2(costUsd)) : 'unknown';
+  out.push(`Drafted by: ${modelId ?? spec?.model ?? '?'} in ${rounds} round(s), cost ${cost}`);
+  out.push(`Cap: ${typeof spec?.budgetUsd === 'number' ? panelMoney2(spec.budgetUsd) : 'unknown'} (money) \u00B7 ${capTimeWords(spec?.maxWallMs)} (time)`, '');
+  out.push(READOUT_HEADS.inputs);
+  if (source) out.push(`  source = ${source}`);
+  for (const i of Array.isArray(spec?.inputs) ? spec.inputs : []) out.push(`  ${i.n}. ${i.label} = ${i.value}`);
+  if (destination) out.push(`  destination = ${destination}`);
+  if (spec?.mcp && typeof spec.mcp === 'object') out.push(`  mcp: ${spec.mcp.server} \u00B7 tools: ${(spec.mcp.tools ?? []).join(', ')}`);
+  const filter = ticketFilterWords(spec?.ticketFilter);
+  if (filter) out.push(`  ticket filter: ${filter}`);
+  out.push('', READOUT_HEADS.steps);
+  const rubricLines = new Set((Array.isArray(closeDecl?.stages) ? closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st.params?.step)).map((/** @type {any} */ st) => st.params.step));
+  for (const l of jobLines) {
+    out.push(`  (line ${l.n}) ${l.text}`);
+    if (rubricLines.has(l.n)) out.push(`     writes: ${stepFileRel(l.n)}`);
+    for (const c of card.checkItems.filter((x) => x.fromLine[0] === l.n)) out.push(`     check: ${c.text} [${c.by}]`);
+  }
+  // the job-level rows (the always-on guards, line 0) serve no one line; the fence row is told once under its own head below
+  for (const c of card.checkItems.filter((x) => x.fromLine[0] === 0 && x.key !== FENCE_KEY)) out.push(`  always: ${c.text} [${c.by}]`);
+  const fence = fenceOfClose(closeDecl);
+  if (fence) out.push('', READOUT_HEADS.fence, `  ${fenceRowText(fence)}`);
+  const refusedRest = refusedOf(closeDecl).filter((r) => !(Number.isInteger(r.rule) || r.fromList));
+  if (card.notChecked.length || refusedRest.length) {
+    out.push('', READOUT_HEADS.notChecked);
+    for (const t of card.notChecked) out.push(`  ${t}${card.notCheckedBy[t] ? ` [${card.notCheckedBy[t]}]` : ''}`);
+    for (const r of refusedRest) out.push(`  line ${r.line}: ${r.reason}`);
+  }
+  out.push('', READOUT_HEADS.jobLines);
+  for (const l of jobLines) {
+    out.push(`  ${l.n}. ${l.text}`);
+    for (const r of lineRules(l)) out.push(`  ~ ${r}`);
+  }
+  if (specHash) out.push('', `Plan hash: ${specHash}`);
+  if (humans.length) {
+    out.push('', READOUT_HEADS.answers);
+    for (const h of humans) out.push(`  ${Number.isInteger(h.line) ? `line ${h.line}: ` : ''}${h.question} \u2014 ${h.answer}`);
+  }
+  return redactSecrets(`${out.join('\n')}\n`);
 }
