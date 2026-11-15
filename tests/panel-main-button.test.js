@@ -56,12 +56,16 @@ test('page: ONE button below the message box; Send, Check again, Revise, the sig
   assert.match(PAGE, /id="chat-main-btn"[^>]*class="btn primary wide"|class="btn primary wide"[^>]*id="chat-main-btn"/);
 });
 
-test('page: Revise is its own button, shown only while a plan waits for the OK, and it reopens the boxes (no typed change request, no /revise route)', () => {
+test('page: Revise is its own button, shown while a plan waits for the OK and on the final card, and it reopens the boxes (no typed change request, no /revise route)', () => {
   const shown = new Function(`${fnSrc('reviseShownFor')}\nreturn reviseShownFor;`)();
   assert.equal(shown({ session: true, pendingAsk: ask('menu') }), true);
   assert.equal(shown({ session: true, pendingAsk: ask('question') }), false);
   assert.equal(shown({ session: true, pendingAsk: null }), false);
   assert.equal(shown({ session: false, pendingAsk: ask('menu') }), false);
+  // hamr 2026-11-15: the FINAL card (signed-ready, phase `prepared`, no pending ask) is where Revise is needed most; it was hidden there (reviseShownFor looked only at a pending menu)
+  assert.equal(shown({ session: true, phase: 'prepared', pendingAsk: null }), true, 'Revise shows on the final card');
+  assert.equal(shown({ session: true, phase: 'drafting', pendingAsk: null }), false);
+  assert.equal(shown({ session: false, phase: 'prepared', pendingAsk: null }), false);
   assert.match(PAGE, /id="chat-reopen-btn"[^>]*hidden>Revise<\/button>/);
   assert.match(fnSrc('renderMain'), /reopenBtn\.hidden = !reviseShownFor\(st\)/);
   const reopen = fnSrc('doReopen');

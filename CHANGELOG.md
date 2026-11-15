@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Revise shows on the final card (rubric and repo jobs).** The button was hidden once the draft reached the signed-ready card (phase `prepared`, no pending ask), because `reviseShownFor` looked only for a pending plan menu; to change the job the person had to clear everything and start over. It now shows there too, with the same 2-revises-then-Start-over count. Seen live 2026-11-15 (run `mwhvvvap`).
 - **The pointing call is shown the folders that hold outside files (`test/`) beside the files.** The live draft `smwi20ir86wxj` showed only files, so a rule "don't edit test/" could not be pointed at its folder. The proof is unchanged.
 - **The pointing call's reply and each edit's accept or refusal reason are in the draft log** (`kind: "fence-point"`: `edits`, `results`, `reason`, secret-masked). Before, the live draft `smwi20ir86wxj` showed only that the call ran.
 - **A drafter line refusal is ignored when a stage or a guard's `guardLines` covers the line** (the rubric's rule: only a line no check could be built for is refused). The live draft `smwi20ir86wxj` showed an extra `No rule can check this` row on a line with three `!` stage checks.

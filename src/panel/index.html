@@ -1064,7 +1064,7 @@
           </div>
           <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
-          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
+          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown while a plan waits for the OK and on the final card (phase prepared). -->
           <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
           <!-- fwd M4e am14 item 3: "N revises left"; after the second revise this same button reads Start over (a fresh draft, its own 2 revises) -->
           <span id="chat-left-count" data-testid="revises-left" class="hint" hidden></span>
@@ -6183,9 +6183,9 @@
     function askBoxOpenFor(st){
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed" && st.pendingAsk.kind !== "menu";
     }
-    // pure: Revise shows only while a plan waits for the OK
+    // pure: Revise shows while a plan waits for the OK (the plan menu) AND on the final signed-ready card (phase "prepared": the pending ask is null there, which is why it never showed)
     function reviseShownFor(st){
-      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
+      return !!st.session && ((!!st.pendingAsk && st.pendingAsk.kind === "menu") || (st.phase === "prepared" && !st.pendingAsk));
     }
     // fwd M4e am14 item 3 (pure): 2 revises per draft, shown as "2 revises left" / "1 revise left"; with none left the same button reads Start over. The SERVER counts (revisesLeft); an
     // absent number (a state from before the count) reads as 2.
