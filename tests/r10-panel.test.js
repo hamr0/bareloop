@@ -93,3 +93,26 @@ test('the prepared plan card (through the real drafting loop) has ONE row for th
   const logged = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-checks');
   assert.deepEqual(logged.map((e) => e.checks.map((c) => [c.line, c.text, c.by])), [[[1, 'the text has exactly 3 list items', 'you']]]);
 });
+
+test('Revise on the final card (hamr 2026-11-15): at phase `prepared` there is no pending ask, the state says revisesLeft 2, and the draft can be ended (the abandon Revise posts) so the boxes reopen', async () => {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'r10-revise-final', jobText: '1. Summarise the latest release\n~ exactly 3 bullets', inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('r10-sess-'),
+    lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } }),
+    pickGenerate: async (_m, tools) => { await tools[0].execute({ checks: [{ line: 1, guardrail: 1, rule: 'listItems', value: 3 }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.0009, unpricedRounds: 0 } }; },
+    confirmGenerate: async (_c, tools) => { await tools[0].execute({ goal: 'g', checks: [], notChecked: [], questions: [] }); return { text: '', error: null, cost: 0.0005 }; },
+    generate: async (_m, tools) => { await tools[0].execute({ edits: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
+  });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
+  session.send('', 'agree');
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await until(() => session.state.phase === 'prepared'), `${session.state.phase} ${session.state.error}`);
+  assert.equal(session.state.pendingAsk, null, 'the final card has no pending ask: the old Revise test (a pending menu) could never be true here');
+  assert.equal(session.state.revisesLeft, 2);
+  assert.equal(session.abandon().ok, true, 'the draft ends, as a Revise needs');
+  assert.equal(session.state.phase, 'abandoned');
+});
