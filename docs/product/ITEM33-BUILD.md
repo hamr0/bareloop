@@ -4559,3 +4559,22 @@ After (1)-(6) are green and live-proven, copy fwd's DRAFT READOUT block into bar
 Per-piece fail-first tests with the rubric batches green, then the full gate. Then a live round of 3 drafts of the job "Fix the bug in src/sum.js so the tests in test/sum.test.js pass" with the rules "don't edit test/", "no new dependencies at all", "keep the comment at the top of src/sum.js".
 
 Pass bar, fixed before drafting: in all 3 drafts, rule 1 shows kept by the fence; rules 2 and 3 appear as questions in the question box (never silently Not checked, never falsely kept); no rule is shown twice; `$` rows read as plain questions. Any miss is a FAIL, reported, never re-tuned.
+
+## Addendum 2026-11-15 (f): button-only questions; Revise on the card (signed by hamr in chat)
+
+Applies to rubric and repo jobs alike (one flow). Supersedes the own-words answer of addendum 2026-11-14 (b) ("one rule in, one rule out": a typed answer replaced the asked rule): typed own-words answers to a check question are retired. A rule is now changed only by Revise.
+
+### Why
+
+Live walk on the panel, 2026-11-15 (repo job, DeepSeek flash, run `mwhvvvap`; draft sessions smwi35txtmgcg, smwi3di3vbemi):
+
+- The Revise button and its text box on the final plan card were never usable; to change the job the person had to clear everything and start over.
+- Clicking "Drop it" on a question still left a text box to add a comment.
+- The chat box "answer here when the draft asks you" is not needed: the question buttons cover it.
+
+### Build
+
+1. Revise works on the final card (rubric and repo): the person edits the job boxes and drafts again without clearing everything. The limit stays: 2 revises per draft, then Start over (as fwd).
+2. A check question is buttons only: no comment / own-words box in the question box, and no typed own-words path in code (the `rule` choice of the check block, the "or type how to check it" wording). The drafter's own try-3 questions, the Destination question and the CLI keep their typed answers (they have no buttons to answer with).
+3. Option A: a question whose only answer would be Drop it (a rule no check can prove, no proposal to Agree to) is NOT asked. The rule goes straight to Not checked with the code REASON that says no check can prove it. Questions that offer Agree stay as they are. Unasked rules do not count toward the 3-question stop (MAX_QUESTIONS), which counts asked questions only.
+4. Tests that pinned the removed wording or path are updated; rubric and repo batches stay green after each item.
