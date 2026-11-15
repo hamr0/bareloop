@@ -86,3 +86,10 @@ test('readout: a Tickets job gets its ticket filter row; a plain job has none', 
   spec.ticketFilter = { priority: ['P1'] };
   assert.ok(base(spec).includes(`ticket filter: ${ticketFilterWords(spec.ticketFilter)}`));
 });
+
+test('the CLI "SIGNING PREPARED" block prints the same buildReadout text (read from source, the repo idiom for the runner: it is reachable only after paid calls)', () => {
+  const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
+  const block = src.slice(src.indexOf("out('\\nSIGNING PREPARED"), src.indexOf("out('\\nTo run it"));
+  assert.ok(block.length > 100, 'the SIGNING PREPARED block moved');
+  assert.match(block, /buildReadout\(\{ spec, rounds: totalCost\.calls\.length, costUsd: totalCost\.knownUsd, spendComplete: totalCost\.spendComplete, specHash: hash \}\)/);
+});

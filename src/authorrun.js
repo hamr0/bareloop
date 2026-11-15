@@ -133,7 +133,7 @@ import { splitReadNotes } from './pagedropwords.js';
 import { answerEffectWords } from './questionbox.js';
 import {
   declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText,
+  openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText, buildReadout,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -1131,6 +1131,9 @@ export async function main(argv, deps = {}) {
           out('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
           out(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
           out('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
+          // the same draft readout the panel Chat shows (hamr 2026-11-15; src/authorreadout.js, the one owner): what the person is about to sign, from the signed spec through the card's own readers
+          out('');
+          for (const l of buildReadout({ spec, rounds: totalCost.calls.length, costUsd: totalCost.knownUsd, spendComplete: totalCost.spendComplete, specHash: hash }).trimEnd().split('\n')) out(`  ${l}`);
           for (const l of openQuestionLines(authored.confirmed)) out(`  ${l}`);
           for (const l of answeredQuestionLines(authored.confirmed)) out(`  ${l}`);
           // F185 — the loose end this fix closes: until now this screen named no
