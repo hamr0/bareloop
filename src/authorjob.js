@@ -116,7 +116,7 @@ import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, tooManyAsksText } from './pagemap.js';
-import { CheckBlock } from './checkblock.js';
+import { CheckBlock, REASON } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
 import { renderJobLines } from './jobblock.js';
@@ -990,7 +990,7 @@ export async function authorCloseForJob({
     repoBlock.addStages(closeDecl.stages, { guardNames, refused: closeDecl.refused ?? [], guardLines: closeDecl.guardLines ?? [] });
     if (Array.isArray(carriedChoices)) { repoBlock.carryChoices(carriedChoices); onChoices(repoBlock.choicesRecord()); }
     const view = repoBlock.closeView();
-    const lineRefusals = (closeDecl.refused ?? []).filter((/** @type {any} */ r) => !Number.isInteger(r.rule));
+    const lineRefusals = (closeDecl.refused ?? []).filter((/** @type {any} */ r) => !Number.isInteger(r.rule)).map((/** @type {any} */ r) => ({ line: r.line, reason: REASON.noRule }));
     const ruleRefusals = repoBlock.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
     closeDecl.stages = view.stages;
     closeDecl.list = view.list;

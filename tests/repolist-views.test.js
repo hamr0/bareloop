@@ -57,9 +57,9 @@ test('Audit: a fence-kept `~` row reads the gate\'s record; an `!` row its own s
 test('a line refused without naming a rule is a `!` Not checked row on that line, in the drafter\'s words, shown once', () => {
   const spec = specWith({ refused: [{ line: 1, reason: 'nothing here can read the ticket' }] });
   const plan = planFromSpec(spec);
-  assert.ok(plan.lines[0].refused.includes('nothing here can read the ticket'));
-  assert.equal(plan.lines[0].refused.filter((r) => /ticket/.test(r)).length, 1);
-  assert.equal(plan.notCheckedBy?.['nothing here can read the ticket'], 'agent');
+  assert.ok(plan.lines[0].refused.includes(REASON.noRule), 'the reason is code\'s (REASON.noRule), not the drafter\'s words');
+  assert.equal(plan.lines[0].refused.filter((r) => r === REASON.noRule).length, 1);
+  assert.equal(plan.notCheckedBy?.[REASON.noRule], 'agent');
 });
 
 test('the success line and the signed card read the rows; the sign-time match holds between them', () => {

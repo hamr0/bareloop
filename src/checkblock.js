@@ -552,7 +552,7 @@ export class CheckBlock {
   setListing(files) { if (this.repo !== null) this.repo.files = Array.isArray(files) ? [...files] : null; }
 
   /**
-   * The drafter's work stages as `!` rows (a mandatory guard is not one), and a Not checked `!` row for each line the drafter refused with a reason. Idempotent: the stage rows are made again from `stages`.
+   * The drafter's work stages as `!` rows (a mandatory guard is not one), and a Not checked `!` row for each line the drafter refused: the refusal is only the SIGNAL, the reason is code's (`REASON.noRule`, the one table). Idempotent: the stage rows are made again from `stages`.
    * @param {any[]} stages the declaration's stages, guards included @param {{guardNames?: string[], refused?: any[], guardLines?: any[]}} [o]
    */
   addStages(stages, { guardNames = [], refused = [], guardLines = [] } = {}) {
@@ -566,7 +566,7 @@ export class CheckBlock {
         this.addRow({ key: stageKeyOf(st.name), line: l.n, kind: 'stage', by: 'agent', from: 'agent', stageName: st.name, cover: [...st.fromLine] });
       }
       (Array.isArray(refused) ? refused : []).filter((/** @type {any} */ x) => x && x.line === l.n && !Number.isInteger(x.rule) && typeof x.reason === 'string')
-        .forEach((/** @type {any} */ x, /** @type {number} */ i) => this.addRow({ key: `L${l.n}.refused.${i + 1}`, line: l.n, kind: 'stage', by: 'agent', from: 'agent', refusal: true, said: x.reason }));
+        .forEach((/** @type {any} */ x, /** @type {number} */ i) => this.addRow({ key: `L${l.n}.refused.${i + 1}`, line: l.n, kind: 'stage', by: 'agent', from: 'agent', refusal: true, said: REASON.noRule }));
     }
   }
 
