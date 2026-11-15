@@ -804,8 +804,16 @@ export const cleanEntry = (e) => String(e ?? '').split(' (')[0].trim().replace(/
  * @returns {Promise<{stop: string, files: null}|{stop: null, files: string[]}>}
  */
 export async function seedFileList(workdir, seedRef) {
-  return seedListing(workdir, seedRef);
+  const r = await seedListing(workdir, seedRef);
+  if (r.stop !== null) return r;
+  // the engine's own stores are never the person's files: a patient that tracks bareloop's `.bareloop/`, `.smoke/` or `.litectx/` must not offer them to the drafter or to code's proofs (hamr 2026-11-15: a leftover
+  // `.bareloop/wt/.../src/sum.js` "kept" a rule). A prefix at the repo root only: `src/.smoke/x` is the person's own path.
+  const own = [...ARBITER_BOOK_STORES, BARELOOP_STORE];
+  return { stop: null, files: r.files.filter((f) => !own.some((s) => f === s || f.startsWith(`${s}/`))) };
 }
+
+/** the engine's own repo-root store of work trees and notes, beside the arbiter books */
+const BARELOOP_STORE = '.bareloop';
 
 /** `src/*` style entries match by segment; everything else is a path prefix.
  * @param {string} entry @returns {(f: string) => boolean} */
