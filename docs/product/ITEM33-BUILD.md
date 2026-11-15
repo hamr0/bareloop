@@ -4582,3 +4582,8 @@ Live walk on the panel, 2026-11-15 (repo job, DeepSeek flash, run `mwhvvvap`; dr
 ### Ruling, same day: a READING question keeps a text box
 
 Item 2 left a reading question (Agree only) with no way out. hamr's ruling: a READING question (a rubric look's reading, e.g. "I read 'under 500' as 500 US dollars") offers three answers: Agree, Drop it, and a text box to correct it ("Or type the right reading:"). Only reading questions get the box; a proposed-check question stays Agree / Drop it with no box; a rule nothing can check stays unasked (option A). Drop it on a reading leaves the rule Not checked with REASON.left (the person chose it). A typed correction REPLACES that rule (one in, one out) and code re-proves it as before; words code cannot prove go to Not checked with REASON.noRule, never a second question. Typing stays retired for everything else.
+
+### Fixes, same day (live run `mwi76vh8`, draft session smwi75mbqjjbs; hamr GO)
+
+- A look phrase or place link counts only when the person's own `~` rule words contain it (case-blind); else the rule is Not checked. Before, "be friendly" was signed as a `~ [you]` phrase check "must say Select flight" because the phrase was on the page (`matchRule`, `src/checkblock.js`). Version and date phrases keep the place-rule path.
+- The confirm card lists a look-dropped fact with no `~` rule once (the block's own row), not also as the look's own line (`shownNotChecked`, `src/authorflow.js`). Display only.
