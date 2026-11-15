@@ -1516,17 +1516,6 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
       });
     }
   }
-  // the drafter's fence claims (Addendum 2026-11-15 (d)): `[{line, rule, path}]`. Only the SHAPE is a red; whether the fence really keeps the rule is proven by code at $0 (src/repolist.js), and an unproven claim is dropped, never a red
-  if (declaration.fenceKept !== undefined) {
-    if (!Array.isArray(declaration.fenceKept)) red('invalid-value', 'fenceKept', 'an array of {line, rule, path} — the ~ rules the write fence keeps, each with a path outside the write scope');
-    else {
-      declaration.fenceKept.forEach((/** @type {any} */ c, /** @type {number} */ j) => {
-        if (!isObj(c) || !Number.isInteger(c.line) || c.line < 1 || !Number.isInteger(c.rule) || c.rule < 1 || !isNonEmptyString(c.path)) {
-          red('invalid-value', `fenceKept[${j}]`, '{line, rule, path}: a job line number, the number of one of its ~ rules, and the path (outside the write scope) that keeps it');
-        }
-      });
-    }
-  }
   /** @type {Set<number>} */
   const refused = new Set();
   if (declaration.refused !== undefined) {

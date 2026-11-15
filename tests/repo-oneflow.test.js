@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { CheckBlock, REASON } from '../src/checkblock.js';
 import { questionsOfBlock, applyChoices } from '../src/blockasks.js';
 import { authorCloseForJob } from '../src/authorjob.js';
+import { validateCloseDecl } from '../src/declaredclose.js';
 
 const live = JSON.parse(readFileSync(new URL('./fixtures/repo-list/smwhxoarri6xz-live.json', import.meta.url), 'utf8'));
 const FILES = live.files.filter((/** @type {string} */ f) => !f.startsWith('.bareloop/'));
@@ -140,4 +141,19 @@ test('Revise carries a repo Drop: the record ties it to the line\'s words and th
   all.carryChoices(['S.sum-tests-green', 'S.sum-tests-failing', 'S.sum-tests-executed'].map((tail) => ({ ...rec[0], tail })));
   all.reconcile();
   assert.equal(all.rows.filter((r) => r.kind === 'stage' && r.state === 'built').length, 1);
+});
+
+test('a drafter that still writes fenceKept and a rule-level refused (the live run\'s own claims) changes nothing: code reads neither, and the signed close carries neither claim', async () => {
+  const jobLines = structuredClone(live.jobLines);
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
+    jobLines, writeScope: live.writeScope,
+    scoutFn: async () => SURVEY, listingFn: async () => ({ stop: null, files: FILES }),
+    authorFn: async () => ({ ok: true, declaration: { stages: live.stages, fenceKept: live.fenceKept, refused: live.refused }, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: null, ledger: null }),
+  });
+  assert.equal(r.ok, true);
+  assert.equal('fenceKept' in r.closeDecl, false, 'the drafter\'s fence claim is not signed');
+  assert.deepEqual(r.closeDecl.list.filter((/** @type {any} */ x) => x.kind === 'rule').map((/** @type {any} */ x) => [x.rule, x.state, x.fence ?? null]), [[1, 'built', 'test'], [2, 'not-checked', null], [3, 'not-checked', null]]);
+  assert.deepEqual(r.closeDecl.refused.map((/** @type {any} */ x) => [x.line, x.rule, x.reason]), [[1, 2, REASON.noRule], [1, 3, REASON.noRule]], 'refused is built from the rows: each rule once, code\'s reason, never the drafter\'s swapped words');
+  assert.deepEqual(validateCloseDecl(r.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: FILES }).reds.filter((/** @type {any} */ x) => /list\[|fenceKept|refused/.test(String(x.path))), []);
 });

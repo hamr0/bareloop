@@ -974,8 +974,6 @@ export async function authorCloseForJob({
     ...(authored.declaration.picks?.length ? { picks: structuredClone(authored.declaration.picks) } : {}),
     // the one check list's final rows (no words), signed with the close: what each row ended as, and the part that carries it
     ...(Array.isArray(authored.ledger) && authored.ledger.length ? { list: structuredClone(authored.ledger) } : {}),
-    // the drafter's fence claims, as written (line, rule, path only): code proves each one when it builds the rows below
-    ...(authored.declaration.fenceKept?.length ? { fenceKept: authored.declaration.fenceKept.map((/** @type {any} */ c) => ({ line: c.line, rule: c.rule, path: String(c.path) })) } : {}),
     // the lines the always-on guards cover (names and numbers only, nothing free-text)
     ...(authored.declaration.guardLines?.length
       ? { guardLines: authored.declaration.guardLines.map((/** @type {any} */ g) => ({ guard: g.guard, lines: [...g.lines] })) }

@@ -2505,8 +2505,9 @@ test('P7: with jobLines the author prompt orders fromLine tagging and carries th
   assert.doesNotMatch(gblock, /guardLines/);
   assert.match(gblock, /NEVER declare any of them again as a stage/);
   assert.match(gblock, /no second files-changed or scope stage/);
-  assert.match(gblock, /\{"fenceKept": \[\{"line": 1, "rule": 1, "path": "package\.json"\}\]\}/, 'a legal example states a fence claim');
-  assert.ok(!/fenceKept/.test(jobLineTagBlock(2)), 'no guards named = no always-on paragraph (old callers byte-identical)');
+  assert.doesNotMatch(gblock, /fenceKept/, 'the drafter no longer states a fence claim: code decides what the write fence keeps, from the person\'s own words');
+  assert.match(gblock, /you never list one in "refused"/);
+  assert.ok(!/never list one/.test(jobLineTagBlock(2)), 'no guards named = no always-on paragraph (old callers byte-identical)');
   assert.ok(!/guardLines/.test(plain));
   assert.match(tagged, /fromLine/);
   assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);

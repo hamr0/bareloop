@@ -100,7 +100,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'list', 'genreEnv']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
 export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts', 'fence']);
