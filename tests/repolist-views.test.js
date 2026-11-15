@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildRepoRows, NO_CHECK_WORDS } from '../src/repolist.js';
+import { repoList } from './repo-list-world.mjs';
+import { REASON } from '../src/checkblock.js';
 import { planFromSpec, planFromConfirm, auditChecksOf } from '../src/panel/jobplan.js';
 import { cardOfClose, planMatchesClose, listMatchesClose } from '../src/rubricstep.js';
 import { successFromSpec } from '../src/panel/server.js';
@@ -11,15 +12,16 @@ import { successFromSpec } from '../src/panel/server.js';
 const old = JSON.parse(readFileSync(new URL('./fixtures/repo-list/smw6ssquvtvqs-spec.json', import.meta.url), 'utf8'));
 const files = ['package.json', 'src/sum.js', 'test/sum.test.js'];
 const GUARDS = ['changed-from-seed', 'no-suppressions'];
-const specWith = (/** @type {any} */ extra = {}) => ({
-  ...old, closeDecl: { ...old.closeDecl, ...(extra.fenceKept ? { fenceKept: extra.fenceKept } : {}),
-    list: buildRepoRows({ jobLines: old.jobLines, stages: old.closeDecl.stages, refused: extra.refused ?? null, fenceKept: extra.fenceKept ?? null, guardNames: GUARDS, writeScope: old.writeScope, files }) },
-});
+/** `kept`: the rule says (in the person's own words) that package.json stays as it is, so code keeps it by the write fence; else the rule names no repo path and is Not checked */
+const specWith = (/** @type {any} */ extra = {}) => {
+  const jobLines = extra.kept ? [{ ...old.jobLines[0], rule: 'do not change package.json', rules: ['do not change package.json'] }] : old.jobLines;
+  return { ...old, jobLines, closeDecl: { ...old.closeDecl, list: repoList({ jobLines, stages: old.closeDecl.stages, refused: extra.refused ?? null, guardNames: GUARDS, writeScope: old.writeScope, files }) } };
+};
 
 test('Job tab: the rule is Not checked with code\'s reason (tagged [you]), the stages are `!` rows, the guards and the fence are `$` rows, and the AI notes are not shown', () => {
   const plan = planFromSpec(specWith());
   const line = plan.lines[0];
-  assert.deepEqual(line.refused, [`"no new dependencies" — ${NO_CHECK_WORDS}`]);
+  assert.deepEqual(line.refused, [`"no new dependencies" — ${REASON.noRule}`]);
   assert.equal(plan.notCheckedBy?.[line.refused[0]], 'you');
   assert.deepEqual(line.checks.map((c) => [c.stage, c.by, c.key]), ['node-test-executed-count', 'node-test-fail-count', 'suite-green'].map((n) => [n, 'agent', `S.${n}`]));
   assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']]);
@@ -28,17 +30,17 @@ test('Job tab: the rule is Not checked with code\'s reason (tagged [you]), the s
 });
 
 test('a rule the fence keeps (proven by code) is a check row of its line, tagged [you], and is no Not checked item', () => {
-  const plan = planFromSpec(specWith({ fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] }));
+  const plan = planFromSpec(specWith({ kept: true }));
   const line = plan.lines[0];
   assert.deepEqual(line.refused, []);
   const kept = line.checks.find((c) => c.key === 'L1.~1');
   assert.ok(kept, 'the kept rule is a row');
   assert.equal(kept.by, 'you');
-  assert.match(kept.name, /^"no new dependencies" — kept by the write fence: package\.json is outside the places the run may change$/);
+  assert.match(kept.name, /^"do not change package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
 });
 
 test('Audit: a fence-kept `~` row reads the gate\'s record; an `!` row its own stage verdict; a Not checked row has no result', () => {
-  const plan = planFromSpec(specWith({ fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] }));
+  const plan = planFromSpec(specWith({ kept: true }));
   const results = new Map([['node-test-executed-count', true], ['node-test-fail-count', true], ['suite-green', false], ['changed-from-seed', true], ['no-suppressions', true]]);
   const a = auditChecksOf(plan, [], results, 2, true);
   const by = (/** @type {string} */ k) => a.checks.find((c) => c.key === k);
@@ -61,7 +63,7 @@ test('a line refused without naming a rule is a `!` Not checked row on that line
 });
 
 test('the success line and the signed card read the rows; the sign-time match holds between them', () => {
-  const spec = specWith({ fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] });
+  const spec = specWith({ kept: true });
   const success = String(successFromSpec(spec));
   assert.match(success, /exit clean\?/);
   assert.match(success, /kept by the write fence/);

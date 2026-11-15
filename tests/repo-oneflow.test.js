@@ -173,3 +173,14 @@ test('authorCloseForJob: a Revise carries the last draft\'s repo Drop (carriedCh
   assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.key === 'S.sum-tests-failing').state, 'dropped');
   assert.deepEqual(handed, [carried]);
 });
+
+test('a line the drafter refused (no rule named) is one Not checked `!` row on that line in its words, shown once; a rule is never refused by the drafter', () => {
+  const b = liveBlock();
+  b.addStages(live.stages, { guardNames: ['changed-from-seed', 'no-suppressions'], refused: [{ line: 1, reason: 'nothing here can read it' }, { line: 1, rule: 1, reason: 'the AI\'s own words' }] });
+  b.reconcile();
+  const row = b.rows.find((r) => r.key === 'L1.refused.1');
+  assert.deepEqual([row?.kind, row?.state, row?.reason], ['stage', 'not-checked', 'nothing here can read it']);
+  assert.equal(b.rows.filter((r) => r.kind === 'stage' && r.refusal).length, 1, 'a rule-level refusal makes no row');
+  assert.equal(rule(b, 1)?.state, 'built', 'and does not set the rule\'s state or reason');
+  assert.equal(b.rowChoice('L1.refused.1', 'drop').ok, false, 'a refusal is no check: nothing to drop');
+});

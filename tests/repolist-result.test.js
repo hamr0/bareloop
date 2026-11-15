@@ -8,7 +8,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeResultWorld } from './result-tab-world.mjs';
 import { getRunResult } from '../src/panel/server.js';
-import { buildRepoRows, NO_CHECK_WORDS } from '../src/repolist.js';
+import { repoList } from './repo-list-world.mjs';
+import { REASON } from '../src/checkblock.js';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'result-tab');
 const GUARDS = ['changed-from-seed', 'no-suppressions'];
@@ -18,9 +19,8 @@ function world() {
   const old = JSON.parse(readFileSync(join(FX, 'mvkj03w7.resolved-spec.json'), 'utf8'));
   const jobLines = [{ n: 1, text: 'Fix the type errors in src/', rule: 'do not change package.json; keep the diff small', rules: ['do not change package.json', 'keep the diff small'] }];
   const stages = old.closeDecl.stages.map((/** @type {any} */ s) => (GUARDS.includes(s.name) ? s : { ...s, fromLine: [1] }));
-  const fenceKept = [{ line: 1, rule: 1, path: 'package.json' }];
-  const list = buildRepoRows({ jobLines, stages, fenceKept, guardNames: GUARDS, writeScope: old.writeScope, files: ['package.json', 'src/checks.js'] });
-  const spec = { ...old, jobLines, closeDecl: { ...old.closeDecl, stages, fenceKept, list } };
+  const list = repoList({ jobLines, stages, guardNames: GUARDS, writeScope: old.writeScope, files: ['package.json', 'src/checks.js'] });
+  const spec = { ...old, jobLines, closeDecl: { ...old.closeDecl, stages, list } };
   const specPath = join(dirname(w.spine('mvkj03w7')), '..', '..', 'session-mvkj03w7', 'resolved-spec.json');
   writeFileSync(join(w.root, 'session-mvkj03w7', 'resolved-spec.json'), JSON.stringify(spec));
   void specPath;
@@ -40,7 +40,7 @@ test('Result tab of a repo close with a list: the checks are its rows, each with
   const fence = by(/^\$ \[default\] other · only files in /);
   assert.match(fence.question, /^\$ \[default\] /);
   const nc = by(/keep the diff small/);
-  assert.match(nc.question, new RegExp(NO_CHECK_WORDS));
+  assert.match(nc.question, new RegExp(REASON.noRule.replace(/[.]/g, '\\.')));
   assert.deepEqual([nc.passed, nc.notReached, nc.status.word], [false, true, 'not checked']);
 });
 

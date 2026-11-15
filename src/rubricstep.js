@@ -1072,7 +1072,7 @@ export function checksOfClose(closeDecl, jobLines = null) {
     const r = list.find((/** @type {any} */ x) => x.kind === 'floor' && x.line === st.params.step);
     return r ? [{ line: st.params.step, text: floorText(closeDecl, st.params.step), by: /** @type {'default'} */ ('default'), key: String(r.key) }] : [];
   };
-  // a repo job's own rows (the list is built by src/repolist.js): the `!` work stages in the order the close runs them, then the `~` rules the write fence keeps, each on its line
+  // a repo job's own row kinds (the list is built by the one CheckBlock, src/checkblock.js `repo` type): the `!` work stages in the order the close runs them, then the `~` rules the write fence keeps, each on its line
   // an `!` stage row reads the stage's plain question (src/stagewords.js, the one owner the Audit and the Result tab read), the stage's own name only when no honest question exists
   const questions = stageQuestionsByName({ closeDecl });
   const repoRows = [
