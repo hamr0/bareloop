@@ -2290,7 +2290,8 @@ export async function runConfirmTurn({
     for (const { text } of lookRows) if (!notChecked.includes(text)) notChecked.push(text);
     // ONE row per `~` rule on the CARD (hamr 2026-11-14, run mwgsl7zx): a rule the check list says Not checked is said by its row alone (its reason is the look's sentence, or the person's kept Drop, which wins),
     // so the look's own line for that rule is not drawn beside it. `accepted.notChecked` below stays the full list the drafter is told.
-    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && l.row.rule !== undefined && block !== null && block.saysRule(l.row.line, l.row.rule)));
+    // live run mwi76vh8 (session smwi75mbqjjbs): a drop with no `~` rule (a place fact) is the block's own `!` row too ("boston place"), so its look line is not drawn beside it either
+    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && block !== null && (l.row.rule !== undefined ? block.saysRule(l.row.line, l.row.rule) : block.rows.some((r) => r.key === `L${l.row.line}.fact.${String(l.row.fact).toLowerCase().replace(/\s+/g, ' ').trim()}`))));
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
