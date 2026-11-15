@@ -1460,10 +1460,14 @@ export function createSession(card, deps = {}) {
         const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) {
           // the plain-words owners (src/authorreadout.js): a validator red is told in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it
-          const why = signing === null
-            ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
-            : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
-          return { ok: false, refused: 'gates', error: `Dropping that check is refused: ${why}` };
+          /** @type {any} */
+          const uncovered = signing === null ? jv.reds.find((/** @type {any} */ r) => r.code === 'job-line-uncovered' && Number.isInteger(r.line)) : undefined;
+          const why = uncovered
+            ? `Dropping that check would leave line ${uncovered.line} with no check, so it stays. Use Revise to change the job instead.`
+            : signing === null
+              ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
+              : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+          return { ok: false, refused: 'gates', error: uncovered ? why : `Dropping that check is refused: ${why}` };
         }
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);

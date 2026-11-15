@@ -1630,6 +1630,6 @@ test('Drop that makes the job validator red (the only stage serving a line): the
   assert.equal(r.ok, false);
   assert.equal(r.refused, 'gates');
   assert.doesNotMatch(r.error, /job-line-uncovered|invalid-value|missing-field|spec-invalid|unknown-field|[a-z]+(-[a-z]+)+ at /);
-  assert.match(r.error, /^Dropping that check is refused: .*job line 1/s);
+  assert.equal(r.error, 'Dropping that check would leave line 1 with no check, so it stays. Use Revise to change the job instead.');
   assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
 });
