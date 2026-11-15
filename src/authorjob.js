@@ -1003,7 +1003,7 @@ export async function authorCloseForJob({
     repoBlock.addStages(closeDecl.stages, { guardNames, refused: closeDecl.refused ?? [], guardLines: closeDecl.guardLines ?? [] });
     if (Array.isArray(carriedChoices)) { repoBlock.carryChoices(carriedChoices); onChoices(repoBlock.choicesRecord()); }
     const view = repoBlock.closeView();
-    const lineRefusals = (closeDecl.refused ?? []).filter((/** @type {any} */ r) => !Number.isInteger(r.rule)).map((/** @type {any} */ r) => ({ line: r.line, reason: REASON.noRule }));
+    const lineRefusals = repoBlock.rows.filter((r) => r.kind === 'stage' && r.refusal === true).map((r) => ({ line: r.line, reason: REASON.noRule }));
     const ruleRefusals = repoBlock.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
     closeDecl.stages = view.stages;
     closeDecl.list = view.list;

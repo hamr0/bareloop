@@ -207,16 +207,33 @@ test('authorCloseForJob: a Revise carries the last draft\'s repo Drop (carriedCh
   assert.deepEqual(handed, [carried]);
 });
 
-test('a line the drafter refused (no rule named) is one Not checked `!` row on that line with the REASON table words, shown once; a rule is never refused by the drafter', () => {
-  const b = liveBlock();
-  b.addStages(live.stages, { guardNames: ['changed-from-seed', 'no-suppressions'], refused: [{ line: 1, reason: 'nothing here can read it' }, { line: 1, rule: 1, reason: 'the AI\'s own words' }] });
-  b.reconcile();
-  const row = b.rows.find((r) => r.key === 'L1.refused.1');
+test('a drafter line refusal is ignored when a live stage covers the line; a line nothing covers gets one Not checked `!` row with the REASON table words; a rule is never refused by the drafter', () => {
+  const guards = ['changed-from-seed', 'no-suppressions'];
+  const refused = [{ line: 1, reason: 'nothing here can read it' }, { line: 1, rule: 1, reason: 'the AI\'s own words' }];
+  const covered = liveBlock();
+  covered.addStages(live.stages, { guardNames: guards, refused });
+  covered.reconcile();
+  assert.equal(covered.rows.filter((r) => r.kind === 'stage' && r.refusal).length, 0, 'line 1 has three stages: nothing to refuse (the live session smwi20ir86wxj showed the extra row)');
+  const bare = liveBlock();
+  bare.addStages(live.stages.filter((/** @type {any} */ s) => guards.includes(s.name)), { guardNames: guards, refused });
+  bare.reconcile();
+  const row = bare.rows.find((r) => r.key === 'L1.refused.1');
   assert.deepEqual([row?.kind, row?.state, row?.reason], ['stage', 'not-checked', REASON.noRule], 'the drafter\'s words are only the signal; the reason is code\'s');
-  assert.equal(b.rows.filter((r) => r.kind === 'stage' && r.refusal).length, 1, 'a rule-level refusal makes no row');
-  assert.equal(rule(b, 1)?.state, 'built', 'and does not set the rule\'s state or reason');
-  assert.equal(b.rowChoice('L1.refused.1', 'drop').ok, false, 'a refusal is no check: nothing to drop');
+  assert.equal(bare.rows.filter((r) => r.kind === 'stage' && r.refusal).length, 1, 'a rule-level refusal makes no row');
+  assert.equal(rule(bare, 1)?.state, 'built', 'and does not set the rule\'s state or reason');
+  assert.equal(bare.rowChoice('L1.refused.1', 'drop').ok, false, 'a refusal is no check: nothing to drop');
+  const guarded = liveBlock();
+  guarded.addStages(live.stages.filter((/** @type {any} */ s) => guards.includes(s.name)), { guardNames: guards, refused, guardLines: [{ guard: 'no-suppressions', lines: [1] }] });
+  assert.equal(guarded.rows.filter((r) => r.refusal).length, 0, 'a guard\'s guardLines covers the line too');
 });
+
+test('the signed close of a covered line carries no line-level refusal (the live smwi20ir86wxj row)', async () => {
+  const r = await callFlow({ authorFn: async () => ({ ok: true, declaration: { stages: live.stages, refused: [{ line: 1, reason: 'x' }] }, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: null, ledger: null }) });
+  assert.equal(r.closeDecl.list.some((/** @type {any} */ x) => /refused/.test(x.key)), false);
+  assert.equal((r.closeDecl.refused ?? []).some((/** @type {any} */ x) => !Number.isInteger(x.rule)), false);
+});
+
+
 
 const callFlow = (/** @type {any} */ o) => authorCloseForJob({
   verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,

@@ -560,12 +560,14 @@ export class CheckBlock {
     this.declared = Array.isArray(stages) ? stages : [];
     this.guardCover = new Set((Array.isArray(guardLines) ? guardLines : []).flatMap((/** @type {any} */ g) => (Array.isArray(g?.lines) ? g.lines : [])));
     const guards = new Set(guardNames);
+    // a line a live stage or a guard's `guardLines` covers is never refused (the rubric's rule: only a line no check could be built for is refused)
+    const covered = new Set([...this.guardCover, ...this.declared.filter((st) => st && !guards.has(st.name) && Array.isArray(st.fromLine)).flatMap((st) => st.fromLine)]);
     for (const l of this.lines) {
       for (const st of this.declared) {
         if (!st || typeof st.name !== 'string' || guards.has(st.name) || !Array.isArray(st.fromLine) || st.fromLine.length === 0 || Math.min(...st.fromLine) !== l.n) continue;
         this.addRow({ key: stageKeyOf(st.name), line: l.n, kind: 'stage', by: 'agent', from: 'agent', stageName: st.name, cover: [...st.fromLine] });
       }
-      (Array.isArray(refused) ? refused : []).filter((/** @type {any} */ x) => x && x.line === l.n && !Number.isInteger(x.rule) && typeof x.reason === 'string')
+      (Array.isArray(refused) ? refused : []).filter((/** @type {any} */ x) => x && x.line === l.n && !Number.isInteger(x.rule) && typeof x.reason === 'string' && !covered.has(l.n))
         .forEach((/** @type {any} */ x, /** @type {number} */ i) => this.addRow({ key: `L${l.n}.refused.${i + 1}`, line: l.n, kind: 'stage', by: 'agent', from: 'agent', refusal: true, said: REASON.noRule }));
     }
   }
