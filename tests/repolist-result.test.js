@@ -33,11 +33,11 @@ test('Result tab of a repo close with a list: the checks are its rows, each with
   const stage = by(/^! \[agent\] line 1 · does "npm test" exit clean\?/);
   assert.match(stage.question, /^! \[agent\] /);
   assert.deepEqual([stage.passed, stage.status.word], [true, 'passed']);
-  assert.match(by(/no-suppressions/).question, /^\$ \[default\] /);
+  assert.match(by(/no checker silenced/).question, /^\$ \[default\] /);
   const kept = by(/do not change package\.json/);
   assert.match(kept.question, /^~ \[you\] .*kept by the write fence: package\.json/);
   assert.equal(kept.status.word, "the gate's record for this run is missing", 'a fence-kept rule reads the gate record, here absent: never "held"');
-  const fence = by(/the run may only change files matching/);
+  const fence = by(/^\$ \[default\] other · only files in /);
   assert.match(fence.question, /^\$ \[default\] /);
   const nc = by(/keep the diff small/);
   assert.match(nc.question, new RegExp(NO_CHECK_WORDS));

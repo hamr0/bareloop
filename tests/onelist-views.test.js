@@ -72,11 +72,12 @@ test('the CLI plan print draws every check with its row tag (~ [you], ! [agent],
   const lines = AR.confirmPlanLines({ goal: 'g', checkItems, checks: checkItems.map((c) => c.text), protections: ['write fence — the run may only change files matching: output/'], notChecked: [], questions: [] });
   const text = lines.join('\n');
   assert.match(text, /· line 1: \$ \[default\] its file output\/steps\/1\.json must exist/);
-  assert.match(text, /· \$ \[default\] changed-from-seed — /);
+  assert.match(text, /· \$ \[default\] did the run change a file\?/);
   assert.ok(checkItems.some((c) => c.by !== 'default'), 'the draft also has ~ or ! rows');
   assert.match(text, /· line \d+: [~!] \[(you|agent)\] /);
   assert.equal(lines.filter((l) => /^    · write fence/.test(l)).length, 1);
-  assert.equal(lines.filter((l) => /changed-from-seed/.test(l)).length, 1, 'the guard is said once');
+  assert.equal(lines.filter((l) => /did the run change a file\?/.test(l)).length, 1, 'the guard is said once');
+  assert.equal(lines.filter((l) => /changed-from-seed/.test(l)).length, 0, 'never by its raw name');
 });
 
 test('a close that carries the list WITH its guard rows draws no free-text note as Not checked (every Not checked item is a row); an older close keeps its notes', () => {

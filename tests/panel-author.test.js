@@ -1567,7 +1567,7 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   const cli = confirmPlanLines({ goal: 'g', checkItems: session.state.finalPlan.checkItems, notChecked: session.state.finalPlan.notChecked, notCheckedBy: session.state.finalPlan.notCheckedBy, protections: [], questions: [] }).join('\n');
   assert.match(cli, /line 1: ! \[agent\] does "node -e " exit clean\?/);
   assert.match(cli, /line 1: ~ \[you\] "do not touch package\.json" — kept by the write fence/);
-  assert.match(cli, /\$ \[default\] write fence/);
+  assert.match(cli, /\$ \[default\] only files in /);
   assert.match(cli, /you asked for these, but nothing checks them:\n    · line 1: "keep it small"/);
 });
 

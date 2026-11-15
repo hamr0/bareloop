@@ -12,7 +12,7 @@ import * as AR from '../src/authorrun.js';
 
 const PAGE = 'Flights\nFrom $389 US dollars\n';
 const JOB = [{ n: 1, text: 'List the price', rules: [] }];
-const FENCE = 'write fence — the run may only change files matching: output/';
+const FENCE = 'only files in output/ changed?';
 function made() {
   const b = new CheckBlock({ texts: { p: PAGE }, labels: ['p'], asks: false });
   b.fromJob(JOB); b.setGuards(['changed-from-seed'], ['output/']);
@@ -50,12 +50,12 @@ test('every view draws the fence once as a `$ [default]` check that serves no li
   assert.deepEqual([row?.result, row?.word], ['held', 'held · 2 writes blocked']);
   assert.equal(auditChecksOf(plan, [], null, null).checks.find((c) => c.key === 'J.$fence')?.result, 'record-missing');
   const cli = AR.confirmPlanLines({ goal: 'g', checkItems: items, protections: [], notChecked: [], questions: [] }).join('\n');
-  assert.match(cli, /\$ \[default\] write fence — /);
+  assert.match(cli, /\$ \[default\] only files in output\/ changed\?/);
   assert.doesNotMatch(cli, /protections \(always-on/);
 });
 
 test('an OLD close (no fence row) keeps its Always-checked fence line', () => {
   const { closeDecl } = made();
   const old = { ...closeDecl, list: closeDecl.list.filter((/** @type {any} */ r) => r.kind !== 'fence' && r.kind !== 'guard') };
-  assert.ok(confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, writeScope: ['output/'], jobLines: JOB, closeDecl: old }).includes(FENCE));
+  assert.ok(confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, writeScope: ['output/'], jobLines: JOB, closeDecl: old }).includes('write fence — the run may only change files matching: output/'));
 });

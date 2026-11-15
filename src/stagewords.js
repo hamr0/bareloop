@@ -152,3 +152,27 @@ export function stageQuestionsByName(spec) {
   }
   return out;
 }
+
+/**
+ * The plain question of the `$ [default]` write-fence row, built from the signed fence itself: `src/**` reads `src/`; an entry that is a glob this cannot read as a folder or file is quoted as it was signed.
+ * @param {string[]} scope @returns {string}
+ */
+export function fenceQuestionText(scope) {
+  const places = scope.map((e) => {
+    const folder = /^(.+?)\/\*\*?$/.exec(e);
+    const base = folder ? `${folder[1]}/` : e;
+    return /[*?[\]{}]/.test(base) ? e : base;
+  });
+  return `only files in ${places.join(', ')} changed?`;
+}
+
+/**
+ * The plain question of a job-level `$ [default]` guard row (the one list's guard rows, by guard NAME) — the one owner the plan card, Job tab, Audit, Result and the CLI print read, in place of the guard's raw name and its
+ * long frozen sentence (GUARD_DESCRIPTIONS stays the older confirm-turn "protections" line). `null` for a guard with no line here: the caller keeps the old words, never an invented question.
+ * @param {string} name @returns {string|null}
+ */
+export function guardQuestionText(name) {
+  if (name === 'changed-from-seed') return 'did the run change a file?';
+  if (name === 'no-suppressions') return 'no checker silenced (@ts-ignore, eslint-disable, # type: ignore)?';
+  return null;
+}

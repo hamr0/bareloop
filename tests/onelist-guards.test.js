@@ -76,16 +76,16 @@ test('the card and the Job tab draw the guard once, as a `$ [default]` check tha
   const g = card.checkItems.filter((c) => c.key === GUARD.key);
   assert.equal(g.length, 1);
   assert.equal(g[0].by, 'default');
-  assert.match(g[0].text, /^changed-from-seed — /);
+  assert.equal(g[0].text, 'did the run change a file?');
   assert.equal(checksOfClose(NEW).filter((c) => c.key === GUARD.key).length, 1);
   const plan = planFromSpec({ ...SPEC, closeDecl: NEW });
-  assert.equal(plan.loose.filter((c) => /^changed-from-seed — /.test(c.name)).length, 1);
+  assert.equal(plan.loose.filter((c) => c.name === 'did the run change a file?').length, 1);
   assert.equal(plan.loose[0].by, 'default');
   assert.deepEqual(plan.alwaysOn, []);
-  assert.deepEqual(plan.lines[0].checks.filter((c) => /changed-from-seed/.test(c.name)), [], 'not repeated under a line');
+  assert.deepEqual(plan.lines[0].checks.filter((c) => /change a file/.test(c.name)), [], 'not repeated under a line');
   // the confirm card reads the same items: loose, once
   const conf = planFromConfirm(SPEC.jobLines, { checkItems: card.checkItems, protections: ['write fence — the run may only change files matching: output/'] });
-  assert.equal(conf.loose.filter((c) => /^changed-from-seed — /.test(c.name)).length, 1);
+  assert.equal(conf.loose.filter((c) => c.name === 'did the run change a file?').length, 1);
   // an OLD record (no guard row) keeps today's display
   assert.deepEqual(planFromSpec(SPEC).alwaysOn, ['changed-from-seed']);
 });

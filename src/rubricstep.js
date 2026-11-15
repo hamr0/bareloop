@@ -5,7 +5,7 @@ import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { OFFERED, plainWords } from './checkwords.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
-import { stageQuestionsByName } from './stagewords.js';
+import { stageQuestionsByName, guardQuestionText, fenceQuestionText } from './stagewords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -1020,8 +1020,8 @@ export const stageNameOfKey = (/** @type {unknown} */ key) => (typeof key === 's
 export const PROSE_WORDS = 'what the text says — you judge it at Accept';
 /** the key of the job-level write fence row (the one list, hamr 2026-11-15: the fence is a `$` row like every other rule) */
 export const FENCE_KEY = 'J.$fence';
-/** the words of the fence row, the way the "Always checked" box always said it @param {string[]} scope @returns {string} */
-export const fenceRowText = (scope) => `write fence — the run may only change files matching: ${scope.join(', ')}`;
+/** the words of the fence row: its plain question (src/stagewords.js, the one owner) @param {string[]} scope @returns {string} */
+export const fenceRowText = (scope) => fenceQuestionText(scope);
 /** the fence a close's row names: `closeDecl.fence` (the confirm card's view of it) or the allowed prefixes its own `changed-from-seed` guard stage signs @param {any} closeDecl @returns {string[]|null} */
 export function fenceOfClose(closeDecl) {
   if (!isRec(closeDecl)) return null;
@@ -1029,8 +1029,8 @@ export function fenceOfClose(closeDecl) {
   const g = (Array.isArray(closeDecl.stages) ? closeDecl.stages : []).find((/** @type {any} */ st) => isRec(st) && st.name === 'changed-from-seed' && isRec(st.params));
   return g && Array.isArray(g.params.allowPrefixes) && g.params.allowPrefixes.length ? g.params.allowPrefixes.map(String) : null;
 }
-/** the words of a guard row: the guard's name and its one plain line (GUARD_DESCRIPTIONS), the way the confirm card always said it @param {string} name @returns {string} */
-export const guardRowText = (name) => `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
+/** the words of a guard row: its plain question (src/stagewords.js, the one owner); a guard with none keeps its name and its one frozen line (GUARD_DESCRIPTIONS) @param {string} name @returns {string} */
+export const guardRowText = (name) => guardQuestionText(name) ?? `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
 
 /**
  * The words of a line's `$` floor row (Addendum 2026-11-14 (c) piece 1), written by code from the signed close: the line's file must exist and be complete JSON, and carry text only when the close
