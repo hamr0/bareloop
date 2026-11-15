@@ -4526,3 +4526,36 @@ Both POCs, on real data. $0 POC on 18 saved repo drafts (`.claude/scratch/poc-re
 
 The full gate (typecheck, build:types, npm test), then one live repo run on DeepSeek direct deepseek-flash. Built here is test-proven only; the fence-claim drafting, the Result tab rows and the phone width are not seen live.
 
+
+## Addendum 2026-11-15 (e): repo jobs on the SAME CheckBlock; fwd's draft readout in the Chat (signed by hamr in chat)
+
+Supersedes (d) items 2-3. The repo side path is removed: `buildRepoRows`, `proveFenceClaim`, `closeDecl.fenceKept`, the drafter-written rule `refused` reasons, `NO_CHECK_WORDS` and the repo-only view code. hamr: "same flow as rubric, no exceptions; same CheckBlock, not another one; only the type of checks varies — rubric checks vs repo checks".
+
+### Why
+
+Live, 2026-11-15, three drafts (smwhxoarri6xz, smwhxqks2yc9s, smwhxsqgr5gub) on `/home/hamr/bareloop-live-sum`:
+
+- A rule shown kept AND Not checked: two stores (the drafter's `refused`, merged back by `refusedOf`).
+- Reasons swapped between rules: the drafter mis-numbered rules and code believed it.
+- A false keep of "keep the comment at the top of src/sum.js" through a leftover `.bareloop/wt/<session>/src/sum.js`. The fence proof only checked "outside the write scope", never the person's words, and the seed listing included bareloop's own tracked `.bareloop/` files.
+
+A side-path fix (fa94a85b, a fence-point call) made it worse and was reverted (b8562817).
+
+### Build, in order
+
+1. The seed listing drops `.bareloop/`, `.smoke/` and `.litectx/`.
+2. Repo jobs build the CheckBlock. The check TYPE varies by job kind: rubric fact/phrase/count rows versus repo catalogue stage rows and fence-kept rule rows.
+3. A repo `~` rule is kept by the fence only when code finds a listing path that is word-found in the person's own rule text and lies outside the write scope. Otherwise it goes to the same question box (Agree / Drop it / own words, one in one out). One REASON table.
+4. The drafter writes no rule-level `refused` and no `fenceKept`. `refused` is built from the rows, in code.
+5. Repo `!` stage rows get the rubric Drop/Add and the Revise carry, and never drop the last check on a line.
+6. The repo-only code is deleted.
+
+### Then: fwd's draft readout in the Chat
+
+After (1)-(6) are green and live-proven, copy fwd's DRAFT READOUT block into bareloop's Chat, above the card, from fwdloop's tagged release v0.33.0. fwd reads the CLI's readout.txt (`fwdloop/src/panel/author.js:229`); `fwdloop/src/authoring.js:197` builds it. bareloop today shows only the card in Chat. Elements bareloop lacks are skipped. Build from fwd's released tag, not a commit sha.
+
+### Proof plan
+
+Per-piece fail-first tests with the rubric batches green, then the full gate. Then a live round of 3 drafts of the job "Fix the bug in src/sum.js so the tests in test/sum.test.js pass" with the rules "don't edit test/", "no new dependencies at all", "keep the comment at the top of src/sum.js".
+
+Pass bar, fixed before drafting: in all 3 drafts, rule 1 shows kept by the fence; rules 2 and 3 appear as questions in the question box (never silently Not checked, never falsely kept); no rule is shown twice; `$` rows read as plain questions. Any miss is a FAIL, reported, never re-tuned.
