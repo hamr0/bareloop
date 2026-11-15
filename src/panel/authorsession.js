@@ -1461,7 +1461,7 @@ export function createSession(card, deps = {}) {
         if (signing === null || !signing.ok) {
           // the plain-words owners (src/authorreadout.js): a validator red is told in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it
           const why = signing === null
-            ? tryRefusedText({ reds: jv.reds })
+            ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
             : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
           return { ok: false, refused: 'gates', error: `Dropping that check is refused: ${why}` };
         }
