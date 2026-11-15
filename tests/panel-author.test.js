@@ -1541,12 +1541,13 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
   assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
 });
 
+const sessionsRootFinal = tmp('panel-author-sess-final-');
 test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL Sign & run card draws every `! [agent]` stage row on its line and every `~ [you]` rule with its status', async () => {
   const repo = makeRepo();
   const decl = { ...fakeDeclaration(), refused: [], fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] };
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-final-card', jobText: 'fix the bug\n~ do not touch package.json\n~ keep it small' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 1, rule: 1, path: 'package.json' }]), home: keysHomeWith(),
-    sessionsRoot: tmp('panel-author-sess-final-'),
+    sessionsRoot: sessionsRootFinal,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('never called'); },
     confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),
@@ -1555,6 +1556,10 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   });
   for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
   assert.equal(session.signPrepare().ok, true);
+  // the pointing call's reply and each edit's verdict are in the draft log (live session smwi20ir86wxj showed none)
+  for (let i = 0; i < 500 && !readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').includes('"kind":"fence-point"'); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  const fp = readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === 'fence-point');
+  assert.deepEqual([JSON.parse(fp.edits), JSON.parse(fp.results).map((/** @type {any} */ e) => e.accepted)], [[{ op: 'fence', line: 1, rule: 1, path: 'package.json' }], [true]]);
   // `keep it small` names no repo path, so the repo flow asks about it like a rubric rule (the one check block); the person answers Drop it
   for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'answer'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
   assert.match(String(session.state.pendingAsk?.question), /Your line 1 says "keep it small"\. I can't check this\. Drop it\?/);

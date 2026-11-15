@@ -882,7 +882,7 @@ export async function authorCloseForJob({
       if (survey != null) { survey.calls = [...(survey.calls ?? []), ...fp.calls]; survey.raws = [...(survey.raws ?? []), ...fp.raws]; }
       const rec = repoBlock.applyDelta({ label: 'pre:fence-point', pre: true, edits: fp.edits });
       repoBlock.reconcile();
-      onPhase('fence-point-done', { sent: fp.edits.length, kept: rec.edits.filter((/** @type {any} */ e) => e.accepted === true).length, reason: fp.reason, refused: rec.edits.filter((/** @type {any} */ e) => e.accepted !== true).map((/** @type {any} */ e) => String(e.refusedBecause)) });
+      onPhase('fence-point-done', { edits: fp.edits, results: rec.edits.map((/** @type {any} */ e) => ({ op: e.op, line: e.line, rule: e.rule, path: e.path, accepted: e.accepted === true, ...(e.accepted === true ? {} : { refusedBecause: String(e.refusedBecause) }) })), sent: fp.edits.length, kept: rec.edits.filter((/** @type {any} */ e) => e.accepted === true).length, reason: fp.reason, refused: rec.edits.filter((/** @type {any} */ e) => e.accepted !== true).map((/** @type {any} */ e) => String(e.refusedBecause)) });
     }
     if (answerQuestions) {
       const ar = await askRounds(repoBlock, [], answerQuestions);

@@ -281,3 +281,10 @@ test('the pointing call\'s system text and schema are the signed ones (one op, f
   assert.match(FENCE_POINT_SYSTEM, /Send an edit only for a rule whose own words say a listed file or folder stays as it is\./);
   assert.equal(typeof runFencePoint, 'function');
 });
+
+test('a refused pointer is recorded with its reason in the phase data', async () => {
+  /** @type {any[]} */ const done = [];
+  await callFlow({ fenceGenerate: pointer([{ op: 'fence', line: 1, rule: 1, path: 'test/sum.test.js' }]), onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { if (p === 'fence-point-done') done.push(d); } });
+  assert.equal(done[0].results[0].accepted, false);
+  assert.match(done[0].results[0].refusedBecause, /do not name test\/sum\.test\.js/);
+});
