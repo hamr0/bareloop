@@ -494,7 +494,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, fenceFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -715,6 +715,7 @@ export function createSession(card, deps = {}) {
     // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
     // the one check list of a rubric job: each row once when it is built and once at the end, and each try's refusals (kind `ledger` / `ledger-try`)
     if (name === 'note-answered') appendDraftLog(outDir, { kind: 'note-ask', no: Math.max(0, state.steps.length - 1), state: data.state, answers: data.answers, ...(data.reason ? { reason: redactSecrets(String(data.reason)) } : {}), at: new Date().toISOString() });
+    if (name === 'fence-point') appendDraftLog(outDir, { kind: 'fence-point', no: Math.max(0, state.steps.length - 1), state: data.state, asked: data.asked, picked: data.picked, dropped: data.dropped, ...(data.reason ? { reason: redactSecrets(String(data.reason)) } : {}), at: new Date().toISOString() });
     if (name === 'ledger-built' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'built', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, kept: data.kept, refused: data.refused, at: new Date().toISOString() });
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
@@ -1308,6 +1309,8 @@ export function createSession(card, deps = {}) {
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
+      // Design B: a test that replaces the model boundary must not reach the real fence-pointing call; `deps.fenceFn` brings its own
+      ...(deps.fenceFn !== undefined ? { fenceFn: deps.fenceFn } : (deps.generate ? { fenceFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
       ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),

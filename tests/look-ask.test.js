@@ -56,7 +56,7 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
   const r = await authorCloseForJob({
     answers: { 1: '1. Find the last 3 releases\n   rule: released in October; one per week' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
     jobLines: JSON.parse(JSON.stringify(LINES)), inputs: [{ n: 1, label: 'Changelog', value: file }], writeScope: ['output/'],
-    provider: { fake: true }, ceilingUsd: 1, onPhase: (p) => order.push(p),
+    provider: { fake: true }, fenceFn: null, ceilingUsd: 1, onPhase: (p) => order.push(p),
     lookFn: async () => { order.push('lookFn'); return survey; },
     answerQuestions: async (o) => {
       order.push('ask'); asked = o;
