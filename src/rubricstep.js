@@ -881,6 +881,7 @@ const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input',
  */
 export function listRowName(kind, key, words) {
   const k = typeof kind === 'string' && kind ? kind : 'check';
+  if (k === 'prose') return '';
   if (k === 'cited' || k === 'numbers' || k === 'note') return DEFAULT_ROW_WORDS[k];
   const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
   const w = Array.isArray(words) && words.length ? words : [tail || key];
@@ -902,6 +903,8 @@ export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
     const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
+    // a `prose` row is said by its own reason alone ("line N: what the text says — you judge it at Accept")
+    if (r.kind === 'prose') return { text: `line ${r.line}: ${r.reason}`, ...by };
     if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
     return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
@@ -936,9 +939,11 @@ export function proseNotChecked(closeDecl) {
 
 /** the same items as {@link proseNotChecked} with the job line each belongs to (the stage's own `step`) @param {any} closeDecl @returns {{line: number, text: string}[]} */
 export function proseNotCheckedItems(closeDecl) {
+  // a list-built close (Addendum 2026-11-14 (c), Q2) says it from its signed `prose` rows, which `refusedOf` reads; only an older close derives it from its stages
+  if (carriesOneList(closeDecl)) return [];
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
-    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: what the text says — you judge it at Accept` }));
+    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: ${PROSE_WORDS}` }));
 }
 
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────
@@ -1002,6 +1007,8 @@ export const carriesOneList = (closeDecl) => isRec(closeDecl) && Array.isArray(c
 export const guardKeyOf = (name) => `J.$guard.${name}`;
 /** the guard a row key names, or '' @param {unknown} key @returns {string} */
 export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWith('J.$guard.') ? key.slice('J.$guard.'.length) : '');
+/** the words of a text line's `prose` row: the person judges what the text says at Accept (the same words the stage-derived line always used) */
+export const PROSE_WORDS = 'what the text says — you judge it at Accept';
 /** the words of a guard row: the guard's name and its one plain line (GUARD_DESCRIPTIONS), the way the confirm card always said it @param {string} name @returns {string} */
 export const guardRowText = (name) => `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
 

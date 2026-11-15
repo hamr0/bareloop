@@ -8,7 +8,7 @@ import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult } from './pagedry.js';
-import { boundInWords, rubricStepShapeReds, floorWords, guardKeyOf, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, floorWords, guardKeyOf, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -61,6 +61,7 @@ export function renderCard(rows) {
   return rows.filter((r) => r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
     let body;
     if (r.kind === 'floor') body = floorWords(r.line, r.carriesText !== false);
+    else if (r.kind === 'prose') body = PROSE_WORDS;
     else if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
     else if (r.kind === 'count') body = `${CARD_T.count} ${r.min ?? ''}-${r.max ?? ''}`;
     else if (r.kind === 'cited') body = `${CARD_T.cited} "${r.source ?? CARD_T.theInput}"`;
@@ -336,6 +337,13 @@ export class CheckBlock {
       this.buildLine(l, lineParts, lineRows, factLines);
       if (lineParts.length) stages.push({ name: `line-${l.n}`, kind: 'rubric-step', fromLine: [l.n], params: { step: l.n, parts: lineParts } });
       // the line's `$` floor row says whether its file carries text (a facts-only line has no text check): code's own reading of the parts just built
+      // a line that writes text (a stage with no fact part) gets its `$` prose row: Not checked, the person judges what the text says at Accept (one owner; never a check, so hasBuiltCheck skips it)
+      const writesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'fact');
+      const prose = this.rowsOn(l.n, 'prose')[0];
+      if (writesText) {
+        const row = prose ?? this.addRow({ key: `L${l.n}.$prose`, line: l.n, kind: 'prose', by: 'default', from: 'default' });
+        row.state = 'not-checked'; row.reason = PROSE_WORDS;
+      } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
       for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
@@ -381,7 +389,7 @@ export class CheckBlock {
     /** the person's picks of this line: they follow the line's fact part on the card, as they always did (the facts, then the picks, then the defaults) @type {{p: any, key: string}[]} */
     const pickParts = [];
     for (const r of this.rowsOn(l.n)) {
-      if (r.kind === 'floor') continue;
+      if (r.kind === 'floor' || r.kind === 'prose') continue;
       r.part = null;
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
       if (r.held) { r.state = 'suggested'; r.reason = r.choice === 'drop' ? REASON.dropped : REASON.suggested; continue; }
