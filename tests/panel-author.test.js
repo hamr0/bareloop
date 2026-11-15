@@ -1560,10 +1560,7 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   for (let i = 0; i < 500 && !readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').includes('"kind":"fence-point"'); i += 1) await new Promise((r) => { setTimeout(r, 10); });
   const fp = readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === 'fence-point');
   assert.deepEqual([JSON.parse(fp.edits), JSON.parse(fp.results).map((/** @type {any} */ e) => e.accepted)], [[{ op: 'fence', line: 1, rule: 1, path: 'package.json' }], [true]]);
-  // `keep it small` names no repo path, so the repo flow asks about it like a rubric rule (the one check block); the person answers Drop it
-  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'answer'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
-  assert.match(String(session.state.pendingAsk?.question), /Your line 1 says "keep it small"\. I can't check this\. Drop it\?/);
-  assert.deepEqual(session.send('', 'drop'), { ok: true });
+  // `keep it small` names no repo path and has no check to agree to: option A (hamr 2026-11-15), it is NOT asked; it is Not checked with code's reason
   for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
   assert.equal(session.state.phase, 'prepared', String(session.state.error));
   // the SAME structure as the rubric card (one renderer): per line its `› check` rows with tags, then "other checks" (the `$` guards and fence), then the "Not checked" fold with each rule as `line N: "<rule>" — <reason>` tagged [you]
@@ -1574,7 +1571,7 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   assert.match(line.checks[1].name, /^"do not touch package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
   assert.deepEqual(line.refused, [], 'a Not checked rule is told in the Not checked section, as on the rubric card');
   assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']], 'other checks: the `$` rows');
-  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — You chose to leave it Not checked, so you judge it at Accept.']);
+  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — No rule can check this, so you judge it at Accept.']);
   assert.equal(plan.notCheckedBy[plan.notChecked[0]], 'you');
   assert.deepEqual(plan.alwaysOn, []);
   // the CLI print draws the same rows

@@ -305,6 +305,6 @@ const ruleBounds = (r) => (r.op === 'between' ? [r.lo, r.hi] : [r.value]);
  * @param {LookAsk[]} asks @returns {string}
  */
 export function tooManyAsksText(asks, where = ' on the page') {
-  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.ask === 'no-check' ? "I can't check this" : (a.reading ?? `I can't check this${where}`)}`).join('; ');
+  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.reading ?? `I can't check this${where}`}`).join('; ');
   return redactSecrets(`Your job has ${asks.length} rules I can't check or had to guess. Please rewrite it so each one says what to look for. My readings: ${list}.`);
 }

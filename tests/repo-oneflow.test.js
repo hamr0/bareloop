@@ -34,16 +34,15 @@ function liveBlock({ asks = true, files = FILES, point = [POINT_TEST] } = {}) {
 }
 const rule = (/** @type {CheckBlock} */ b, /** @type {number} */ k) => b.rows.find((r) => r.kind === 'rule' && r.rule === k);
 
-test('the live job: rule 1 is kept by the fence (the AI pointed at test/, the words name it), rules 2 and 3 are QUESTIONS, never falsely kept', () => {
+test('the live job: rule 1 is kept by the fence (the AI pointed at test/, the words name it), rules 2 and 3 are Not checked at once with the code reason (option A: no question whose only answer is Drop it), never falsely kept', () => {
   const b = liveBlock();
   assert.deepEqual([rule(b, 1)?.state, rule(b, 1)?.fence], ['built', 'test']);
   assert.equal(rule(b, 2)?.state, 'not-checked');
   assert.equal(rule(b, 3)?.state, 'not-checked');
   assert.equal(rule(b, 2)?.fence, undefined);
   assert.equal(rule(b, 3)?.fence, undefined);
-  const asks = questionsOfBlock(b);
-  assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[2, 'cant-check'], [3, 'cant-check']]);
-  assert.ok(asks.every((a) => !/on the page/.test(a.question)), 'a repo question never says "page"');
+  assert.deepEqual(questionsOfBlock(b), [], 'nothing is asked');
+  assert.deepEqual([rule(b, 2)?.reason, rule(b, 3)?.reason], [REASON.noRule, REASON.noRule]);
   assert.deepEqual(b.signedRows().filter((r) => r.kind === 'rule').map((r) => r.key), ['L1.~1', 'L1.~2', 'L1.~3']);
 });
 
@@ -60,16 +59,16 @@ test('the proof: a path the AI points at must be on the listing, in the rule\'s 
   assert.equal(b.provesFence("don't edit test/", 'lockfile.json'), false, 'a path not on the listing');
 });
 
-test('code never keeps a rule the AI did not point at: "the tests in test/ must pass" names test/ outside the fence, but with no pointer it is a question', () => {
+test('code never keeps a rule the AI did not point at: "the tests in test/ must pass" names test/ outside the fence, but with no pointer it is Not checked (not asked)', () => {
   const b = liveBlock({ point: [] });
   b.rows.find((r) => r.kind === 'rule' && r.rule === 1).text = 'the tests in test/ must pass';
   b.reconcile();
   assert.equal(rule(b, 1)?.state, 'not-checked');
   assert.equal(rule(b, 1)?.fence, undefined);
-  assert.deepEqual(questionsOfBlock(b).map((a) => a.rule), [1, 2, 3]);
+  assert.deepEqual(questionsOfBlock(b), []);
 });
 
-test('a pointer that fails the proof is refused alone with its reason and the rule is a question; the other pointers stand', () => {
+test('a pointer that fails the proof is refused alone with its reason and the rule is Not checked; the other pointers stand', () => {
   const b = liveBlock({ point: [] });
   const rec = b.applyDelta({ pre: true, edits: [{ op: 'fence', line: 1, rule: 2, path: 'package.json' }, { op: 'fence', line: 1, rule: 3, path: 'src/sum.js' }, { op: 'fence', line: 1, rule: 1, path: 'nope.txt' }, POINT_TEST, { op: 'fence', line: 9, rule: 1, path: 'test' }] });
   b.reconcile();
@@ -77,7 +76,7 @@ test('a pointer that fails the proof is refused alone with its reason and the ru
   assert.match(rec.edits[0].refusedBecause, /do not name package\.json/);
   assert.match(rec.edits[2].refusedBecause, /not on the repo listing/);
   assert.deepEqual([rule(b, 1)?.state, rule(b, 2)?.state, rule(b, 3)?.state], ['built', 'not-checked', 'not-checked']);
-  assert.deepEqual(questionsOfBlock(b).map((a) => a.rule), [2, 3]);
+  assert.deepEqual(questionsOfBlock(b), []);
 });
 
 test('a tracked bareloop store path never keeps a rule (the old leak): a pointer at it is refused', () => {
@@ -92,23 +91,12 @@ test('no listing read: nothing is kept', () => {
   assert.equal(rule(b, 1)?.state, 'not-checked');
 });
 
-test('Drop it leaves the rule Not checked with REASON.left; own words replace the rule (one in, one out) and, not pointed at by the AI, stay Not checked; Agree is not offered', () => {
+test('a rule the fence cannot keep has no question to answer, so it is Not checked with REASON.noRule; the job text keeps its words (Revise is how a rule changes)', () => {
   const b = liveBlock();
-  const [q2, q3] = questionsOfBlock(b);
-  assert.equal(b.open.find((q) => q.key === q2.key)?.offers.agree, false);
-  assert.deepEqual(applyChoices(b, [{ key: q2.key, choice: 'rule', text: 'do not change package.json' }, { key: q3.key, choice: 'drop' }]), []);
-  assert.deepEqual([rule(b, 2)?.state, rule(b, 2)?.fence, rule(b, 2)?.text, rule(b, 2)?.reason], ['not-checked', undefined, 'do not change package.json', REASON.nothingOnPage]);
-  assert.deepEqual([rule(b, 3)?.state, rule(b, 3)?.reason], ['not-checked', REASON.left]);
   assert.equal(b.open.length, 0);
-  assert.deepEqual(b.jobLinesView(live.jobLines)[0].rules, ["don't edit test/", 'do not change package.json', 'keep the comment at the top of src/sum.js']);
-});
-
-test('own words that name no outside path stay Not checked (typed words are the person\'s to judge, never asked twice)', () => {
-  const b = liveBlock();
-  const [q2] = questionsOfBlock(b);
-  applyChoices(b, [{ key: q2.key, choice: 'rule', text: 'use only what is already installed' }]);
-  assert.deepEqual([rule(b, 2)?.state, rule(b, 2)?.reason], ['not-checked', REASON.nothingOnPage]);
-  assert.deepEqual(questionsOfBlock(b).map((a) => a.rule), [3]);
+  assert.deepEqual([rule(b, 2)?.state, rule(b, 2)?.fence, rule(b, 2)?.reason], ['not-checked', undefined, REASON.noRule]);
+  assert.deepEqual([rule(b, 3)?.state, rule(b, 3)?.reason], ['not-checked', REASON.noRule]);
+  assert.deepEqual(b.jobLinesView(live.jobLines)[0].rules, ["don't edit test/", 'no new dependencies at all', 'keep the comment at the top of src/sum.js']);
 });
 
 test('nobody to ask (no answer seam): a rule code cannot prove is Not checked with REASON.noRule', () => {
@@ -117,7 +105,7 @@ test('nobody to ask (no answer seam): a rule code cannot prove is Not checked wi
   assert.equal(b.open.length, 0);
 });
 
-test('authorCloseForJob on the live job: the questions are the two rules, answers land in the one signed list, no rule shows twice', async () => {
+test('authorCloseForJob on the live job: nothing is asked, the two rules land Not checked in the one signed list, no rule shows twice', async () => {
   /** @type {any[]} */ const seen = [];
   const jobLines = structuredClone(live.jobLines);
   const r = await authorCloseForJob({
@@ -131,10 +119,10 @@ test('authorCloseForJob on the live job: the questions are the two rules, answer
     authorFn: async () => ({ ok: true, declaration: { stages: live.stages }, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: null, ledger: null }),
   });
   assert.equal(r.ok, true);
-  assert.deepEqual(seen.map((q) => [q.rule, q.ask]), [[2, 'cant-check'], [3, 'cant-check']]);
+  assert.deepEqual(seen, [], 'answerQuestions is never called: no rule has a question');
   const list = r.closeDecl.list;
   assert.deepEqual(list.filter((/** @type {any} */ x) => x.kind === 'rule').map((/** @type {any} */ x) => [x.rule, x.state, x.fence ?? null, x.reason ?? null]),
-    [[1, 'built', 'test', null], [2, 'not-checked', null, REASON.left], [3, 'not-checked', null, REASON.left]]);
+    [[1, 'built', 'test', null], [2, 'not-checked', null, REASON.noRule], [3, 'not-checked', null, REASON.noRule]]);
   assert.deepEqual(r.closeDecl.refused.map((/** @type {any} */ x) => [x.line, x.rule]), [[1, 2], [1, 3]], 'refused is built from the rows in code: each rule once');
   assert.equal(list.filter((/** @type {any} */ x) => x.kind === 'stage').length, 3);
 });
@@ -269,7 +257,7 @@ test('the pointing call: one call before the asks, its user text names each rule
   assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).state, 'built');
 });
 
-test('the pointing call is conditional: no `~` rules, or no path outside the fence, or no model boundary = no call (a rule is then a question)', async () => {
+test('the pointing call is conditional: no `~` rules, or no path outside the fence, or no model boundary = no call (a rule is then Not checked, not asked)', async () => {
   let n = 0;
   const counting = async () => { n += 1; return { text: '', error: null, msgs: [], metrics: { costUsd: 0, unpricedRounds: 0 } }; };
   await callFlow({ fenceGenerate: counting, jobLines: [{ n: 1, text: 'fix the bug', rules: [], rule: '' }] });
@@ -279,7 +267,7 @@ test('the pointing call is conditional: no `~` rules, or no path outside the fen
   assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).state, 'not-checked', 'no pointing seam: rule 1 is not kept by words alone');
 });
 
-test('a failed pointing call never stops the draft: the rules go to the questions, the reason is logged, and the call is booked', async () => {
+test('a failed pointing call never stops the draft: the rules are Not checked, the reason is logged, and the call is booked', async () => {
   /** @type {any[]} */ const done = []; /** @type {any[]} */ const asked = [];
   const bad = async () => ({ text: 'not a tool call', error: null, msgs: [], metrics: { costUsd: 0.001, unpricedRounds: 0 } });
   const r = await callFlow({
@@ -288,7 +276,7 @@ test('a failed pointing call never stops the draft: the rules go to the question
   });
   assert.equal(r.ok, true);
   assert.equal(typeof done[0].reason, 'string');
-  assert.deepEqual(asked.map((q) => q.rule), [1, 2, 3]);
+  assert.deepEqual(asked, [], 'nothing to ask');
 });
 
 test('the pointing call\'s system text and schema are the signed ones (one op, fence; no counts, no readings)', () => {

@@ -43,8 +43,6 @@ const wordSet = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}
 export const REASON = Object.freeze({
   left: 'You chose to leave it Not checked, so you judge it at Accept.',
   nothingOnPage: 'Your own words are on the line; the machine has no check for them, so you judge it at Accept.',
-  cantCheck: "I can't check this on the page; waiting for your answer",
-  cantCheckRepo: "I can't check this; waiting for your answer",
   noRule: 'No rule can check this, so you judge it at Accept.',
   waitingPick: 'waiting for your answer on the proposed check',
   waitingReading: 'waiting for your answer on the reading',
@@ -304,7 +302,8 @@ export class CheckBlock {
     if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
     if (r.links?.length) { r.can = { ok: false, why: r.aiReason ?? `the look tied a fact to this rule but gave no limit, and ${ownWhy ? `in your words ${ownWhy}` : 'your own words give none code can read'}, so you judge it at Accept.` }; return; }
-    r.can = this.asks ? { ok: false, ask: 'cant-check', why: r.lookWhy ?? REASON.cantCheck } : { ok: false, why: r.lookWhy ?? REASON.noRule };
+    // hamr 2026-11-15 (option A): a rule no check can prove has only one answer (Drop it), so it is NOT asked: it is Not checked with code's reason at once
+    r.can = { ok: false, why: r.lookWhy ?? REASON.noRule };
   }
 
   /** a `~` rule that counts words, bullets, lines or sections: a settled pick builds it; else code proposes the check and asks */
@@ -320,7 +319,7 @@ export class CheckBlock {
     const proposal = r.pickProposal ?? countCheck(r.text);
     if (!this.asks) r.can = { ok: false, why: REASON.noRule };
     else if (proposal) r.can = { ok: false, ask: 'check', proposal, why: REASON.waitingPick };
-    else r.can = r.origin === 'typed' ? { ok: false, why: REASON.noRule } : { ok: false, ask: 'cant-check', why: REASON.cantCheck };
+    else r.can = { ok: false, why: REASON.noRule };
   }
 
   /** a `!` fact or phrase row: its words must be on the page; a version or a date is true only today, so only a place rule's fit may carry it */
@@ -635,7 +634,7 @@ export class CheckBlock {
     // the AI points, code proves (never kept without a pointer; own words that replaced the rule are proved again against the same pointer)
     if (typeof r.pointed === 'string' && this.provesFence(r.text, r.pointed)) { r.can = { ok: true, how: 'fence', path: r.pointed }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: REASON.nothingOnPage }; return; }
-    r.can = this.asks ? { ok: false, ask: 'cant-check', why: REASON.cantCheckRepo } : { ok: false, why: REASON.noRule };
+    r.can = { ok: false, why: REASON.noRule };
   }
 
   /** a repo job's rows: a rule is built with the path the fence keeps for it or Not checked with its reason; a work stage is built, or dropped when the person dropped it and it is not the last thing on its line */

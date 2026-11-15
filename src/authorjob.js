@@ -664,14 +664,14 @@ export async function authorCloseForJob({
 
   /**
    * The code-forced ask rounds of the check block, ONE flow for every job (hamr 2026-11-15): the rows code cannot settle are asked (cap 3 counted), the person's choice goes back through the block, and the job text is rebuilt
-   * from the list. Rubric jobs ask about the look and the pick path, repo jobs about a `~` rule no path in the person's words lets the write fence keep. Returns `{stop}` (a finished return) or `{answered}`.
-   * @param {import('./checkblock.js').CheckBlock} blk @param {any[]} scoped @param {NonNullable<typeof answerQuestions>} answerFn the seam that asks the person @returns {Promise<{stop: any}|{answered: {picks: any[], left: any[]}}>}
+   * from the list. Only a rule with something to Agree to is asked (a look's reading, a proposed count check); a rule no check can prove is Not checked at once, never asked (option A, hamr 2026-11-15). Returns `{stop}` (a finished return) or `{answered}`.
+   * @param {import('./checkblock.js').CheckBlock} blk @param {NonNullable<typeof answerQuestions>} answerFn the seam that asks the person @returns {Promise<{stop: any}|{answered: {picks: any[], left: any[]}}>}
    */
-  const askRounds = async (blk, scoped, answerFn) => {
+  const askRounds = async (blk, answerFn) => {
     /** what the person answered, across the rounds: the picks and the rules they left, for the record this draft hands on @type {{picks: any[], left: any[]}} */
     const answered = { picks: [], left: [] };
     for (let round = 0; round < 3 && blk.open.length > 0; round += 1) {
-      const asks = questionsOfBlock(blk, pickGenerate ? scoped : []);
+      const asks = questionsOfBlock(blk);
       const counted = asks.filter((a) => a.counted);
       if (counted.length > MAX_QUESTIONS) {
         return { stop: { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(asks, blk.repo !== null ? '' : undefined) }], stop: 'look-asks-too-many', cost: null } };
@@ -679,7 +679,7 @@ export async function authorCloseForJob({
       // the asks go to the person whole (key, check, reading, counted, pairRule): normalizeQuestions keeps only a model's question fields and would drop the proposal an Agree button needs
       const shown = asks.map((a) => ({ ...a, question: redactSecrets(a.question) }));
       if (shown.length === 0) break;
-      onPhase(shown.every((a) => a.ask === 'check' || a.ask === 'no-check') ? 'check-ask' : 'look-ask', { questions: shown.length });
+      onPhase(shown.every((a) => a.ask === 'check') ? 'check-ask' : 'look-ask', { questions: shown.length });
       const updated = await answerFn({ questions: shown, dropped: [], confirmed: null });
       if (updated === null) return { stop: { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null } };
       jobLines = updated.jobLines;
@@ -754,7 +754,7 @@ export async function authorCloseForJob({
     // the code-forced asks (PRD v1.106 Part 5 Q3 T2, v1.107 Part 5b, R10): a reading code proposes, a rule the page cannot check, a check proposed for a counting rule. More than
     // MAX_QUESTIONS counted asks is a job to rewrite, not a questionnaire: nothing is asked and the stop lists every ask.
     if (answerQuestions) {
-      const ar = await askRounds(block, pickGenerate ? scoped : [], answerQuestions);
+      const ar = await askRounds(block, answerQuestions);
       if ('stop' in ar) return ar.stop;
       const answered = ar.answered;
       // the record this draft hands on, written whether or not anything was asked (a draft that kept every pick still carries them forward): the picks it kept, as they were, and the picks just answered, keyed by words
@@ -886,7 +886,7 @@ export async function authorCloseForJob({
       onPhase('fence-point-done', { edits: fp.edits, results: rec.edits.map((/** @type {any} */ e) => ({ op: e.op, line: e.line, rule: e.rule, path: e.path, accepted: e.accepted === true, ...(e.accepted === true ? {} : { refusedBecause: String(e.refusedBecause) }) })), sent: fp.edits.length, kept: rec.edits.filter((/** @type {any} */ e) => e.accepted === true).length, reason: fp.reason, refused: rec.edits.filter((/** @type {any} */ e) => e.accepted !== true).map((/** @type {any} */ e) => String(e.refusedBecause)) });
     }
     if (answerQuestions) {
-      const ar = await askRounds(repoBlock, [], answerQuestions);
+      const ar = await askRounds(repoBlock, answerQuestions);
       if ('stop' in ar) return ar.stop;
     }
   }

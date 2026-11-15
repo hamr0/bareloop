@@ -19,7 +19,7 @@ const tmp = (p = 'r10-panel-') => { const d = mkdtempSync(join(tmpdir(), p)); ma
 const keysHome = () => { const d = tmp('r10-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
 
-test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree REPLACES the asked rule with the plain words; the picks reach the drafter; the draft log holds the call and each pick', async () => {
+test('the panel: a proposal is asked in fwd\'s words (a rule with no check is not asked, option A); agree REPLACES the asked rule with the plain words; the picks reach the drafter; the draft log holds the call and each pick', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } };
@@ -41,13 +41,10 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const said = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
   // the panel shows the question without the CLI's typed answer words (the box and its buttons say it); the stored question keeps them
-  assert.match(said(), /\(1 of 2\), about job line 1: Line 1, guardrail "under 80 words": I propose at most 80 words\.$/);
+  assert.match(said(), /\(1 of 1\), about job line 1: Line 1, guardrail "under 80 words": I propose at most 80 words\.$/);
   assert.match(session.state.pendingAsk.question, /I propose at most 80 words\. Answer "agree" to use it/);
   assert.equal(legs.length, 0, 'asked before any draft');
-  session.send('agree');
-  assert.ok(await until(() => /\(2 of 2\)/.test(said())));
-  assert.match(said(), /Line 1, guardrail "be nice": I can't check this\. Your own words, or Not checked\?/);
-  session.send('drop it');
+  session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   // the plan menu (before signing) draws the agreed pick once, as a `[you]` row
   const menuPlan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
@@ -56,11 +53,12 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.ok(await until(() => legs.length === 1));
   assert.deepEqual(legs[0].jobLines[0].rules, ['at most 80 words', 'be nice']);
   // one rule in, one rule out (2026-11-14): agree REPLACES the asked rule in the signed job lines and its row; that row carries the pick (no aiProposal)
-  assert.deepEqual(legs[0].block.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true]]);
+  assert.deepEqual(legs[0].block.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, false]]);
+  assert.equal(legs[0].block.rows.find((r) => r.kind === 'rule' && r.rule === 2)?.reason, 'No rule can check this, so you judge it at Accept.');
   const log = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.ok(log.some((e) => e.kind === 'call' && e.label === 'check-suggest' && e.costUsd === 0.0009), 'the suggestion call is booked like a drafting call');
   const picks = log.filter((e) => e.kind === 'check-pick');
-  assert.deepEqual(picks.map((e) => [e.rule, e.how]), [[1, 'agree'], [2, 'drop it']]);
+  assert.deepEqual(picks.map((e) => [e.rule, e.how]), [[1, 'agree']]);
   assert.deepEqual(picks[0].picked, { rule: 'maxWords', value: 80 });
 });
 
@@ -81,9 +79,7 @@ test('the prepared plan card (through the real drafting loop) has ONE row for th
     },
   });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
-  session.send('agree');
-  assert.ok(await until(() => /\(2 of 2\)/.test(session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text)));
-  session.send('drop it');
+  session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   assert.deepEqual(session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan.lines[0].picked, ['exactly 3 list items'], 'the plan menu draws the pick once too');
   assert.equal(session.signPrepare().ok, true);
@@ -93,7 +89,7 @@ test('the prepared plan card (through the real drafting loop) has ONE row for th
   // the pick is drawn once, from `picked`; the drafter's made-up maxWords 79 is not on the card; the one list's own default check (a text line quotes its input) is, tagged [default]
   // (and the line's `$` floor row, drawn since Addendum 2026-11-14 (c) piece 1)
   assert.deepEqual(plan.lines[0].checks.map((c) => [c.name, c.by]), [['every claim is backed by a quote copied from "Changelog"', 'default'], ['its file output/steps/1.json must exist, be complete JSON, and carry text', 'default']]);
-  assert.ok(plan.notChecked.some((n) => /"be kind" — You chose to leave it Not checked/.test(n)), JSON.stringify(plan.notChecked));
+  assert.ok(plan.notChecked.some((n) => /"be kind" — No rule can check this/.test(n)), JSON.stringify(plan.notChecked));
   // labels: the close's row for the pick is the person's, and the draft log records the checks the draft ended with, each marked
   const logged = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-checks');
   assert.deepEqual(logged.map((e) => e.checks.map((c) => [c.line, c.text, c.by])), [[[1, 'the text has exactly 3 list items', 'you']]]);

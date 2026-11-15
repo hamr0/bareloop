@@ -43,15 +43,15 @@ test('the static markup: head, line, question, the labelled one-line box, an ale
   assert.match(PAGE, /\.chat-question \.q-choices \.btn\{[^}]*white-space:normal/, 'long button words wrap instead of scrolling the page sideways');
 });
 
-test('session: a look question carries its box and its thread message is held back until it is answered; the answer closes it', async () => {
-  const { session, bot } = rubricSession({ jobText: '1. Find the last 3 releases\n~ one per week' });
+test('session: a check question carries its box and its thread message is held back until it is answered; the answer closes it', async () => {
+  const { session, bot } = rubricSession({ jobText: '1. Summarise the latest release\n~ under 80 words', picks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const box = session.state.pendingAsk.box;
   assert.equal(box.head, 'A question the plan raised (1 of 1)');
   assert.equal(box.line, 'About job line 1');
-  assert.match(box.text, /^Your line 1 says "one per week"\. I can't check this on the page\./);
+  assert.equal(box.text, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
   assert.equal(bot().at(-1).askOpen, true, 'the box shows the question, so the thread holds the message back');
-  assert.equal(session.send('each release is a weekly build').ok, true);
+  assert.equal(session.send('', 'agree').ok, true);
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   assert.equal(bot().some((m) => m.askOpen === true), false, 'answered: the question joins the thread');
   assert.equal(session.state.pendingAsk.box, undefined);

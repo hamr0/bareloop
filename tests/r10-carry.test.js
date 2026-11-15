@@ -26,7 +26,7 @@ const HOME = keysHome();
 const SURVEY = () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } });
 
 /**
- * One draft through the real session. `suggest(askedRules)` answers the suggestion call; `answers` are typed in order; returns what the drafter was handed.
+ * One draft through the real session. `suggest(askedRules)` answers the suggestion call; `answers` are the buttons pressed in order (Agree only: a rule with no check is not asked, hamr 2026-11-15); returns what the drafter was handed.
  * @param {string} jobText @param {{carryFrom?: string, suggest?: (rules: any[]) => any, answers?: string[]}} [o]
  */
 async function draft(jobText, { carryFrom, suggest = () => ({ checks: [] }), answers = [] } = {}) {
@@ -52,7 +52,7 @@ async function draft(jobText, { carryFrom, suggest = () => ({ checks: [] }), ans
     assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
     const q = session.state.pendingAsk.question;
     asked.push(session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text);
-    session.send(a);
+    session.send('', a);
     await until(() => session.state.pendingAsk?.kind !== 'answer' || session.state.pendingAsk?.question !== q);
   }
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `no ask expected here, but: ${session.state.phase} / ${session.state.error} / ${JSON.stringify(session.state.pendingAsk)}`);
@@ -77,40 +77,38 @@ const view = (/** @type {any} */ leg) => {
 const maxWords = (rules) => ({ checks: rules.map((g) => { const n = /(\d+) words/.exec(g.text); return n ? { line: 1, guardrail: g.rule, rule: 'maxWords', value: Number(n[1]) } : { line: 1, guardrail: g.rule, rule: 'none' }; }) });
 
 test('the first draft writes a record of words only (no line or rule number), and its card holds the answered rule IN PLACE of the asked one (one in, one out)', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree', 'be gentle'] });
+  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree'] });
   const rec = JSON.parse(readFileSync(join(a.session.state.outDir, 'picks-record.json'), 'utf8'));
-  assert.deepEqual(rec.picks.map((e) => [e.ruleText, e.check?.rule ?? null, e.own]), [['at most 80 words', 'maxWords', false], ['be gentle', null, true]], 'the record keeps the FINAL words of each rule');
+  assert.deepEqual(rec.picks.map((e) => [e.ruleText, e.check?.rule ?? null, e.own]), [['at most 80 words', 'maxWords', false]], 'the record keeps the FINAL words of each rule (a rule with no check was not asked, so it has no entry)');
   assert.equal(JSON.stringify(rec).match(/"(line|rule)":\s*\d/), null, 'no line or rule number is stored');
-  assert.equal(a.session.state.card.jobText, 'Summarise the latest release\n~ at most 80 words\n~ be gentle', 'a Revise reopens the boxes WITH the rules as the answers replaced them');
+  assert.equal(a.session.state.card.jobText, 'Summarise the latest release\n~ at most 80 words\n~ be nice', 'a Revise reopens the boxes WITH the rules as the answers replaced them');
 });
 
-test('am17: a draft that changes nothing about the rules asks nothing, makes no suggestion call, keeps both picks (kept from last draft) and logs them', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree', 'drop it'] });
+test('am17: a draft that changes nothing about the rules asks nothing, makes no suggestion call, keeps its pick (kept from last draft) and logs it', async () => {
+  const a = await draft('Summarise the latest release\n~ under 80 words\n~ under 40 words', { suggest: maxWords, answers: ['agree', 'agree'] });
   const b = await draft(a.session.state.card.jobText, { carryFrom: a.session.id, suggest: () => { throw new Error('the suggestion call must not run'); } });
   assert.equal(b.suggestSeen.length, 0);
-  assert.deepEqual(view(b.leg).picks.map((p) => [p.rule, p.check?.rule, p.kept]), [[1, 'maxWords', true]]);
-  assert.deepEqual(view(b.leg).left.map((l) => [l.rule, l.kept]), [[2, true]]);
+  assert.deepEqual(view(b.leg).picks.map((p) => [p.rule, p.check?.rule, p.kept]), [[1, 'maxWords', true], [2, 'maxWords', true]]);
   assert.deepEqual(b.log.filter((e) => e.kind === 'check-pick').map((e) => e.how), [KEPT_WORDS, KEPT_WORDS]);
   assert.equal(b.log.some((e) => e.kind === 'call' && e.label === 'check-suggest'), false);
   assert.deepEqual(JSON.parse(readFileSync(join(b.session.state.outDir, 'picks-record.json'), 'utf8')).picks.length, 2, 'the record is carried forward');
 });
 
 test('am17 (3): a rule whose words changed is suggested and asked (only that one); the other keeps its pick; the changed one keeps no old check', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree', 'drop it'] });
-  const b = await draft('Summarise the latest release\n~ under 60 words\n~ be nice\n', { carryFrom: a.session.id, suggest: maxWords, answers: ['agree'] });
+  const a = await draft('Summarise the latest release\n~ under 80 words\n~ under 40 words', { suggest: maxWords, answers: ['agree', 'agree'] });
+  const b = await draft('Summarise the latest release\n~ under 60 words\n~ at most 40 words\n', { carryFrom: a.session.id, suggest: maxWords, answers: ['agree'] });
   assert.equal(b.suggestSeen.length, 1);
   assert.match(b.suggestSeen[0][0], /g1: under 60 words/);
-  assert.doesNotMatch(b.suggestSeen[0][0], /be nice/, 'the kept rule is not sent to the call');
+  assert.doesNotMatch(b.suggestSeen[0][0], /40 words/, 'the kept rule is not sent to the call');
   assert.match(b.asked[0], /Line 1, guardrail "under 60 words": I propose at most 60 words\./);
-  assert.deepEqual(view(b.leg).picks.map((p) => [p.rule, p.check.value, p.kept === true]), [[1, 60, false]]);
-  assert.deepEqual(view(b.leg).left.map((l) => [l.rule, l.kept]), [[2, true]]);
+  assert.deepEqual(view(b.leg).picks.map((p) => [p.rule, p.check.value, p.kept === true]), [[1, 60, false], [2, 40, true]]);
 });
 
 test('am17 (3): a deleted rule takes its pick with it (no ask, no check, not in the next record)', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree', 'drop it'] });
-  const b = await draft('Summarise the latest release\n~ be nice', { carryFrom: a.session.id, suggest: () => { throw new Error('no call'); } });
-  assert.deepEqual(view(b.leg).picks, []);
-  assert.deepEqual(JSON.parse(readFileSync(join(b.session.state.outDir, 'picks-record.json'), 'utf8')).picks.map((e) => e.ruleText), ['be nice']);
+  const a = await draft('Summarise the latest release\n~ under 80 words\n~ under 40 words', { suggest: maxWords, answers: ['agree', 'agree'] });
+  const b = await draft('Summarise the latest release\n~ at most 40 words', { carryFrom: a.session.id, suggest: () => { throw new Error('no call'); } });
+  assert.deepEqual(view(b.leg).picks.map((p) => [p.rule, p.check.value]), [[1, 40]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(b.session.state.outDir, 'picks-record.json'), 'utf8')).picks.map((e) => e.ruleText), ['at most 40 words']);
 });
 
 test('am18: a line added at the top asks nothing and every pick lands on its line\'s NEW number', async () => {
@@ -120,11 +118,12 @@ test('am18: a line added at the top asks nothing and every pick lands on its lin
   assert.deepEqual(view(b.leg).rules.map((r) => [r.line, r.text]), [[2, 'at most 80 words']], 'the answered rule is the one rule (one in, one out)');
 });
 
-test('am18 (3): a line whose own words changed is a new line - its rules are asked, the other line keeps its pick', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\nList the headings\n~ nonstop', { suggest: (g) => ({ checks: g.map((x, i) => ({ line: /80/.test(x.text) ? 1 : 2, guardrail: x.rule, rule: 'none' })) }), answers: ['one', 'two'] });
+test('am18 (3): a line whose own words changed is a new line - its pick is not carried (settled from its own words here), the other line keeps its pick', async () => {
+  const perLine = (g) => ({ checks: g.map((x) => ({ line: /80/.test(x.text) ? 1 : 2, guardrail: x.rule, rule: 'maxWords', value: Number(/(\d+) words/.exec(x.text)[1]) })) });
+  const a = await draft('Summarise the latest release\n~ under 80 words\nList the headings\n~ under 20 words', { suggest: perLine, answers: ['agree', 'agree'] });
   assert.ok(a.asked.length === 2);
-  const b = await draft(a.session.state.card.jobText.replace('latest', 'newest'), { carryFrom: a.session.id, suggest: maxWords, answers: ['agree'] });
-  assert.match(b.asked[0], /Line 1, guardrail "one"/, 'line 1 changed words: its (replaced) rule is asked again');
+  const b = await draft(a.session.state.card.jobText.replace('latest', 'newest'), { carryFrom: a.session.id, suggest: perLine, answers: [] });
+  assert.equal(b.asked.length, 0, 'line 1 changed words, but its agreed rule "at most 80 words" is its own check, so it is settled as written (no obvious asks)');
   assert.deepEqual(view(b.leg).picks.map((p) => [p.line, p.kept === true]).sort(), [[1, false], [2, true]]);
 });
 
@@ -134,18 +133,18 @@ test('am18 (3): two lines with the same words are matched in their order - each 
   assert.deepEqual(view(b.leg).picks.map((p) => [p.line, p.rule, p.check.value]).sort(), [[1, 1, 80], [2, 1, 40], [3, 1, 20]]);
 });
 
-test('am17 (4): kept picks never count toward the cap - three kept "can\'t check" picks plus one new one still asks', async () => {
-  const none = () => ({ checks: [1, 2, 3].map((n) => ({ line: 1, guardrail: n, rule: 'none' })) });
-  const a = await draft('Do it\n~ be nice\n~ be brief\n~ be kind', { suggest: none, answers: ['x one', 'x two', 'x three'] });
-  const b = await draft(`${a.session.state.card.jobText}\n~ be calm`, { carryFrom: a.session.id, suggest: () => ({ checks: [{ line: 1, guardrail: 7, rule: 'none' }] }), answers: ['calmly'] });
-  assert.equal(b.asked.length, 1);
-  assert.doesNotMatch(String(b.session.state.error), /rules I can't check/, 'three kept picks plus one new one is one counted ask, not four');
+test('am17 (4): rules with no check are not asked, so they never count toward the cap - four of them plus one proposal still asks once', async () => {
+  const a = await draft('Do it\n~ be nice\n~ be brief\n~ be kind\n~ be calm\n~ under 80 words', { suggest: maxWords, answers: ['agree'] });
+  assert.equal(a.asked.length, 1);
+  assert.doesNotMatch(String(a.session.state.error), /rules I can't check/, 'four unasked rules are not a questionnaire');
+  assert.deepEqual(view(a.leg).left, [], 'they are Not checked with code\'s reason, not "left" by a choice');
+  assert.equal(a.leg.block.rows.filter((r) => r.kind === 'rule' && r.state === 'not-checked').length, 4);
 });
 
 test('am17 (5): the model never sees a pick - the suggestion call of a following draft carries none of the carried words', async () => {
-  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree', 'my secret wording'] });
-  const b = await draft(`${a.session.state.card.jobText}\n~ nonstop`, { carryFrom: a.session.id, suggest: maxWords, answers: ['drop it'] });
-  assert.doesNotMatch(JSON.stringify(b.suggestSeen), /my secret wording|at most 80 words|maxWords/);
+  const a = await draft('Summarise the latest release\n~ under 80 words\n~ be nice', { suggest: maxWords, answers: ['agree'] });
+  const b = await draft(`${a.session.state.card.jobText}\n~ nonstop`, { carryFrom: a.session.id, suggest: maxWords, answers: [] });
+  assert.doesNotMatch(JSON.stringify(b.suggestSeen), /at most 80 words|maxWords/);
 });
 
 test('one rule in, one rule out: an agreed rule edited in the box is just the rule; its words are the check, so nothing is asked and a draft that changes nothing keeps it', async () => {
@@ -160,14 +159,13 @@ test('one rule in, one rule out: an agreed rule edited in the box is just the ru
   assert.equal(c.asked.length, 0);
 });
 
-test('own words replace the edited rule; "drop it" leaves that one rule Not checked', async () => {
+test('a rule edited to words no check can prove is not asked: it is Not checked with code\'s reason', async () => {
   const a = await draft('Summarise the latest release\n~ under 80 words', { suggest: maxWords, answers: ['agree'] });
-  const own = await draft('Summarise the latest release\n~ a bit shorter', { carryFrom: a.session.id, suggest: maxWords, answers: ['about sixty words please'] });
-  assert.deepEqual(own.leg.jobLines[0].rules, ['about sixty words please']);
-  assert.deepEqual(view(own.leg).picks.map((p) => [p.rule, p.check, p.own]), [[1, null, true]]);
-  const drop = await draft('Summarise the latest release\n~ a bit shorter', { carryFrom: a.session.id, suggest: () => ({ checks: [{ line: 1, guardrail: 1, rule: 'none' }] }), answers: ['drop it'] });
-  assert.deepEqual(drop.leg.jobLines[0].rules, ['a bit shorter']);
-  assert.deepEqual(view(drop.leg).left.map((l) => l.rule), [1]);
+  const own = await draft('Summarise the latest release\n~ a bit shorter', { carryFrom: a.session.id, suggest: () => ({ checks: [{ line: 1, guardrail: 1, rule: 'none' }] }) });
+  assert.equal(own.asked.length, 0);
+  assert.deepEqual(own.leg.jobLines[0].rules, ['a bit shorter']);
+  const row = own.leg.block.rows.find((r) => r.kind === 'rule');
+  assert.deepEqual([row.state, row.reason], ['not-checked', 'No rule can check this, so you judge it at Accept.']);
 });
 
 test('no record (or a carryFrom that is not a session id): every rule is asked, as on a first draft; a path is never followed out of the sessions folder', async () => {

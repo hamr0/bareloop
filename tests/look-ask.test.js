@@ -25,6 +25,8 @@ const tmp = (p = 'look-ask-') => { const d = mkdtempSync(join(tmpdir(), p)); mad
 const changelogCopy = () => { const f = join(tmp(), 'CHANGELOG.md'); copyFileSync(join(HERE, '..', 'CHANGELOG.md'), f); return f; };
 const keysHome = () => { const d = tmp('look-ask-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 
+/** a kept look fact with a reading the person's words do not carry (a time window): the one kind of rule that is still asked (Agree), hamr 2026-11-15 */
+const READING_FACT = { line: 1, name: 'release time', shape: 'time', source: 'Changelog', words: ['Released:'], forRule: 1, reading: { op: 'between', lo: '07:00', hi: '23:00' } };
 const LINES = [{ n: 1, text: 'Find the last 3 releases', rule: 'released in October; one per week', rules: ['released in October', 'one per week'] }];
 
 test('the existing caps apply: at most MAX_QUESTIONS are kept, each on a line the look named', () => {
@@ -52,7 +54,7 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
   /** @type {any} */ let asked = null;
   /** @type {any} */ let seen = null;
   const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
-    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [{ line: 1, name: 'release date', shape: 'time', source: 'Changelog', example: '', forRule: 1 }], prose: [], notFound: [] } } };
+    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [READING_FACT], prose: [], notFound: [] } } };
   const r = await authorCloseForJob({
     answers: { 1: '1. Find the last 3 releases\n   rule: released in October; one per week' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
     jobLines: JSON.parse(JSON.stringify(LINES)), inputs: [{ n: 1, label: 'Changelog', value: file }], writeScope: ['output/'],
@@ -61,9 +63,8 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
     answerQuestions: async (o) => {
       order.push('ask'); asked = o;
       const jobLines = JSON.parse(JSON.stringify(LINES));
-      // one rule in, one rule out: the person's words REPLACE the asked rule (rule 2 "one per week"); the check list rebuilds the job text from that choice
-      jobLines[0].rules[1] = 'every Monday'; jobLines[0].rule = jobLines[0].rules.join('; ');
-      return { jobLines, answers: { 1: 'x' }, choices: o.questions.map((q) => ({ key: q.key, choice: 'rule', text: 'every Monday' })) };
+      // one rule in, one rule out: Agree REPLACES the asked rule with the reading; the check list rebuilds the job text from that choice
+      return { jobLines, answers: { 1: 'x' }, choices: o.questions.map((q) => ({ key: q.key, choice: 'agree', text: '' })) };
     },
     generate: async () => { throw new Error('no model call'); },
     authorFn: async (o) => { order.push('authorFn'); seen = o; return { ok: true, declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] }, genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }; },
@@ -71,11 +72,12 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.deepEqual(order.filter((x) => ['lookFn', 'ask', 'authorFn'].includes(x)), ['lookFn', 'ask', 'authorFn'], 'look, then the one early ask, then the draft');
   assert.deepEqual(asked.questions.map((q) => q.line), [1]);
-  assert.match(asked.questions[0].question, /^Your line 1 says "one per week"\. I can't check this on the page\. Drop it\?/);
-  assert.deepEqual([asked.questions[0].rule, asked.questions[0].source], [2, 'look'], 'rule 1 is tied to a kept page word, so only rule 2 is asked');
+  assert.match(asked.questions[0].question, /^Your line 1 says "released in October"\. I read it as: release time /);
+  assert.deepEqual([asked.questions[0].rule, asked.questions[0].source, asked.questions[0].ask], [1, 'look', 'reading'], 'rule 1 is tied to a kept page word with a reading, so it is asked; rule 2 has no check to agree to, so it is NOT asked (option A)');
   assert.equal(asked.confirmed, null);
-  assert.match(seen.answers[1], /every Monday/, 'the answer reaches the drafter as a ~ rule');
-  assert.equal(seen.jobLines[0].rules.at(-1), 'every Monday');
+  assert.match(seen.answers[1], /release time between/, 'the agreed reading reaches the drafter as a ~ rule');
+  assert.match(seen.jobLines[0].rules[0], /^release time between /);
+  assert.equal(seen.jobLines[0].rules[1], 'one per week', 'the unasked rule is untouched');
   assert.equal(seen.offerQuestions, undefined, 'a rubric job never offers the piecemeal try-3 ask');
   assert.equal(order.includes('look-ask'), true);
   // an abandoned ask stops the draft with nothing spent on it
@@ -89,15 +91,15 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
   assert.equal(abandoned.stop, 'confirm-abandoned');
 });
 
-test('the panel: the early ask goes through the ordinary ask path, required with no skip; the answer is signed with the job lines; a draft that then fails says "review the whole job"', async () => {
+test('the panel: the early ask goes through the ordinary ask path, answered by its button; the answer is signed with the job lines; a draft that then fails says "review the whole job"', async () => {
   const file = changelogCopy();
   const sessionsRoot = tmp('look-ask-sess-');
   /** @type {any[]} */ const legs = [];
   const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
-    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } };
+    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [READING_FACT], prose: [], notFound: [] } } };
   const PLAN = { goal: 'Find releases.', checks: [{ text: 'three releases are listed', fromLine: [1] }], notChecked: [], questions: [] };
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'look-ask-job', jobText: '1. Find the last 3 releases\n~ one per week',
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'look-ask-job', jobText: '1. Find the last 3 releases\n~ released in October',
     inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot,
@@ -110,18 +112,18 @@ test('the panel: the early ask goes through the ordinary ask path, required with
   const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const said = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
-  assert.match(said(), /about job line 1: Your line 1 says "one per week"\. I can't check this on the page\./);
+  assert.match(said(), /about job line 1: Your line 1 says "released in October"\. I read it as: release time /);
   assert.equal(legs.length, 0, 'asked at once: nothing was drafted yet');
-  session.send('   ');
-  assert.ok(await until(() => session.state.messages.some((/** @type {any} */ m) => /An answer is needed/.test(m.text))));
-  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
-  session.send('each release is a weekly build');
+  assert.deepEqual(session.send('', 'maybe').ok, false, 'a choice that is not one is refused and the question stays open');
+  assert.equal(session.state.pendingAsk?.kind, 'answer');
+  session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   assert.equal(session.signPrepare().ok, true);
   assert.ok(await until(() => ['refused', 'error', 'prepared'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'refused', String(session.state.error));
   assert.equal(legs.length, 1, 'one draft, and no piecemeal ask after it failed');
-  assert.deepEqual(legs[0].jobLines[0].rules, ['each release is a weekly build'], 'the typed words REPLACED the asked rule (one rule in, one rule out)');
+  assert.equal(legs[0].jobLines[0].rules.length, 1);
+  assert.match(legs[0].jobLines[0].rules[0], /^release time between /, 'Agree REPLACED the asked rule (one rule in, one rule out)');
   assert.match(session.state.error, /What to do: review the whole job - every line and its ~ rules, and the inputs - and submit it again\./);
   assert.match(session.state.error, /the label "from" is not one of the labels the input "Changelog"/);
 });

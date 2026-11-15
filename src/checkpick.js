@@ -291,8 +291,6 @@ export function rowsFromAnswer(scoped, args) {
 }
 
 // ---- the asks (words are item 4's) -------------------------------------------------------------------------------------------------------
-/** the can't-check ask, as the signed words say it */
-export const CANT_CHECK_WORDS = "I can't check this. Your own words, or Not checked?";
 /** how every answer is told, once (fwd am2 item 2's words) */
 export const HOW_TO_ANSWER = (/** @type {number} */ line, /** @type {boolean} */ agree) => `${agree ? 'Answer "agree" to use it, or type your own words' : 'Type your own words'} (your answer replaces that ~ rule on line ${line}), or answer "drop it" to leave it Not checked.`;
 

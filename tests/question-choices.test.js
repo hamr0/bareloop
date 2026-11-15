@@ -75,50 +75,44 @@ test('boxFor: Agree and Drop it buttons follow the offers; the box label says "O
   assert.equal(plain?.sendChoice, 'rule');
 });
 
-test('session: a proposal ask carries Agree + Drop it, its box shows the question without the typed-answer words, the stored question keeps them; Agree = today\'s agree', async () => {
+test('session: a proposal ask carries Agree + Drop it, its box shows the question without the typed-answer words, the stored question keeps them; Agree = today\'s agree; the rule with no check is not asked', async () => {
   const w = await pickDraft();
   const ask = w.session.state.pendingAsk;
+  assert.equal(ask.total, 1, 'only the proposal is a question (option A, hamr 2026-11-15)');
   assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree', 'drop']);
   assert.equal(ask.box.text, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
   assert.match(ask.question, /I propose at most 80 words\. Answer "agree" to use it, or type your own words \(your answer replaces that ~ rule on line 1\), or answer "drop it" to leave it Not checked\.$/);
   assert.equal(w.bot().at(-1).text.endsWith('I propose at most 80 words.'), true, 'the thread holds the panel copy');
   assert.deepEqual(w.session.send('', 'agree'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  assert.equal(w.session.state.pendingAsk.box.text, 'Line 1, guardrail "be nice": I can\'t check this. Your own words, or Not checked?');
-  assert.deepEqual(w.session.state.pendingAsk.box.choices.map((c) => c.choice), ['drop'], 'no proposal: no Agree button');
-  assert.deepEqual(w.session.send('', 'drop'), { ok: true });
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   assert.equal(w.session.signPrepare().ok, true);
   assert.ok(await until(() => w.legs.length === 1));
   // ruling 1 (2026-11-12): agree writes a `~` line into the signed job lines AND a row with the SAME rule number; the agreed rule's row carries the pick (no aiProposal)
   assert.deepEqual(w.legs[0].jobLines[0].rules, ['at most 80 words', 'be nice'], 'one rule in, one rule out: the agreed words REPLACED "under 80 words"');
   const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true]]);
+  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, false]]);
+  assert.equal(blockRows[1].reason, 'No rule can check this, so you judge it at Accept.');
   const rows = human(w);
-  assert.deepEqual(rows.map((r) => [r.answer, r.choice]), [['agree', 'agree'], ['drop it', 'drop']], 'the human row keeps the answer words, and says which button');
+  assert.deepEqual(rows.map((r) => [r.answer, r.choice]), [['agree', 'agree']], 'the human row keeps the answer words, and says which button');
   assert.match(rows[0].question, /Answer "agree" to use it/, 'the logged question keeps its words');
-  assert.deepEqual(w.log().filter((e) => e.kind === 'check-pick').map((e) => [e.rule, e.how]), [[1, 'agree'], [2, 'drop it']]);
-  assert.deepEqual(w.session.state.messages.filter((m) => m.role === 'you').map((m) => m.text), ['Agree', 'Drop it']);
+  assert.deepEqual(w.log().filter((e) => e.kind === 'check-pick').map((e) => [e.rule, e.how]), [[1, 'agree']]);
+  assert.deepEqual(w.session.state.messages.filter((m) => m.role === 'you').map((m) => m.text), ['Agree']);
 });
 
-test('the box\'s own words are a rule WHOLE, even when they read "agree" or "drop it" (fwd walk: "agree, why not" became a rule word for word)', async () => {
+test('Drop it on a proposal leaves the rule Not checked (the person\'s own choice, REASON.left)', async () => {
   const w = await pickDraft();
-  assert.deepEqual(w.session.send('agree, why not', 'rule'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  assert.deepEqual(w.session.send('drop it', 'rule'), { ok: true });
+  assert.deepEqual(w.session.send('', 'drop'), { ok: true });
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
   assert.ok(await until(() => w.legs.length === 1));
-  assert.deepEqual(w.legs[0].jobLines[0].rules, ['agree, why not', 'drop it'], 'both typed answers kept word for word, each REPLACING the rule it was asked about');
-  const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.origin, r.pick ?? null, r.left ?? false, r.cantAsked ?? false]), [[1, 'typed', null, false, true], [2, 'typed', null, false, true]], 'own words: the asked rule is settled (a pick with no check), a typed row holds the words; nothing was left Not checked by words');
-  assert.deepEqual(human(w).map((r) => [r.answer, r.choice]), [['agree, why not', 'rule'], ['drop it', 'rule']]);
+  const rows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
+  assert.deepEqual(rows.map((r) => [r.rule, r.left ?? false]), [[1, true], [2, false]]);
 });
 
-test('a refused choice leaves the question open: nothing said, nothing logged, nothing resolved (bad value, not offered, blank box)', async () => {
+test('a refused choice leaves the question open: nothing said, nothing logged, nothing resolved (bad value, not offered)', async () => {
   const w = await pickDraft();
   const before = JSON.stringify(w.session.state.messages);
-  for (const [text, choice, say] of [['', 'maybe', CHOICE_SAYS.bad], ['', 7, CHOICE_SAYS.bad], ['x', null, CHOICE_SAYS.bad], ['', 'rule', CHOICE_SAYS.blank], ['  ', 'rule', CHOICE_SAYS.blank]]) {
+  for (const [text, choice, say] of [['', 'maybe', CHOICE_SAYS.bad], ['', 7, CHOICE_SAYS.bad], ['x', null, CHOICE_SAYS.bad]]) {
     const r = w.session.send(text, choice);
     assert.equal(r.ok, false, `${choice}`);
     assert.equal(r.error, say);
@@ -127,38 +121,18 @@ test('a refused choice leaves the question open: nothing said, nothing logged, n
   assert.equal(w.session.state.pendingAsk.kind, 'answer');
   assert.equal(w.session.state.pendingAsk.box.text.includes('under 80 words'), true, 'still the first question');
   assert.deepEqual(human(w), [], 'nothing logged');
-  // and the question still takes a good answer afterwards
   assert.deepEqual(w.session.send('', 'agree'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  // question 2 has no proposal: agree is not offered
-  assert.equal(w.session.send('', 'agree').error, CHOICE_SAYS.notOffered);
-  assert.equal(w.session.state.pendingAsk.box.text.includes('be nice'), true);
+  assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
 });
 
-test('a can\'t-check ask (real look path): Drop it leaves the rule Not checked; the box\'s "drop it" words are a rule; the old words reading still works with no choice', async () => {
-  const job = '1. Find the last 3 releases\n~ one per week';
-  const a = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(a.session)));
-  assert.deepEqual(a.session.state.pendingAsk.box.choices.map((c) => c.choice), ['drop']);
-  assert.match(a.session.state.pendingAsk.box.text, /Drop it\?$/);
-  assert.match(a.session.state.pendingAsk.question, /Answer "drop it", or type how to check it/);
-  a.session.send('', 'drop');
-  assert.ok(await until(() => a.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(a.session.state.messages.some((m) => /Noted: those stay Not checked/.test(m.text)));
-  const b = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(b.session)));
-  b.session.send('drop it', 'rule');
-  assert.ok(await until(() => b.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(b.session.state.messages.some((m) => /Your answers are in on those job lines/.test(m.text)), 'a rule, not a drop');
-  b.session.signPrepare();
-  assert.ok(await until(() => b.legs.length === 1));
-  assert.deepEqual(b.legs[0].jobLines[0].rules, ['drop it']);
-  const c = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(c.session)));
-  c.session.send('drop it');
-  assert.ok(await until(() => c.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(c.session.state.messages.some((m) => /Noted: those stay Not checked/.test(m.text)), 'no choice = today\'s words reading');
-  assert.equal(human(c).at(-1).choice, undefined, 'a words answer carries no choice');
+test('a rule nothing can check (real look path) is not asked: the draft goes straight to the plan with the rule Not checked', async () => {
+  const a = rubricSession({ jobText: '1. Find the last 3 releases\n~ one per week' });
+  assert.ok(await until(() => a.session.state.pendingAsk?.kind === 'menu'), `${a.session.state.phase} / ${a.session.state.error}`);
+  a.session.signPrepare();
+  assert.ok(await until(() => a.legs.length === 1));
+  assert.deepEqual(a.legs[0].jobLines[0].rules, ['one per week']);
+  assert.equal(a.legs[0].block.rows.find((r) => r.kind === 'rule').reason, 'No rule can check this, so you judge it at Accept.');
+  assert.equal(human(a).length, 0, 'no question, no human row');
 });
 
 test('the send route hands the body\'s `choice` to the session', () => {

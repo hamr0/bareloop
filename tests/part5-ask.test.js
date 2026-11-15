@@ -68,7 +68,10 @@ test('isDropIt: the exact words, any case, a closing full stop; nothing else', (
   assert.equal(isDropIt('please drop it, thanks'), false);
 });
 
-/** a panel session over a look with one untied rule; the confirm model raises one question of its own */
+/** a kept look fact carrying a reading the person's words do not hold (a time window): the kind of rule that is still asked, answered with Agree (hamr 2026-11-15) */
+const READING_FACT = { line: 1, name: 'release time', shape: 'time', source: 'Changelog', words: ['Released:'], forRule: 1, reading: { op: 'between', lo: '07:00', hi: '23:00' } };
+
+/** a panel session over a look with one rule; the confirm model raises one question of its own */
 function sessionWith({ lookFacts, confirmQuestions }) {
   const file = changelogCopy();
   const sessionsRoot = tmp('part5-ask-sess-');
@@ -90,37 +93,42 @@ function sessionWith({ lookFacts, confirmQuestions }) {
   return { session, legs, sessionDir, survey };
 }
 
-test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, answer); a blank answer leaves no row; "drop it" adds no rule and lands on the look\'s Not checked list; a question the confirm model raises is discarded (a rubric confirm turn plans the goal only), never asked', async () => {
-  const { session, legs, sessionDir } = sessionWith({ lookFacts: [], confirmQuestions: ['Which airport do you mean?'] });
+test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, answer, choice); Agree writes the reading as the rule; a rule nothing can check is not asked and lands Not checked with code\'s reason; a question the confirm model raises is discarded (a rubric confirm turn plans the goal only), never asked', async () => {
+  const { session, legs, sessionDir } = sessionWith({ lookFacts: [READING_FACT], confirmQuestions: ['Which airport do you mean?'] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'look');
-  session.send('   ');                                 // blank: re-asks, records nothing
-  assert.ok(await until(() => session.state.messages.some((m) => /An answer is needed/.test(m.text))));
-  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
-  session.send('Drop it.');                            // T2: no new rule
+  assert.deepEqual(session.state.pendingAsk.offers, { agree: true, drop: false }, 'a reading offers Agree only');
+  session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   session.signPrepare();
   assert.ok(await until(() => legs.length === 1));
   const raw = readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8');
   const humans = raw.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'human');
-  assert.equal(humans.length, 1, 'one answered question, the blank answer left nothing, and the confirm model\'s own question was never asked');
-  assert.deepEqual(humans.map((h) => [h.source, h.line ?? null]), [['look', 1]]);
+  assert.equal(humans.length, 1, 'one answered question; the confirm model\'s own question was never asked');
+  assert.deepEqual(humans.map((h) => [h.source, h.line ?? null, h.choice]), [['look', 1, 'agree']]);
   assert.match(humans[0].question, /^Your line 1 says "one per week"\./);
-  assert.equal(humans[0].answer, 'Drop it.');
+  assert.equal(humans[0].answer, 'agree');
   // the steps fold them in under the step that was running
   const steps = readDraftSteps(sessionDir());
   const withHumans = steps.filter((x) => x.humans.length > 0);
   assert.deepEqual(withHumans.map((x) => [x.id, x.humans.length]), [['look', 1]]);
-  // T2 "leave": no rule was added, and the rule is Not checked in the block's own row (ruling 4 of 2026-11-12: a rule the person left is the block's own, not an entry on the look's dropped list), so it reads that way everywhere
+  assert.match(legs[0].jobLines[0].rules[0], /^release time between /, 'Agree REPLACED the asked rule');
+});
+
+test('option A (hamr 2026-11-15): a rule nothing can check is NOT asked; it is Not checked with code\'s reason and the draft goes straight to the plan', async () => {
+  const { session, legs } = sessionWith({ lookFacts: [], confirmQuestions: [] });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  session.signPrepare();
+  assert.ok(await until(() => legs.length === 1));
   assert.deepEqual(legs[0].jobLines[0].rules, ['one per week']);
   const row = legs[0].block.rows.find((r) => r.kind === 'rule');
-  assert.deepEqual([row.rule, row.state, row.left], [1, 'not-checked', true]);
-  assert.equal(row.reason, 'You chose to leave it Not checked, so you judge it at Accept.');
+  assert.deepEqual([row.rule, row.state], [1, 'not-checked']);
+  assert.equal(row.reason, 'No rule can check this, so you judge it at Accept.');
   assert.deepEqual(legs[0].block.signedRows().find((r) => r.key === row.key)?.reason, row.reason);
 });
 
 test('Q1: an abandoned or unanswered question writes no row; an old session (the real mve5y8fa log) has no human rows and its steps carry an empty list', async () => {
-  const { session, sessionDir } = sessionWith({ lookFacts: [], confirmQuestions: [] });
+  const { session, sessionDir } = sessionWith({ lookFacts: [READING_FACT], confirmQuestions: [] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
   const raw = () => { try { return readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8'); } catch { return ''; } };
   assert.ok(!raw().includes('"kind":"human"'), 'asked but not answered: nothing written');

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { askableFromLook } from '../src/pagemap.js';
-import { rowsFromAnswer, CANT_CHECK_WORDS, isCountable } from '../src/checkpick.js';
+import { rowsFromAnswer, isCountable } from '../src/checkpick.js';
 import { checkDeclarationWords } from '../src/factwords.js';
 import { CheckBlock } from '../src/checkblock.js';
 import { questionsOfBlock } from '../src/blockasks.js';
@@ -30,9 +30,9 @@ test('D1: a count rule is never asked as a page question (no "can\'t check on th
   assert.equal(look.facts.length, 1);
 });
 
-test('D1 on the block: a count rule is asked as a CHECK proposal (never "can\'t check", never a reading); a non-count rule is a can\'t-check ask; the look\'s fact tied to the count rule stays a fact', () => {
+test('D1 on the block: a count rule is asked as a CHECK proposal (never "can\'t check", never a reading); a non-count rule with no check is not asked at all (option A, hamr 2026-11-15); the look\'s fact tied to the count rule stays a fact', () => {
   const { b, asks } = asksOf(['exactly 3 bullets', 'under 80 words', 'be friendly'], [{ line: 1, forRule: 1, name: 'bullet count', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] }]);
-  assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[3, 'cant-check'], [1, 'check'], [2, 'check']]);
+  assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[1, 'check'], [2, 'check']]);
   assert.equal(b.rows.find((r) => r.key === 'L1.fact.bullet count')?.state, 'built');
 });
 
@@ -64,15 +64,15 @@ test('D3: round-4 draft 9 (the suggest call said none for "exactly 3 bullets"): 
   assert.deepEqual([a.ask, a.counted, a.check], ['check', false, { rule: 'listItems', value: 3 }]);
   assert.equal(a.question, 'Line 1, guardrail "exactly 3 bullets": I propose exactly 3 list items. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
   assert.deepEqual([b.ask, b.check], ['check', { rule: 'maxWords', value: 80 }]);
-  assert.ok(!asks.some((x) => x.question.includes(CANT_CHECK_WORDS)));
+  assert.ok(!asks.some((x) => x.question.includes("I can't check this")));
 });
-test('D3: with no suggestion every count rule still gets its proposal; a non-count rule is the can\'t-check ask; two different counts in one rule build nothing; (rowsFromAnswer keeps its own rows for the pick path)', () => {
+test('D3: with no suggestion every count rule still gets its proposal; a non-count rule is not asked; two different counts in one rule build nothing; (rowsFromAnswer keeps its own rows for the pick path)', () => {
   const texts = ['exactly 3 bullets', 'under 80 words', 'at least 200 words', 'at most 10 lines', 'be friendly', 'between 100 and 200 words'];
   const { asks } = asksOf(texts);
   // no obvious asks (hamr 2026-11-14): "at least 200 words" and "at most 10 lines" ARE their checks, so they are built as written and not asked; the other two count rules still get a proposal
-  assert.deepEqual(asks.map((a) => [a.rule, a.ask, a.check ?? null]), [[5, 'cant-check', null], [6, 'cant-check', null], [1, 'check', { rule: 'listItems', value: 3 }], [2, 'check', { rule: 'maxWords', value: 80 }]]);
+  assert.deepEqual(asks.map((a) => [a.rule, a.ask, a.check ?? null]), [[1, 'check', { rule: 'listItems', value: 3 }], [2, 'check', { rule: 'maxWords', value: 80 }]]);
   assert.ok(texts.slice(0, 4).every((t) => isCountable(t)));
-  assert.equal(asksOf(['exactly 3 bullets under 80 words']).asks[0].ask, 'cant-check', 'two different counts in one rule: nothing is built');
+  assert.equal(asksOf(['exactly 3 bullets under 80 words']).asks.length, 0, 'two different counts in one rule: nothing is built and nothing is asked');
   const rs = [...rules, { line: 1, rule: 3, text: 'at least 200 words' }, { line: 1, rule: 4, text: 'at most 10 lines' }, { line: 1, rule: 5, text: 'be friendly' }, { line: 1, rule: 6, text: 'between 100 and 200 words' }];
   assert.deepEqual(rowsFromAnswer(rs, { checks: [] }).map((r) => r.check), [{ rule: 'listItems', value: 3 }, { rule: 'maxWords', value: 80 }, { rule: 'minWords', value: 200 }, { rule: 'maxLines', value: 10 }, null, null]);
 });
