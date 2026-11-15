@@ -1559,6 +1559,31 @@ function stepChecksOf(records, spec) {
 }
 
 /**
+ * The Result tab's checks of a repo close that carries the one list (Addendum 2026-11-15 (d)): drawn from the list's rows only, by the Audit's own reader ({@link auditChecksFor}), each with its tag and its OWN result: an `!` stage row its
+ * recorded verdict, a `$` guard row its guard stage, the `$` fence row and a fence-kept `~` row the gate's record of the run, a Not checked row none. The head and the counts stay the close's own. A close with no list, or a rubric close, is returned as it was.
+ * @param {any} base what {@link checksOf} read @param {any} row @param {any[]} records @param {any} spec @param {{ home?: string, sessionsRoot?: string }} opts
+ */
+function repoRowChecks(base, row, records, spec, opts) {
+  const cd = spec?.closeDecl;
+  if (!base || !carriesOneList(cd) || (Array.isArray(cd.stages) ? cd.stages : []).some((/** @type {any} */ x) => x && x.kind === 'rubric-step')) return base;
+  const ac = auditChecksFor(row, records, spec, opts);
+  if (!ac) return base;
+  const tag = (/** @type {any} */ by) => (by === 'you' ? '~ [you] ' : by === 'agent' ? '! [agent] ' : by === 'default' ? '$ [default] ' : '');
+  const grey = (/** @type {string} */ word) => ({ sign: '\u00b7', word });
+  const mk = (/** @type {any} */ r) => {
+    const standing = r.result === 'passed' ? { passed: true, notReached: false, status: STATUS.passed }
+      : r.result === 'failed' ? { passed: false, notReached: false, status: STATUS.failed }
+        : r.result === 'held' ? { passed: true, notReached: false, status: { sign: STATUS.passed.sign, word: String(r.word) } }
+          : r.result === 'record-missing' ? { passed: false, notReached: true, status: grey(String(r.word)) }
+            : r.result === 'not-reached' ? { passed: false, notReached: true, status: NOT_REACHED }
+              : r.result === 'not-checked' ? { passed: false, notReached: true, status: grey('not checked') }
+                : { passed: false, notReached: true, status: grey('no result recorded') };
+    return { name: r.key ?? r.text, question: `${tag(r.by)}${r.text}`, ...standing, value: null, baseline: null, direction: null, baselineKind: null, notes: typeof r.why === 'string' && r.why ? r.why : null };
+  };
+  return { ...base, stages: [...ac.checks, ...ac.notChecked].map(mk) };
+}
+
+/**
  * The generic Result tab's "The checks" box, from the run's FINAL close record (the last `outer-close` or fix-loop staged `close-verdict`): each stage's plain question ({@link stageQuestionText}'s one
  * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. A run the close never reached
  * falls back to the checks its steps ran ({@link stepChecksOf}); `null` when neither exists.
@@ -1648,7 +1673,7 @@ function genericResultOf(runid, row, records, spec, opts) {
     job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
     ticket,
     changed: changedOf(records, writeScope),
-    checks: checksOf(records, spec),
+    checks: repoRowChecks(checksOf(records, spec), row, records, spec, opts),
     work: workOf(row, records),
     run: {
       spent: spentUsd === null ? 'unknown' : `${complete ? '' : 'at least '}${panelMoney2(spentUsd)}`,
