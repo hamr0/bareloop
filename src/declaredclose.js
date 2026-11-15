@@ -100,7 +100,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'list', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
 export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts', 'fence']);
@@ -328,6 +328,12 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         if (row.fence !== undefined && !isNonEmptyString(row.fence)) red('invalid-value', `${w}.fence`, 'the path the write fence keeps, a non-empty string (a repo job\'s ~ rule row the fence keeps)');
         if (row.facts !== undefined && !(Array.isArray(row.facts) && row.facts.every((/** @type {unknown} */ x) => typeof x === 'string'))) red('invalid-value', `${w}.facts`, 'the names of the facts the row built, an array of strings');
       });
+    }
+  }
+  // an OLD signed repo spec may carry the drafter's fence claim (`fenceKept`, unreleased dev sessions): it still loads and Reuses; only its SHAPE is read, nothing reads its words, and a new draft never writes it
+  if (closeDecl.fenceKept !== undefined) {
+    if (!Array.isArray(closeDecl.fenceKept) || !closeDecl.fenceKept.every((/** @type {any} */ c) => isObj(c) && Number.isInteger(c.line) && c.line >= 1 && Number.isInteger(c.rule) && c.rule >= 1 && isNonEmptyString(c.path))) {
+      red('invalid-value', `${at}.fenceKept`, '{line, rule, path} entries (an older signed spec\'s fence claim)');
     }
   }
   // PART 1a: a genre is bound to its language — code languages are TYPES, the rubric-files language is TEXT, and neither may

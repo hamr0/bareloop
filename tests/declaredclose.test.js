@@ -393,7 +393,7 @@ test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown l
   assert.ok(codes({ ...GOOD_DECL(), refused: [{ line: 1 }] }).some((c) => c.startsWith('invalid-value:closeDecl.refused')));
   // `calibration` joined the list at softgreen module 4 — the frozen ten a judged
   // close is calibrated against ride the declaration, not a stage's params
-  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['genre', 'genreEnv', 'guardLines', 'lang', 'list', 'notes', 'picks', 'refused', 'stages']);
+  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['fenceKept', 'genre', 'genreEnv', 'guardLines', 'lang', 'list', 'notes', 'picks', 'refused', 'stages']);
 });
 
 test('validateCloseDecl refuses when a guard was WEAKENED — D5 is not a taste', () => {
@@ -754,4 +754,17 @@ test('a higher-is-better floor CANNOT manufacture a converging reading out of a 
   t2.record(closeGrade({ declared: true, stage: 'tests-kept', trendValue: null, gap: 'a' }));
   t2.record(closeGrade({ declared: true, stage: 'tests-kept', trendValue: null, gap: 'b' }));
   assert.notEqual(t2.verdict().trend, 'converging');
+});
+
+test('an OLD signed repo spec that carries fenceKept (live session smwhvmfsxd5t8) still validates, loads and is Reusable: never unknown-field', async () => {
+  const { readFileSync } = await import('node:fs');
+  const old = JSON.parse(readFileSync(new URL('./fixtures/repo-list/smwhvmfsxd5t8-spec.json', import.meta.url), 'utf8'));
+  assert.ok(Array.isArray(old.closeDecl.fenceKept), 'the fixture is a spec with a fence claim');
+  const v = validateCloseDecl(old.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: ['package.json', 'src/sum.js', 'test/sum.test.js'] });
+  assert.deepEqual(v.reds.filter((/** @type {any} */ r) => r.code === 'unknown-field'), []);
+  const { buildReuseSpec } = await import('../src/panel/authorsession.js');
+  const { validateJob } = await import('../src/job.js');
+  const reused = buildReuseSpec(old, { destination: 'src/', capUsd: 1, inputs: old.inputs?.map((/** @type {any} */ i) => `${i.label}: ${i.value}`).join('\n') ?? '' });
+  assert.deepEqual(reused.closeDecl.fenceKept, old.closeDecl.fenceKept, 'Reuse ships the whole signed plan, claim included');
+  assert.deepEqual(validateJob(reused).reds.filter((/** @type {any} */ r) => /fenceKept|unknown-field/.test(`${r.code}${r.path}`)), []);
 });
