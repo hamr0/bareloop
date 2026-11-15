@@ -10,7 +10,7 @@ import { confirmProtections } from '../src/authorflow.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 
 const PAGE = 'Issue #19\nTitle: Crash on start when config is empty\nOpened by alice\nThe app crashes when config.json is empty.\n';
-const LINES = [{ n: 1, text: 'Write a one-sentence triage note for the ticket, quoting its title word for word', rules: ['the title must be quoted'] }];
+const LINES = [{ n: 1, text: 'Write a one-sentence triage note for the ticket, quoting its title "Crash on start when config is empty" word for word', rules: ['the title must be quoted'] }];
 const LOOK = { facts: [{ line: 1, name: 'title', shape: 'phrase', source: 'Ticket', words: ['Crash on start when config is empty'], forRule: 1 }], dropped: [] };
 
 function made(lines = LINES, look = LOOK) {

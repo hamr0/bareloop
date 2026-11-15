@@ -21,7 +21,7 @@ test('"be friendly" with a look phrase "Select flight" is Not checked, never a s
   assert.equal(r?.can?.ok, false);
 });
 
-test('the unnamed phrase is not thrown away: it is an ordinary ! [agent] row, placed by the existing split/inJob path (here job-derived, because the AI named the fact "friendly", a word of the rule)', () => {
+test('the unnamed phrase is not thrown away: it is an ordinary ! [agent] row, Suggested (not job-derived: the AI-written fact name "friendly" is no proof, the phrase words are in no job text)', () => {
   const b = new CheckBlock({ texts: { flights: PAGE }, labels: ['flights'], asks: false, split: true });
   b.fromJob([{ n: 1, text: 'List 3 flights from Boston to Chicago', rules: ['be friendly'] }]);
   b.addLook([{ line: 1, name: 'friendly', shape: 'phrase', source: 'flights', words: ['Select flight'], forRule: 1 }]);
@@ -29,7 +29,8 @@ test('the unnamed phrase is not thrown away: it is an ordinary ! [agent] row, pl
   assert.equal(b.rows.find((x) => x.kind === 'rule')?.state, 'not-checked');
   const bang = b.rows.find((x) => x.key === 'L1.fact.friendly');
   assert.equal(bang?.by, 'agent');
-  assert.equal(bang?.derived, true);
+  assert.equal(bang?.derived, false);
+  assert.equal(bang?.held, true);
 });
 
 test('a phrase the rule names in the person\'s own words still builds (case-blind)', () => {
