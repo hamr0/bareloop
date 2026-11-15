@@ -14,6 +14,7 @@
 import { NOT_REACHED } from './status.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
+import { stageQuestionsByName } from '../stagewords.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
@@ -70,7 +71,7 @@ export function planFromSpec(spec, ledger = null) {
         if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];
         // a repo job's `!` work stage is its list row (Addendum 2026-11-15 (d)): the row's key rides on the check
         const stageRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) && spec.closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'stage' && r.key === stageKeyOf(s.name));
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: stageRow ? (stageQuestionsByName(spec).get(s.name) ?? s.name) : s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)

@@ -21,7 +21,7 @@ test('Job tab: the rule is Not checked with code\'s reason (tagged [you]), the s
   const line = plan.lines[0];
   assert.deepEqual(line.refused, [`"no new dependencies" — ${NO_CHECK_WORDS}`]);
   assert.equal(plan.notCheckedBy?.[line.refused[0]], 'you');
-  assert.deepEqual(line.checks.map((c) => [c.name, c.by, c.key]), ['node-test-executed-count', 'node-test-fail-count', 'suite-green'].map((n) => [n, 'agent', `S.${n}`]));
+  assert.deepEqual(line.checks.map((c) => [c.stage, c.by, c.key]), ['node-test-executed-count', 'node-test-fail-count', 'suite-green'].map((n) => [n, 'agent', `S.${n}`]));
   assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']]);
   assert.deepEqual(plan.notChecked, [], 'closeDecl.notes is no view item of a list-carrying close');
   assert.deepEqual(plan.alwaysOn, []);
@@ -63,7 +63,7 @@ test('a line refused without naming a rule is a `!` Not checked row on that line
 test('the success line and the signed card read the rows; the sign-time match holds between them', () => {
   const spec = specWith({ fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] });
   const success = String(successFromSpec(spec));
-  assert.match(success, /suite-green/);
+  assert.match(success, /exit clean\?/);
   assert.match(success, /kept by the write fence/);
   const card = cardOfClose({ closeDecl: spec.closeDecl, jobLines: spec.jobLines });
   assert.equal(card.checkItems.filter((c) => c.by === 'you').length, 1);

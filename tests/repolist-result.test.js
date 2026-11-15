@@ -30,7 +30,7 @@ function world() {
 test('Result tab of a repo close with a list: the checks are its rows, each with its tag and its own result', () => {
   const k = getRunResult('mvkj03w7', { home: world().home }).checks;
   const by = (/** @type {RegExp} */ re) => k.stages.find((/** @type {any} */ s) => re.test(s.question));
-  const stage = by(/suite-green/);
+  const stage = by(/^! \[agent\] line 1 · does "npm test" exit clean\?/);
   assert.match(stage.question, /^! \[agent\] /);
   assert.deepEqual([stage.passed, stage.status.word], [true, 'passed']);
   assert.match(by(/no-suppressions/).question, /^\$ \[default\] /);
