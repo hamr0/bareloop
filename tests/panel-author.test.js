@@ -1572,10 +1572,10 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
 });
 
 /** a repo session driven to the FINAL card with two work stages; `signing(n)` answers the n-th signing-gates call (1 = the draft's own) */
-async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ signing) {
+async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ signing, /** @type {{only?: boolean}} */ o = {}) {
   const repo = makeRepo();
   const g = fakeDeclaration().stages;
-  const decl = { stages: [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
+  const decl = { stages: o.only ? [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[2]] : [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
   let n = 0;
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ keep it small' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
@@ -1621,4 +1621,15 @@ test('Drop refused by the gates: plain words, and the plan, the spec file and th
   assert.deepEqual(session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan.lines[0].checks.map((c) => c.key), ['S.verdict', 'S.verdict-2']);
   assert.equal((await session.dropStage('J.$guard.changed-from-seed')).refused, 'bad-row');
   assert.equal((await session.dropStage('S.nope')).refused, 'bad-row');
+});
+
+test('Drop that makes the job validator red (the only stage serving a line): the refusal is plain words, never a raw red code', async () => {
+  const session = await finalRepoSession((n) => okSigning(`hash${n}`), { only: true });
+  const before = readFileSync(session.state.resolvedSpecPath, 'utf8');
+  const r = await session.dropStage('S.verdict');
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, 'gates');
+  assert.doesNotMatch(r.error, /job-line-uncovered|invalid-value|missing-field|spec-invalid|unknown-field|[a-z]+(-[a-z]+)+ at /);
+  assert.match(r.error, /^Dropping that check is refused: .*job line 1/s);
+  assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
 });

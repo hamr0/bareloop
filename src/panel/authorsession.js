@@ -1459,8 +1459,9 @@ export function createSession(card, deps = {}) {
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
         const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) {
+          // the plain-words owners (src/authorreadout.js): a validator red is told in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it
           const why = signing === null
-            ? jv.reds.map((/** @type {any} */ r) => r.code).join(', ')
+            ? tryRefusedText({ reds: jv.reds })
             : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
           return { ok: false, refused: 'gates', error: `Dropping that check is refused: ${why}` };
         }
