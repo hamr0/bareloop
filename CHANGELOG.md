@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Regression test for Add/Drop on a Suggested phrase through the panel's `rowEdit` (test only).** `tests/checklist-door.test.js`: before Add the phrase is Suggested with the cited default and the count Not checked (true reason); Add on the phrase gives a facts line and offers the count; Add on the count builds it; Drop returns to the first state.
 - **A result count's Not-checked reason is true when its fact is only Suggested (live run `mwi76vh8`).** The Audit said "a result count needs a fact to count; this line has none" while the line's fact sat under Suggested. With a Suggested fact on the line the reason now reads "a result count needs a fact to count; add the suggested fact on this line to count its results" (`REASON.countNeedsSuggested`, picked by code); a line with no fact keeps the old words.
 - **The Audit Checks header's word "checks" matches the row result words (hamr 2026-11-15).** It now uses the `.st-word` look at the same 12px as the "passed" below it. Display only.
 - **The confirm card lists a look-dropped fact once (live run `mwi76vh8`).** A dropped place fact with no `~` rule ("Boston place") showed twice before Draft the plan: the look's own line and the check block's `! [agent]` row ("boston place"). The look's line is now left out when the block already has the row. Display only.

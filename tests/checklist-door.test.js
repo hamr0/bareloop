@@ -79,6 +79,61 @@ test('panel door: the list is built once with its call, every row is in the draf
   assert.ok(log.some((e) => e.label === 'ledger-suggest'), 'the list call is a booked call in the draft log');
 });
 
+test('panel door Add/Drop: a Suggested phrase brings the line back to a facts line and the count back (offered, then built); Drop puts it back (hamr 2026-11-15, live run mwi76vh8)', async () => {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const sessionsRoot = tmp('checklist-door-sess-');
+  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
+    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], prose: [], notFound: [], dropped: [] } } };
+  /** @type {string[]} */ const drafterPrompts = [];
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'checklist-door-job', jobText: '1. Find the latest release heading',
+    inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot,
+    lookFn: async () => survey,
+    ledgerGenerate: async (m, tools) => { await tools.find((t) => t.name === LEDGER_TOOL).execute({ extra: [{ line: 1, kind: 'count', min: 1, max: 1 }] }); return ok; },
+    confirmGenerate: async (_c, tools) => { await tools[0].execute({ goal: 'Find the latest release heading.', checks: [], notChecked: [], questions: [] }); return { text: '', error: null, cost: 0.0005 }; },
+    generate: async (m, tools) => {
+      drafterPrompts.push(m[0].content);
+      // the drafter's reply is ROW EDITS (src/rowedit.js): the first try sends one edit the page cannot prove (refused alone), the revise sends none
+      await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: drafterPrompts.length === 1 ? [{ op: 'add', kind: 'phrase', line: 1, name: 'made up', source: 'Changelog', words: ['zzz'] }] : [] });
+      return ok;
+    },
+    prepareSigningFn: async () => ({ ok: true, specHash: 'abc123def4567890', seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }),
+  });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  const plan = () => session.state.pendingAsk.plan;
+  const keys = () => plan().checkItems.map((/** @type {any} */ c) => c.key);
+  const sugg = () => plan().suggested.map((/** @type {any} */ x) => x.key);
+  const dir = join(sessionsRoot, readdirSync(sessionsRoot)[0]);
+  const log0 = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // before Add: the phrase is Suggested, the line is a text line (cited default shown), the count is Not checked with the true reason (a fact exists, only Suggested)
+  assert.deepEqual(sugg(), ['L1.fact.release heading']);
+  assert.ok(keys().includes('L1.$cited'));
+  const countBefore = log0.filter((e) => e.kind === 'ledger' && e.phase === 'built' && e.rowKind === 'count').at(-1);
+  assert.equal(countBefore.state, 'not-checked');
+  assert.match(countBefore.reason, /add the suggested fact on this line/);
+  assert.doesNotMatch(countBefore.reason, /has none/);
+  // Add on the phrase: built by agent, the line is a facts line again (no cited default), the count is offered under Suggested
+  assert.deepEqual(session.rowEdit('add', 'L1.fact.release heading'), { ok: true });
+  assert.equal(plan().checkItems.find((/** @type {any} */ c) => c.key === 'L1.fact.release heading')?.by, 'agent');
+  assert.ok(!keys().includes('L1.$cited'));
+  assert.match(plan().checkItems.find((/** @type {any} */ c) => c.key === 'L1.$floor').text, /finds facts/);
+  assert.deepEqual(sugg(), ['L1.count.1-1']);
+  // Add on the count: built, nothing left under Suggested
+  assert.deepEqual(session.rowEdit('add', 'L1.count.1-1'), { ok: true });
+  assert.ok(keys().includes('L1.count.1-1'));
+  assert.deepEqual(sugg(), []);
+  // Drop on the phrase: back to the first state, and the phrase can be added again
+  assert.deepEqual(session.rowEdit('drop', 'L1.fact.release heading'), { ok: true });
+  assert.ok(keys().includes('L1.$cited'));
+  assert.deepEqual(sugg(), ['L1.fact.release heading']);
+  assert.deepEqual(session.rowEdit('add', 'L1.fact.release heading'), { ok: true });
+  assert.ok(!keys().includes('L1.$cited'));
+});
+
 // ---- the CLI door: the same list, no ask -------------------------------------------------------------------------------------------------------
 import { phaseLine } from '../src/authorreadout.js';
 
