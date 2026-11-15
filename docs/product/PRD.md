@@ -2297,3 +2297,8 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 ### Rubric checks on the one list; try-3 question replaces (v1.136 — 2026-11-14)
 
 - [ ] Rubric checks all on the one list; try-3 question replaces — spec signed 2026-11-14, ITEM33-BUILD addendum (c); not built.
+
+### Repo jobs on the one list (v1.137 — 2026-11-15)
+
+- [ ] Repo jobs on the one list under hamr's law (a rule shows as kept only when code proves it, else Not checked) — spec signed 2026-11-15, `docs/product/ITEM33-BUILD.md` Addendum 2026-11-15 (d); built on feat/one-list-rubric, not live-proven.
+

@@ -4501,3 +4501,28 @@ Why: a read-only audit of v0.57.0 found the list (`src/checkblock.js`, rubric on
 ### Proof
 
 First a $0 test on saved rubric drafts: every rule shows once, nothing a view shows comes from outside the list, signed greens stay green and reds stay red. Then build, then the full gate (typecheck, build:types, npm test). Then live: one page job and one Tickets job on DeepSeek direct deepseek-flash, about 10 cents. Live proof decides done.
+
+## Addendum 2026-11-15 (d): repo jobs on the one list (signed by hamr in chat)
+
+The law (hamr, 2026-11-15): "if you can't prove it it goes to not checked like every thing else." A rule shows as kept only when CODE proves it; anything code cannot prove is Not checked with a reason. No AI link between a stage and a rule is ever shown as kept or offered for approval.
+
+### What is signed
+
+1. A repo job signs a list (`closeDecl.list`, null for repo until now), built by ONE small row builder (`src/repolist.js`, `buildRepoRows`; `src/checkblock.js` stays rubric-only):
+   - `~ [you]` one row per `~` rule (the old joined `rule` and the new `rules[]` both read). Key `L<line>.~<rule>`, kind `rule`.
+   - `! [agent]` one row per AI work stage, on its line (`fromLine` stays line-level; one row, on the first line it serves). Key `S.<stage name>`, kind `stage`. It is a real check (code already proves the stage reads red at the seed). It never carries `fromRule`, and no stage-to-rule tie exists.
+   - `$ [default]` the mandatory guard rows once per job and the write-fence row once per job (line 0, as spec 1).
+2. The fence claim, the only way a `~` rule shows as kept. The drafter may say for a `~` rule "the fence keeps it" with a path: `closeDecl.fenceKept: [{line, rule, path}]` (carried through `CLOSE_DECL_FIELDS`, shape-checked, signed). Code proves it at $0 (`proveFenceClaim`): the path is in the repo listing and no file it names is a place the run may change (outside `writeScope`). Proven: the `~` row is built with `fence: <path>` and shows kept by the write fence (its result is the gate's record, `held · N writes blocked`). Not proven (inside the scope, or absent): the claim is dropped (no red, no revise: refusals pushed the paid POC model to invent checks) and the rule is Not checked with a code reason ("the AI said the fence keeps it, but <path> is a place the run may change"). The drafter prompt names the claim with ONE legal example in the same change.
+3. Every other `~` rule is Not checked with a code-written reason ("no check code can prove keeps this rule — you judge it at Accept"). A rule with no tie is never a validator red. `guardLines` and guard-covers-rule claims are not offered to new drafts (unprovable: Not checked); an old signed spec keeps today's display. A line the drafter refuses without naming a rule is a `!` Not checked row on that line.
+4. The repo confirm turn is goal-only (the model is told to plan none, code discards what it sends; `accepted.goalOnly`). New repo drafts' free-text `closeDecl.notes` are no view item of a list-carrying close. Every view reads rows only: confirm card (the `$` guard and fence rows, known before drafting), signed card, Job tab, Audit, success line, sign-time match (`planMatchesClose` takes the job lines). Per-row result: an `!` row is its recorded stage verdict, a guard row its guard stage, the fence row and a fence-kept `~` row the gate audit; a Not checked row has no result.
+5. The try-3 answer (replace or add, built in 421e06ef) rebuilds the repo rows through the one owner: the rows are built from the job lines that stand when the draft stands.
+6. An old signed repo spec (no list) keeps today's display, never crashes; verdicts are unchanged.
+
+### Why
+
+Both POCs, on real data. $0 POC on 18 saved repo drafts (`.claude/scratch/poc-repo-list/RESULTS.md`): FAIL, 26 of 28 `~` rules tied to nothing in the signed data; a line-level tie would have shown a green suite "checking" "no new dependencies" (saved draft smw6ssquvtvqs). Paid drafter POC on DeepSeek flash, 12 drafts, $0.18 (`.claude/scratch/poc-repo-tag/RESULTS.md`): FAIL on the AI stage-to-rule tag, 75% accuracy and 2 false ticks on "no new dependencies" (the revise loop invented a stage to own the rule); the fence claims WORKED: every correct one was proven by code at $0, every wrong one (a path inside the scope) was caught and never shown ticked. So the AI tag is dropped and the one claim code can prove is kept.
+
+### Proof plan
+
+The full gate (typecheck, build:types, npm test), then one live repo run on DeepSeek direct deepseek-flash. Built here is test-proven only; the fence-claim drafting, the Result tab rows and the phone width are not seen live.
+
