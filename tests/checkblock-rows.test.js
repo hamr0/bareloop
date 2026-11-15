@@ -166,6 +166,21 @@ test('A9 every row ends built or Not checked with a plain reason (no row is drop
   assert.equal(c.rows.find((r) => r.kind === 'count')?.reason, REASON.countNeedsFact);
 });
 
+// live run mwi76vh8: the count row's Audit reason said "this line has none" while a fact sat under Suggested. With a held (Suggested) fact on the line the reason says to add it; with none it keeps the old words.
+test('A9b a result count whose line has only a Suggested fact says to add that fact; a line with no fact at all keeps "this line has none"', () => {
+  const b = new CheckBlock({ texts: { Changelog: TEXT }, labels: ['Changelog'], asks: false, split: true });
+  b.fromJob([{ n: 1, text: 'Find the latest release heading', rules: [] }]);
+  b.addLook([{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] }], []);
+  b.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, min: 1, max: 1 }] });
+  b.reconcile();
+  assert.equal(b.rows.find((r) => r.key === 'L1.fact.release heading')?.state, 'suggested');
+  const c = b.rows.find((r) => r.kind === 'count');
+  assert.equal(c?.state, 'not-checked');
+  assert.equal(c?.reason, REASON.countNeedsSuggested);
+  assert.match(String(c?.reason), /add the suggested fact/);
+  assert.doesNotMatch(String(c?.reason), /has none/);
+});
+
 // ---- the draft gate's own word checks run per fact on the block (src/factwords.js checkFactWords): a word the gate would refuse makes THIS row Not checked in the gate's plain words, never a red on code's whole plan ----
 // Fail-first: before this pre-check each case below was a `plan-red` stop (a code-built plan refused by checkDeclarationWords), e.g. the real run mwdhma1l "12 results returned." counted once for 3 results.
 const PAGE = 'Flights\nLeaves Boston at 9 AM. Price: $389 US dollars\nLeaves Boston at 10 AM. Price: $431 US dollars\nLeaves Boston at 11 AM. Price: $512 US dollars\n12 results returned.\n';
