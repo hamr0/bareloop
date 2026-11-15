@@ -6172,7 +6172,8 @@
         if(st.phase === "prepared" && st.signClicked){
           return {text: "Sign " + (st.specHash || "").slice(0, 8) + " & run", action: "sign", disabled: false, hint: hint};
         }
-        return {text: "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
+        // at the plan menu this click only confirms the plan and starts drafting the checks (it never signs): it says so. A drafted card's first click (a Reuse) keeps "Sign & run"
+        return {text: atMenu ? "Draft the plan" : "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
       }
       return {text: "Sign & run", action: "none", disabled: true, hint: ""};
     }

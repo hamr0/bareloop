@@ -1203,7 +1203,7 @@ test('planMessage: a structured plan — lines with their checks, loose checks, 
   }, lines);
   assert.equal(m.kind, 'plan');
   assert.equal(m.role, 'bot');
-  assert.equal(m.text, 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  assert.equal(m.text, 'Draft the plan to see its checks, or Revise to edit the boxes.');
   assert.deepEqual(m.plan.lines.map((l) => l.checks.map((c) => c.name)), [['a'], ['b']]);
   assert.deepEqual(m.plan.loose.map((c) => c.name), ['c']);
   assert.deepEqual(m.plan.notChecked, ['the doc is accurate']);

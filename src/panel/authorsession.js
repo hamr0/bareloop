@@ -171,7 +171,7 @@ const SOURCE_CHECK_CODES = new Set([
 ]);
 
 /** the line under the plan bubble, in plain words (the bubble itself is drawn by the page's one `renderJobPlan`) */
-export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.';
+export const PLAN_FOOTER = 'Draft the plan to see its checks, or Revise to edit the boxes.';
 
 /**
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the

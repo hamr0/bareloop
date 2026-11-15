@@ -597,7 +597,7 @@ export const ANSWER_QUESTION_FIELD = Object.freeze({
  * @type {Record<'confirm'|'fix'|'type-goal'|'start-over', string>}
  */
 export const CONFIRM_MENU = Object.freeze({
-  confirm: 'Confirm — sign this plan and goal as shown',
+  confirm: 'Confirm — draft the checks for this plan and goal as shown',
   fix: 'Fix — describe what to change',
   'type-goal': 'Type the goal sentence yourself',
   'start-over': 'Start over — rerun the interview from the beginning',
