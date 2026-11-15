@@ -101,8 +101,7 @@
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
 import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
-import { buildRepoRows, outsideScopeFiles } from './repolist.js';
-import { runFencePoint, fenceCandidates } from './fencepoint.js';
+import { buildRepoRows } from './repolist.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
@@ -436,7 +435,7 @@ function composerRefusal(reds) {
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
- *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null, fenceFn?: Function|null,
+ *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
@@ -475,8 +474,6 @@ export async function authorCloseForJob({
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
   // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
   lookFn = runPageMap,
-  // Design B (hamr 2026-11-15): the pointing call for a repo `~` rule the drafter left Not checked though a file outside the write fence may keep it (src/fencepoint.js); `null` = a test seam for "no call"
-  fenceFn = runFencePoint,
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -955,23 +952,10 @@ export async function authorCloseForJob({
 
   // A repo job signs its list too (Addendum 2026-11-15 (d)): rows built from the declaration by code, a `~` rule kept only when the fence claim is proven against the listing and the write scope
   if (closeDecl.list === undefined && Array.isArray(jobLines) && jobLines.length > 0 && !closeDecl.stages.some((/** @type {any} */ s) => s && s.kind === 'rubric-step')) {
-    const build = () => buildRepoRows({
+    closeDecl.list = buildRepoRows({
       jobLines, stages: closeDecl.stages, refused: closeDecl.refused ?? null, fenceKept: closeDecl.fenceKept ?? null,
       guardNames: classGuards({ verdictType: picked, lang }).map((g) => g.name), writeScope, files: Array.isArray(seeds?.files) ? seeds.files : null,
     });
-    closeDecl.list = build();
-    // Design B: ONE call, only IF a `~` rule is still Not checked AND the repo holds a place outside the fence; the AI points at a listed path, code proves it (the same proof as the drafter's own claim) and rebuilds the rows
-    const pending = closeDecl.list.filter((/** @type {any} */ r) => r.kind === 'rule' && r.state === 'not-checked').map((/** @type {any} */ r) => ({ line: Number(r.line), rule: Number(r.rule), text: redactSecrets(String(lineRules(jobLines.find((l) => l.n === r.line))[Number(r.rule) - 1] ?? '')) })).filter((r) => r.text !== '');
-    const paths = pending.length > 0 ? fenceCandidates(outsideScopeFiles(writeScope, seeds?.files)) : [];
-    if (fenceFn && provider && pending.length > 0 && paths.length > 0) {
-      const fenceCallOptions = thinkingCallOptions(provider, draftThinking);
-      const pointed = await fenceFn({ rules: pending, paths, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}), ...(Object.keys(fenceCallOptions).length ? { callOptions: fenceCallOptions } : {}) });
-      onPhase('fence-point', { state: pointed.state, asked: pending.length, picked: pointed.picks.length, dropped: pointed.dropped, reason: pointed.reason });
-      if (pointed.picks.length > 0) {
-        closeDecl.fenceKept = [...(closeDecl.fenceKept ?? []), ...pointed.picks.map((/** @type {any} */ c) => ({ line: c.line, rule: c.rule, path: String(c.path) }))];
-        closeDecl.list = build();
-      }
-    }
   }
 
   return {

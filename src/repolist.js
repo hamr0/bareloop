@@ -21,16 +21,6 @@ function underScope(rel, scope) {
 }
 
 /**
- * The repo's files that lie OUTSIDE the signed write scope, from the committed listing — the only places a `~` rule can be kept by the fence. Pure.
- * @param {string[]|null|undefined} writeScope @param {string[]|null|undefined} files @returns {string[]}
- */
-export function outsideScopeFiles(writeScope, files) {
-  const scope = Array.isArray(writeScope) ? writeScope : [];
-  if (scope.length === 0 || !Array.isArray(files)) return [];
-  return files.filter((f) => !scope.some((s) => underScope(f, s)));
-}
-
-/**
  * Code's proof of a fence claim, at $0: `path` names a file (or a folder) that is in the repo listing, and none of the files it names is a place the run may change. Anything else is not proven, and says why in plain words.
  * @param {string} path @param {string[]|null|undefined} writeScope the signed write fence @param {string[]|null|undefined} files the repo listing at the seed
  * @returns {{ok: true, path: string}|{ok: false, reason: string}}
