@@ -27,6 +27,7 @@ import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
 import { cardOfClose, fenceOfClose, fenceRowText, refusedOf, stepFileRel, lineRules, FENCE_KEY } from './rubricstep.js';
+import { decidedWords } from './draftspend.js';
 import { ticketFilterWords } from './ticketfilter.js';
 
 /**
@@ -700,14 +701,7 @@ export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spen
   if (specHash) out.push('', `Plan hash: ${specHash}`);
   if (humans.length) {
     out.push('', READOUT_HEADS.answers);
-    for (const h of humans) {
-      const at = Number.isInteger(h.line) ? `line ${h.line}: ` : '';
-      // a replaced rule's old words are never shown again (one in, one out): print what was decided, not the question that quotes them
-      if (h.choice === 'agree' && typeof h.words === 'string') out.push(`  ${at}agreed \u2014 ${h.words}`);
-      else if (h.choice === 'rule' && typeof h.words === 'string') out.push(`  ${at}you wrote \u2014 ${h.words}`);
-      else if (h.choice === 'drop') out.push(`  ${at}dropped \u2014 Not checked`);
-      else out.push(`  ${at}${h.question} \u2014 ${h.answer}`);
-    }
+    for (const h of humans) out.push(`  ${Number.isInteger(h.line) ? `line ${h.line}: ` : ''}${decidedWords(h) ?? `${h.question} \u2014 ${h.answer}`}`);
   }
   return redactSecrets(`${out.join('\n')}\n`);
 }

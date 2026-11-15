@@ -11,6 +11,7 @@ import { parseMapAnswer } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { lookFactOf } from '../src/inputlook.js';
 import { ANTH_CFG } from './helpers.js';
+import { readDraftSteps } from '../src/draftspend.js';
 
 const CLOSE_DECL = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mv5bk400-resolved-spec.json'), 'utf8')).closeDecl;
 
@@ -80,6 +81,11 @@ test('Agree on "not a red-eye": every view the person sees holds the agreed word
   assert.deepEqual(legs[0].jobLines[0].rules, ['under $450', READ]);
   // the final plan card (the signed close's) and the signed jobLines
   for (const msg of session.state.messages.filter((x) => x.plan)) assert.doesNotMatch(seen(msg), /red-eye/, 'a plan card after drafting');
+  // the Audit's drafting rows (askedText / saidText) say what was decided, never the question that quotes the old words
+  const humans = readDraftSteps(sessionDir()).flatMap((x) => x.humans);
+  assert.ok(humans.length > 0, 'the answered question is in the drafting log');
+  assert.doesNotMatch(seen(humans.map((h) => [h.askedText, h.saidText])), /red-eye/, 'the Audit drafting rows (the words the page draws)');
+  assert.ok(humans.some((h) => h.askedText === `agreed \u2014 ${READ}`), seen(humans));
   // the card on disk (what Reuse reopens)
   const disk = JSON.parse(readFileSync(join(sessionDir(), 'card.json'), 'utf8'));
   assert.doesNotMatch(disk.jobText, /red-eye/, 'card.json');
