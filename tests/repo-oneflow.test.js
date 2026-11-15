@@ -233,7 +233,22 @@ test('the signed close of a covered line carries no line-level refusal (the live
   assert.equal((r.closeDecl.refused ?? []).some((/** @type {any} */ x) => !Number.isInteger(x.rule)), false);
 });
 
+test('the pointing call is shown the folders holding outside files (`test/`) beside the files, and a pointer at the folder is kept', async () => {
+  const b = liveBlock({ point: [] });
+  assert.deepEqual(b.outsideFolders(), ['test']);
+  /** @type {any[]} */ const done = [];
+  const r = await callFlow({ fenceGenerate: pointer([{ op: 'fence', line: 1, rule: 1, path: 'test/' }]), onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { if (p === 'fence-point-done') done.push(d); } });
+  assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).fence, 'test');
+  assert.deepEqual(done[0].edits, [{ op: 'fence', line: 1, rule: 1, path: 'test/' }], 'the reply rides the phase data');
+  assert.deepEqual(done[0].results.map((/** @type {any} */ e) => [e.path, e.accepted]), [['test/', true]]);
+});
 
+test('a refused pointer is recorded with its reason in the phase data', async () => {
+  /** @type {any[]} */ const done = [];
+  await callFlow({ fenceGenerate: pointer([{ op: 'fence', line: 1, rule: 1, path: 'test/sum.test.js' }]), onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { if (p === 'fence-point-done') done.push(d); } });
+  assert.equal(done[0].results[0].accepted, false);
+  assert.match(done[0].results[0].refusedBecause, /do not name test\/sum\.test\.js/);
+});
 
 const callFlow = (/** @type {any} */ o) => authorCloseForJob({
   verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
@@ -248,7 +263,7 @@ test('the pointing call: one call before the asks, its user text names each rule
   const r = await callFlow({ fenceGenerate: pointer([POINT_TEST], seen), onCall: (/** @type {any} */ c) => booked.push(c), onPhase: (/** @type {string} */ p) => phases.push(p) });
   assert.equal(r.ok, true);
   assert.equal(seen.length, 1);
-  assert.equal(seen[0], ["THE RULES (the person's own words)", "line 1 rule 1: don't edit test/", 'line 1 rule 2: no new dependencies at all', 'line 1 rule 3: keep the comment at the top of src/sum.js', '', 'PATHS OUTSIDE THE WRITE SCOPE (src/):', '- package.json', '- test/sum.test.js'].join('\n'));
+  assert.equal(seen[0], ["THE RULES (the person's own words)", "line 1 rule 1: don't edit test/", 'line 1 rule 2: no new dependencies at all', 'line 1 rule 3: keep the comment at the top of src/sum.js', '', 'PATHS OUTSIDE THE WRITE SCOPE (src/):', '- test/', '- package.json', '- test/sum.test.js'].join('\n'));
   assert.deepEqual(booked.map((c) => c.label), ['fence-point']);
   assert.ok(phases.indexOf('fence-point') >= 0 && phases.indexOf('fence-point') < phases.indexOf('author'), 'point, then asks, then the draft');
   assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).state, 'built');
@@ -280,11 +295,4 @@ test('the pointing call\'s system text and schema are the signed ones (one op, f
   assert.match(FENCE_POINT_SYSTEM, /^You read the "~" rules of a job and point at the files a rule asks to leave as they are/);
   assert.match(FENCE_POINT_SYSTEM, /Send an edit only for a rule whose own words say a listed file or folder stays as it is\./);
   assert.equal(typeof runFencePoint, 'function');
-});
-
-test('a refused pointer is recorded with its reason in the phase data', async () => {
-  /** @type {any[]} */ const done = [];
-  await callFlow({ fenceGenerate: pointer([{ op: 'fence', line: 1, rule: 1, path: 'test/sum.test.js' }]), onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { if (p === 'fence-point-done') done.push(d); } });
-  assert.equal(done[0].results[0].accepted, false);
-  assert.match(done[0].results[0].refusedBecause, /do not name test\/sum\.test\.js/);
 });

@@ -875,7 +875,8 @@ export async function authorCloseForJob({
     repoBlock.fromJob(jobLines ?? []);
     repoBlock.reconcile();
     // point -> code proves -> asks -> draft (the rubric's order): the AI points a rule at a listing path, row edits judge it alone; only when the job has `~` rules and the listing has paths outside the fence
-    const outside = repoBlock.outsideScope();
+    // the folders holding outside files are listed too (`test/`), so a rule that names a folder can be pointed at it
+    const outside = [...repoBlock.outsideFolders().map((d) => `${d}/`), ...repoBlock.outsideScope()];
     if (fenceGenerate && outside.length > 0 && repoBlock.rows.some((r) => r.kind === 'rule')) {
       onPhase('fence-point', {});
       const fp = await runFencePoint({ jobLines: jobLines ?? [], outside, writeScope, generate: fenceGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });

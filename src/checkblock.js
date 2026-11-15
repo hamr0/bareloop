@@ -579,6 +579,15 @@ export class CheckBlock {
     return Array.isArray(files) && Array.isArray(scope) && scope.length ? files.filter((f) => !this.inScope(f)) : [];
   }
 
+  /** the folders every file of which lies outside the write scope (a rule may ask such a folder to stay as it is, written `folder/`); the pointing call is shown them beside the files @returns {string[]} */
+  outsideFolders() {
+    const files = this.repo?.files;
+    if (!Array.isArray(files) || this.outsideScope().length === 0) return [];
+    const all = new Set();
+    for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
+    return [...all].filter((d) => !files.some((f) => f.startsWith(`${d}/`) && this.inScope(f)));
+  }
+
   /** is this repo file a place the run may change? @param {string} f */
   inScope(f) {
     return (this.repo?.writeScope ?? []).some((s) => { const pre = String(globToPrefix(String(s))).trim().replace(/^\.\//, '').replace(/\/+$/, ''); return pre === '' || pre === '.' || pre === '/' || f === pre || f.startsWith(`${pre}/`); });
