@@ -3,7 +3,7 @@
 > What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08. Updated 2026-10-24: cross-run learnings, the thinking rule,
 > rubric jobs on pages (page-word map, fit check, asks, Result tab), the launcher.
 > Updated 2026-11-15: the one check list (`~` you, `!` agent, `$` default) for rubric and repo jobs; the fit check and calibration are gone (see "One list, one flow").
-> The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/logs/FINDINGS.md`, not here.
+> The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/wiki/FINDINGS.md`, not here.
 
 ---
 
@@ -209,7 +209,7 @@ Repo jobs had a side path first. It was removed because it broke on real drafts:
 
 **Being built right now (not done):**
 - When the AI's phrase is not in your rule's words, it becomes its own `! [agent]` check (Drop, or Suggested with Add), and your rule stays Not checked. The code that stops the wrong tie is in the working tree; the `!` row is not finished.
-- Next: fwd's draft readout copied into the Chat above the card, from fwdloop's v0.33.0 tag.
+- Next: fwd's draft readout copied into the Chat above the card, from fwdloop's v0.34.0 tag.
 
 **Proof, honestly.**
 - Seen live on 2026-11-15, repo job: "don't edit test/" kept by the fence in 3 of 3 drafts and again after Revise; "package.json" kept after Revise; run walk-sum3 went green. Rubric job: "be friendly please" came out Not checked; run walk-flight1-2.
@@ -294,7 +294,7 @@ pre-printed checklist. Mom signs it. Nothing is built until she does.
 |---|---|
 | the contract | `docs/product/PRD.md` |
 | how to use it | `bareloop.context.md` |
-| what we learned | `docs/logs/FINDINGS.md` |
+| what we learned | `docs/wiki/FINDINGS.md` |
 | why it is shaped this way | `docs/product/2026-07-10-agentic-automation-successor-design.md` |
 | the panel | `docs/product/PANEL-BUILD.md` |
 | the launcher (`bareloop start\|stop\|status\|install`) | `src/launcher.js` |
@@ -309,7 +309,8 @@ The one place implementation names appear:
 | reuse (Layer 3) | `src/bridges.js`, `src/reuse.js`; export in `src/bundle.js` |
 | learnings | `src/learn.js` (cards, fold, climb, hints), `src/learnstore.js` (the ledger, the `learningHints` setting) |
 | thinking | `src/thinking.js` |
-| the page-word map, fit check | `src/pagemap.js`, `src/pagerules.js`, `src/fitcheck.js` |
+| the page-word map | `src/pagemap.js`, `src/pagerules.js` |
+| the one check list (rows, questions) | `src/checkblock.js`, `src/stagewords.js`, `src/questionbox.js` |
 | web-page inputs | `src/pagefetch.js` |
 | the worker loop, the gate (fence, budget) | `bare-agent`, `bareguard` |
 | `recall` / `get` | `litectx` |
