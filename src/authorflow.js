@@ -946,18 +946,19 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         },
         description: 'job lines (or single ~ rules of a line) you could not turn into a check, each with a reason in the person\'s words — a note does not cover a line or a rule',
       },
-      guardLines: {
+      fenceKept: {
         type: 'array',
         items: {
           type: 'object',
           properties: {
-            guard: { type: 'string', minLength: 1, description: 'the name of a mandatory guard stage' },
-            lines: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line(s) that guard already checks' },
+            line: { type: 'integer', minimum: 1, description: 'the job line the rule is on' },
+            rule: { type: 'integer', minimum: 1, description: 'the number of the ~ rule of that line' },
+            path: { type: 'string', minLength: 1, description: 'a file from the listing that lies OUTSIDE the write scope and that the rule asks to leave as it is' },
           },
-          required: ['guard', 'lines'],
+          required: ['line', 'rule', 'path'],
           additionalProperties: false,
         },
-        description: 'optional: which job lines the always-on guards already cover (a line whose every ask a mandatory guard checks needs no stage of its own)',
+        description: 'optional: the ~ rules the write fence keeps (the rule asks a file outside the write scope to stay as it is). Code checks each one; a wrong one is dropped and the rule is Not checked. Never a stage for it',
       },
       ...(ticket ? {
         ticketFilter: {
@@ -1223,7 +1224,7 @@ export function confirmedBlock(confirmed) {
  * names the ONE numbered job line it serves, or the line is refused with a reason; the mandatory guards serve no line.
  * The $0 validator (validateDeclaration, `jobLines`) enforces it and the revise loop feeds a miss back.
  * @param {number} count how many numbered job lines the person wrote
- * @param {string[]} [guardNames] the mandatory guards' names; present = the block also tells how a line they already cover is covered
+ * @param {string[]} [guardNames] the mandatory guards' names; present = the block also tells that a rule needs no stage and how the write fence keeps a rule (`fenceKept`, Addendum 2026-11-15 (d))
  */
 export function jobLineTagBlock(count, guardNames = []) {
   return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
@@ -1233,17 +1234,13 @@ export function jobLineTagBlock(count, guardNames = []) {
     + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
     + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".'
     + (guardNames.length
-      ? '\n\nA job line whose every ask the always-on checks (the mandatory guards) already do needs no stage of its own and no refusal: '
-        + 'name the guard(s) that do it in "guardLines", beside "stages" — for example {"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [N]}]}. '
-        + 'Never write a second stage that repeats a guard, and keep "refused" for a line nothing can check.'
-        + '\n\nTHE ALWAYS-ON CHECKS ALREADY EXIST in this close, in plain words: ' + guardNames.map((n) => n + ' (' + (GUARD_DESCRIPTIONS[n] ?? n) + ')').join('; ')
+      ? '\n\nTHE ALWAYS-ON CHECKS ALREADY EXIST in this close, in plain words: ' + guardNames.map((n) => n + ' (' + (GUARD_DESCRIPTIONS[n] ?? n) + ')').join('; ')
         + '; and the write fence (changes stay inside the write scope). They are already among the guard stages you were given — keep those exactly as given, and NEVER declare any of them again as a stage of your own — '
-        + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line they already cover '
-        + '(for example "Fix the cause in the source code under src/" with the rule "no suppression comments") is linked to them with "guardLines", '
-        + 'not given a stage and not refused. Legal example for a two-line job whose line 1 is a test run and whose line 2 is covered by the guards: '
-        + '{"stages": [{"name": "suite-green", "kind": "command-exit", "fromLine": [1], "params": {"cmd": "npm", "args": ["test"], "expectExit": 0}}], '
-        + '"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [2]}' + (guardNames[1] ? ', {"guard": "' + guardNames[1] + '", "lines": [2]}' : '') + ']} — '
-        + 'line 2 has no stage of its own and is not refused.'
+        + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line whose every ask they already do needs no stage of its own: list it in "refused" with a reason, never a stage that repeats them.'
+        + '\n\nA "~" rule needs no stage and no refusal. Write a stage only for what a kind in the catalogue really measures; never write one to stand in for a rule nothing can check — code lists that rule as Not checked and the person judges it at Accept. '
+        + 'One thing you may state: when a "~" rule asks that a file stay as it is and that file lies OUTSIDE the write scope (the scope and the file listing are shown below), the write fence keeps it; say so with "fenceKept", beside "stages", naming a file from the listing. '
+        + 'Legal example for a job whose write scope is src/ and whose line 1 has the rule "do not change package.json": {"fenceKept": [{"line": 1, "rule": 1, "path": "package.json"}]} — no stage for it. '
+        + 'Never name a file inside the write scope: code checks it and drops a claim that is wrong, and the rule is then Not checked.'
       : '');
 }
 
