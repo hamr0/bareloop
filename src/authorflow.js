@@ -953,7 +953,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
           properties: {
             line: { type: 'integer', minimum: 1, description: 'the job line the rule is on' },
             rule: { type: 'integer', minimum: 1, description: 'the number of the ~ rule of that line' },
-            path: { type: 'string', minLength: 1, description: 'a file from the listing that lies OUTSIDE the write scope and that the rule asks to leave as it is' },
+            path: { type: 'string', minLength: 1, description: 'a file or folder from the listing that lies OUTSIDE the write scope and that the rule asks to leave as it is' },
           },
           required: ['line', 'rule', 'path'],
           additionalProperties: false,
@@ -1238,7 +1238,7 @@ export function jobLineTagBlock(count, guardNames = []) {
         + '; and the write fence (changes stay inside the write scope). They are already among the guard stages you were given — keep those exactly as given, and NEVER declare any of them again as a stage of your own — '
         + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line whose every ask they already do needs no stage of its own: list it in "refused" with a reason, never a stage that repeats them.'
         + '\n\nA "~" rule needs no stage and no refusal. Write a stage only for what a kind in the catalogue really measures; never write one to stand in for a rule nothing can check — code lists that rule as Not checked and the person judges it at Accept. '
-        + 'One thing you may state: when a "~" rule asks that a file stay as it is and that file lies OUTSIDE the write scope (the scope and the file listing are shown below), the write fence keeps it; say so with "fenceKept", beside "stages", naming a file from the listing. '
+        + 'One thing you may state: when a "~" rule asks that a file stay as it is and that file lies OUTSIDE the write scope (the scope and the file listing are shown below), the write fence keeps it; say so with "fenceKept", beside "stages", naming a file or folder from the listing. '
         + 'Legal example for a job whose write scope is src/ and whose line 1 has the rule "do not change package.json": {"fenceKept": [{"line": 1, "rule": 1, "path": "package.json"}]} — no stage for it. '
         + 'Never name a file inside the write scope: code checks it and drops a claim that is wrong, and the rule is then Not checked.'
       : '');
