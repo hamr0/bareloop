@@ -636,12 +636,15 @@ export const READOUT_HEADS = Object.freeze({
   answers: 'YOUR ANSWERS',
 });
 
-/** Zero-based indexes of the heading lines in a readout's text (split on "\n"): the panel draws those bold. @param {string} text @returns {number[]} */
+/** The readout's top line prefix: ONE owner for the text `buildReadout` writes and the bold `readoutHeadIndexes` finds. */
+export const READOUT_HEADER_PREFIX = 'DRAFT READOUT \u2014 NOT SIGNED \u2014 job ';
+
+/** Zero-based indexes of the header and heading lines in a readout's text (split on "\n"): the panel draws those bold. @param {string} text @returns {number[]} */
 export function readoutHeadIndexes(text) {
   const heads = new Set(Object.values(READOUT_HEADS));
   /** @type {number[]} */
   const idx = [];
-  String(text).split('\n').forEach((l, i) => { if (heads.has(/** @type {any} */ (l))) idx.push(i); });
+  String(text).split('\n').forEach((l, i) => { if (heads.has(/** @type {any} */ (l)) || l.startsWith(READOUT_HEADER_PREFIX)) idx.push(i); });
   return idx;
 }
 
@@ -665,7 +668,7 @@ export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spen
   const closeDecl = spec?.closeDecl;
   const card = cardOfClose({ closeDecl, jobLines, ledger });
   const out = [];
-  out.push(`DRAFT READOUT \u2014 NOT SIGNED \u2014 job ${name ?? spec?.job ?? '?'}`, '');
+  out.push(`${READOUT_HEADER_PREFIX}${name ?? spec?.job ?? '?'}`, '');
   const cost = typeof costUsd === 'number' ? (spendComplete === false ? `at least ${panelMoney2(costUsd)} (a provider call is unpriced)` : panelMoney2(costUsd)) : 'unknown';
   out.push(`Drafted by: ${modelId ?? spec?.model ?? '?'} in ${rounds} round(s), cost ${cost}`);
   out.push(`Cap: ${typeof spec?.budgetUsd === 'number' ? panelMoney2(spec.budgetUsd) : 'unknown'} (money) \u00B7 ${capTimeWords(spec?.maxWallMs)} (time)`, '');

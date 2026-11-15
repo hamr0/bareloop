@@ -1625,7 +1625,7 @@ test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its 
   assert.match(ro.text, /Plan hash: hash2\n/);
   assert.equal(ro.text.includes(card.lines[0].checks[0].name), true);
   assert.equal(ro.text.includes('verdict-2'), false);
-  assert.deepEqual(ro.heads.map((i) => ro.text.split('\n')[i]).slice(0, 2), ['INPUTS', 'STEPS']);
+  assert.deepEqual(ro.heads.map((i) => ro.text.split('\n')[i]).slice(0, 3), [ro.text.split('\n')[0], 'INPUTS', 'STEPS']);
   // the Drop goes into the same record a rubric Drop writes (the check block's `choiceEntries`), so a Revise keeps it
   const { readRowChoices, RECORD_FILE } = await import('../src/pickrecord.js');
   assert.deepEqual(readRowChoices(join(dirname(session.state.resolvedSpecPath), RECORD_FILE)), [{ lineWords: 'fix the bug', occurrence: 0, tail: 'S.verdict-2', choice: 'drop' }]);

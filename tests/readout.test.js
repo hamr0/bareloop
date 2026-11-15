@@ -27,7 +27,8 @@ for (const [kind, get] of /** @type {[string, () => any][]} */ ([['repo', REPO],
     assert.match(t, /line 1: Which file\? — src\/sum\.js/);
     assert.match(t, /destination = src\//);
     for (const gone of ['ASKS', 'SEND TARGET', 'Flows root', 'grants:', 'emits:']) assert.ok(!t.includes(gone), gone);
-    assert.deepEqual(readoutHeadIndexes(t).map((i) => t.split('\n')[i]), t.split('\n').filter((l) => Object.values(READOUT_HEADS).includes(/** @type {any} */ (l))));
+    assert.deepEqual(readoutHeadIndexes(t).map((i) => t.split('\n')[i]), t.split('\n').filter((l, i) => i === 0 || Object.values(READOUT_HEADS).includes(/** @type {any} */ (l))));
+    assert.equal(readoutHeadIndexes(t)[0], 0, 'the header line is drawn bold');
   });
 
   test(`readout (${kind}): check lines and tags are exactly the card's rows for the same signed close`, () => {
