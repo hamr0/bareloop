@@ -68,8 +68,8 @@ import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevise
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
-import { appendDraftLog, readDraftLedger } from '../draftspend.js';
-import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
+import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
+import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
@@ -1356,7 +1356,18 @@ export function createSession(card, deps = {}) {
   }
 
   /** the signed-ready card as a chat message; a repo job's agent rows can be Dropped on it (the person shapes the spec they sign: `dropStage`) */
-  const finalPlanMessage = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : {}) }, jobLines);
+  const finalPlanMessage = () => ({ ...finalPlanCard(), readout: draftReadout() });
+  /** the draft readout of the signed-ready plan (hamr 2026-11-15): text + head indexes, display only, built from the signed spec in `finalCtx`, the draft log and this session's own figures; one function, so Drop never carries a stale or a second one */
+  const draftReadout = () => {
+    const steps = readDraftSteps(outDir);
+    const text = buildReadout({
+      spec: finalCtx?.spec, name: String(finalCtx?.spec?.job ?? card.jobName), modelId: String(card.model), rounds: steps.reduce((n, x) => n + x.calls.length, 0),
+      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: String(card.destination ?? ''),
+      humans: steps.flatMap((x) => x.humans), ledger: readDraftLedger(outDir),
+    });
+    return { text, heads: readoutHeadIndexes(text) };
+  };
+  const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : {}) }, jobLines);
   /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean}|null} the spec the final card shows and the seed it was gated against */
   let finalCtx = null;
   let dropping = false;

@@ -708,6 +708,9 @@
   .jp-qs .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
   .jp-qs ul{margin:4px 0;padding-left:26px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
+  /* the draft readout above the signed-ready card: plain text, wrapped, the server names the heading lines (bold) */
+  .jp-readout{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+  .jp-readout b{font-weight:700;}
   /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
   #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
   /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
@@ -6084,6 +6087,13 @@
     function planControlHTML(op, key){
       return ' <button type="button" class="btn jp-btn" data-testid="plan-' + op + '" data-rowop="' + op + '" data-rowkey="' + escapeXml(key) + '">' + (op === "add" ? "Add" : "Drop") + "</button>";
     }
+    // the draft readout is plain text; the server names which lines are headings (src/authorreadout.js readoutHeadIndexes), drawn bold
+    function readoutHtml(r){
+      var heads = Array.isArray(r.heads) ? r.heads : [];
+      return r.text.replace(/\s+$/, "").split("\n").map(function(l, i){
+        return heads.indexOf(i) >= 0 ? "<b>" + escapeXml(l) + "</b>" : escapeXml(l);
+      }).join("\n");
+    }
     function renderMessages(state){
       var sig = JSON.stringify(state.messages);
       if(sig === lastMsgSig) return;
@@ -6094,11 +6104,12 @@
         var who = chatWhoLabel(m.role);
         var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
         if(m.kind === "plan" && m.plan){
+          var ro = m.readout && typeof m.readout.text === "string" ? '<div class="jp-readout" data-testid="plan-readout">' + readoutHtml(m.readout) + "</div>" : "";
           // P7: the confirm turn's plan is drawn by the one job-plan renderer (the Job tab uses the same)
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
               m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");

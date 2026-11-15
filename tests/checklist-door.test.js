@@ -59,6 +59,13 @@ test('panel door: the list is built once with its call, every row is in the draf
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
+  // the draft readout (hamr 2026-11-15) rides on the final plan message, once, above the card: the signed spec's own words, the session's hash and its round count
+  const planMsgs = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan');
+  assert.equal(planMsgs.length, 1);
+  assert.match(planMsgs[0].readout.text, /^DRAFT READOUT \u2014 NOT SIGNED \u2014 job checklist-door-job\n/);
+  assert.match(planMsgs[0].readout.text, /Plan hash: abc123def4567890/);
+  assert.match(planMsgs[0].readout.text, /\(line 1\) .*Find the latest release heading\n {5}writes: output\/steps\/1\.json/);
+  assert.equal(planMsgs[0].readout.heads.length, 5, 'INPUTS, STEPS, WRITE FENCE, NOT CHECKED and JOB LINES (no answers were asked)');
   // invariant 5: no injected text restates the list of checks (the drafter sees the job, the look and the inputs, never the rows)
   assert.doesNotMatch(drafterPrompts[0].split('INPUT "Changelog"')[0], /THE LIST OF CHECKS|result count|\$ default|! fact/);
   assert.equal(drafterPrompts.length, 2, 'a refused edit starts exactly one revise; the empty reply settles it');

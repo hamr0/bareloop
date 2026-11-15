@@ -1619,6 +1619,13 @@ test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its 
   const card = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
   assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict', 'L1.~1']);
   assert.equal(session.state.messages.filter((m) => m.kind === 'plan').length, 1);
+  // the draft readout is on the redrawn plan message exactly once, and it is the NEW plan's (the dropped stage gone, the new hash)
+  const ro = session.state.messages.filter((m) => m.kind === 'plan').at(-1).readout;
+  assert.equal(ro.text.split('DRAFT READOUT').length - 1, 1);
+  assert.match(ro.text, /Plan hash: hash2\n/);
+  assert.equal(ro.text.includes(card.lines[0].checks[0].name), true);
+  assert.equal(ro.text.includes('verdict-2'), false);
+  assert.deepEqual(ro.heads.map((i) => ro.text.split('\n')[i]).slice(0, 2), ['INPUTS', 'STEPS']);
   // the Drop goes into the same record a rubric Drop writes (the check block's `choiceEntries`), so a Revise keeps it
   const { readRowChoices, RECORD_FILE } = await import('../src/pickrecord.js');
   assert.deepEqual(readRowChoices(join(dirname(session.state.resolvedSpecPath), RECORD_FILE)), [{ lineWords: 'fix the bug', occurrence: 0, tail: 'S.verdict-2', choice: 'drop' }]);
