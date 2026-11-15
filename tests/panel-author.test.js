@@ -1534,3 +1534,39 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
   assert.match(session.state.steps.find((/** @type {any} */ x) => x.id === 'draft').detail, /^revise-1: refused — no check was failing/);
   assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
 });
+
+test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL Sign & run card draws every `! [agent]` stage row on its line and every `~ [you]` rule with its status', async () => {
+  const repo = makeRepo();
+  const decl = { ...fakeDeclaration(), refused: [], fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] };
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-final-card', jobText: 'fix the bug\n~ do not touch package.json\n~ keep it small' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
+    sessionsRoot: tmp('panel-author-sess-final-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('never called'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),
+    authorFn: async () => ({ ok: true, declaration: decl, genreEnv: null, cost: { costUsd: 0.002, knownUsd: 0.002, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.signPrepare().ok, true);
+  for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  // the SAME structure as the rubric card (one renderer): per line its `› check` rows with tags, then "other checks" (the `$` guards and fence), then the "Not checked" fold with each rule as `line N: "<rule>" — <reason>` tagged [you]
+  const shown = session.state.messages.filter((m) => m.kind === 'plan').at(-1);
+  const plan = shown.plan;
+  const line = plan.lines[0];
+  assert.deepEqual(line.checks.map((c) => [c.by, c.key ?? null]), [['agent', 'S.verdict'], ['you', 'L1.~1']], 'under the line: the `! [agent]` stage row, then the `~ [you]` rule the fence keeps');
+  assert.match(line.checks[1].name, /^"do not touch package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
+  assert.deepEqual(line.refused, [], 'a Not checked rule is told in the Not checked section, as on the rubric card');
+  assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']], 'other checks: the `$` rows');
+  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — no check code can prove keeps this rule — you judge it at Accept']);
+  assert.equal(plan.notCheckedBy[plan.notChecked[0]], 'you');
+  assert.deepEqual(plan.alwaysOn, []);
+  // the CLI print draws the same rows
+  const { confirmPlanLines } = await import('../src/authorrun.js');
+  const cli = confirmPlanLines({ goal: 'g', checkItems: session.state.finalPlan.checkItems, notChecked: session.state.finalPlan.notChecked, notCheckedBy: session.state.finalPlan.notCheckedBy, protections: [], questions: [] }).join('\n');
+  assert.match(cli, /line 1: ! \[agent\] verdict/);
+  assert.match(cli, /line 1: ~ \[you\] "do not touch package\.json" — kept by the write fence/);
+  assert.match(cli, /\$ \[default\] write fence/);
+  assert.match(cli, /you asked for these, but nothing checks them:\n    · line 1: "keep it small"/);
+});
