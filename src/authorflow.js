@@ -2037,6 +2037,10 @@ export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are t
   + 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
   + 'and write ONE sentence saying what the job does, from the numbered job lines.';
 
+/** What the confirm turn tells the model about a REPO job (model-facing, registered; Addendum 2026-11-15 (d)): the turn plans the goal only, the job's checks are the one list's rows, built by code after the draft. */
+export const REPO_CONFIRM_NOTE = 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
+  + 'and write ONE sentence saying what the job does, from the numbered job lines.';
+
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
   + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
@@ -2099,6 +2103,7 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   // PART 1a: a rubric job on the person's own text files. The model is told what a check CAN be here, so that anything
   // needing judgement lands in `notChecked` instead of being promised as a check
   if (lang === RUBRIC_LANG) lines.push('', RUBRIC_CONFIRM_NOTE);
+  else if (isRepo === true) lines.push('', REPO_CONFIRM_NOTE);
   // R10: the `~` rules code settles from the person's own picks are not yours to plan: a check for them is code's, a gap is code's Not checked row
   // MCP + tickets R5 (F285): a Tickets job's confirm turn is told the ticket is picked per run and a priority/label line is code's, so it never asks the person which ticket
   if (ticket) lines.push('', ticketPerRunFacts());
@@ -2186,8 +2191,8 @@ export async function runConfirmTurn({
   // the live check block of a rubric job and the reader that draws its rows (`() => cardOfClose(...)`): the confirm card's Drop and Add are instant row edits ($0, no AI) through the block, and the card is redrawn from its rows
   block = null, cardOf = null,
 }) {
-  /** a rubric job's confirm turn plans the goal only (its checks are the list's) */
-  const goalOnly = lang === RUBRIC_LANG;
+  /** a rubric or a repo job's confirm turn plans the goal only (its checks are the list's rows) */
+  const goalOnly = lang === RUBRIC_LANG || isRepo === true;
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
   const base = () => ({ ok: false, stop: null, rounds: 0, accepted: null, reds: [], cost: book.report() });
@@ -2212,7 +2217,7 @@ export async function runConfirmTurn({
   // the prompt below so the model can check `notChecked` against it, and
   // reused (never recomputed) after the call so the shown, prompted, and
   // recorded protections are always the exact same list.
-  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : null });
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : (card?.closeDecl ?? null) });
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */

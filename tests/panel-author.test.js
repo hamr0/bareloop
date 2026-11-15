@@ -566,9 +566,11 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1);
   assert.equal(shown.kind, 'plan');
   assert.equal(shown.text, PLAN_FOOTER);
+  // a repo job's confirm turn plans the goal only (Addendum 2026-11-15 (d)): no AI check is drafted onto a line; the card is the job's rows, the `$ [default]` guards and the fence
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
-    [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
-  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always checked');
+    [[1, 'fix things', 'no new deps', []], [2, 'tsc clean', '', []]]);
+  assert.ok(shown.plan.loose.length > 0 && shown.plan.loose.every((c) => c.by === 'default'), 'the real protections are `$ [default]` rows');
+  assert.deepEqual(shown.plan.alwaysOn, []);
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');

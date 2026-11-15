@@ -804,6 +804,11 @@ export async function authorCloseForJob({
         const cardOf = () => cardOfClose({ closeDecl: block.closeView(), jobLines, ledger: block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) })) });
         return { card: cardOf(), cardOf, block };
       })() : {}),
+      // a repo job's card is its rows too (Addendum 2026-11-15 (d)): the `$ [default]` guards and the write fence, known before drafting; the `~` rules and the `!` stages get their rows when the draft stands
+      ...(!block && isRepo && Array.isArray(jobLines) && jobLines.length > 0 ? (() => {
+        const closeDecl = { stages: [], fence: writeScope ?? [], list: buildRepoRows({ jobLines: [], stages: [], guardNames: classGuards({ verdictType: picked, lang }).map((g) => g.name), writeScope }) };
+        return { card: { ...cardOfClose({ closeDecl, jobLines }), closeDecl } };
+      })() : {}),
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
     // per round when a plan arrives) — this is the WRAPPER's own line, once,

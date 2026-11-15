@@ -34,7 +34,8 @@ test('A4 the rubric confirm note is the signed one: goal only, plan none; CONFIR
   assert.match(confirmSystemFor(RUBRIC_LANG), /one-sentence goal/);
   assert.doesNotMatch(confirmSystemFor(RUBRIC_LANG), /the checks you plan to compose/);
   assert.equal(confirmSystemFor('js'), CONFIRM_SYSTEM, 'a code job keeps the old system text');
-  assert.doesNotMatch(confirmPrompt({ ...CA, isRepo: true, lang: 'js' }), /plan none/);
+  assert.match(confirmPrompt({ ...CA, isRepo: true, lang: 'js' }), /plan none/, 'a repo job plans the goal only too (Addendum 2026-11-15 (d))');
+  assert.doesNotMatch(confirmPrompt({ ...CA, isRepo: false, lang: 'js' }), /plan none/);
 });
 
 test('A4 runConfirmTurn on a rubric job keeps the goal and discards the model\'s checks, gaps and questions; accepted carries goalOnly; the menu shows no check', async () => {
@@ -52,9 +53,9 @@ test('A4 runConfirmTurn on a rubric job keeps the goal and discards the model\'s
   assert.doesNotMatch(sent[0], /only three kinds of check/);
 });
 
-test('A4 a code job\'s confirm turn is untouched: its checks and questions still count', async () => {
+test('A4 a plain code folder\'s confirm turn is untouched: its checks and questions still count', async () => {
   const generate = async (m, tools) => { await tools.find((t) => t.name === CONFIRM_TOOL_NAME).execute({ goal: 'g', checks: [{ text: 'tests stay green', fromLine: [1] }], notChecked: [], questions: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; };
-  const r = await runConfirmTurn({ verdictType: 'green', answers: { 1: '1. fix' }, questions: GREEN_QUESTIONS, isRepo: true, lang: 'js', facts: {}, writeScope: ['src/**'], generate, book: makeCostBook({ ceilingUsd: null }), ask: async () => 'confirm' });
+  const r = await runConfirmTurn({ verdictType: 'green', answers: { 1: '1. fix' }, questions: GREEN_QUESTIONS, isRepo: false, lang: 'js', facts: {}, writeScope: ['src/**'], generate, book: makeCostBook({ ceilingUsd: null }), ask: async () => 'confirm' });
   assert.equal(r.accepted.checkItems.length, 1);
   assert.equal(r.accepted.goalOnly, undefined);
 });
