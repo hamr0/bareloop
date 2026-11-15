@@ -1048,10 +1048,11 @@ export function floorWords(n, carriesText) {
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
- * @param {any} closeDecl
- * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true}[]}
+ * A repo job's list (Addendum 2026-11-15 (d)) adds its rows here: an `!` row per work stage (the stage's name) and a `~` row the write fence keeps (the rule in the person's words, from `jobLines`; else its number), `fence` holding the path.
+ * @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines, so a `~` row reads in their own words
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true, fence?: string}[]}
  */
-export function checksOfClose(closeDecl) {
+export function checksOfClose(closeDecl, jobLines = null) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built') : [];
@@ -1070,6 +1071,14 @@ export function checksOfClose(closeDecl) {
     const r = list.find((/** @type {any} */ x) => x.kind === 'floor' && x.line === st.params.step);
     return r ? [{ line: st.params.step, text: floorText(closeDecl, st.params.step), by: /** @type {'default'} */ ('default'), key: String(r.key) }] : [];
   };
+  // a repo job's own rows (the list is built by src/repolist.js): the `!` work stages in the order the close runs them, then the `~` rules the write fence keeps, each on its line
+  const repoRows = [
+    ...list.filter((/** @type {any} */ x) => x.kind === 'stage' && stageNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: Number(x.line), text: stageNameOfKey(x.key), by: /** @type {'agent'} */ ('agent'), key: String(x.key) })),
+    ...list.filter((/** @type {any} */ x) => x.kind === 'rule' && typeof x.fence === 'string').map((/** @type {any} */ x) => {
+      const said = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === x.line))[Number(x.rule) - 1];
+      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${x.fence} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
+    }),
+  ].sort((a, b) => a.line - b.line);
   // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows
   const guardRows = list.filter((/** @type {any} */ x) => x.kind === 'guard' && guardNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: 0, text: guardRowText(guardNameOfKey(x.key)), by: /** @type {'default'} */ ('default'), key: String(x.key) }));
   // the job-level `$` write fence row (hamr 2026-11-15): once, after the guards; its words need the fence the close signs
@@ -1094,7 +1103,7 @@ export function checksOfClose(closeDecl) {
         return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
       });
     }), ...floorOf(st)]
-    : [])), ...guardRows, ...fenceRows];
+    : [])), ...repoRows, ...guardRows, ...fenceRows];
 }
 
 /**
@@ -1122,7 +1131,7 @@ export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notCheckedBy = {};
   for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}) })),
+    checkItems: checksOfClose(closeDecl, jobLines).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}) })),
     notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
     notCheckedBy,
   };
@@ -1162,12 +1171,12 @@ export function listMatchesClose(closeDecl) {
 /**
  * The sign-time invariant: the checks the person was shown (`shown`, from the plan card) are exactly the checks the signed
  * close runs (`checksOfClose`), per line. Pure.
- * @param {{text: string, fromLine: number[]|null}[]} shown @param {any} closeDecl
+ * @param {{text: string, fromLine: number[]|null}[]} shown @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines (a repo job's `~` row reads the rule in their words)
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function planMatchesClose(shown, closeDecl) {
+export function planMatchesClose(shown, closeDecl, jobLines = null) {
   const key = (/** @type {number|null|undefined} */ line, /** @type {string} */ text) => `line ${line ?? '?'}: ${text}`;
-  const ran = checksOfClose(closeDecl).map((c) => key(c.line, c.text));
+  const ran = checksOfClose(closeDecl, jobLines).map((c) => key(c.line, c.text));
   const saw = shown.map((c) => key(Array.isArray(c.fromLine) ? c.fromLine[0] : null, c.text));
   const onlyShown = saw.filter((k) => !ran.includes(k));
   const onlyRan = ran.filter((k) => !saw.includes(k));

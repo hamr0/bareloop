@@ -3398,7 +3398,7 @@ function stageOfCheck(c) {
 export function successFromSpec(spec) {
   if (!spec || typeof spec !== 'object') return null;
   // a one-list job (Addendum 2026-11-14 (c) piece 3): the checks ARE its rows, in the card's own words, never the stage names
-  if (carriesOneList(spec.closeDecl)) return checksOfClose(spec.closeDecl).map((c) => c.text).join(' · ');
+  if (carriesOneList(spec.closeDecl)) return checksOfClose(spec.closeDecl, spec.jobLines ?? null).map((c) => c.text).join(' · ');
   const stages = Array.isArray(spec.close) ? spec.close
     : (spec.closeDecl && Array.isArray(spec.closeDecl.stages) ? spec.closeDecl.stages : null);
   if (!stages) return null;

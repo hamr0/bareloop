@@ -16,12 +16,13 @@ import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
-import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
+import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
 /** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string}} AuditRow */
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string}} PlanCheck */
+/** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
 
@@ -67,7 +68,9 @@ export function planFromSpec(spec, ledger = null) {
         // a guard stage the signed list holds as a job-level `$` row (piece 2) is that row: one check that serves no one line, drawn once, never "Always checked"
         const guardRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) ? spec.closeDecl.list.find((/** @type {any} */ r) => r && r.kind === 'guard' && r.state === 'built' && r.key === guardKeyOf(s.name)) : null;
         if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name }];
+        // a repo job's `!` work stage is its list row (Addendum 2026-11-15 (d)): the row's key rides on the check
+        const stageRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) && spec.closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'stage' && r.key === stageKeyOf(s.name));
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -107,8 +110,12 @@ export function planFromSpec(spec, ledger = null) {
   }
   // the write fence is a job-level `$` row of the signed list (hamr 2026-11-15): one check that serves no one line
   for (const c of checksOfClose(spec?.closeDecl ?? {}).filter((x) => x.key === FENCE_KEY)) loose.push({ name: c.text, cls: null, by: 'default', key: FENCE_KEY });
-  // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
-  for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
+  // a `~` rule the write fence keeps (a repo job's list; code proved the claim at drafting) is a check of its own line, kept by the fence
+  for (const c of checksOfClose(spec?.closeDecl ?? {}, spec?.jobLines ?? null).filter((x) => x.fence !== undefined)) {
+    lines.find((l) => l.n === c.line)?.checks.push({ name: c.text, cls: null, by: 'you', key: c.key, fence: true });
+  }
+  // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>"); a close with the one list says none (code cannot prove a guard keeps a rule: Not checked)
+  for (const g of carriesOneList(spec?.closeDecl) ? [] : Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
     if (!g || typeof g.guard !== 'string' || !Array.isArray(g.lines)) continue;
     for (const line of lines.filter((l) => g.lines.includes(l.n))) (line.always ??= []).push(g.guard);
   }
@@ -117,7 +124,7 @@ export function planFromSpec(spec, ledger = null) {
     // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked; a list row of another kind names its fact when it has one
     const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[Number(r.rule) - 1] : (r.label ?? null);
     // a list row that is not a fact or a rule (a phrase, a count) is named by its words: the draft log's, else the text after the key's kind prefix
-    const named = line && !ruleText && r.fromList && r.key ? listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words) : null;
+    const named = line && !ruleText && r.fromList && r.key && r.kind !== 'stage' ? listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words) : null;
     const text = ruleText ? `"${ruleText}" — ${r.reason}` : (named ? `${named} — ${r.reason}` : r.reason);
     if (line) { line.refused.push(text); if (r.by) refusedBy[text] = r.by; }
   }
@@ -195,13 +202,14 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
   const verdict = (stage) => (!stage || !results ? 'none' : (!results.has(stage) ? (closeRan ? 'not-reached' : 'none') : (results.get(stage) ? 'passed' : 'failed')));
   /** @type {AuditRow[]} */
   const checks = [];
-  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string}} c @param {string} text @returns {AuditRow} */
+  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true}} c @param {string} text @returns {AuditRow} */
   const rowOf = (c, text) => {
     // the fence row reads the gate's own record of THIS run (never a stage verdict): held · N writes blocked, or the record is missing
-    if (c.key === FENCE_KEY) {
+    if (c.key === FENCE_KEY || c.fence === true) {
+      const by = c.fence === true ? /** @type {'you'} */ ('you') : /** @type {'default'} */ ('default');
       return blocked === null
-        ? { text, by: /** @type {'default'} */ ('default'), result: /** @type {'record-missing'} */ ('record-missing'), word: "the gate's record for this run is missing", key: FENCE_KEY }
-        : { text, by: /** @type {'default'} */ ('default'), result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked`, key: FENCE_KEY };
+        ? { text, by, result: /** @type {'record-missing'} */ ('record-missing'), word: "the gate's record for this run is missing", key: String(c.key) }
+        : { text, by, result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked`, key: String(c.key) };
     }
     const own = c.key ? rowRes?.results.get(c.key) : undefined;
     if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}) };

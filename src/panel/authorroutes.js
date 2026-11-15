@@ -536,7 +536,7 @@ export function signRun(session, claimedHash, o) {
   if (session.state.finalPlan) {
     try {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-      const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
+      const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl, spec.jobLines ?? null);
       if (!m.ok) return { ok: false, error: m.error };
       // B2: a close that carries the one check list must agree with it: every built row points at a check the close runs, and every check has a row
       const lm = listMatchesClose(spec.closeDecl);
