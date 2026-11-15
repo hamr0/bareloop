@@ -2160,7 +2160,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy?: Record<string, string>}|null, block?: CheckBlock|null, cardOf?: (() => any)|null}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy?: Record<string, string>, closeDecl?: any}|null, block?: CheckBlock|null, cardOf?: (() => any)|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
