@@ -97,7 +97,7 @@ test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, ans
   const { session, legs, sessionDir } = sessionWith({ lookFacts: [READING_FACT], confirmQuestions: ['Which airport do you mean?'] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'look');
-  assert.deepEqual(session.state.pendingAsk.offers, { agree: true, drop: false }, 'a reading offers Agree only');
+  assert.deepEqual(session.state.pendingAsk.offers, { agree: true, drop: true }, 'a reading offers Agree and Drop it (and a box for the right reading)');
   session.send('', 'agree');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   session.signPrepare();

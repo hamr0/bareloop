@@ -24,13 +24,13 @@ export function questionsOfBlock(block) {
 
 /**
  * The person's choices back into the block, one by one (the choice decides, never the words). A choice the block refuses is returned with its plain reason; the question stays open.
- * @param {import('./checkblock.js').CheckBlock} block @param {{key: string, choice: string}[]} choices @returns {{key: string, why: string}[]}
+ * @param {import('./checkblock.js').CheckBlock} block @param {{key: string, choice: string, text?: string}[]} choices @returns {{key: string, why: string}[]}
  */
 export function applyChoices(block, choices) {
   /** @type {{key: string, why: string}[]} */
   const refused = [];
   for (const c of choices) {
-    const r = block.applyAnswer(c.key, c.choice);
+    const r = block.applyAnswer(c.key, c.choice, c.text);
     if (!r.ok) refused.push({ key: c.key, why: r.why });
   }
   block.reconcile();

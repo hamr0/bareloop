@@ -1217,7 +1217,7 @@ export function createSession(card, deps = {}) {
       const left = [];
       /** R10: the picks the person made (fwd am16): the check agreed to, or their own words with no check @type {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}[]} */
       const picks = [];
-      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string}[]} */
+      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string, text?: string}[]} */
       const choices = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
@@ -1236,12 +1236,13 @@ export function createSession(card, deps = {}) {
           if (text) break;
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
-        // a code-forced look question about a `~` rule is answered by a BUTTON only (hamr 2026-11-15; `send` refuses words for it): `agree` writes the code's reading (a reading ask) or the proposed check (a check ask)
-        // as the rule, `drop` leaves a proposed-check rule Not checked. The choice decides, never the words.
+        // a code-forced look question about a `~` rule is answered by a BUTTON (hamr 2026-11-15; `send` refuses words with no choice): `agree` writes the code's reading (a reading ask) or the proposed check (a check ask)
+        // as the rule, `drop` leaves the rule Not checked. Only a READING question also takes the person's own correction (`rule`, the box's words), which REPLACES the asked rule. The choice decides, never the words.
         const agrees = via === 'agree';
         const dropsIt = via === 'drop';
+        const corrects = via === 'rule' && q.source === 'look' && q.ask === 'reading';
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
-        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : 'agree' });
+        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt || corrects)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : corrects ? 'rule' : 'agree', ...(corrects ? { text } : {}) });
         // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked
         const isPick = q.source === 'look' && q.ask === 'check' && Number.isInteger(q.rule);
         if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }

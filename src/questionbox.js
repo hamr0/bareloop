@@ -17,13 +17,13 @@ export const CHOICE_SAYS = Object.freeze({
 
 /**
  * Which buttons a look question offers. Agree only when it carries a proposal (a reading ask with its reading, a check-pick ask with its check); Drop it only where "drop it" leaves
- * one of the person's own `~` rules Not checked (a check-pick ask about a rule number). A rule with nothing to agree to is not asked at all (src/checkblock.js).
+ * one of the person's own `~` rules Not checked (a reading or check-pick ask about a rule number). A rule with nothing to agree to is not asked at all (src/checkblock.js).
  * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown}} q @returns {{agree: boolean, drop: boolean}}
  */
 export function offersOf(q) {
   const look = q.source === 'look';
   const agree = look && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== null && typeof q.check === 'object'));
-  const drop = look && Number.isInteger(q.rule) && q.ask === 'check';
+  const drop = look && Number.isInteger(q.rule) && (q.ask === 'check' || q.ask === 'reading');
   return { agree, drop };
 }
 
@@ -52,7 +52,7 @@ export function answerEffectWords(step) {
 /**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
  * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
- * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
+ * @param {{kind: string, source?: string, ask?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
  * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
@@ -76,23 +76,25 @@ export function boxFor(step) {
     line: `${Number.isInteger(step.line) ? `About job line ${step.line}` : ''}${answerEffectWords(step) === null ? '' : `${Number.isInteger(step.line) ? '. ' : ''}${answerEffectWords(step)}`}`,
     text: panelQuestionText({ question: step.question, source: step.source, ...(Number.isInteger(step.line) ? { line: step.line } : {}) }),
     choices,
-    // a check question is buttons only (no box); the drafter's own question has no button, so it keeps the one line to type in
-    orLabel: buttonsOnly ? null : 'Type your answer:',
+    // a proposed-check question is buttons only (no box); a READING question also takes the person's correction (hamr 2026-11-15 ruling); the drafter's own question has no button, so it keeps the one line to type in
+    orLabel: buttonsOnly ? (step.ask === 'reading' ? 'Or type the right reading:' : null) : 'Type your answer:',
     sendChoice: 'rule',
   };
 }
 
 /** the choices each kind of question's answer may name: a check question has its buttons only (hamr 2026-11-15); the drafter's own question and the Destination question keep typed words */
-const CHOICES = { look: ['agree', 'drop'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
+const CHOICES = { look: ['agree', 'drop', 'rule'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
 
 /**
  * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
- * @param {{kind: string, source?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean}}} step @param {unknown} choice @returns {string|null}
+ * @param {{kind: string, source?: string, ask?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean}}} step @param {unknown} choice @returns {string|null}
  */
 export function refuseChoice(step, choice) {
   if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
   const own = step.source === 'dest-point' ? CHOICES['dest-point'] : step.source === 'look' ? CHOICES.look : CHOICES.typed;
   if (typeof choice !== 'string' || !own.includes(choice)) return CHOICE_SAYS.bad;
+  // the box's own words are for a READING question only; a proposed check has its buttons
+  if (choice === 'rule' && step.source === 'look' && step.ask !== 'reading') return CHOICE_SAYS.notOffered;
   if (step.source === 'dest-point') return null;
   if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
   if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;

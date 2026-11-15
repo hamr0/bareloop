@@ -164,11 +164,48 @@ test('session: "agree" writes the reading as a `~` rule in plain words IN PLACE 
   assert.deepEqual(human.map((h) => [h.source, h.line, h.answer, h.choice]), [['look', 1, 'agree', 'agree']]);
 });
 
-test('session: a reading ask offers Agree only; Drop it is refused and the question stays open', async () => {
-  const { session } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
+test('session: a reading ask offers Agree, Drop it and a box for the right reading; Drop it leaves the rule Not checked with REASON.left', async () => {
+  const { session, legs } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
-  assert.equal(session.send('', 'drop').ok, false);
-  assert.equal(session.state.pendingAsk?.kind, 'answer');
+  assert.deepEqual(session.state.pendingAsk.box.choices.map((c) => c.choice), ['agree', 'drop']);
+  assert.equal(session.state.pendingAsk.box.orLabel, 'Or type the right reading:');
+  assert.equal(session.send('', 'drop').ok, true);
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  session.signPrepare();
+  assert.ok(await until(() => legs.length === 1));
+  const row = legs[0].block.rows.find((r) => r.kind === 'rule' && r.rule === 2);
+  assert.deepEqual([row.state, row.reason], ['not-checked', 'You chose to leave it Not checked, so you judge it at Accept.']);
+  assert.equal(legs[0].jobLines[0].rules[1], 'not a red-eye', 'the rule\'s words stay');
+});
+
+test('session: a typed correction of a reading REPLACES the rule (one in, one out); words code cannot prove are Not checked with REASON.noRule and nothing is asked again', async () => {
+  const { session, legs } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
+  assert.equal(session.send('', 'rule').ok, false, 'a blank correction is refused and the question stays open');
+  assert.equal(session.send('leaves in the evening, whatever that means', 'rule').ok, true);
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'no second question');
+  session.signPrepare();
+  assert.ok(await until(() => legs.length === 1));
+  assert.equal(legs[0].jobLines[0].rules[1], 'leaves in the evening, whatever that means', 'the correction replaced the asked rule');
+  const row = legs[0].block.rows.find((r) => r.kind === 'rule' && r.rule === 2);
+  assert.deepEqual([row.state, row.reason], ['not-checked', 'No rule can check this, so you judge it at Accept.']);
+});
+
+test('session: a typed correction that carries the bounds in its own words replaces the rule and is built from the person\'s words', async () => {
+  const { session, legs } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
+  assert.equal(session.send('departure time between 05:00 and 22:00', 'rule').ok, true);
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  session.signPrepare();
+  assert.ok(await until(() => legs.length === 1));
+  assert.equal(legs[0].jobLines[0].rules[1], 'departure time between 05:00 and 22:00');
+  assert.equal(legs[0].block.rows.find((r) => r.kind === 'rule' && r.rule === 2).state, 'built');
+});
+
+test('a typed correction on a proposed-check question is refused: that question has its buttons only', async () => {
+  const { refuseChoice, CHOICE_SAYS } = await import('../src/questionbox.js');
+  assert.equal(refuseChoice({ kind: 'answer', source: 'look', ask: 'check', rule: 1, offers: { agree: true, drop: true } }, 'rule'), CHOICE_SAYS.notOffered);
+  assert.equal(refuseChoice({ kind: 'answer', source: 'look', ask: 'reading', rule: 1, offers: { agree: true, drop: true } }, 'rule'), null);
 });
 
 test('session: the rules with no check (1 and 3) are not asked and read Not checked with code\'s reason on the plan', async () => {

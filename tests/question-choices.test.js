@@ -27,11 +27,11 @@ async function pickDraft(jobText = PICK_JOB) {
 const human = (w) => w.log().filter((e) => e.kind === 'human');
 
 test('offersOf: Agree only with a proposal; Drop it only on a look ask about one of the person\'s ~ rules where "drop it" leaves it Not checked (fwd am29 + am30)', () => {
-  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', reading: 'x between 1 and 2', rule: 1 }), { agree: true, drop: false }, 'a reading ask: agree it, or type; drop it has no effect on a reading ask today');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', reading: 'x between 1 and 2', rule: 1 }), { agree: true, drop: true }, 'a reading ask: agree it, drop it, or type the right reading (hamr 2026-11-15 ruling)');
   assert.deepEqual(offersOf({ source: 'look', ask: 'check', check: { rule: 'maxWords', value: 80 }, rule: 1 }), { agree: true, drop: true });
   assert.deepEqual(offersOf({ source: 'look', ask: 'cant-check', rule: 2 }), { agree: false, drop: false }, 'a rule with nothing to agree to is not asked at all (hamr 2026-11-15)');
   assert.deepEqual(offersOf({ source: 'look', ask: 'check', check: { rule: 'maxWords', value: 80 } }), { agree: true, drop: false }, 'no rule number: nothing to drop');
-  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', rule: 1 }), { agree: false, drop: false }, 'a reading ask with no reading words proposes nothing');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', rule: 1 }), { agree: false, drop: true }, 'a reading ask with no reading words offers no Agree');
   assert.deepEqual(offersOf({ source: 'try-3', rule: 1 }), { agree: false, drop: false }, 'a drafter question: box and Send only');
 });
 
@@ -56,10 +56,11 @@ test('refuseChoice / resolveChoice: the door\'s words, word for word (fwd am31)'
   assert.equal(refuseChoice(step({ rule: undefined, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.noRule, 'drop on a question with no ~ rule number');
   assert.equal(refuseChoice(step({ source: 'try-3', rule: undefined, offers: undefined }), 'drop'), CHOICE_SAYS.bad, 'a drafter question has no buttons: only its typed words');
   assert.equal(refuseChoice(step({ source: 'try-3', rule: undefined, offers: undefined }), 'rule'), null, 'the drafter\'s own question keeps its typed answer');
-  assert.equal(refuseChoice(step({ rule: 3, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.notOffered, 'a rule number but "drop it" has no effect (a reading ask)');
+  assert.equal(refuseChoice(step({ rule: 3, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.notOffered, 'a rule number but nothing to drop is not offered');
   assert.equal(refuseChoice({ kind: 'menu' }, 'rule'), CHOICE_SAYS.notOffered, 'only a question the person answers takes a choice');
   for (const ok of ['agree', 'drop']) assert.equal(refuseChoice(step({ offers: { agree: true, drop: true } }), ok), null);
-  assert.equal(refuseChoice(step({ offers: { agree: true, drop: true } }), 'rule'), CHOICE_SAYS.bad, 'a check question has no typed words (hamr 2026-11-15)');
+  assert.equal(refuseChoice(step({ ask: 'check', offers: { agree: true, drop: true } }), 'rule'), CHOICE_SAYS.notOffered, 'a proposed-check question has no typed words (hamr 2026-11-15)');
+  assert.equal(refuseChoice(step({ ask: 'reading', offers: { agree: true, drop: true } }), 'rule'), null, 'a reading question takes the right reading in words');
   assert.deepEqual(resolveChoice('agree', 'ignored'), { value: 'agree', shown: 'Agree' });
   assert.deepEqual(resolveChoice('drop', ''), { value: 'drop it', shown: 'Drop it' });
   assert.deepEqual(resolveChoice('rule', 'agree, why not\nplease'), { value: 'agree, why not please', shown: 'agree, why not please' }, 'the box\'s words, kept whole, one line');
@@ -173,13 +174,13 @@ function readingSession() {
   });
   return { session, legs };
 }
-test('a reading ask: Agree writes the reading as a ~ rule; no Drop it (it has no effect on a reading ask); the box shows the question without the typed words; typed words are refused', async () => {
+test('a reading ask: Agree writes the reading as a ~ rule; Drop it and a box for the right reading are offered; typed words with no choice are refused', async () => {
   const w = readingSession();
   assert.ok(await until(() => asking(w.session)), `${w.session.state.phase} / ${w.session.state.error}`);
   const ask = w.session.state.pendingAsk;
-  assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree']);
+  assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree', 'drop']);
+  assert.equal(ask.box.orLabel, 'Or type the right reading:');
   assert.equal(ask.box.text, 'Your line 1 says "not a red-eye". I read it as: departure time between 06:00 and 21:00. Agree?');
-  assert.equal(w.session.send('', 'drop').error, CHOICE_SAYS.notOffered, 'drop is not offered on a reading ask');
   w.session.send('', 'agree');
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
@@ -187,6 +188,5 @@ test('a reading ask: Agree writes the reading as a ~ rule; no Drop it (it has no
   assert.deepEqual(w.legs[0].jobLines[0].rules, ['under $450', 'departure time between 06:00 and 21:00', 'nonstop']);
   const w2 = readingSession();
   assert.ok(await until(() => asking(w2.session)));
-  assert.equal(w2.session.send('agree', 'rule').ok, false, 'the box\'s own words are retired');
   assert.equal(w2.session.send('agree').ok, false, 'typed words with no choice are refused');
 });

@@ -282,6 +282,7 @@ export class CheckBlock {
         if (reading === undefined || !validReading(l.shape, reading)) continue; // code does not guess a limit; the AI may still propose one
         const bounds = reading.op === 'between' ? [reading.lo, reading.hi] : [reading.value];
         const unsaid = bounds.some((b) => !boundInWords(b, said));
+        if (unsaid && r.corrected) { r.can = { ok: false, why: REASON.noRule }; return; } // the person's corrected words do not carry the look's bound: never built from the AI's reading, never asked again
         if (unsaid && !r.agreed && this.asks) { r.can = { ok: false, ask: 'reading', link: l, reading, proposal: `${l.name} ${ruleWords({ shape: l.shape, unit: l.unit, currency: l.currency, rule: reading })}`, why: REASON.waitingReading }; return; }
         if (unsaid && l.shape === 'time' && reading.op !== 'between') { r.can = { ok: false, why: REASON.oneSidedTime }; return; }
         r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords && !r.agreed, ...(ownWords ? { readBy: 'your words' } : {}) };
@@ -300,6 +301,8 @@ export class CheckBlock {
     }
     if (otherCurrency) { r.can = { ok: false, why: `the amount in your rule is in another currency than the page's prices, so it is not checked.` }; return; }
     if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
+    // a READING the person corrected in words (applyAnswer `rule`): code tried the new words above; what it cannot prove is Not checked with REASON.noRule, never a second question
+    if (r.corrected) { r.can = { ok: false, why: REASON.noRule }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
     if (r.links?.length) { r.can = { ok: false, why: r.aiReason ?? `the look tied a fact to this rule but gave no limit, and ${ownWhy ? `in your words ${ownWhy}` : 'your own words give none code can read'}, so you judge it at Accept.` }; return; }
     // hamr 2026-11-15 (option A): a rule no check can prove has only one answer (Drop it), so it is NOT asked: it is Not checked with code's reason at once
@@ -677,8 +680,8 @@ export class CheckBlock {
 
   // 6. the person's answer: a row edit from the typed CHOICE (agree | drop), buttons only (hamr 2026-11-15: a typed own-words answer is retired; a rule is changed by Revise). ONE rule in, ONE rule out (hamr 2026-11-14):
   // an agreed answer REPLACES the asked rule, same line and same rule number; this list is the one owner (the job text is rebuilt from it, `jobLinesView`).
-  /** @param {string} qKey @param {string} choice @returns {{ok: true} | {ok: false, why: string}} */
-  applyAnswer(qKey, choice) {
+  /** @param {string} qKey @param {string} choice @param {string} [text] the person's correction (a reading question only) @returns {{ok: true} | {ok: false, why: string}} */
+  applyAnswer(qKey, choice, text) {
     const q = this.open.find((x) => x.key === qKey);
     const r = q ? this.rows.find((x) => x.key === q.rowKey) : undefined;
     if (!q || !r) return { ok: false, why: 'out of date' };
@@ -695,6 +698,13 @@ export class CheckBlock {
       return { ok: true };
     }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
+    // only a READING question takes the person's words (hamr 2026-11-15 ruling): they REPLACE the asked rule (one in, one out) and code proves them as it proves any rule; no second question
+    if (choice === 'rule' && q.ask === 'reading') {
+      const said = String(text ?? '').replace(/\s+/g, ' ').trim();
+      if (!said) return { ok: false, why: 'an answer is needed' };
+      r.text = said; r.origin = 'typed'; r.cantAsked = !isCountable(said); r.corrected = true;
+      return { ok: true };
+    }
     return { ok: false, why: 'not one of the choices' };
   }
 
@@ -854,7 +864,7 @@ export class CheckBlock {
   // 8. whole-list reconcile, every time
   reconcile() { this.match(); const c = this.build(); this.ask(); return c; }
 
-  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice} or null (a person who did not answer) */
+  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice, text?} or null (a person who did not answer) */
   drive({ answer }) {
     this.unanswered = [];
     this.reconcile();
@@ -862,7 +872,7 @@ export class CheckBlock {
       const q = this.open.find((x) => !this.unanswered.includes(x.key));
       if (q) {
         const a = answer(q);
-        const res = a ? this.applyAnswer(q.key, a.choice) : { ok: false };
+        const res = a ? this.applyAnswer(q.key, a.choice, a.text) : { ok: false };
         if (!res.ok) { this.unanswered.push(q.key); continue; }
         this.reconcile();
         continue;
