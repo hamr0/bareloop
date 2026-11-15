@@ -186,7 +186,10 @@ export class CheckBlock {
       this.lookFacts.push(f);
       // a fact the look tied to a COUNTING `~` rule stays a fact of its own: the pick path owns that rule (R10, hamr 2026-11-09), so the rule uses no link
       const tied = Number.isInteger(f.forRule) ? this.ruleRows(f.line).find((r) => r.rule === f.forRule) : undefined;
-      const row = tied && !isCountable(tied.text) ? tied : undefined;
+      // hamr 2026-11-15 (live run mwi76vh8, "be friendly" + "Select flight"): a phrase or place the person's own `~` rule words do not contain is no check of that rule; it is an ordinary `!` row (the split/inJob path
+      // decides Drop or Suggested) and the rule goes Not checked. A version or a date keeps the place-rule path; money, time, number and date links are unchanged.
+      const named = !tied || !['phrase', 'place'].includes(f.shape) || (f.words ?? []).some((/** @type {string} */ w) => weekOnly(w) || norm(tied.text).includes(norm(w)));
+      const row = tied && named && !isCountable(tied.text) ? tied : undefined;
       const carried = { name: f.name, shape: f.shape, words: [...(f.words ?? [])], unit: f.unit, currency: f.currency, decimal: f.decimal, lang: f.lang, source: f.source };
       if (row) { (row.links ??= []).push({ ...carried, reading: f.reading }); continue; }
       this.addRow({ key: `L${f.line}.fact.${norm(f.name)}`, line: f.line, kind: 'fact', by: 'agent', from: 'look', ...carried });
@@ -258,9 +261,7 @@ export class CheckBlock {
     const negated = NEGATING_RE.test(r.text);
     const isPhrase = (/** @type {any} */ l) => l.shape === 'phrase' || l.shape === 'place';
     if (negated && (r.links ?? []).length && (r.links ?? []).every(isPhrase)) { r.can = { ok: false, why: REASON.negated }; return; }
-    // hamr 2026-11-15 (live run mwi76vh8): a phrase or place link counts only when the PERSON'S OWN rule words name it ("be friendly" never makes "Select flight" a check); the AI only points, code proves against the person's words
-    const inOwnWords = (/** @type {any} */ l, /** @type {string} */ w) => !isPhrase(l) || weekOnly(w) || norm(r.text).includes(norm(w)); // a version or a date goes the place-rule way below (never fixed words unless the rule names it)
-    const links = (r.links ?? []).filter((/** @type {any} */ l) => !(negated && isPhrase(l)) && l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w) && inOwnWords(l, w)));
+    const links = (r.links ?? []).filter((/** @type {any} */ l) => !(negated && isPhrase(l)) && l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w)));
     const said = this.said(r.line);
     let ownWhy = null;
     let otherCurrency = false;
@@ -302,11 +303,7 @@ export class CheckBlock {
       return;
     }
     if (otherCurrency) { r.can = { ok: false, why: `the amount in your rule is in another currency than the page's prices, so it is not checked.` }; return; }
-    if (r.links?.length && !links.length) {
-      const onPage = r.links.some((/** @type {any} */ l) => l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w)));
-      r.can = { ok: false, why: onPage && !negated ? (r.lookWhy ?? REASON.noRule) : REASON.lookNoWords };
-      return;
-    }
+    if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
     // a READING the person corrected in words (applyAnswer `rule`): code tried the new words above; what it cannot prove is Not checked with REASON.noRule, never a second question
     if (r.corrected) { r.can = { ok: false, why: REASON.noRule }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
