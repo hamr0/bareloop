@@ -141,7 +141,8 @@ test('the Checks fold header wears caret then sign exactly like a step row: sign
 
 test('the Checks fold header word is lowercase like the other Audit part rows (hamr 2026-11-13); the inner section heading stays "Checks"', () => {
   const body = fnSrc('auditChecksEl');
-  assert.match(body, /var head = "checks &middot; " \+ nPass/);
+  assert.match(body, /var head = '<b class="st-word audit-checks-label">checks<\/b>' \+ " &middot; " \+ nPass/);
+  assert.match(PAGE, /\.audit-checks-label\{font-size:12px;\}/, 'the label is the same 12px as the row result word');
   assert.doesNotMatch(body, /var head = "Checks &middot;/);
   assert.match(PAGE, /sec\("Checks", ac\.checks/, 'the card section name keeps its capital');
 });
