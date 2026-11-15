@@ -184,13 +184,14 @@ export function sessionDirForRow(row, opts = {}) {
 
 /**
  * PRD v1.106 Part 5 Q1: one answered question as the two lines the Audit's drafting table shows under its step. ONE place owns the words.
- * @param {{question: string, answer: string, source?: string, line?: number, at?: string}} h
- * @returns {{question: string, answer: string, source: string, line?: number, at?: string, askedText: string, saidText: string}}
+ * @param {{question: string, answer: string, source?: string, line?: number, at?: string, choice?: string, words?: string}} h
+ * @returns {{question: string, answer: string, source: string, line?: number, at?: string, choice?: string, words?: string, askedText: string, saidText: string}}
  */
 export function humanRowWords(h) {
   return {
     question: h.question, answer: h.answer, source: typeof h.source === 'string' ? h.source : 'confirm',
     ...(Number.isInteger(h.line) ? { line: h.line } : {}), ...(h.at ? { at: h.at } : {}),
+    ...(typeof h.choice === 'string' ? { choice: h.choice } : {}), ...(typeof h.words === 'string' ? { words: h.words } : {}),
     askedText: `you were asked: ${h.question}`, saidText: `you said: ${h.answer}`,
   };
 }
@@ -228,7 +229,7 @@ export function readDraftSteps(dir) {
       x.status = 'running';
       x.endedAt = null;
     } else if (ev.kind === 'human' && byNo.has(ev.no) && typeof ev.question === 'string' && typeof ev.answer === 'string') {
-      byNo.get(ev.no).humans.push(humanRowWords({ question: ev.question, answer: ev.answer, source: ev.source, ...(Number.isInteger(ev.line) ? { line: ev.line } : {}), at: ev.at }));
+      byNo.get(ev.no).humans.push(humanRowWords({ question: ev.question, answer: ev.answer, source: ev.source, ...(typeof ev.choice === 'string' ? { choice: ev.choice } : {}), ...(typeof ev.words === 'string' ? { words: ev.words } : {}), ...(Number.isInteger(ev.line) ? { line: ev.line } : {}), at: ev.at }));
     } else if (ev.kind === 'call') {
       const c = { label: String(ev.label), model: typeof ev.model === 'string' ? ev.model : null, costUsd: typeof ev.costUsd === 'number' ? ev.costUsd : null, unpricedRounds: Number(ev.unpricedRounds) || 0, at: String(ev.at) };
       byNo.get(ev.no)?.calls.push(c);

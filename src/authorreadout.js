@@ -655,7 +655,7 @@ function capTimeWords(ms) {
  * DISPLAY ONLY: built from the signed resolved spec, the draft log and the session's own figures; never signed, never stored, never part of the hash. Pure. The check rows are `cardOfClose`'s (the same reader and tags the card draws),
  * the fence is `fenceRowText`'s, the Not checked rows are `ruleNotCheckedItems`'s plus the `refusedOf` rows it leaves out. The whole text goes through `redactSecrets`.
  * @param {{spec: any, name?: string, modelId?: string|null, rounds: number, costUsd: number|null, spendComplete?: boolean, specHash?: string|null, source?: string, destination?: string,
- *   humans?: {question: string, answer: string, line?: number}[], ledger?: {key: string, words: string[]}[]|null}} o
+ *   humans?: {question: string, answer: string, line?: number, choice?: string, words?: string}[], ledger?: {key: string, words: string[]}[]|null}} o
  *   `costUsd` = the known drafting spend; `spendComplete` false = a provider call was unpriced, so it reads "at least"
  * @returns {string}
  */
@@ -700,7 +700,14 @@ export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spen
   if (specHash) out.push('', `Plan hash: ${specHash}`);
   if (humans.length) {
     out.push('', READOUT_HEADS.answers);
-    for (const h of humans) out.push(`  ${Number.isInteger(h.line) ? `line ${h.line}: ` : ''}${h.question} \u2014 ${h.answer}`);
+    for (const h of humans) {
+      const at = Number.isInteger(h.line) ? `line ${h.line}: ` : '';
+      // a replaced rule's old words are never shown again (one in, one out): print what was decided, not the question that quotes them
+      if (h.choice === 'agree' && typeof h.words === 'string') out.push(`  ${at}agreed \u2014 ${h.words}`);
+      else if (h.choice === 'rule' && typeof h.words === 'string') out.push(`  ${at}you wrote \u2014 ${h.words}`);
+      else if (h.choice === 'drop') out.push(`  ${at}dropped \u2014 Not checked`);
+      else out.push(`  ${at}${h.question} \u2014 ${h.answer}`);
+    }
   }
   return redactSecrets(`${out.join('\n')}\n`);
 }

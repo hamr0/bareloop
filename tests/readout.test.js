@@ -93,3 +93,18 @@ test('the CLI "SIGNING PREPARED" block prints the same buildReadout text (read f
   assert.ok(block.length > 100, 'the SIGNING PREPARED block moved');
   assert.match(block, /buildReadout\(\{ spec, rounds: totalCost\.calls\.length, costUsd: totalCost\.knownUsd, spendComplete: totalCost\.spendComplete, specHash: hash \}\)/);
 });
+
+test('readout: a replaced rule is shown by what was decided, never by the question that quotes its old words', () => {
+  const q = 'Your line 1 says "not a red-eye". I read it as: departure between 05:00 and 23:59. Agree?';
+  const t = base(REPO(), { humans: [
+    { question: q, answer: 'agree', line: 1, choice: 'agree', words: 'departure between 05:00 and 23:59' },
+    { question: q, answer: 'depart after 6am', line: 2, choice: 'rule', words: 'depart after 6am' },
+    { question: q, answer: 'drop', line: 3, choice: 'drop' },
+    { question: 'Which file?', answer: 'src/sum.js', line: 4 },
+  ] });
+  assert.match(t, /^ {2}line 1: agreed — departure between 05:00 and 23:59$/m);
+  assert.match(t, /^ {2}line 2: you wrote — depart after 6am$/m);
+  assert.match(t, /^ {2}line 3: dropped — Not checked$/m);
+  assert.match(t, /^ {2}line 4: Which file\? — src\/sum\.js$/m);
+  assert.doesNotMatch(t, /red-eye|Agree\?/);
+});

@@ -668,7 +668,9 @@ export function createSession(card, deps = {}) {
         const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
         appendDraftLog(outDir, {
           kind: 'human', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, source: typeof step.source === 'string' ? step.source : 'confirm',
-          question: redactSecrets(step.question), answer: said, ...(answeredChoice === null ? {} : { choice: answeredChoice }), ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
+          question: redactSecrets(step.question), answer: said, ...(answeredChoice === null ? {} : { choice: answeredChoice }),
+          // what was decided, for the readout (it never prints a question that quotes the rule's old words): the agreed reading, or the person's own correction
+          ...(answeredChoice === 'agree' && typeof step.agreeWords === 'string' ? { words: redactSecrets(step.agreeWords) } : answeredChoice === 'rule' ? { words: said } : {}), ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
         });
       }
       resolveFn0(value);
@@ -1228,7 +1230,7 @@ export function createSession(card, deps = {}) {
           // a try-3 question (the drafter's own) says what its answer does: it REPLACES the rule it names, or ADDS a new one (Addendum 2026-11-14 (c) piece 5); a look question has its own words
           const asked = q.source === 'look' ? null : jobLines.find((l) => l.n === q.line);
           const replaces = asked && Number.isInteger(q.rule) ? asked.rules[/** @type {number} */ (q.rule) - 1] : undefined;
-          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q) } : {}), ...(typeof replaces === 'string' ? { replaces } : {}), ...(q.source !== 'look' && /** @type {any} */ (q).new === true ? { adds: true } : {}) });
+          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q), agreeWords: q.ask === 'check' && q.check ? plainWords(/** @type {any} */ (q.check)) : typeof q.reading === 'string' ? q.reading : undefined } : {}), ...(typeof replaces === 'string' ? { replaces } : {}), ...(q.source !== 'look' && /** @type {any} */ (q).new === true ? { adds: true } : {}) });
           if (a === null) return null;
           via = takeChoice();
           // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
