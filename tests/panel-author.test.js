@@ -1611,6 +1611,9 @@ test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its 
   const card = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
   assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict', 'L1.~1']);
   assert.equal(session.state.messages.filter((m) => m.kind === 'plan').length, 1);
+  // the Drop goes into the same record a rubric Drop writes (the check block's `choiceEntries`), so a Revise keeps it
+  const { readRowChoices, RECORD_FILE } = await import('../src/pickrecord.js');
+  assert.deepEqual(readRowChoices(join(dirname(session.state.resolvedSpecPath), RECORD_FILE)), [{ lineWords: 'fix the bug', occurrence: 0, tail: 'S.verdict-2', choice: 'drop' }]);
 });
 
 test('Drop refused by the gates: plain words, and the plan, the spec file and the hash stay as they were; only an agent stage row can be dropped', async () => {

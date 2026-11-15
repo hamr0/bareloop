@@ -88,6 +88,16 @@ function placeFacts(name, strips, mk) {
   return strips.map((s) => mk(nm(s.kind), { shape: 'phrase', phrase: s.value, place: s.rule }));
 }
 
+/**
+ * The Drop/Add choices of rows, tied to the line's words (not its number) and the row's own name, so a Revise keeps them. ONE owner for the block's own record and for a Drop made on a signed card.
+ * @param {{n: number, text: string}[]} lines @param {{line: number, key: string, choice: string}[]} picks @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]}
+ */
+export function choiceEntries(lines, picks) {
+  const seen = new Map();
+  const key = new Map(lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return [l.n, { lineWords: w, occurrence: o }]; }));
+  return picks.map((p) => ({ ...(key.get(p.line) ?? { lineWords: '', occurrence: 0 }), tail: p.key.replace(/^L\d+\./, ''), choice: String(p.choice) }));
+}
+
 export class CheckBlock {
   /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean, repo?: {files: string[]|null, writeScope: string[]|null}|null}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
   constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false, repo = null }) {
@@ -908,9 +918,7 @@ export class CheckBlock {
 
   /** the person's Drop/Add choices, tied to the line's words (not its number) and the row's own name, so a Revise keeps them @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]} */
   choicesRecord() {
-    const seen = new Map();
-    const key = new Map(this.lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return [l.n, { lineWords: w, occurrence: o }]; }));
-    return this.rows.filter((r) => r.choice === 'drop' || r.choice === 'add').map((r) => ({ ...(key.get(r.line) ?? { lineWords: '', occurrence: 0 }), tail: r.key.replace(/^L\d+\./, ''), choice: String(r.choice) }));
+    return choiceEntries(this.lines, this.rows.filter((r) => r.choice === 'drop' || r.choice === 'add').map((r) => ({ line: r.line, key: r.key, choice: String(r.choice) })));
   }
 
   /** a Revise keeps the last draft's Drop/Add choices on the rows that are still there (same line words, same row); code still judges every one @param {{lineWords: string, occurrence: number, tail: string, choice: string}[]} rec */

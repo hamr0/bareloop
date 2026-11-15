@@ -62,6 +62,7 @@ import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
+import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
@@ -1453,6 +1454,7 @@ export function createSession(card, deps = {}) {
       if (!rowOk) return { ok: false, refused: 'bad-row', error: 'only a check the agent added can be dropped' };
       dropping = true;
       try {
+        const droppedLine = Number(finalCtx.spec.closeDecl.list.find((/** @type {any} */ r) => r && r.key === key)?.line ?? 1);
         const spec = structuredClone(finalCtx.spec);
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
@@ -1479,6 +1481,12 @@ export function createSession(card, deps = {}) {
         const msg = { ...finalPlanMessage(), text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.' };
         if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
         appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op: 'drop', key: redactSecrets(String(key)), at: new Date().toISOString() });
+        // the same record a rubric Drop writes (the check block's own `choiceEntries`): a Revise keeps this Drop, code still judging it (never the last check on a line)
+        try {
+          const entry = choiceEntries(jobLines.map((/** @type {any} */ l) => ({ n: l.n, text: l.text })), [{ line: droppedLine, key: String(key), choice: 'drop' }]);
+          const had = readRowChoices(join(outDir, RECORD_FILE)) ?? [];
+          writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: [...had.filter((/** @type {any} */ c) => !entry.some((e) => e.lineWords === c.lineWords && e.occurrence === c.occurrence && e.tail === c.tail)), ...entry] });
+        } catch { /* a convenience: a disk fault only means the next draft starts without it */ }
         return { ok: true };
       } finally { dropping = false; }
     },
