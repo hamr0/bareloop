@@ -23,7 +23,7 @@ export function questionsOfBlock(block, scoped = []) {
       return { ...base, ask: /** @type {'check'} */ ('check'), counted: false, reading: words, check: q.proposal, question: `Line ${q.line}, guardrail "${q.ruleText}": I propose ${words}. ${HOW_TO_ANSWER(q.line, true)}` };
     }
     if (scoped.some((x) => x.line === q.line && x.rule === rule)) return { ...base, ask: /** @type {'no-check'} */ ('no-check'), counted: true, question: `Line ${q.line}, guardrail "${q.ruleText}": ${CANT_CHECK_WORDS} ${HOW_TO_ANSWER(q.line, false)}` };
-    return { ...base, ask: /** @type {'cant-check'} */ ('cant-check'), counted: true, question: cantCheckQuestion(q.line, String(q.ruleText)) };
+    return { ...base, ask: /** @type {'cant-check'} */ ('cant-check'), counted: true, question: cantCheckQuestion(q.line, String(q.ruleText), block.repo !== null ? '' : undefined) };
   }).sort((a, b) => rank[a.ask] - rank[b.ask]);
 }
 

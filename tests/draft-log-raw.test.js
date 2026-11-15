@@ -32,7 +32,7 @@ test('a draft whose answer cannot be used: the log keeps each try\'s raw answer,
   git(repo, ['commit', '-q', '-m', 'seed']);
   const plan = { goal: 'fix things v1', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] };
   let n = 0;
-  const session = createSession({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'raw-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`, destination: 'src/', capUsd: 2 }, {
+  const session = createSession({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'raw-job', jobText: 'fix things\n~ leave package.json alone\ntsc clean', inputs: `repo: ${repo}`, destination: 'src/', capUsd: 2 }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { n += 1; return { text: `try ${n}: I could not produce a declaration. key ${SECRET} UNUSABLE-ANSWER-MARKER`, error: null, msgs: [], metrics: { costUsd: 0.03, unpricedRounds: 0 } }; },

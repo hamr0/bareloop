@@ -242,7 +242,7 @@ export function readingOfQuestion(q) {
 }
 
 /** @param {number} n @param {string} rule @returns {string} the can't-check ask of a rule the page cannot check */
-export const cantCheckQuestion = (n, rule) => `Your line ${n} says "${rule}". I can't check this on the page. Drop it?${cantCheckTail(n)}`;
+export const cantCheckQuestion = (n, rule, where = ' on the page') => `Your line ${n} says "${rule}". I can't check this${where}. Drop it?${cantCheckTail(n)}`;
 
 /**
  * PRD v1.107 Part 5b ("the look reads, code asks"): the early asks CODE forces before any paid drafting, from the look's own result. Every `~` rule is
@@ -304,7 +304,7 @@ const ruleBounds = (r) => (r.op === 'between' ? [r.lo, r.hi] : [r.value]);
  * its reading as the suggestion (no extra paid call). A secret in a rule is masked.
  * @param {LookAsk[]} asks @returns {string}
  */
-export function tooManyAsksText(asks) {
-  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.ask === 'no-check' ? "I can't check this" : (a.reading ?? "I can't check this on the page")}`).join('; ');
+export function tooManyAsksText(asks, where = ' on the page') {
+  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.ask === 'no-check' ? "I can't check this" : (a.reading ?? `I can't check this${where}`)}`).join('; ');
   return redactSecrets(`Your job has ${asks.length} rules I can't check or had to guess. Please rewrite it so each one says what to look for. My readings: ${list}.`);
 }

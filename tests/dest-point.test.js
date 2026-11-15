@@ -80,7 +80,7 @@ test('runDestPoint: books its call, one retry on a malformed reply, then absent 
 
 // ── the wiring, through the real session ──
 const git = (dir, args) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
-async function session(t, { destination, replyPoints, jobText = 'Fix the bug in src/mod.js so the tests pass\n~ no new deps\ntsc clean' }) {
+async function session(t, { destination, replyPoints, jobText = 'Fix the bug in src/mod.js so the tests pass\n~ leave package.json alone\ntsc clean' }) {
   const w = await world(t, { serve: false });
   const repo = makeRepo(path.join(w.base, 'repo'));
   mkdirSync(path.join(repo, 'docs'));

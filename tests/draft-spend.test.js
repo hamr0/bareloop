@@ -70,7 +70,7 @@ async function draftSession(t, calls, gapMs = 0) {
   const seen = [];
   let sessionDir = '';
   const session = createSession({
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', jobText: 'fix things\n~ leave package.json alone\ntsc clean', inputs: `repo: ${repo}`,
     destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
@@ -324,7 +324,7 @@ async function sessionAtMenu(t, home, jobName) {
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'seed']);
   const s = createSession({
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName, jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName, jobText: 'fix things\n~ leave package.json alone\ntsc clean', inputs: `repo: ${repo}`,
     destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),

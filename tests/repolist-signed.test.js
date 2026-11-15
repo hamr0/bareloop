@@ -35,21 +35,33 @@ test('a repo draft signs a list: the rule row Not checked, one `!` row per work 
   assert.deepEqual(validateCloseDecl(r.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: LISTING.files }).reds.filter((/** @type {any} */ x) => /closeDecl\.list\[|fenceKept/.test(String(x.path))), []);
 });
 
-test('a proven fence claim reaches the signed row and the claim itself is carried in the signed close', async () => {
-  const r = await draft([{ line: 1, rule: 1, path: 'package.json' }]);
+/** the fixture job with its first rule's words replaced */
+async function draftRule(/** @type {string} */ words) {
+  const jobLines = structuredClone(spec.jobLines);
+  jobLines[0].rules = [words]; jobLines[0].rule = words;
+  const declaration = { stages: spec.closeDecl.stages };
+  return authorCloseForJob({
+    verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
+    jobLines, writeScope: spec.writeScope,
+    scoutFn: async () => SURVEY, listingFn: async () => LISTING,
+    authorFn: async () => ({ ok: true, declaration, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: LISTING, ledger: null }),
+  });
+}
+
+test('a rule that names a repo file outside the write fence, in the person\'s own words, is kept by code', async () => {
+  const r = await draftRule('do not change package.json');
   const row = r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule');
   assert.deepEqual([row.state, row.fence], ['built', 'package.json']);
-  assert.deepEqual(r.closeDecl.fenceKept, [{ line: 1, rule: 1, path: 'package.json' }]);
-  assert.deepEqual(validateCloseDecl(r.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: LISTING.files }).reds.filter((/** @type {any} */ x) => /closeDecl\.list\[|fenceKept/.test(String(x.path))), []);
+  assert.deepEqual(validateCloseDecl(r.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: LISTING.files }).reds.filter((/** @type {any} */ x) => /closeDecl\.list\[/.test(String(x.path))), []);
   assert.equal(listMatchesClose(r.closeDecl).ok, true);
 });
 
-test('a claim on a place the run may change is dropped at $0: no red, the rule is Not checked with the path named', async () => {
-  const r = await draft([{ line: 1, rule: 1, path: 'src/sum.js' }]);
-  assert.equal(r.ok, true, 'a wrong claim is never a red');
+test('a rule that names a place the run may change is not kept: Not checked, never built', async () => {
+  const r = await draftRule('keep the comment at the top of src/sum.js');
+  assert.equal(r.ok, true);
   const row = r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule');
   assert.equal(row.state, 'not-checked');
-  assert.match(row.reason, /src\/sum\.js is a place the run may change/);
+  assert.equal(row.fence, undefined);
 });
 
 test('a malformed fenceKept (not {line, rule, path}) is refused at signing, never signed', () => {

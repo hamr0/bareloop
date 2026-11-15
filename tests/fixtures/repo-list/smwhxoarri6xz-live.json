@@ -1,0 +1,186 @@
+{
+ "note": "session smwhxoarri6xz (live patient bareloop-live-sum, run mwhvvvap): the real job, write fence, drafted stages and the drafter's own fenceKept/refused claims; listing = the patient's tracked files incl. three of its tracked .bareloop/ files",
+ "jobLines": [
+  {
+   "n": 1,
+   "text": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass",
+   "rule": "don't edit test/; no new dependencies at all; keep the comment at the top of src/sum.js",
+   "rules": [
+    "don't edit test/",
+    "no new dependencies at all",
+    "keep the comment at the top of src/sum.js"
+   ]
+  }
+ ],
+ "writeScope": [
+  "src/"
+ ],
+ "stages": [
+  {
+   "name": "changed-from-seed",
+   "kind": "files-changed",
+   "params": {
+    "requireNonEmpty": true,
+    "allowPrefixes": [
+     "src/"
+    ]
+   }
+  },
+  {
+   "name": "sum-tests-green",
+   "kind": "command-exit",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "cmd": "node",
+    "args": [
+     "--test",
+     "test/sum.test.js"
+    ],
+    "expectExit": 0,
+    "timeoutMs": 120000
+   }
+  },
+  {
+   "name": "sum-tests-failing",
+   "kind": "count-not-worse",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "cmd": "node",
+    "args": [
+     "--test",
+     "test/sum.test.js"
+    ],
+    "parser": {
+     "terms": [
+      {
+       "lineMatch": "^# fail (\\d+)$",
+       "capture": 1,
+       "sign": 1,
+       "aggregate": "first",
+       "region": "whole-output"
+      }
+     ]
+    },
+    "scope": {
+     "includePrefixes": [
+      "test/"
+     ]
+    },
+    "direction": "lower-is-better",
+    "baseline": 0,
+    "timeoutMs": 120000
+   }
+  },
+  {
+   "name": "sum-tests-executed",
+   "kind": "count-not-worse",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "cmd": "node",
+    "args": [
+     "--test",
+     "test/sum.test.js"
+    ],
+    "parser": {
+     "terms": [
+      {
+       "lineMatch": "^# tests (\\d+)$",
+       "capture": 1,
+       "sign": 1,
+       "aggregate": "first",
+       "region": "whole-output"
+      }
+     ]
+    },
+    "scope": {
+     "includePrefixes": [
+      "test/"
+     ]
+    },
+    "direction": "higher-is-better",
+    "baseline": "seed",
+    "timeoutMs": 120000
+   }
+  },
+  {
+   "name": "no-suppressions",
+   "kind": "pattern-absent-in-diff",
+   "params": {
+    "patterns": [
+     {
+      "id": "ts-ignore",
+      "regex": "@ts-ignore"
+     },
+     {
+      "id": "ts-expect-error",
+      "regex": "@ts-expect-error"
+     },
+     {
+      "id": "ts-nocheck",
+      "regex": "@ts-nocheck"
+     },
+     {
+      "id": "eslint-disable",
+      "regex": "eslint-disable"
+     },
+     {
+      "id": "any",
+      "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+     },
+     {
+      "id": "any-star",
+      "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+     },
+     {
+      "id": "cast",
+      "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+     }
+    ],
+    "extensions": [
+     ".js",
+     ".mjs",
+     ".cjs"
+    ]
+   }
+  }
+ ],
+ "refused": [
+  {
+   "line": 1,
+   "rule": 3,
+   "reason": "The rule asks that the comment at the top of src/sum.js be kept. No kind in the catalogue can look inside a file or compare its comment across the change, so nothing mechanical can decide it \u2014 you would have to look at the file yourself at Accept."
+  }
+ ],
+ "fenceKept": [
+  {
+   "line": 1,
+   "rule": 1,
+   "path": "test"
+  },
+  {
+   "line": 1,
+   "rule": 2,
+   "path": "package.json"
+  },
+  {
+   "line": 1,
+   "rule": 3,
+   "path": ".bareloop/wt/smw6lfgjqkal1/src/sum.js"
+  }
+ ],
+ "guardLines": null,
+ "files": [
+  "package.json",
+  "src/sum.js",
+  "test/sum.test.js",
+  ".bareloop/wt/smw6lfgjqkal1/gate-audit.jsonl",
+  ".bareloop/wt/smw6lfgjqkal1/package.json",
+  ".bareloop/wt/smw6lfgjqkal1/src/sum.js"
+ ]
+}

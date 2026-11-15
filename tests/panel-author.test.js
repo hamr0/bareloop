@@ -108,7 +108,7 @@ const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...over
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  jobText: 'fix things\n~ no new deps\ntsc clean',
+  jobText: 'fix things\n~ leave package.json alone\ntsc clean',
   inputs: `repo: ${source}`,
   destination: 'src/',
   capUsd: 2,
@@ -568,7 +568,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.equal(shown.text, PLAN_FOOTER);
   // a repo job's confirm turn plans the goal only (Addendum 2026-11-15 (d)): no AI check is drafted onto a line; the card is the job's rows, the `$ [default]` guards and the fence
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
-    [[1, 'fix things', 'no new deps', []], [2, 'tsc clean', '', []]]);
+    [[1, 'fix things', 'leave package.json alone', []], [2, 'tsc clean', '', []]]);
   assert.ok(shown.plan.loose.length > 0 && shown.plan.loose.every((c) => c.by === 'default'), 'the real protections are `$ [default]` rows');
   assert.deepEqual(shown.plan.alwaysOn, []);
 
@@ -1231,7 +1231,7 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
     return fakeAuthorFn()();
   };
   const sessionsRoot = tmp('panel-author-sess-q-');
-  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('unused'); },
@@ -1261,13 +1261,13 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
   assert.equal(legs.length, 2, 'the draft ran again, once');
   assert.equal(legs[1].offerQuestions, false, 'the redraft may not ask');
   assert.equal(legs[1].priorCalls, 1, 'the first leg\'s spend is carried so the one cap still binds');
-  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'no new deps; only the date tests, not the rest']],
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'leave package.json alone; only the date tests, not the rest']],
     'word for word (newlines folded to a space), joined to an existing rule with "; "');
-  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: no new deps; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: leave package.json alone; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
   const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1);
-  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
+  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'leave package.json alone; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
   const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'signed with the spec');
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'leave package.json alone; only the date tests, not the rest'], 'signed with the spec');
   const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8');
   assert.match(log, /questions-dropped/, 'a dropped question is logged');
 });
@@ -1286,7 +1286,7 @@ test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES 
     return fakeAuthorFn()();
   };
   const sessionsRoot = tmp('panel-author-sess-try3-');
-  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-replace', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-replace', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('unused'); },
@@ -1297,9 +1297,9 @@ test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES 
   assert.equal(session.signPrepare().ok, true);
   await untilTrue(() => session.state.pendingAsk?.kind === 'answer');
   const say = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
-  assert.equal(session.state.pendingAsk.replaces, 'no new deps', 'the ask carries the old words of the rule it replaces');
-  assert.match(say(), /which dependencies\? This replaces: no new deps/);
-  assert.match(session.state.pendingAsk.box.line, /About job line 2.*This replaces: no new deps/);
+  assert.equal(session.state.pendingAsk.replaces, 'leave package.json alone', 'the ask carries the old words of the rule it replaces');
+  assert.match(say(), /which dependencies\? This replaces: leave package.json alone/);
+  assert.match(session.state.pendingAsk.box.line, /About job line 2.*This replaces: leave package.json alone/);
   session.send('pin every dependency');
   await untilTrue(() => /\(2 of 2\)/.test(say()));
   assert.equal(session.state.pendingAsk.adds, true);
@@ -1313,7 +1313,7 @@ test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES 
   const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
   assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'pin every dependency']);
   const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'try3-question');
-  assert.deepEqual(log.map((e) => [e.line, e.rule ?? null, e.new ?? null, e.how, e.ruleText ?? null]), [[2, 1, null, 'replaced', 'no new deps'], [1, null, true, 'added', null]]);
+  assert.deepEqual(log.map((e) => [e.line, e.rule ?? null, e.new ?? null, e.how, e.ruleText ?? null]), [[2, 1, null, 'replaced', 'leave package.json alone'], [1, null, true, 'added', null]]);
   assert.equal(log[0].answer, 'pin every dependency');
 });
 
@@ -1549,6 +1549,10 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   });
   for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
   assert.equal(session.signPrepare().ok, true);
+  // `keep it small` names no repo path, so the repo flow asks about it like a rubric rule (the one check block); the person answers Drop it
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'answer'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.match(String(session.state.pendingAsk?.question), /Your line 1 says "keep it small"\. I can't check this\. Drop it\?/);
+  assert.deepEqual(session.send('', 'drop'), { ok: true });
   for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
   assert.equal(session.state.phase, 'prepared', String(session.state.error));
   // the SAME structure as the rubric card (one renderer): per line its `› check` rows with tags, then "other checks" (the `$` guards and fence), then the "Not checked" fold with each rule as `line N: "<rule>" — <reason>` tagged [you]
@@ -1559,7 +1563,7 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   assert.match(line.checks[1].name, /^"do not touch package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
   assert.deepEqual(line.refused, [], 'a Not checked rule is told in the Not checked section, as on the rubric card');
   assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']], 'other checks: the `$` rows');
-  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — no check code can prove keeps this rule — you judge it at Accept']);
+  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — You chose to leave it Not checked, so you judge it at Accept.']);
   assert.equal(plan.notCheckedBy[plan.notChecked[0]], 'you');
   assert.deepEqual(plan.alwaysOn, []);
   // the CLI print draws the same rows
@@ -1577,7 +1581,7 @@ async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ sig
   const g = fakeDeclaration().stages;
   const decl = { stages: o.only ? [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[2]] : [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
   let n = 0;
-  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ keep it small' }), {
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ leave package.json alone' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('never called'); },
@@ -1605,7 +1609,7 @@ test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its 
   assert.deepEqual(spec.closeDecl.stages.map((s) => s.name).filter((x) => x.startsWith('verdict')), ['verdict']);
   assert.equal(spec.closeDecl.list.some((x) => x.key === 'S.verdict-2'), false);
   const card = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
-  assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict']);
+  assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict', 'L1.~1']);
   assert.equal(session.state.messages.filter((m) => m.kind === 'plan').length, 1);
 });
 
@@ -1618,7 +1622,7 @@ test('Drop refused by the gates: plain words, and the plan, the spec file and th
   assert.match(r.error, /^Dropping that check is refused: /);
   assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
   assert.equal(session.state.specHash, 'hash1');
-  assert.deepEqual(session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan.lines[0].checks.map((c) => c.key), ['S.verdict', 'S.verdict-2']);
+  assert.deepEqual(session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan.lines[0].checks.map((c) => c.key), ['S.verdict', 'S.verdict-2', 'L1.~1']);
   assert.equal((await session.dropStage('J.$guard.changed-from-seed')).refused, 'bad-row');
   assert.equal((await session.dropStage('S.nope')).refused, 'bad-row');
 });
