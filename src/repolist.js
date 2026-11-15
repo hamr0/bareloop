@@ -2,17 +2,14 @@
 // from the person's `~` rules, the drafter's work stages, the mandatory guards and the write fence, and from nothing else. A `~` rule shows as kept in ONE case only: the drafter said the write fence
 // keeps it and CODE proved it ($0, from the repo listing and the signed write scope). Every other rule is Not checked, with a reason code writes. No AI link between a stage and a rule exists, so none is shown.
 // Pure; no IO. (src/checkblock.js is rubric-only and is not bent for this.)
-import { lineRules, guardKeyOf, FENCE_KEY } from './rubricstep.js';
+import { lineRules, guardKeyOf, FENCE_KEY, stageKeyOf, stageNameOfKey } from './rubricstep.js';
+export { stageKeyOf, stageNameOfKey };
 import { globToPrefix } from './validate.js';
 
 /** the reason of a `~` rule nothing code can prove keeps */
 export const NO_CHECK_WORDS = 'no check code can prove keeps this rule — you judge it at Accept';
 /** the key of a `~` rule row: line, then the rule's number */
 export const ruleKeyOf = (/** @type {number} */ n, /** @type {number} */ k) => `L${n}.~${k}`;
-/** the key of an `!` work-stage row */
-export const stageKeyOf = (/** @type {string} */ name) => `S.${name}`;
-/** the stage a row key names, or '' @param {unknown} key @returns {string} */
-export const stageNameOfKey = (key) => (typeof key === 'string' && key.startsWith('S.') ? key.slice(2) : '');
 
 /** @param {string} p a path as the drafter wrote it @returns {string} */
 const cleanPath = (p) => String(p).trim().replace(/^\.\//, '').replace(/\/+$/, '');

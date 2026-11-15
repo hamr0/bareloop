@@ -101,6 +101,7 @@
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
 import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
+import { buildRepoRows } from './repolist.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
@@ -936,11 +937,21 @@ export async function authorCloseForJob({
     ...(authored.declaration.picks?.length ? { picks: structuredClone(authored.declaration.picks) } : {}),
     // the one check list's final rows (no words), signed with the close: what each row ended as, and the part that carries it
     ...(Array.isArray(authored.ledger) && authored.ledger.length ? { list: structuredClone(authored.ledger) } : {}),
+    // the drafter's fence claims, as written (line, rule, path only): code proves each one when it builds the rows below
+    ...(authored.declaration.fenceKept?.length ? { fenceKept: authored.declaration.fenceKept.map((/** @type {any} */ c) => ({ line: c.line, rule: c.rule, path: String(c.path) })) } : {}),
     // the lines the always-on guards cover (names and numbers only, nothing free-text)
     ...(authored.declaration.guardLines?.length
       ? { guardLines: authored.declaration.guardLines.map((/** @type {any} */ g) => ({ guard: g.guard, lines: [...g.lines] })) }
       : {}),
   };
+
+  // A repo job signs its list too (Addendum 2026-11-15 (d)): rows built from the declaration by code, a `~` rule kept only when the fence claim is proven against the listing and the write scope
+  if (closeDecl.list === undefined && Array.isArray(jobLines) && jobLines.length > 0 && !closeDecl.stages.some((/** @type {any} */ s) => s && s.kind === 'rubric-step')) {
+    closeDecl.list = buildRepoRows({
+      jobLines, stages: closeDecl.stages, refused: closeDecl.refused ?? null, fenceKept: closeDecl.fenceKept ?? null,
+      guardNames: classGuards({ verdictType: picked, lang }).map((g) => g.name), writeScope, files: Array.isArray(seeds?.files) ? seeds.files : null,
+    });
+  }
 
   return {
     ok: true,

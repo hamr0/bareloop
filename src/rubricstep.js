@@ -904,7 +904,7 @@ export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
     const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
     // a `prose` row is said by its own reason alone ("line N: what the text says — you judge it at Accept")
-    if (r.kind === 'prose') return { text: `line ${r.line}: ${r.reason}`, ...by };
+    if (r.kind === 'prose' || (r.kind === 'stage' && !Number.isInteger(r.rule))) return { text: `line ${r.line}: ${r.reason}`, ...by };
     if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
     return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
@@ -927,7 +927,9 @@ export function refusedOf(closeDecl) {
   const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor' && !notApplicable(r)).map((/** @type {any} */ r) => ({
     line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(['you', 'agent', 'default'].includes(r.by) ? { by: r.by } : {}), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
   }));
-  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
+  // a line-level refusal a repo job's list already holds as its own `!` Not checked row (same line, same reason) is not told twice
+  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule))
+    || (!Number.isInteger(r.rule) && rows.some((x) => x.kind === 'stage' && x.line === r.line && x.reason === r.reason));
   return [...rows, ...old.filter((/** @type {any} */ r) => !seen(r)).map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }))];
 }
 
@@ -1010,6 +1012,9 @@ export const carriesOneList = (closeDecl) => isRec(closeDecl) && Array.isArray(c
 export const guardKeyOf = (name) => `J.$guard.${name}`;
 /** the guard a row key names, or '' @param {unknown} key @returns {string} */
 export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWith('J.$guard.') ? key.slice('J.$guard.'.length) : '');
+/** the key of a repo job's `!` work-stage row (Addendum 2026-11-15 (d)) and the stage a key names, or '' */
+export const stageKeyOf = (/** @type {string} */ name) => `S.${name}`;
+export const stageNameOfKey = (/** @type {unknown} */ key) => (typeof key === 'string' && key.startsWith('S.') ? key.slice(2) : '');
 /** the words of a text line's `prose` row: the person judges what the text says at Accept (the same words the stage-derived line always used) */
 export const PROSE_WORDS = 'what the text says — you judge it at Accept';
 /** the key of the job-level write fence row (the one list, hamr 2026-11-15: the fence is a `$` row like every other rule) */
@@ -1137,8 +1142,10 @@ export function listMatchesClose(closeDecl) {
   // a job-level guard row (line 0) points at a guard STAGE the close runs, by name; it has no part
   const stageNames = stages.filter((/** @type {any} */ st) => isRec(st)).map((/** @type {any} */ st) => st.name);
   const guardBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'guard' && r.state === 'built' && !stageNames.includes(guardNameOfKey(r.key)));
-  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard' && r.kind !== 'fence');
-  const bad = [...guardBad, ...built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])))];
+  // a repo job's rows (Addendum 2026-11-15 (d)): an `!` stage row names a stage the close runs; a `~` rule row the fence keeps points at no part (`fence` holds the path)
+  const stageBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'stage' && r.state === 'built' && !stageNames.includes(stageNameOfKey(r.key)));
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard' && r.kind !== 'fence' && r.kind !== 'stage' && !(r.kind === 'rule' && typeof r.fence === 'string'));
+  const bad = [...guardBad, ...stageBad, ...built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])))];
   const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
   const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))
     .filter(({ p }) => isRec(p) && (p.class === 'countable' || p.class === 'fact'))
