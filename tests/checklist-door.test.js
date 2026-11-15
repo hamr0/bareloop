@@ -46,14 +46,16 @@ test('panel door: the list is built once with its call, every row is in the draf
   });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   // the model's own plan is the goal only; the card draws the block's rows (hamr 2026-11-12, session smwe2qz5g3xrq: it used to show none of them)
-  assert.deepEqual(session.state.pendingAsk.plan.checkItems.map((/** @type {any} */ c) => c.text).filter((/** @type {string} */ t) => /^fact · /.test(t)), ['fact · release heading — phrase, must say "## [", quoted from "Changelog"'], 'the confirm card draws the check block\'s rows');
+  // pick A (hamr 2026-11-15, 545f13f8): the phrase "## [" is in no job text, so it is NOT job-derived: no fact row is built on the card; it waits under Suggested with its Add
+  assert.deepEqual(session.state.pendingAsk.plan.checkItems.map((/** @type {any} */ c) => c.text).filter((/** @type {string} */ t) => /^fact · /.test(t)), [], 'no fact row is job-derived on the confirm card');
   const items = session.state.pendingAsk.plan.checkItems;
   assert.equal(items.filter((/** @type {any} */ c) => c.key === 'L1.$floor' && c.by === 'default').length, 1, 'the line\'s floor row is on the card');
   assert.equal(items.filter((/** @type {any} */ c) => c.key === 'J.$guard.changed-from-seed' && c.by === 'default').length, 1, 'the guard is one job-level row on the card');
   assert.equal(items.filter((/** @type {any} */ c) => c.key === 'J.$fence').length, 1, 'the write fence is one job-level row');
-  assert.equal(items.length, 4, 'the fact, the floor, the guard and the fence: no row the list does not hold');
+  assert.equal(items.filter((/** @type {any} */ c) => c.key === 'L1.$cited' && c.by === 'default').length, 1, 'with no job-derived fact the line is a text line: its `$` cited default shows instead of the fact');
+  assert.equal(items.length, 4, 'the cited default, the floor, the guard and the fence: no row the list does not hold');
   // N-1: the result count of 1 is not in the job line; the fact on its line is built, so code can build it and it waits under Suggested (with its Add), not checked
-  assert.deepEqual(session.state.pendingAsk.plan.suggested.map((/** @type {any} */ x) => x.text), ['fact · results — exactly 1 result, each quoted from "Changelog"']);
+  assert.deepEqual(session.state.pendingAsk.plan.suggested.map((/** @type {any} */ x) => x.text), ['fact · release heading — phrase, must say "## [", quoted from "Changelog"']); // the result count of 1 no longer waits here: with no job-derived fact the line is a text line (`$` cited default shown) and the count is not built
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
@@ -67,8 +69,8 @@ test('panel door: the list is built once with its call, every row is in the draf
   const final = rows.filter((e) => e.phase === 'final');
   assert.ok(built.length > 0 && built.length === final.length, 'each row at build and at the end');
   assert.ok(built.every((e) => e.key && e.rowKind && e.from && e.by && e.state));
-  assert.equal(final.find((e) => e.key === 'L1.fact.release heading').state, 'built');
-  assert.equal(final.find((e) => e.rowKind === 'count').state, 'suggested');
+  assert.equal(final.find((e) => e.key === 'L1.fact.release heading').state, 'suggested'); // pick A: not job-derived, so it is offered under Suggested
+  assert.equal(final.find((e) => e.rowKind === 'count').state, 'not-checked'); // pick A: with no job-derived fact on the line the results count is no longer built (a direct result of the ruling)
   const tries = log.filter((e) => e.kind === 'ledger-try');
   assert.equal(tries.length, 2);
   assert.deepEqual(tries[0].refused.map((x) => x.op), ['add']);
