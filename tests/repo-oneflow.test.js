@@ -7,23 +7,34 @@ import { readFileSync } from 'node:fs';
 import { CheckBlock, REASON } from '../src/checkblock.js';
 import { questionsOfBlock, applyChoices } from '../src/blockasks.js';
 import { authorCloseForJob } from '../src/authorjob.js';
+import { FENCE_POINT_TOOL, FENCE_POINT_SYSTEM, runFencePoint } from '../src/fencepointcall.js';
 import { validateCloseDecl } from '../src/declaredclose.js';
 
 const live = JSON.parse(readFileSync(new URL('./fixtures/repo-list/smwhxoarri6xz-live.json', import.meta.url), 'utf8'));
 const FILES = live.files.filter((/** @type {string} */ f) => !f.startsWith('.bareloop/'));
 const SURVEY = { state: 'PRESENT', reason: null, calls: [], facts: { language: 'javascript', runner: 'node --test', sourcePaths: ['src'], testPaths: [], extensions: ['.js'] }, meta: { bytes: 1, rounds: 1, bounded: false, recovered: false, error: null } };
 
-/** @param {{asks?: boolean, files?: string[]|null}} [o] */
-function liveBlock({ asks = true, files = FILES } = {}) {
+/** the AI's pointer for rule 1 of the live job (`don't edit test/`), as the row-edit door carries it */
+const POINT_TEST = { op: 'fence', line: 1, rule: 1, path: 'test' };
+/** a fake model boundary that delivers the given edits through the pointing call's tool (what a real model does) */
+const pointer = (/** @type {any[]} */ edits, /** @type {any[]} */ seen = []) => async (/** @type {any[]} */ m, /** @type {any[]} */ tools) => {
+  seen.push(m.at(-1).content);
+  await tools.find((t) => t.name === FENCE_POINT_TOOL).execute({ edits });
+  return { text: '', error: null, msgs: [], metrics: { costUsd: 0.001, unpricedRounds: 0 } };
+};
+
+/** @param {{asks?: boolean, files?: string[]|null, point?: any[]}} [o] */
+function liveBlock({ asks = true, files = FILES, point = [POINT_TEST] } = {}) {
   const b = new CheckBlock({ texts: {}, labels: [], asks, repo: { files, writeScope: live.writeScope } });
   b.setGuards(['changed-from-seed', 'no-suppressions'], live.writeScope);
   b.fromJob(live.jobLines);
   b.reconcile();
+  if (point.length) { b.applyDelta({ label: 'pre:fence-point', pre: true, edits: point }); b.reconcile(); }
   return b;
 }
 const rule = (/** @type {CheckBlock} */ b, /** @type {number} */ k) => b.rows.find((r) => r.kind === 'rule' && r.rule === k);
 
-test('the live job: rule 1 is kept by the fence (test/ is in the words), rules 2 and 3 are QUESTIONS, never falsely kept', () => {
+test('the live job: rule 1 is kept by the fence (the AI pointed at test/, the words name it), rules 2 and 3 are QUESTIONS, never falsely kept', () => {
   const b = liveBlock();
   assert.deepEqual([rule(b, 1)?.state, rule(b, 1)?.fence], ['built', 'test']);
   assert.equal(rule(b, 2)?.state, 'not-checked');
@@ -36,22 +47,44 @@ test('the live job: rule 1 is kept by the fence (test/ is in the words), rules 2
   assert.deepEqual(b.signedRows().filter((r) => r.kind === 'rule').map((r) => r.key), ['L1.~1', 'L1.~2', 'L1.~3']);
 });
 
-test('the proof reads the PERSON\'s words, never a path the AI pointed at: the listing path must be in the rule text', () => {
-  const b = liveBlock();
-  assert.equal(b.fenceKeeps('no new dependencies at all'), null, 'package.json is not in those words');
-  assert.equal(b.fenceKeeps("don't edit test/"), 'test');
-  assert.equal(b.fenceKeeps('leave package.json alone.'), 'package.json');
-  assert.equal(b.fenceKeeps('do not touch ./package.json'), 'package.json');
-  assert.equal(b.fenceKeeps('keep the comment at the top of src/sum.js'), null, 'src/sum.js is a place the run may change');
-  assert.equal(b.fenceKeeps('keep package.json and src/sum.js as they are'), null, 'one named path is inside the fence: not kept');
-  assert.equal(b.fenceKeeps('keep the tests short'), null, 'a folder word without its slash is not a path');
-  assert.equal(b.fenceKeeps("don't edit test/sum.test.js"), 'test/sum.test.js');
+test('the proof: a path the AI points at must be on the listing, in the rule\'s OWN words, and outside the write scope', () => {
+  const b = liveBlock({ point: [] });
+  assert.equal(b.provesFence('no new dependencies at all', 'package.json'), false, 'package.json is not in those words');
+  assert.equal(b.provesFence("don't edit test/", 'test'), true);
+  assert.equal(b.provesFence('leave package.json alone.', 'package.json'), true);
+  assert.equal(b.provesFence('do not touch ./package.json', 'package.json'), true);
+  assert.equal(b.provesFence('keep the comment at the top of src/sum.js', 'src/sum.js'), false, 'src/sum.js is a place the run may change');
+  assert.equal(b.provesFence('keep package.json and src/sum.js as they are', 'package.json'), false, 'one named path is inside the fence: not kept');
+  assert.equal(b.provesFence('keep the tests short', 'test'), false, 'a folder word without its slash is not a path');
+  assert.equal(b.provesFence("don't edit test/sum.test.js", 'test/sum.test.js'), true);
+  assert.equal(b.provesFence("don't edit test/", 'lockfile.json'), false, 'a path not on the listing');
 });
 
-test('a tracked bareloop store path never keeps a rule (the old leak): the listing without it, the words name no path', () => {
-  const b = liveBlock({ files: live.files });
-  // the patient\'s own `.bareloop/wt/.../src/sum.js` is only a leaked path if it is OFFERED; code still never keeps a rule from words that name no outside path
-  assert.equal(b.fenceKeeps('keep the comment at the top of src/sum.js'), null);
+test('code never keeps a rule the AI did not point at: "the tests in test/ must pass" names test/ outside the fence, but with no pointer it is a question', () => {
+  const b = liveBlock({ point: [] });
+  b.rows.find((r) => r.kind === 'rule' && r.rule === 1).text = 'the tests in test/ must pass';
+  b.reconcile();
+  assert.equal(rule(b, 1)?.state, 'not-checked');
+  assert.equal(rule(b, 1)?.fence, undefined);
+  assert.deepEqual(questionsOfBlock(b).map((a) => a.rule), [1, 2, 3]);
+});
+
+test('a pointer that fails the proof is refused alone with its reason and the rule is a question; the other pointers stand', () => {
+  const b = liveBlock({ point: [] });
+  const rec = b.applyDelta({ pre: true, edits: [{ op: 'fence', line: 1, rule: 2, path: 'package.json' }, { op: 'fence', line: 1, rule: 3, path: 'src/sum.js' }, { op: 'fence', line: 1, rule: 1, path: 'nope.txt' }, POINT_TEST, { op: 'fence', line: 9, rule: 1, path: 'test' }] });
+  b.reconcile();
+  assert.deepEqual(rec.edits.map((e) => e.accepted), [false, false, false, true, false]);
+  assert.match(rec.edits[0].refusedBecause, /do not name package\.json/);
+  assert.match(rec.edits[2].refusedBecause, /not on the repo listing/);
+  assert.deepEqual([rule(b, 1)?.state, rule(b, 2)?.state, rule(b, 3)?.state], ['built', 'not-checked', 'not-checked']);
+  assert.deepEqual(questionsOfBlock(b).map((a) => a.rule), [2, 3]);
+});
+
+test('a tracked bareloop store path never keeps a rule (the old leak): a pointer at it is refused', () => {
+  const b = liveBlock({ files: FILES, point: [] });
+  const rec = b.applyDelta({ pre: true, edits: [{ op: 'fence', line: 1, rule: 3, path: '.bareloop/wt/smw6lfgjqkal1/src/sum.js' }] });
+  assert.equal(rec.edits[0].accepted, false);
+  assert.equal(rule(b, 3)?.state, 'not-checked');
 });
 
 test('no listing read: nothing is kept', () => {
@@ -59,12 +92,12 @@ test('no listing read: nothing is kept', () => {
   assert.equal(rule(b, 1)?.state, 'not-checked');
 });
 
-test('Drop it leaves the rule Not checked with REASON.left; own words are re-proved (one in, one out); Agree is not offered', () => {
+test('Drop it leaves the rule Not checked with REASON.left; own words replace the rule (one in, one out) and, not pointed at by the AI, stay Not checked; Agree is not offered', () => {
   const b = liveBlock();
   const [q2, q3] = questionsOfBlock(b);
   assert.equal(b.open.find((q) => q.key === q2.key)?.offers.agree, false);
   assert.deepEqual(applyChoices(b, [{ key: q2.key, choice: 'rule', text: 'do not change package.json' }, { key: q3.key, choice: 'drop' }]), []);
-  assert.deepEqual([rule(b, 2)?.state, rule(b, 2)?.fence, rule(b, 2)?.text], ['built', 'package.json', 'do not change package.json']);
+  assert.deepEqual([rule(b, 2)?.state, rule(b, 2)?.fence, rule(b, 2)?.text, rule(b, 2)?.reason], ['not-checked', undefined, 'do not change package.json', REASON.nothingOnPage]);
   assert.deepEqual([rule(b, 3)?.state, rule(b, 3)?.reason], ['not-checked', REASON.left]);
   assert.equal(b.open.length, 0);
   assert.deepEqual(b.jobLinesView(live.jobLines)[0].rules, ["don't edit test/", 'do not change package.json', 'keep the comment at the top of src/sum.js']);
@@ -89,7 +122,7 @@ test('authorCloseForJob on the live job: the questions are the two rules, answer
   const jobLines = structuredClone(live.jobLines);
   const r = await authorCloseForJob({
     verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
-    jobLines, writeScope: live.writeScope,
+    jobLines, writeScope: live.writeScope, fenceGenerate: pointer([POINT_TEST]),
     scoutFn: async () => SURVEY, listingFn: async () => ({ stop: null, files: live.files.filter((/** @type {string} */ f) => !f.startsWith('.bareloop/')) }),
     answerQuestions: async ({ questions }) => {
       seen.push(...questions);
@@ -147,7 +180,7 @@ test('a drafter that still writes fenceKept and a rule-level refused (the live r
   const jobLines = structuredClone(live.jobLines);
   const r = await authorCloseForJob({
     verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
-    jobLines, writeScope: live.writeScope,
+    jobLines, writeScope: live.writeScope, fenceGenerate: pointer([POINT_TEST]),
     scoutFn: async () => SURVEY, listingFn: async () => ({ stop: null, files: FILES }),
     authorFn: async () => ({ ok: true, declaration: { stages: live.stages, fenceKept: live.fenceKept, refused: live.refused }, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: null, ledger: null }),
   });
@@ -183,4 +216,51 @@ test('a line the drafter refused (no rule named) is one Not checked `!` row on t
   assert.equal(b.rows.filter((r) => r.kind === 'stage' && r.refusal).length, 1, 'a rule-level refusal makes no row');
   assert.equal(rule(b, 1)?.state, 'built', 'and does not set the rule\'s state or reason');
   assert.equal(b.rowChoice('L1.refused.1', 'drop').ok, false, 'a refusal is no check: nothing to drop');
+});
+
+const callFlow = (/** @type {any} */ o) => authorCloseForJob({
+  verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
+  jobLines: structuredClone(live.jobLines), writeScope: live.writeScope,
+  scoutFn: async () => SURVEY, listingFn: async () => ({ stop: null, files: FILES }),
+  authorFn: async () => ({ ok: true, declaration: { stages: live.stages }, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: null, ledger: null }),
+  ...o,
+});
+
+test('the pointing call: one call before the asks, its user text names each rule\'s words and the outside-scope paths only, its cost is booked through onCall', async () => {
+  /** @type {string[]} */ const seen = []; /** @type {any[]} */ const booked = []; /** @type {string[]} */ const phases = [];
+  const r = await callFlow({ fenceGenerate: pointer([POINT_TEST], seen), onCall: (/** @type {any} */ c) => booked.push(c), onPhase: (/** @type {string} */ p) => phases.push(p) });
+  assert.equal(r.ok, true);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], ["THE RULES (the person's own words)", "line 1 rule 1: don't edit test/", 'line 1 rule 2: no new dependencies at all', 'line 1 rule 3: keep the comment at the top of src/sum.js', '', 'PATHS OUTSIDE THE WRITE SCOPE (src/):', '- package.json', '- test/sum.test.js'].join('\n'));
+  assert.deepEqual(booked.map((c) => c.label), ['fence-point']);
+  assert.ok(phases.indexOf('fence-point') >= 0 && phases.indexOf('fence-point') < phases.indexOf('author'), 'point, then asks, then the draft');
+  assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).state, 'built');
+});
+
+test('the pointing call is conditional: no `~` rules, or no path outside the fence, or no model boundary = no call (a rule is then a question)', async () => {
+  let n = 0;
+  const counting = async () => { n += 1; return { text: '', error: null, msgs: [], metrics: { costUsd: 0, unpricedRounds: 0 } }; };
+  await callFlow({ fenceGenerate: counting, jobLines: [{ n: 1, text: 'fix the bug', rules: [], rule: '' }] });
+  await callFlow({ fenceGenerate: counting, listingFn: async () => ({ stop: null, files: ['src/sum.js'] }) });
+  assert.equal(n, 0);
+  const r = await callFlow({});
+  assert.equal(r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule' && x.rule === 1).state, 'not-checked', 'no pointing seam: rule 1 is not kept by words alone');
+});
+
+test('a failed pointing call never stops the draft: the rules go to the questions, the reason is logged, and the call is booked', async () => {
+  /** @type {any[]} */ const done = []; /** @type {any[]} */ const asked = [];
+  const bad = async () => ({ text: 'not a tool call', error: null, msgs: [], metrics: { costUsd: 0.001, unpricedRounds: 0 } });
+  const r = await callFlow({
+    fenceGenerate: bad, onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { if (p === 'fence-point-done') done.push(d); },
+    answerQuestions: async (/** @type {any} */ { questions }) => { asked.push(...questions); return { jobLines: structuredClone(live.jobLines), answers: { 1: 'x' }, left: [], picks: [], choices: questions.map((/** @type {any} */ q) => ({ key: q.key, choice: 'drop' })) }; },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(typeof done[0].reason, 'string');
+  assert.deepEqual(asked.map((q) => q.rule), [1, 2, 3]);
+});
+
+test('the pointing call\'s system text and schema are the signed ones (one op, fence; no counts, no readings)', () => {
+  assert.match(FENCE_POINT_SYSTEM, /^You read the "~" rules of a job and point at the files a rule asks to leave as they are/);
+  assert.match(FENCE_POINT_SYSTEM, /Send an edit only for a rule whose own words say a listed file or folder stays as it is\./);
+  assert.equal(typeof runFencePoint, 'function');
 });

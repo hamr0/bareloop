@@ -34,6 +34,12 @@ import { ANTH_CFG } from './helpers.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 
+/** a fake pointing-call model boundary: the AI points the given edits at repo files (src/fencepointcall.js); code proves each */
+const pointAt = (/** @type {any[]} */ edits) => async (/** @type {any} */ _m, /** @type {any[]} */ tools) => {
+  await tools.find((t) => t.name === 'submit_edits').execute({ edits });
+  return { text: '', error: null, msgs: [], metrics: { costUsd: 0, unpricedRounds: 0 } };
+};
+
 /** @type {string[]} */
 const tmpDirs = [];
 test.after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
@@ -108,7 +114,7 @@ const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...over
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  jobText: 'fix things\n~ leave package.json alone\ntsc clean',
+  jobText: 'fix things\ntsc clean',
   inputs: `repo: ${source}`,
   destination: 'src/',
   capUsd: 2,
@@ -568,7 +574,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.equal(shown.text, PLAN_FOOTER);
   // a repo job's confirm turn plans the goal only (Addendum 2026-11-15 (d)): no AI check is drafted onto a line; the card is the job's rows, the `$ [default]` guards and the fence
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
-    [[1, 'fix things', 'leave package.json alone', []], [2, 'tsc clean', '', []]]);
+    [[1, 'fix things', '', []], [2, 'tsc clean', '', []]]);
   assert.ok(shown.plan.loose.length > 0 && shown.plan.loose.every((c) => c.by === 'default'), 'the real protections are `$ [default]` rows');
   assert.deepEqual(shown.plan.alwaysOn, []);
 
@@ -1225,14 +1231,14 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
         ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
         questions: [{ line: 2, question: 'which tests?' }, { line: 1, question: 'which folder?' }],
         iterations: [{ droppedQuestions: [{ reason: 'blank question', raw: {} }] }],
-        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [...(o.scout?.calls ?? []), { label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
       };
     }
     return fakeAuthorFn()();
   };
   const sessionsRoot = tmp('panel-author-sess-q-');
   const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 2, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('unused'); },
     confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
@@ -1287,7 +1293,7 @@ test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES 
   };
   const sessionsRoot = tmp('panel-author-sess-try3-');
   const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-replace', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 2, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('unused'); },
     confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
@@ -1539,7 +1545,7 @@ test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL 
   const repo = makeRepo();
   const decl = { ...fakeDeclaration(), refused: [], fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] };
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-final-card', jobText: 'fix the bug\n~ do not touch package.json\n~ keep it small' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 1, rule: 1, path: 'package.json' }]), home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-final-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('never called'); },
@@ -1582,7 +1588,7 @@ async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ sig
   const decl = { stages: o.only ? [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[2]] : [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
   let n = 0;
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ leave package.json alone' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 1, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('never called'); },
     confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),

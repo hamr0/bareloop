@@ -99,7 +99,7 @@ export function draftSeams(seen) {
 }
 export async function until(fn, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => { setTimeout(r, 10); }); } return false; }
 /** the card the tests start from (Inputs line 1 is the repo) */
-export const baseCard = ({ source = '/x', ...o } = {}) => ({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'flow-job', jobText: 'fix things\n~ leave package.json alone\ntsc clean', inputs: `repo: ${source}`, destination: 'src/', capUsd: 2, ...o });
+export const baseCard = ({ source = '/x', ...o } = {}) => ({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'flow-job', jobText: 'fix things\ntsc clean', inputs: `repo: ${source}`, destination: 'src/', capUsd: 2, ...o });
 
 // ── one listed run laid out the way a panel run is (tests/p5-startfrom.test.js `makeRun`) ──
 import { utimesSync } from 'node:fs';

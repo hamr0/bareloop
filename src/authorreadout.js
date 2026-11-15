@@ -179,6 +179,8 @@ export function phaseLine(phase, data = {}) {
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
     case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
     case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
+    case 'fence-point': return '· pointing at the files your rules keep as they are…';
+    case 'fence-point-done': return data.reason ? `· pointing failed (${data.reason}); those rules are asked about` : `· ${data.kept ?? 0} of ${data.sent ?? 0} pointer(s) proved by code`;
     case 'ledger-suggest': return '· suggesting extra checks from your input…';
     case 'ledger-built': { const rows = Array.isArray(data.rows) ? data.rows : []; const not = rows.filter((/** @type {any} */ r) => r.state === 'not-checked').length; return `· the list of checks: ${rows.length} row(s), ${not} not checked`; }
     case 'draft-ledger-try': return `·   ${data.label}: ${data.kept ?? '?'} edit(s) kept, ${(data.refused ?? []).length} refused`;

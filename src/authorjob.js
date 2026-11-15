@@ -124,6 +124,7 @@ import { scopedRules, codeScope, plainWords, obviousCheck } from './checkpick.js
 import { matchRecord, entriesFromAnswers, KEPT_WORDS } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
 import { runLedgerSuggest, ledgerRecord } from './checklist.js';
+import { runFencePoint } from './fencepointcall.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -439,7 +440,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -480,6 +481,8 @@ export async function authorCloseForJob({
   // the model boundary of the list call (a `makeLoopGenerate` bound to LEDGER_SYSTEM), rubric jobs only. ABSENT = the list is built from the look and the defaults with no suggestion call
   // (a test seam, like `pickGenerate`); the CLI and the panel always bring it.
   ledgerGenerate = null,
+  // the repo job's pointing call (src/fencepointcall.js): ONE small call BEFORE the asks that points a `~` rule at a file the write fence keeps; code proves it. ABSENT = no pointing: every unproven rule is asked
+  fenceGenerate = null,
   // 2026-11-14 (b): the note question (src/noteask.js), asked ONLY when a rubric line is facts-only; ABSENT = never asked (every older caller and test)
   noteFn = null,
   // one rule in, one rule out: called with the job lines rebuilt from the check list after an answer (the seam that shows the job text updates itself); ABSENT = nothing shows it
@@ -871,6 +874,16 @@ export async function authorCloseForJob({
     repoBlock.setListing(seeds.files);
     repoBlock.fromJob(jobLines ?? []);
     repoBlock.reconcile();
+    // point -> code proves -> asks -> draft (the rubric's order): the AI points a rule at a listing path, row edits judge it alone; only when the job has `~` rules and the listing has paths outside the fence
+    const outside = repoBlock.outsideScope();
+    if (fenceGenerate && outside.length > 0 && repoBlock.rows.some((r) => r.kind === 'rule')) {
+      onPhase('fence-point', {});
+      const fp = await runFencePoint({ jobLines: jobLines ?? [], outside, writeScope, generate: fenceGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
+      if (survey != null) { survey.calls = [...(survey.calls ?? []), ...fp.calls]; survey.raws = [...(survey.raws ?? []), ...fp.raws]; }
+      const rec = repoBlock.applyDelta({ label: 'pre:fence-point', pre: true, edits: fp.edits });
+      repoBlock.reconcile();
+      onPhase('fence-point-done', { sent: fp.edits.length, kept: rec.edits.filter((/** @type {any} */ e) => e.accepted === true).length, reason: fp.reason, refused: rec.edits.filter((/** @type {any} */ e) => e.accepted !== true).map((/** @type {any} */ e) => String(e.refusedBecause)) });
+    }
     if (answerQuestions) {
       const ar = await askRounds(repoBlock, [], answerQuestions);
       if ('stop' in ar) return ar.stop;

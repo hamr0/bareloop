@@ -73,6 +73,11 @@ export const PROMPT_REGISTERS = Object.freeze([
   // (F198 item 2), built inline inside `middle` and appended to `w.ask([...])`
   Object.freeze({ file: 'src/planrun.js', name: 'middle()\'s facts-only "The close\'s own numbers so far" block (inline template, not a const)' }),
 
+  // src/fencepointcall.js — the repo job's pointing call (a `~` rule the AI points at a file the write fence keeps; code proves it)
+  Object.freeze({ file: 'src/fencepointcall.js', name: 'FENCE_POINT_SYSTEM' }),
+  Object.freeze({ file: 'src/fencepointcall.js', name: 'FENCE_POINT_SCHEMA (property descriptions)' }),
+  Object.freeze({ file: 'src/fencepointcall.js', name: 'fencePointUserText() (inline template, not a const)' }),
+
   // src/checklist.js — the one check list of a rubric job: the list call's system text and schema descriptions, the drafter's list block, the code-written refusal words
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SYSTEM' }),
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SCHEMA (property descriptions)' }),

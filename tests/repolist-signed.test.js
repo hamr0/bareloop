@@ -36,20 +36,22 @@ test('a repo draft signs a list: the rule row Not checked, one `!` row per work 
 });
 
 /** the fixture job with its first rule's words replaced */
-async function draftRule(/** @type {string} */ words) {
+/** a fake pointing-call boundary that points rule 1 of line 1 at package.json */
+const pointAt = async (/** @type {any} */ _m, /** @type {any[]} */ tools) => { await tools.find((t) => t.name === 'submit_edits').execute({ edits: [{ op: 'fence', line: 1, rule: 1, path: 'package.json' }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0, unpricedRounds: 0 } }; };
+async function draftRule(/** @type {string} */ words, /** @type {any} */ fenceGenerate = undefined) {
   const jobLines = structuredClone(spec.jobLines);
   jobLines[0].rules = [words]; jobLines[0].rule = words;
   const declaration = { stages: spec.closeDecl.stages };
   return authorCloseForJob({
     verdictType: 'green', answers: { 1: '1. Fix the bug.' }, repoPath: '/tmp', lang: 'js', seedRef: 'x', isRepo: true,
-    jobLines, writeScope: spec.writeScope,
+    jobLines, writeScope: spec.writeScope, ...(fenceGenerate ? { fenceGenerate } : {}),
     scoutFn: async () => SURVEY, listingFn: async () => LISTING,
     authorFn: async () => ({ ok: true, declaration, seedRead: null, iterations: [], reds: [], cost: null, stop: null, genreEnv: { applied: {} }, listing: LISTING, ledger: null }),
   });
 }
 
-test('a rule that names a repo file outside the write fence, in the person\'s own words, is kept by code', async () => {
-  const r = await draftRule('do not change package.json');
+test('a rule the AI points at a repo file outside the write fence, which its own words name, is kept by code\'s proof', async () => {
+  const r = await draftRule('do not change package.json', pointAt);
   const row = r.closeDecl.list.find((/** @type {any} */ x) => x.kind === 'rule');
   assert.deepEqual([row.state, row.fence], ['built', 'package.json']);
   assert.deepEqual(validateCloseDecl(r.closeDecl, { at: 'closeDecl', verdictType: 'green', listing: LISTING.files }).reds.filter((/** @type {any} */ x) => /closeDecl\.list\[/.test(String(x.path))), []);

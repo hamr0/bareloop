@@ -979,7 +979,7 @@ test('a --source prepared from a repo whose deps ARE already installed never ref
 // ── hamr 2026-10-11: the CLI drafter is the SAME door as the panel — thinking OFF by the one default ─────────────────────
 test('the CLI drafter builds its model boundaries through makeLoopGenerate with NO thinking override, so the one default (off) applies', async () => {
   const calls = SRC.match(/makeLoopGenerate\(provider, \{[^}]*\}\)/g) ?? [];
-  assert.equal(calls.length, 4, 'the author generate, the confirm generate, the rubric list call and the rubric row-edit turn — the only drafting boundaries in this door');
+  assert.equal(calls.length, 5, 'the author generate, the confirm generate, the rubric list call, the repo pointing call and the rubric row-edit turn — the only drafting boundaries in this door');
   for (const c of calls) assert.ok(!/draftThinking/.test(c), `an override crept in: ${c}`);
   assert.ok(!/draftThinking/.test(SRC), 'authorCloseForJob is not handed a thinking value either — the library default is the single rule');
   const { makeProvider } = await import('../src/providers.js');

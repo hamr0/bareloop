@@ -24,11 +24,11 @@ async function draftWithAnswer(/** @type {(l: any[]) => any[]} */ answered, /** 
   });
 }
 
-test('an ADDED rule (a try-3 answer) is a new `~` row of the rebuilt list, Not checked unless the fence proves it', async () => {
+test('an ADDED rule (a try-3 answer) is a new `~` row of the rebuilt list, Not checked: the AI never pointed at it, so code keeps nothing', async () => {
   const r = await draftWithAnswer((l) => { l[0].rules.push('leave package.json alone'); l[0].rule = l[0].rules.join('; '); return l; }, [{ line: 1, rule: 2, path: 'package.json' }]);
   assert.equal(r.ok, true);
   const rules = r.closeDecl.list.filter((/** @type {any} */ x) => x.kind === 'rule');
-  assert.deepEqual(rules.map((/** @type {any} */ x) => [x.key, x.state, x.fence ?? null]), [['L1.~1', 'not-checked', null], ['L1.~2', 'built', 'package.json']]);
+  assert.deepEqual(rules.map((/** @type {any} */ x) => [x.key, x.state, x.fence ?? null]), [['L1.~1', 'not-checked', null], ['L1.~2', 'not-checked', null]]);
 });
 
 test('a REPLACED rule is one row, not two: the old words leave the list', async () => {

@@ -61,6 +61,7 @@ import { fetchPageText } from '../pagefetch.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
+import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
@@ -494,7 +495,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -1148,6 +1149,8 @@ export function createSession(card, deps = {}) {
     // R10 (fwd am16): the check-suggestion call's own model boundary (SUGGEST_SYSTEM, the drafter's thinking); a test that replaces the model boundary never reaches it unless it brings `deps.pickGenerate`
     const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     // the one check list's call has its own model boundary (LEDGER_SYSTEM, the drafter's thinking); like the others, a test that replaces the model boundary never reaches it unless it brings `deps.ledgerGenerate`
+    // the repo job's pointing call: its own model boundary (FENCE_POINT_SYSTEM), the drafter's thinking (off); a test that replaces the model boundary never reaches it unless it brings `deps.fenceGenerate`
+    const fenceGenerate = deps.fenceGenerate !== undefined ? deps.fenceGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: FENCE_POINT_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     const ledgerGenerate = deps.ledgerGenerate !== undefined ? deps.ledgerGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     // the row-edit turn (the drafter's reply of a rubric job, src/rowedit.js) has its own model boundary; a test that replaces `generate` need not bring one
     const editGenerate = deps.editGenerate !== undefined ? deps.editGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: ROW_EDIT_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
@@ -1296,7 +1299,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {

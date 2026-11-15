@@ -41,7 +41,7 @@ async function start(t) {
   return { base, token, H };
 }
 const card = (source) => ({
-  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'reattach-job', jobText: 'fix things\n~ leave package.json alone\ntsc clean', inputs: `repo: ${source}`,
+  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'reattach-job', jobText: 'fix things\ntsc clean', inputs: `repo: ${source}`,
   destination: 'src/', capUsd: 2,
 });
 

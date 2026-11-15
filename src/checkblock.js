@@ -29,7 +29,7 @@ import { factSentence, countSentence } from './facts.js';
 export const CARD_T = Object.freeze({ count: 'result count', cited: 'every claim is backed by a quote copied from', theInput: 'the input', numbers: 'every number in the text is in a checked quote of line', withWords: 'with the words' });
 
 /** the four row edits an AI reply may hold */
-export const EDIT_OPS = Object.freeze(['add', 'reading', 'pick', 'not-checkable']);
+export const EDIT_OPS = Object.freeze(['add', 'reading', 'pick', 'not-checkable', 'fence']);
 
 const norm = (/** @type {unknown} */ t) => String(t ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -570,32 +570,59 @@ export class CheckBlock {
     }
   }
 
-  /** a path of the repo listing the `~` rule's own words name, that the write fence keeps: it is in the person's words (whole path; a folder only as `folder/`), in the listing, and no file under it is a place the run may change. Else null. Code decides, never an AI @param {string} text @returns {string|null} */
-  fenceKeeps(text) {
+  /** the repo paths outside the write scope (the pointing call is shown these); empty when there is no listing or no fence @returns {string[]} */
+  outsideScope() {
     const files = this.repo?.files;
     const scope = this.repo?.writeScope;
-    if (!Array.isArray(files) || !Array.isArray(scope) || scope.length === 0) return null;
+    return Array.isArray(files) && Array.isArray(scope) && scope.length ? files.filter((f) => !this.inScope(f)) : [];
+  }
+
+  /** is this repo file a place the run may change? @param {string} f */
+  inScope(f) {
+    return (this.repo?.writeScope ?? []).some((s) => { const pre = String(globToPrefix(String(s))).trim().replace(/^\.\//, '').replace(/\/+$/, ''); return pre === '' || pre === '.' || pre === '/' || f === pre || f.startsWith(`${pre}/`); });
+  }
+
+  /** the listing paths (a file, or a folder written `folder/`) a text names as whole tokens @param {string} text @returns {string[]} */
+  namedPaths(text) {
+    const files = this.repo?.files;
+    if (!Array.isArray(files)) return [];
     const said = ` ${String(text).replace(/(^|[\s"'(])\.\//g, '$1')} `;
     const all = new Set(files);
     for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
     const esc = (/** @type {string} */ t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    /** @type {{p: string, at: number}[]} */
-    const found = [];
-    for (const p of all) {
-      const folder = !files.includes(p);
-      const m = new RegExp(`(?<![\\w./-])${esc(p)}${folder ? '/(?![\\w.-])' : '(?![\\w-]|\\.\\w)'}`).exec(said);
-      if (m) found.push({ p, at: m.index });
-    }
-    if (found.length === 0) return null;
-    const inScope = (/** @type {string} */ f) => scope.some((s) => { const pre = String(globToPrefix(String(s))).trim().replace(/^\.\//, '').replace(/\/+$/, ''); return pre === '' || pre === '.' || pre === '/' || f === pre || f.startsWith(`${pre}/`); });
-    for (const { p } of found) if (files.some((f) => (f === p || f.startsWith(`${p}/`)) && inScope(f))) return null;
-    return found.sort((a, b) => a.at - b.at)[0].p;
+    return [...all].filter((p) => new RegExp(`(?<![\\w./-])${esc(p)}${files.includes(p) ? '(?![\\w-]|\\.\\w)' : '/(?![\\w.-])'}`).test(said));
   }
 
-  /** a repo `~` rule: kept by the write fence when code proves it from the person's words; else the same ask the rubric flow uses (the person's Agree / Drop it / own words), Not checked when nobody can be asked @param {Row} r */
+  /**
+   * Code's proof of a fence pointer: `path` is on the listing, the rule's own words name it (whole token; a folder as `folder/`), and neither it nor any other path those words name holds a place the run may change.
+   * @param {string} text the rule's own words @param {string} path @returns {boolean}
+   */
+  provesFence(text, path) {
+    const files = this.repo?.files;
+    if (!Array.isArray(files) || this.outsideScope().length === 0) return false;
+    const p = String(path).trim().replace(/^\.\//, '').replace(/\/+$/, '');
+    const named = this.namedPaths(text);
+    if (!named.includes(p)) return false;
+    return !named.some((n) => files.some((f) => (f === n || f.startsWith(`${n}/`)) && this.inScope(f)));
+  }
+
+  /** the AI's pointer at a repo `~` rule ({op:'fence', line, rule, path}): judged ALONE; code's proof decides, the AI only points @param {any} e */
+  editFence(e) {
+    if (this.repo === null) return { refusedBecause: 'a fence pointer is for a repo job' };
+    const r = this.ruleRows(e.line).find((x) => x.rule === e.rule);
+    if (!r) return { refusedBecause: 'names no ~ rule of this line' };
+    const path = typeof e.path === 'string' ? e.path.trim().replace(/^\.\//, '').replace(/\/+$/, '') : '';
+    if (!path) return { refusedBecause: 'no path given' };
+    if (!(this.repo.files ?? []).some((f) => f === path || f.startsWith(`${path}/`))) return { refusedBecause: `${path} is not on the repo listing` };
+    if (!this.provesFence(r.text, path)) return { refusedBecause: `the rule's own words do not name ${path}, or it names a place the run may change` };
+    r.pointed = path;
+    return { accepted: true, landedKey: r.key };
+  }
+
+  /** a repo `~` rule: kept by the write fence when the AI pointed at a path and code proves it from the person's words; else the same ask the rubric flow uses (the person's Agree / Drop it / own words), Not checked when nobody can be asked @param {Row} r */
   matchRepoRule(r) {
-    const path = this.fenceKeeps(r.text);
-    if (path !== null) { r.can = { ok: true, how: 'fence', path }; return; }
+    // the AI points, code proves (never kept without a pointer; own words that replaced the rule are proved again against the same pointer)
+    if (typeof r.pointed === 'string' && this.provesFence(r.text, r.pointed)) { r.can = { ok: true, how: 'fence', path: r.pointed }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: REASON.nothingOnPage }; return; }
     r.can = this.asks ? { ok: false, ask: 'cant-check', why: REASON.cantCheckRepo } : { ok: false, why: REASON.noRule };
   }
@@ -720,6 +747,7 @@ export class CheckBlock {
       if (res.accepted) kept.adds += 1;
       return res;
     }
+    if (e.op === 'fence') return this.editFence(e);
     if (e.op === 'reading') return this.editReading(e);
     if (e.op === 'pick') return this.editPick(e);
     return this.editNot(e);

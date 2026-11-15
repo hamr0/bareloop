@@ -12,10 +12,10 @@ import { successFromSpec } from '../src/panel/server.js';
 const old = JSON.parse(readFileSync(new URL('./fixtures/repo-list/smw6ssquvtvqs-spec.json', import.meta.url), 'utf8'));
 const files = ['package.json', 'src/sum.js', 'test/sum.test.js'];
 const GUARDS = ['changed-from-seed', 'no-suppressions'];
-/** `kept`: the rule says (in the person's own words) that package.json stays as it is, so code keeps it by the write fence; else the rule names no repo path and is Not checked */
+/** `kept`: the rule says (in the person's own words) that package.json stays as it is and the AI points at it, so code keeps it by the write fence; else the rule names no repo path and is Not checked */
 const specWith = (/** @type {any} */ extra = {}) => {
   const jobLines = extra.kept ? [{ ...old.jobLines[0], rule: 'do not change package.json', rules: ['do not change package.json'] }] : old.jobLines;
-  return { ...old, jobLines, closeDecl: { ...old.closeDecl, list: repoList({ jobLines, stages: old.closeDecl.stages, refused: extra.refused ?? null, guardNames: GUARDS, writeScope: old.writeScope, files }) } };
+  return { ...old, jobLines, closeDecl: { ...old.closeDecl, list: repoList({ jobLines, stages: old.closeDecl.stages, refused: extra.refused ?? null, point: extra.kept ? [{ op: 'fence', line: 1, rule: 1, path: 'package.json' }] : [], guardNames: GUARDS, writeScope: old.writeScope, files }) } };
 };
 
 test('Job tab: the rule is Not checked with code\'s reason (tagged [you]), the stages are `!` rows, the guards and the fence are `$` rows, and the AI notes are not shown', () => {

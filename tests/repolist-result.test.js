@@ -19,7 +19,7 @@ function world() {
   const old = JSON.parse(readFileSync(join(FX, 'mvkj03w7.resolved-spec.json'), 'utf8'));
   const jobLines = [{ n: 1, text: 'Fix the type errors in src/', rule: 'do not change package.json; keep the diff small', rules: ['do not change package.json', 'keep the diff small'] }];
   const stages = old.closeDecl.stages.map((/** @type {any} */ s) => (GUARDS.includes(s.name) ? s : { ...s, fromLine: [1] }));
-  const list = repoList({ jobLines, stages, guardNames: GUARDS, writeScope: old.writeScope, files: ['package.json', 'src/checks.js'] });
+  const list = repoList({ jobLines, stages, point: [{ op: 'fence', line: 1, rule: 1, path: 'package.json' }], guardNames: GUARDS, writeScope: old.writeScope, files: ['package.json', 'src/checks.js'] });
   const spec = { ...old, jobLines, closeDecl: { ...old.closeDecl, stages, list } };
   const specPath = join(dirname(w.spine('mvkj03w7')), '..', '..', 'session-mvkj03w7', 'resolved-spec.json');
   writeFileSync(join(w.root, 'session-mvkj03w7', 'resolved-spec.json'), JSON.stringify(spec));
