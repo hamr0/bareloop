@@ -50,7 +50,8 @@ test('panel door: the list is built once with its call, every row is in the draf
   const items = session.state.pendingAsk.plan.checkItems;
   assert.equal(items.filter((/** @type {any} */ c) => c.key === 'L1.$floor' && c.by === 'default').length, 1, 'the line\'s floor row is on the card');
   assert.equal(items.filter((/** @type {any} */ c) => c.key === 'J.$guard.changed-from-seed' && c.by === 'default').length, 1, 'the guard is one job-level row on the card');
-  assert.equal(items.length, 3, 'the fact, the floor and the guard: no row the list does not hold');
+  assert.equal(items.filter((/** @type {any} */ c) => c.key === 'J.$fence').length, 1, 'the write fence is one job-level row');
+  assert.equal(items.length, 4, 'the fact, the floor, the guard and the fence: no row the list does not hold');
   // N-1: the result count of 1 is not in the job line; the fact on its line is built, so code can build it and it waits under Suggested (with its Add), not checked
   assert.deepEqual(session.state.pendingAsk.plan.suggested.map((/** @type {any} */ x) => x.text), ['fact · results — exactly 1 result, each quoted from "Changelog"']);
   session.signPrepare();

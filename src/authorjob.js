@@ -672,7 +672,7 @@ export async function authorCloseForJob({
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
     block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
-    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name));
+    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];

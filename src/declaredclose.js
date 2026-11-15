@@ -108,7 +108,7 @@ export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'ki
 export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
 const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
 const SIGNED_BY = Object.freeze(['you', 'agent', 'default']);
-const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor', 'guard', 'prose']);
+const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor', 'guard', 'prose', 'fence']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
@@ -314,8 +314,9 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         const w = `${at}.list[${i}]`;
         if (!isObj(row)) { red('invalid-value', w, 'a row: { line, key, from, by, kind, state, rule?, part?, reason? }'); return; }
         for (const k of Object.keys(row)) if (!SIGNED_ROW_FIELDS.includes(k)) red('unknown-field', `${w}.${k}`, `not a signed row field (the row's own words are never signed); fields: ${SIGNED_ROW_FIELDS.join(', ')}`);
-        // a `guard` row is the job's (line 0, once for the whole job); every other row names its job line
-        if (!Number.isInteger(row.line) || row.line < (row.kind === 'guard' ? 0 : 1) || (row.kind === 'guard' && row.line !== 0)) red('invalid-value', `${w}.line`, row.kind === 'guard' ? 'a guard row belongs to the whole job: line 0' : 'the job line number');
+        // a `guard` or `fence` row is the job's (line 0, once for the whole job); every other row names its job line
+        const jobWide = row.kind === 'guard' || row.kind === 'fence';
+        if (!Number.isInteger(row.line) || row.line < (jobWide ? 0 : 1) || (jobWide && row.line !== 0)) red('invalid-value', `${w}.line`, jobWide ? 'a guard or fence row belongs to the whole job: line 0' : 'the job line number');
         if (!isNonEmptyString(row.key)) red('invalid-value', `${w}.key`, 'the row key, a non-empty string');
         if (!SIGNED_FROM.includes(row.from)) red('invalid-value', `${w}.from`, `menu: ${SIGNED_FROM.join('|')}`);
         if (!SIGNED_BY.includes(row.by)) red('invalid-value', `${w}.by`, `menu: ${SIGNED_BY.join('|')}`);

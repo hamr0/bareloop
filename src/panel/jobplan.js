@@ -16,7 +16,7 @@ import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
-import { checksOfClose, carriesOneList, guardKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
+import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
@@ -105,6 +105,8 @@ export function planFromSpec(spec, ledger = null) {
     for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
     if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
   }
+  // the write fence is a job-level `$` row of the signed list (hamr 2026-11-15): one check that serves no one line
+  for (const c of checksOfClose(spec?.closeDecl ?? {}).filter((x) => x.key === FENCE_KEY)) loose.push({ name: c.text, cls: null, by: 'default', key: FENCE_KEY });
   // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
   for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
     if (!g || typeof g.guard !== 'string' || !Array.isArray(g.lines)) continue;
@@ -195,6 +197,12 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
   const checks = [];
   /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string}} c @param {string} text @returns {AuditRow} */
   const rowOf = (c, text) => {
+    // the fence row reads the gate's own record of THIS run (never a stage verdict): held · N writes blocked, or the record is missing
+    if (c.key === FENCE_KEY) {
+      return blocked === null
+        ? { text, by: /** @type {'default'} */ ('default'), result: /** @type {'record-missing'} */ ('record-missing'), word: "the gate's record for this run is missing", key: FENCE_KEY }
+        : { text, by: /** @type {'default'} */ ('default'), result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked`, key: FENCE_KEY };
+    }
     const own = c.key ? rowRes?.results.get(c.key) : undefined;
     if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}) };
     // `unread`: the line's file could not be read, so this row was not looked at: never passed, never failed

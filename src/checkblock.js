@@ -8,7 +8,7 @@ import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult } from './pagedry.js';
-import { boundInWords, rubricStepShapeReds, floorWords, guardKeyOf, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, floorWords, guardKeyOf, FENCE_KEY, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -117,10 +117,12 @@ export class CheckBlock {
     this.notes = new Map();
     /** @type {string[]} the NAMES of the mandatory guards the close carries (Addendum 2026-11-14 (c) piece 2): each is a job-level `$` row of the signed list, never a row of `rows` (no line, so no check of a line) */
     this.guards = [];
+    /** @type {string[]|null} the write fence of the job: a job-level `$` row of the signed list (hamr 2026-11-15), never a row of `rows` */
+    this.fence = null;
   }
 
-  /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names */
-  setGuards(names) { this.guards = [...new Set(names)]; }
+  /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names @param {string[]|null} [fence] the signed write fence, when the job has one */
+  setGuards(names, fence = null) { this.guards = [...new Set(names)]; this.fence = Array.isArray(fence) && fence.length ? [...fence] : null; }
 
   textOf(/** @type {string|undefined} */ source) { return this.texts[source ?? this.labels[0] ?? ''] ?? Object.values(this.texts)[0] ?? ''; }
   /** @param {number} line @param {string} [kind] */
@@ -726,7 +728,7 @@ export class CheckBlock {
    */
   closeView() {
     const c = this.reconcile();
-    return { stages: c.stages, picks: this.picksOf(c), list: this.signedRows() };
+    return { stages: c.stages, picks: this.picksOf(c), list: this.signedRows(), ...(this.fence ? { fence: [...this.fence] } : {}) };
   }
 
   /** the picks code records: a countable part carrying the `~` rule numbers it settles @param {{parts: any[], map: {part: number, line: number}[]}} c the build @returns {{line: number, part: any}[]} */
@@ -747,7 +749,7 @@ export class CheckBlock {
       const row = { ...r, ...(gone ? { state: 'dropped' } : {}), ...(r.state === 'built' && r.factNames?.length ? { facts: r.factNames } : {}) };
       return Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => row[f] !== undefined && row[f] !== null).map((f) => [f, row[f]]));
     });
-    return [...rows, ...this.guards.map((name) => ({ line: 0, key: guardKeyOf(name), from: 'default', by: 'default', kind: 'guard', state: 'built' }))];
+    return [...rows, ...this.guards.map((name) => ({ line: 0, key: guardKeyOf(name), from: 'default', by: 'default', kind: 'guard', state: 'built' })), ...(this.fence ? [{ line: 0, key: FENCE_KEY, from: 'default', by: 'default', kind: 'fence', state: 'built' }] : [])];
   }
 
   /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */

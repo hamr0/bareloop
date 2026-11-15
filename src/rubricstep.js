@@ -921,7 +921,10 @@ export function refusedOf(closeDecl) {
   const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
   if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));
-  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor').map((/** @type {any} */ r) => ({
+  // a `$` default that does not apply to a line kind is not a Not checked item: a facts line's cited default ("this line finds facts, so it has no text to quote") is said by the line's floor row (one-list closes)
+  const factLines = new Set((Array.isArray(closeDecl.stages) ? closeDecl.stages : []).filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && factPartOf(st.params)).map((/** @type {any} */ st) => st.params.step));
+  const notApplicable = (/** @type {any} */ r) => carriesOneList(closeDecl) && r.kind === 'cited' && r.by === 'default' && factLines.has(r.line);
+  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor' && !notApplicable(r)).map((/** @type {any} */ r) => ({
     line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(['you', 'agent', 'default'].includes(r.by) ? { by: r.by } : {}), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
   }));
   const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
@@ -1009,6 +1012,17 @@ export const guardKeyOf = (name) => `J.$guard.${name}`;
 export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWith('J.$guard.') ? key.slice('J.$guard.'.length) : '');
 /** the words of a text line's `prose` row: the person judges what the text says at Accept (the same words the stage-derived line always used) */
 export const PROSE_WORDS = 'what the text says — you judge it at Accept';
+/** the key of the job-level write fence row (the one list, hamr 2026-11-15: the fence is a `$` row like every other rule) */
+export const FENCE_KEY = 'J.$fence';
+/** the words of the fence row, the way the "Always checked" box always said it @param {string[]} scope @returns {string} */
+export const fenceRowText = (scope) => `write fence — the run may only change files matching: ${scope.join(', ')}`;
+/** the fence a close's row names: `closeDecl.fence` (the confirm card's view of it) or the allowed prefixes its own `changed-from-seed` guard stage signs @param {any} closeDecl @returns {string[]|null} */
+export function fenceOfClose(closeDecl) {
+  if (!isRec(closeDecl)) return null;
+  if (Array.isArray(closeDecl.fence) && closeDecl.fence.length) return closeDecl.fence.map(String);
+  const g = (Array.isArray(closeDecl.stages) ? closeDecl.stages : []).find((/** @type {any} */ st) => isRec(st) && st.name === 'changed-from-seed' && isRec(st.params));
+  return g && Array.isArray(g.params.allowPrefixes) && g.params.allowPrefixes.length ? g.params.allowPrefixes.map(String) : null;
+}
 /** the words of a guard row: the guard's name and its one plain line (GUARD_DESCRIPTIONS), the way the confirm card always said it @param {string} name @returns {string} */
 export const guardRowText = (name) => `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
 
@@ -1053,6 +1067,9 @@ export function checksOfClose(closeDecl) {
   };
   // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows
   const guardRows = list.filter((/** @type {any} */ x) => x.kind === 'guard' && guardNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: 0, text: guardRowText(guardNameOfKey(x.key)), by: /** @type {'default'} */ ('default'), key: String(x.key) }));
+  // the job-level `$` write fence row (hamr 2026-11-15): once, after the guards; its words need the fence the close signs
+  const fence = fenceOfClose(closeDecl);
+  const fenceRows = fence ? list.filter((/** @type {any} */ x) => x.kind === 'fence').map((/** @type {any} */ x) => ({ line: 0, text: fenceRowText(fence), by: /** @type {'default'} */ ('default'), key: String(x.key) })) : [];
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
@@ -1072,7 +1089,7 @@ export function checksOfClose(closeDecl) {
         return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
       });
     }), ...floorOf(st)]
-    : [])), ...guardRows];
+    : [])), ...guardRows, ...fenceRows];
 }
 
 /**
@@ -1120,7 +1137,7 @@ export function listMatchesClose(closeDecl) {
   // a job-level guard row (line 0) points at a guard STAGE the close runs, by name; it has no part
   const stageNames = stages.filter((/** @type {any} */ st) => isRec(st)).map((/** @type {any} */ st) => st.name);
   const guardBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'guard' && r.state === 'built' && !stageNames.includes(guardNameOfKey(r.key)));
-  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard');
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard' && r.kind !== 'fence');
   const bad = [...guardBad, ...built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])))];
   const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
   const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))

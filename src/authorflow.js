@@ -634,7 +634,8 @@ export function confirmProtections({ verdictType, lang, writeScope = null, jobLi
     }
     return `${g.name} — ${desc}`;
   });
-  if (Array.isArray(writeScope) && writeScope.length > 0) {
+  // (a close whose signed list holds the fence row says it THERE, as a `$` row; only an older close keeps this line)
+  if (Array.isArray(writeScope) && writeScope.length > 0 && !(Array.isArray(closeDecl?.list) && closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'fence'))) {
     lines.push(`write fence — the run may only change files matching: ${writeScope.join(', ')}`);
   }
   // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
@@ -2662,7 +2663,7 @@ export async function authorClose({
     block.reconcile();
   }
   // the mandatory guards are job-level `$` rows of the signed list (piece 2): the block that signs knows their names, whoever built it
-  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name));
+  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;
   const draftGenerate = rowEdits && editGenerate ? editGenerate : generate;

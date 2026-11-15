@@ -194,8 +194,11 @@ export function confirmPlanLines(p) {
       out.push(`    · ${line}${tag ? `${tag} ` : ''}${c.text}`);
     }
   } else for (const c of p.checks ?? []) out.push(`    · ${c}`);
-  out.push('  protections (always-on guards, never named in the goal):');
-  for (const g of p.protections ?? []) out.push(`    · ${g}`);
+  // (a one-list job's guards and fence are rows above; the heading shows only when something is left)
+  if ((p.protections ?? []).length) {
+    out.push('  protections (always-on guards, never named in the goal):');
+    for (const g of p.protections) out.push(`    · ${g}`);
+  }
   const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
   if (unchecked.length) {
     out.push('  you asked for these, but nothing checks them:');
