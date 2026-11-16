@@ -5,7 +5,7 @@ import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { OFFERED, plainWords } from './checkwords.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
-import { stageQuestionsByName, guardQuestionText, fenceQuestionText } from './stagewords.js';
+import { stageQuestionsByName, guardQuestionText, fenceQuestionText, fencePlace } from './stagewords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -1080,7 +1080,7 @@ export function checksOfClose(closeDecl, jobLines = null) {
     ...list.filter((/** @type {any} */ x) => x.kind === 'stage' && stageNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: Number(x.line), text: questions.get(stageNameOfKey(x.key)) ?? stageNameOfKey(x.key), by: /** @type {'agent'} */ ('agent'), key: String(x.key) })),
     ...list.filter((/** @type {any} */ x) => x.kind === 'rule' && typeof x.fence === 'string').map((/** @type {any} */ x) => {
       const said = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === x.line))[Number(x.rule) - 1];
-      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${x.fence} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
+      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${fencePlace(String(x.fence))} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
     }),
   ].sort((a, b) => a.line - b.line);
   // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows

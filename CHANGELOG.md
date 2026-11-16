@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- A `~` rule kept by the write fence now names the fence as a folder (`test/`, not the raw `test/**`), the same words the write-fence question uses; one helper (`fencePlace`) owns both.
+
 ## [0.59.0] - 2026-11-16
 
 ### Added

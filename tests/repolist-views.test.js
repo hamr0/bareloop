@@ -39,6 +39,14 @@ test('a rule the fence keeps (proven by code) is a check row of its line, tagged
   assert.match(kept.name, /^"do not change package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
 });
 
+test('a kept rule whose fence is a folder glob reads as the folder, the same form fenceQuestionText gives (not the raw `test/**`)', () => {
+  const spec = specWith({ kept: true });
+  const row = spec.closeDecl.list.find((/** @type {any} */ r) => r.kind === 'rule' && typeof r.fence === 'string');
+  row.fence = 'test/**';
+  const kept = planFromSpec(spec).lines[0].checks.find((/** @type {any} */ c) => c.key === 'L1.~1');
+  assert.match(kept.name, /^"do not change package\.json" — kept by the write fence: test\/ is outside the places the run may change$/);
+});
+
 test('Audit: a fence-kept `~` row reads the gate\'s record; an `!` row its own stage verdict; a Not checked row has no result', () => {
   const plan = planFromSpec(specWith({ kept: true }));
   const results = new Map([['node-test-executed-count', true], ['node-test-fail-count', true], ['suite-green', false], ['changed-from-seed', true], ['no-suppressions', true]]);
