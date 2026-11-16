@@ -163,7 +163,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.from, 'signed job');
   assert.equal('locked' in a, false, 'v1.101: nothing is locked, so the prefill names no locked boxes');
   assert.equal('open' in a, false);
-  assert.equal(a.card.jobText, 'fix things\ntsc clean', 'the SIGNED job lines (with their ~ rule), not the typed text');
+  assert.equal(a.card.jobText, 'fix things\ntsc clean', 'the SIGNED job lines, not the typed text');
   assert.equal(a.card.jobText, jobTextFromSpec(spec));
   assert.equal(a.note, null, 'a job with numbered lines is not an older job');
   assert.equal(a.card.jobName, spec.job);
