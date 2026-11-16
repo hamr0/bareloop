@@ -222,7 +222,7 @@ test('an ALREADY-GREEN run opens the door too, and says which verdict it is offe
   const outcome = await runJob(job, {
     approvals: approve(job), workdir: p.dir, provider: forbiddenProvider(), emit: virtualSpine(p.spine, clock), reviewDoor: true,
   });
-  assert.equal(outcome, 'already-green', 'the DISTINCT terminal is untouched — an already-green mints no learning credit');
+  assert.equal(outcome, 'already-green', 'the DISTINCT terminal is untouched — an already-green mints no reuse credit');
   assert.equal(doorRecordOf(readEvents(p.spine)).outcome, 'already-green');
 });
 

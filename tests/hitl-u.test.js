@@ -500,7 +500,7 @@ test('§1 the pause door is REACHABLE and silent about money: a signed `--decide
 test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {
   const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length && !ctx\.bundle\)/,
-    'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint learning credit no close ever rendered');
+    'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint reuse credit no close ever rendered');
 });
 
 test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decision is stuck behind it', () => {
