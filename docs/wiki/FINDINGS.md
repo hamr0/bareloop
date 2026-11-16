@@ -14665,6 +14665,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 *Update 2026-10-26: FIXED by the time dry read, see F247 ("Departure time" without the colon now reads no time and is dropped as Not checked).*
 
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the note above is the state of 2026-10-26.*
+
 ## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
 
 **Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
@@ -14687,6 +14689,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
 
 *Update 2026-10-26: the "Departure time:" part (a time label whose line holds no readable time) is FIXED by the time dry read, see F247; "StaticText" and "O" are not time facts and are not covered.*
+
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the note above is the state of 2026-10-26.*
 
 ## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
 
@@ -14825,6 +14829,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - Not seen in a live run; no fix built.
 
 ## F247 — time dry read POC and build: a time label the run's checker cannot read after is Not checked (2026-10-26; built on fix/barebrowse-0241, fixes F236 and the "Departure time:" part of F237)
+
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the "FIXED" notes under F236 and F237 are the state of 2026-10-26.*
 
 **Grounded in:** `docs/logs/time-dryread-poc-PREREG.md` (frozen at 46574ab, sha256 8502f5a2217397b98a3581a3b306149d328909a3983101600eecb6d51cb008a9), `docs/logs/time-dryread-poc-RESULTS.md` (copy of the POC results); the build is `dryReadTimes` in `src/pagedry.js`, called by `runPageMap` between the money and phrase dry reads; the sentence is `reads-no-time` in `src/pagedropwords.js`; tests `tests/time-dry.test.js` on real pages (`tests/fixtures/time-dry`, `tests/fixtures/idea-a/jfk-lax.page.txt`).
 
