@@ -10,7 +10,7 @@ import { globToPrefix } from './validate.js';
 import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.js';
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
-import { phraseInNoResult } from './pagedry.js';
+import { phraseInNoResult, asSeenOf } from './pagedry.js';
 import { boundInWords, rubricStepShapeReds, floorWords, stageKeyOf, guardKeyOf, FENCE_KEY, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
@@ -442,8 +442,11 @@ export class CheckBlock {
       r.state = 'built'; r.reason = null;
     }
     if (facts.length) {
+      // F337: the planner's example when a label sits off the result's first line; from the drafting copy, only here at signing
+      const asSeen = asSeenOf(this.textOf(factRows[0]?.src), facts, factRows[0]?.src ?? '');
       const part = {
         text: facts.map((f) => f.name).join('; '), class: 'fact', source: factRows[0]?.src, facts,
+        ...(asSeen ? { asSeen } : {}),
         ...(rulesCarried.length ? { rules: rulesCarried } : {}),
         ...(countRow ? { count: { ...(Number.isInteger(countRow.min) ? { min: countRow.min } : {}), ...(Number.isInteger(countRow.max) ? { max: countRow.max } : {}) } } : {}),
       };

@@ -25,7 +25,7 @@ export const FACT_LANGS = Object.freeze({ en: 'English', de: 'German', fr: 'Fren
 /** the decimal marks a number or money fact may sign (bareguard 0.27 `decimal`); absent = "." */
 export const FACT_DECIMALS = Object.freeze(['.', ',']);
 /** every field a part of class `fact` may carry (the shared ones are checked by rubricStepShapeReds) */
-export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count']);
+export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count', 'asSeen']);
 /** a fact's name appears in the claim text bareguard scans for numbers, so it carries letters only (no digit can red the claim) */
 const NAME_RE = /^[A-Za-z][A-Za-z _-]{0,63}$/;
 
@@ -66,11 +66,19 @@ export const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) =
  */
 export function factShapeReds(part, w, red) {
   for (const k of Object.keys(part)) {
-    if (!['text', 'class', 'covers', 'rules', 'source', 'facts', 'count'].includes(k)) {
+    if (!['text', 'class', 'covers', 'rules', 'source', 'facts', 'count', 'asSeen'].includes(k)) {
       red('invalid-value', `${w}.${k}`, `"${k}" is not a field of a fact part — fields: text, class, covers, rules, ${FACT_PART_FIELDS.join(', ')}`);
     }
   }
   if (!(nonEmpty(part.source) && part.source.length <= 128)) red('invalid-value', `${w}.source`, 'the label of the input the quotes come from');
+  // F337: the planner's "as seen" example, only ever written by code at signing (src/pagedry.js asSeenOf); optional, absent on every older spec
+  if (Object.hasOwn(part, 'asSeen')) {
+    const a = part.asSeen;
+    const strs = (/** @type {unknown} */ v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string');
+    if (!(isRec(a) && nonEmpty(a.input) && strs(a.lines) && strs(a.labels) && Object.keys(a).every((k) => ['input', 'lines', 'labels'].includes(k)))) {
+      red('invalid-value', `${w}.asSeen`, 'the as-seen example: {input, lines: [..], labels: [..]}');
+    }
+  }
   if (!Array.isArray(part.facts) || part.facts.length === 0 || part.facts.length > MAX_FACTS) {
     red('invalid-value', `${w}.facts`, `a list of 1 to ${MAX_FACTS} facts {name, shape, ...}`);
   } else {
