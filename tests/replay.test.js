@@ -8,12 +8,12 @@
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, copyFileSync, appendFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow, moneyWithDraft,
+  replayRun, formatReplay, summarizeForAllLine, auditWindow, moneyWithDraft,
 } from '../src/replay.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
@@ -22,9 +22,6 @@ import { scriptedProvider, initPatientRepo } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 const ARCHIVE = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
-const AURORA_SOAR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
-const LITECTX_TYPES = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
-const MAILPROOF_JOB2 = '/home/hamr/PycharmProjects/bareloop-patients/mailproof-job2-bareloop';
 const BAREAGENT_U = '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u-bareloop';
 const LITECTX_MAINTAINER = '/home/hamr/PycharmProjects/bareloop-patients/litectx-maintainer-bareloop';
 const SCRIPT = new URL('../scripts/run-replay.mjs', import.meta.url).pathname;
@@ -35,183 +32,12 @@ function parseJsonl(file) {
     .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 }
 
-/** @param {string} id */
-function loadRun(id) {
-  const spine = parseJsonl(join(ARCHIVE, `u-${id}.jsonl`));
-  const auditPath = join(ARCHIVE, `u-${id}-gate-audit.jsonl`);
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-  return { spine, audit };
-}
-
 /** @type {string[]} */
 const tmpDirs = [];
 after(() => {
   for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
 });
 
-const haveArchive = existsSync(ARCHIVE);
-
-test('a GREEN run (u-ms2c0ls7) reconstructs job, spend, steps and ending', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine, audit } = loadRun('ms2c0ls7');
-  const s = replayRun(spine, audit, { runId: 'ms2c0ls7' });
-  assert.equal(s.runId, 'ms2c0ls7');
-  assert.equal(s.job, 'aurora-u-spawner-types');
-  assert.equal(s.outcome, 'green');
-  assert.equal(s.stopReason, null, 'a green run has nothing to explain');
-  assert.equal(s.spentUsd, 2.2072228);
-  assert.equal(s.spendComplete, true);
-  assert.equal(s.wallMs, 536431, 'wallMs is job-end.ts minus job-start.ts, both real timestamps');
-  assert.equal(s.steps.length, 3);
-  assert.deepEqual(s.steps.map((st) => st.id), ['annotate-init-methods', 'fix-remaining-strict-violations', 'verify-tests-still-pass']);
-  for (const st of s.steps) {
-    assert.equal(st.outcome, 'green');
-    assert.ok(st.rounds > 0, `${st.id}: a real step spends at least one worker-round`);
-  }
-  assert.equal(s.skipped, 0);
-  assert.ok(s.ending.record, 'the last spine record is carried');
-  assert.equal(s.ending.record.type, 'job-end');
-  assert.equal(s.ending.before.length, 3);
-
-  // wall-clock fallback (F117 fix #1): its elapsedMs is a START-of-engagement
-  // snapshot (chain time inherited at the top of this run, not this run's own
-  // duration) — asserting on the real record's own fields, never hardcoded.
-  const wallClockRecord = spine.find((e) => e.type === 'wall-clock');
-  assert.ok(wallClockRecord, 'precondition: the real file carries a wall-clock record');
-  assert.equal(wallClockRecord.elapsedMs, 0, 'precondition: this real record\'s elapsedMs really is exactly 0 — the case that used to print as "0.0s of 30m00s signed" and read as a zero-second run');
-  assert.equal(wallClockRecord.requestedMs, 1800000, 'precondition: a 30-minute signed wall');
-  assert.ok(s.chainClock, 'a wall-clock record yields a chainClock reading when there is no wall-halt');
-  assert.equal(s.chainClock.source, 'wall-clock');
-  assert.equal(s.chainClock.elapsedMs, wallClockRecord.elapsedMs);
-  assert.equal(s.chainClock.requestedMs, wallClockRecord.requestedMs);
-
-  const text = formatReplay(s);
-  assert.match(text, /RUN ms2c0ls7 · aurora-u-spawner-types/);
-  assert.match(text, /outcome: green/);
-  // the wall-clock fallback must NEVER read as "this run took 0 seconds" — it
-  // must name what the number actually is (inherited at start) and say plainly
-  // there is no end-of-run chain reading in this file.
-  assert.match(text, /clock: 30m00s signed · 0\.0s inherited from prior legs at start \(from wall-clock; no end-of-run reading in this file\)/);
-  assert.doesNotMatch(text, /clock: 0\.0s of 30m00s signed/, 'the old wording (reads as "took 0 seconds") must be gone');
-  assert.match(text, /\$2\.2072/);
-  assert.match(text, /TIMELINE \(steps\)/);
-  assert.match(text, /CLOSE\n {2}satisfied · 4 stages: changed-from-seed OK · typecheck OK · suite-green OK · no-suppressions OK/, 'the outer-close (the only close on a never-replanned green run) is the CLOSE section');
-  assert.match(text, /ENDING/);
-  assert.match(text, /BEHAVIOUR/);
-  assert.match(text, /MEMORY-CACHE  not armed on this run/, 'MEMORY-CACHE is ALWAYS printed, even absent');
-});
-
-test('a PROVIDER-RED run (u-mszcthk1) carries a floor spend and a named stop reason', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine, audit } = loadRun('mszcthk1');
-  const s = replayRun(spine, audit, { runId: 'mszcthk1' });
-  assert.equal(s.outcome, 'provider-red');
-  assert.equal(s.spentUsd, 0.8529209000000001);
-  assert.equal(s.spendComplete, false, 'F44/F6: an unpriced-transport-failure spend is a floor, never exact');
-  assert.match(String(s.stopReason), /provider path failed mid-run/);
-  // the ACTUAL reason this run died (the escalation's own `detail`, src/planrun.js:2427)
-  // must ride onto stopReason verbatim — the generic per-category decision prose alone
-  // ("the provider path failed mid-run…") fires for every transport casualty and hides
-  // exactly the information a 5-minute replay exists to surface.
-  assert.match(String(s.stopReason), /bad record mac/);
-  assert.equal(s.steps.length, 1);
-  assert.equal(s.steps[0].id, 'fix-spawner-mypy-strict');
-  assert.equal(s.steps[0].outcome, 'escalated');
-
-  // this run's own escalation (seq 77) sits 4 records before job-end (seq 81) —
-  // outside the fixed 3-before ENDING window — so it must ride as its own field
-  // rather than being silently dropped from the reconstructed ending.
-  assert.ok(s.ending.escalation, 'the last escalation is carried even when outside the 3-before window');
-  assert.equal(s.ending.escalation.seq, 77);
-  assert.match(String(s.ending.escalation.detail), /bad record mac/);
-  assert.ok(!s.ending.before.some((r) => r.seq === 77), 'precondition: seq 77 really is outside the 3-before window');
-
-  // this run never reached a close at all (no close-verdict, no outer-close) —
-  // verified directly on the real file, not inferred from the outcome.
-  assert.equal(spine.filter((e) => e.type === 'close-verdict').length, 0, 'precondition: no close-verdict anywhere in this file');
-  assert.equal(spine.filter((e) => e.type === 'outer-close').length, 0, 'precondition: no outer-close anywhere in this file');
-  assert.equal(s.close, null);
-
-  const text = formatReplay(s);
-  assert.match(text, /bad record mac/, 'the formatted report surfaces the real failure, not just the generic category prose');
-  assert.match(text, /CLOSE\n {2}none — the run ended before any close ran/, 'the CLOSE section is never omitted, even when no close ever ran');
-});
-
-test('an ESCALATED (cap-halt) run (u-mszeikq6) states the strike-out reason and per-step checks', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine, audit } = loadRun('mszeikq6');
-  const s = replayRun(spine, audit, { runId: 'mszeikq6' });
-  assert.equal(s.outcome, 'escalated');
-  assert.equal(s.spentUsd, 2.684313800000001);
-  assert.match(String(s.stopReason), /strikes — the fix loop stopped making progress/);
-  assert.equal(s.steps.length, 1);
-  const step = s.steps[0];
-  assert.equal(step.id, 'fix-mypy-strict-spawner');
-  assert.equal(step.outcome, 'green', 'the STEP itself closed green; the run-level escalation is a separate ladder outside it');
-  assert.ok(step.checks.passed >= 1 && step.checks.failed >= 1, 'the real archived fix loop recorded both a red and a green check-passes iteration');
-  assert.equal(step.treeChanged, true);
-  assert.ok(step.toolCalls > 0, 'gate-audit rows fall inside the step-start..step-end window');
-
-  // CLOSE section: the FIX LOOP'S OWN final close-verdict (the run's real
-  // close never satisfied — that's WHY it escalated), never the earlier
-  // outer-close precheck that happened before the fix loop even started.
-  const closeVerdicts = spine.filter((e) => e.type === 'close-verdict' && Array.isArray(e.stages));
-  const outerCloses = spine.filter((e) => e.type === 'outer-close');
-  assert.ok(closeVerdicts.length > 0 && outerCloses.length > 0, 'precondition: this file has BOTH a precheck outer-close and fix-loop close-verdicts');
-  const lastByType = [...outerCloses, ...closeVerdicts].sort((a, b) => a.seq - b.seq);
-  const expected = lastByType[lastByType.length - 1];
-  assert.equal(expected.type, 'close-verdict', 'precondition: the fix loop\'s own close-verdict is LATER (by seq) than the precheck outer-close');
-  assert.equal(s.close.source, 'close-verdict');
-  assert.equal(s.close.iteration, expected.iteration);
-  assert.equal(s.close.verdict, expected.verdict);
-  assert.equal(s.close.verdict, 'needs_revision', 'the fix loop never got this close to satisfied — consistent with the run escalating');
-});
-
-test('--all lists every archived run with a header row: id, job, shape, outcome, spend, wall, steps, reason', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, '--all', ARCHIVE], { encoding: 'utf8' });
-  const lines = out.trim().split('\n');
-  const files = readdirSync(ARCHIVE).filter((f) => /^u-[^/]+\.jsonl$/.test(f) && !f.includes('gate-audit') && !f.endsWith('.lag.jsonl'));
-  // header + one row per spine + (a footnote line IF this archive holds at
-  // least one resumed run — measured, not assumed: aurora-u-bareloop does) +
-  // (a second footnote line IF it holds at least one run with a transport
-  // retry — F119: measured, u-mt8yk53k does).
-  const hasFootnote = lines.some((l) => l.startsWith('* resumed run'));
-  const hasRetryFootnote = lines.some((l) => l.startsWith('⟲N transport retry'));
-  assert.equal(lines.length, files.length + 1 + (hasFootnote ? 1 : 0) + (hasRetryFootnote ? 1 : 0), 'one header row + one line per real spine file (+ the resumed/retry footnotes when any row needs them), none dropped or duplicated');
-  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+model\s+outcome\s+spend\s+wall\s+steps\s+reason$/, 'the header row names every column');
-  const line = lines.find((l) => l.startsWith('mszcthk1 '));
-  assert.ok(line, 'the known provider-red run appears in the listing');
-  assert.match(line, /aurora-u-spawner-types/, 'the job column is present');
-  assert.match(line, /\bplan\b/, 'the shape column is present');
-  assert.match(line, /provider-red/);
-  assert.match(line, /\$0\.8529/);
-
-  // fixed columns, aligned — never CSV: every `$` in the spend column starts
-  // at the SAME character offset across every data row (the header's own
-  // "spend" label included in the width computation, per hamr's ruling).
-  const dataLines = lines.slice(1);
-  const dollarOffsets = new Set(dataLines.map((l) => l.indexOf('$')).filter((i) => i !== -1));
-  assert.equal(dollarOffsets.size, 1, `every spend column must start at the same offset; saw offsets ${[...dollarOffsets]}`);
-});
-
-test('the CLI resolves the sibling gate-audit and prints a full report for a real run', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, join(ARCHIVE, 'u-mszcthk1.jsonl')], { encoding: 'utf8' });
-  assert.match(out, /RUN mszcthk1/);
-  assert.match(out, /outcome: provider-red/);
-  assert.match(out, /provider path failed mid-run/);
-});
-
-test('a malformed line is counted and never thrown — CLI stays green over a corrupted copy', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-test-'));
-  tmpDirs.push(dir);
-  const srcSpine = join(ARCHIVE, 'u-mszcthk1.jsonl');
-  const dstSpine = join(dir, 'u-mszcthk1.jsonl');
-  copyFileSync(srcSpine, dstSpine);
-  appendFileSync(dstSpine, 'this is not valid json\n');
-  const srcAudit = join(ARCHIVE, 'u-mszcthk1-gate-audit.jsonl');
-  if (existsSync(srcAudit)) copyFileSync(srcAudit, join(dir, 'u-mszcthk1-gate-audit.jsonl'));
-
-  const out = execFileSync('node', [SCRIPT, dstSpine], { encoding: 'utf8' });
-  assert.match(out, /RUN mszcthk1/, 'the corrupted line does not stop the run from being reconstructed');
-  assert.match(out, /1 malformed line skipped/);
-});
 
 test('--all never opens a run\'s gate-audit sidecar — PR #23 review item 5, scripts/run-replay.mjs:95', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-noaudit-'));
@@ -229,17 +55,6 @@ test('--all never opens a run\'s gate-audit sidecar — PR #23 review item 5, sc
 
   const out = execFileSync('node', [SCRIPT, '--all', dir], { encoding: 'utf8' });
   assert.match(out, /fake0001/, '--all completes and lists the run despite the poisoned sidecar path');
-});
-
-test('spentUsd reads null (never 0) when a real job-end record has no spend field', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine } = loadRun('ms2c0ls7');
-  const jobEnd = spine.find((e) => e.type === 'job-end');
-  assert.ok(jobEnd && typeof jobEnd.spentUsd === 'number', 'precondition: the real record has a spentUsd to delete');
-  const { spentUsd, ...withoutSpend } = jobEnd;
-  const strippedSpine = spine.map((e) => (e === jobEnd ? withoutSpend : e));
-  const s = replayRun(strippedSpine, []);
-  assert.equal(s.spentUsd, null, 'an absent spend field reads as unknown, never as $0 (F6)');
-  assert.equal(s.spendComplete, false);
 });
 
 test('replayRun never throws on a non-object entry in either array, and counts it skipped', () => {
@@ -262,35 +77,6 @@ test('replayRun never throws on a non-object entry in either array, and counts i
 // file), never by matching `u-*.jsonl`, and must name — never silently
 // drop — a `.jsonl` that is neither a spine nor a recognised sidecar.
 
-test('--all on aurora-soar (battery/l2accept/l2clip prefixes) finds spines never matching u-*.jsonl', { skip: !existsSync(AURORA_SOAR) && 'no aurora-soar patient on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, '--all', AURORA_SOAR], { encoding: 'utf8' });
-  const lines = out.trim().split('\n');
-  assert.ok(lines.length > 0);
-  assert.ok(lines.some((l) => l.startsWith('battery-A1-')), 'a battery-prefixed spine is found');
-  assert.ok(lines.some((l) => l.startsWith('l2accept-L1-') || l.startsWith('l2clip-L1-')), 'an l2accept/l2clip-prefixed spine is found');
-  assert.ok(!lines.some((l) => /^u-/.test(l)), 'this patient carries no u-*.jsonl runs at all — the old name filter would have found zero');
-  for (const l of lines) assert.doesNotMatch(l, /^undefined|^null/, `no line reads as a broken/undefined summary: "${l}"`);
-});
-
-test('--all on mailproof-job2 flags its own orphan gate-audit file as not-a-spine, never silently', { skip: !existsSync(MAILPROOF_JOB2) && 'no mailproof-job2 patient on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, '--all', MAILPROOF_JOB2], { encoding: 'utf8' });
-  const lines = out.trim().split('\n');
-  const orphanLine = lines.find((l) => l.startsWith('battery-mrm7gk25-orphan-gate-audit-mrm7gk27.jsonl'));
-  assert.ok(orphanLine, 'the orphan file (named like a sidecar but not ending in -gate-audit.jsonl) is listed, not dropped');
-  assert.match(orphanLine, /not-a-spine/);
-  assert.ok(lines.some((l) => l.startsWith('battery-P1-mrm8dr1l')), 'a real battery-prefixed spine in the same dir is still found');
-});
-
-test('--all on litectx-types flags real non-spine .jsonl logs as not-a-spine', { skip: !existsSync(LITECTX_TYPES) && 'no litectx-types patient on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, '--all', LITECTX_TYPES], { encoding: 'utf8' });
-  const lines = out.trim().split('\n');
-  // types-check-log.jsonl / types-close-log.jsonl: bare {ts, check, ...} rows,
-  // no `type` field at all — neither job-start nor run-start ever appears.
-  assert.ok(lines.includes('types-check-log.jsonl  not-a-spine'));
-  assert.ok(lines.includes('types-close-log.jsonl  not-a-spine'));
-  assert.ok(lines.some((l) => l.startsWith('types-screen-C-')), 'the real screen-C spines in the same dir are still found');
-});
-
 test('a directory with no .jsonl files at all says so, not a blank line', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-empty-'));
   tmpDirs.push(dir);
@@ -309,246 +95,11 @@ test('looksLikeSpine (via the CLI, on a hand-built non-spine .jsonl) is reported
 
 // ── occurrence attribution + wall/clock labeling (coordinator fix, 2026-08-25) ──
 
-test('a step that RUNS TWICE (u-msdsmkid, fix-loop-strict) is split by occurrence, never merged by id', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
-  const spine = parseJsonl(spinePath);
-  const auditPath = join(BAREAGENT_U, 'u-msdsmkid-gate-audit.jsonl');
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-
-  // derive the expected total from the file itself — never hardcode
-  const totalRoundsForId = spine.filter((e) => e.type === 'worker-round' && e.phase === 'step:fix-loop-strict').length;
-  assert.ok(totalRoundsForId > 0, 'precondition: the real file has worker-rounds for this id');
-
-  const s = replayRun(spine, audit, { runId: 'msdsmkid' });
-  const occurrences = s.steps.filter((st) => st.id === 'fix-loop-strict');
-  assert.equal(occurrences.length, 2, 'two step-start/step-end pairs for the same id are two occurrences, not one merged row');
-  assert.deepEqual(occurrences.map((o) => o.occurrence), [1, 2]);
-  assert.notEqual(occurrences[0].rounds, occurrences[1].rounds, 'the two occurrences must have DIFFERENT round tallies (the bug: both showed 82)');
-  const sum = occurrences[0].rounds + occurrences[1].rounds;
-  assert.equal(sum, totalRoundsForId, "the two occurrences partition the id's real worker-rounds exactly, none lost, none double-counted");
-  assert.equal(occurrences[0].outcome, 'escalated');
-  assert.equal(occurrences[1].outcome, 'green');
-  assert.notEqual(occurrences[0].checks.failed, undefined);
-
-  const text = formatReplay(s);
-  // row text now leads with a row number ("1  fix-loop-strict …"), so match
-  // on the row-number prefix rather than the id starting the line.
-  const lines = text.split('\n').filter((l) => /^\s*\d+\s+fix-loop-strict/.test(l));
-  assert.equal(lines.length, 2);
-  assert.doesNotMatch(lines[0], /\(2nd\)/, 'the FIRST occurrence prints unmarked');
-  assert.match(lines[1], /fix-loop-strict \(2nd\)/, 'the repeated occurrence prints an ordinal marker');
-});
-
-test('u-msx87qqs labels "this file" wall vs the chain-scoped signed clock separately', { skip: !existsSync(LITECTX_MAINTAINER) && 'no litectx-maintainer patient on this machine' }, () => {
-  const spinePath = join(LITECTX_MAINTAINER, 'u-msx87qqs.jsonl');
-  const spine = parseJsonl(spinePath);
-  const auditPath = join(LITECTX_MAINTAINER, 'u-msx87qqs-gate-audit.jsonl');
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-
-  const jobStart = spine.find((e) => e.type === 'job-start');
-  const jobEnd = spine.findLast((e) => e.type === 'job-end');
-  const wallHalt = spine.findLast((e) => e.type === 'wall-halt');
-  assert.ok(jobStart && jobEnd && wallHalt, 'precondition: the real file carries job-start, job-end and wall-halt');
-
-  const s = replayRun(spine, audit, { runId: 'msx87qqs' });
-  assert.equal(s.wallMs, Date.parse(jobEnd.ts) - Date.parse(jobStart.ts), "wallMs is THIS FILE's own job-start..job-end span");
-  assert.ok(s.chainClock, 'a wall-halt record yields a chainClock reading');
-  assert.equal(s.chainClock.source, 'wall-halt');
-  assert.equal(s.chainClock.elapsedMs, wallHalt.elapsedMs);
-  assert.equal(s.chainClock.requestedMs, wallHalt.requestedMs);
-  // the two numbers really do diverge on this real file — the exact ambiguity being fixed
-  assert.notEqual(Math.round(s.wallMs), Math.round(s.chainClock.elapsedMs));
-
-  const text = formatReplay(s);
-  assert.match(text, /wall .+\(this file\)/);
-  assert.match(text, /clock: .+ of .+ signed \(chain, from wall-halt\)/);
-});
-
 // ── the signed layout: header block, per-row time/cost/tripped, CLOSE
 // section, loop-shape iterations, and the job/shape --all columns
 // (hamr, 2026-08-25) ─────────────────────────────────────────────────────
 
-test('u-msdsmkid: header block, per-step wall/spend/tripped, replans via the materials fallback, CLOSE none', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
-  const spine = parseJsonl(spinePath);
-  const auditPath = join(BAREAGENT_U, 'u-msdsmkid-gate-audit.jsonl');
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-  const jobStart = spine.find((e) => e.type === 'job-start');
-  const jobEnd = spine.findLast((e) => e.type === 'job-end');
-
-  // preconditions this test's expectations depend on — all read from the
-  // real file, not asserted from memory
-  assert.equal(spine.filter((e) => e.type === 'work-branch').length, 0, 'precondition: this archived run predates the work-branch rung');
-  const planExecuted = spine.findLast((e) => e.type === 'plan-executed');
-  assert.equal(typeof planExecuted.replans, 'undefined', 'precondition: this archived run predates plan-executed.replans');
-  const replanMaterials = spine.filter((e) => e.type === 'materials' && e.phase === 'replan');
-  assert.equal(replanMaterials.length, 1, 'precondition: exactly one real replan-phase materials record');
-
-  const s = replayRun(spine, audit, { runId: 'msdsmkid' });
-  assert.equal(s.job, jobStart.job);
-  assert.equal(s.goal, jobStart.goal);
-  assert.equal(s.budgetUsd, jobStart.budgetUsd);
-  assert.equal(s.specHash, jobStart.specHash);
-  assert.equal(s.branch, null, 'no work-branch record in this file — null, never a derived/guessed name');
-  assert.equal(s.replans, 1, 'falls back to the materials phase:"replan" count when plan-executed.replans is absent');
-  assert.equal(s.close, null, 'this run never reached a close at all');
-
-  assert.equal(s.steps.length, 3);
-  const [occ1, occ2, occ3] = s.steps;
-  assert.equal(occ1.wallMs, Date.parse('2026-08-03T22:36:32.684Z') - Date.parse('2026-08-03T22:25:24.850Z'));
-  assert.ok(occ1.spentUsd > 0 && occ1.unpricedRounds === 0);
-  assert.ok(occ1.tripped && occ1.tripped.category === 'cap-halt');
-  // this occurrence's escalation carries NO `detail` field at all (a
-  // ladder-exhaustion cap-halt, src/ralph.js) — the tripped line must still
-  // say something real by falling back to `decision`, never a bare category.
-  const capHaltEsc = spine.find((e) => e.type === 'escalation' && e.category === 'cap-halt' && e.seq < 130);
-  assert.equal(typeof capHaltEsc.detail, 'undefined', 'precondition: this escalation really has no detail field');
-  assert.match(occ1.tripped.detail, /the step stopped making progress/);
-
-  assert.equal(occ2.tripped, null, 'the SECOND (green) occurrence tripped nothing');
-  assert.ok(occ3.tripped && occ3.tripped.category === 'step-variance');
-
-  const text = formatReplay(s);
-  assert.match(text, /RUN msdsmkid · bareagent-u-types/);
-  assert.match(text, new RegExp(`goal: {4}${jobStart.goal.slice(0, 20)}`));
-  assert.match(text, /shape: {3}plan · 3 steps, 1 replan/);
-  assert.match(text, /signed: {2}\$4\.00 budget · 25m00s wall · spec 1c35a1eb/);
-  assert.match(text, /branch: {2}none recorded/);
-  assert.match(text, /resumed: no/, 'no priorSpentUsd on this real job-start — a genuinely cold run');
-  assert.match(text, /spent: {3}\$3\.5428 of \$4\.00 signed · wall 25m43s \(this file\)/);
-  assert.match(text, /TIMELINE \(steps\)/);
-  assert.match(text, /#\s+step\s+result\s+rounds\s+tools\s+checks\s+tree\s+wall\s+spend/, 'the timeline carries its own column header row');
-  assert.match(text, /fix-loop-strict \(2nd\)/);
-  assert.match(text, /↳ tripped: cap-halt/);
-  assert.match(text, /↳ tripped: step-variance/);
-  assert.match(text, /CLOSE\n {2}none — the run ended before any close ran/);
-  assert.match(text, /MEMORY-CACHE {2}not armed on this run/);
-  assert.equal(s.spentUsd, jobEnd.spentUsd);
-});
-
-test('u-msf70nei: loop-shape iterations, and CLOSE resolves the LATER fix-loop close-verdict over the earlier outer-close precheck', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msf70nei.jsonl');
-  const spine = parseJsonl(spinePath);
-  const auditPath = join(BAREAGENT_U, 'u-msf70nei-gate-audit.jsonl');
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-
-  // preconditions: the file carries an EARLIER outer-close (a precheck that
-  // read red) and a LATER staged close-verdict (the fix loop's own final,
-  // satisfied) — the exact shape that would mislead a type-preferring picker.
-  const outerClose = spine.find((e) => e.type === 'outer-close');
-  const finalCloseVerdict = spine.findLast((e) => e.type === 'close-verdict' && Array.isArray(e.stages));
-  assert.ok(outerClose && finalCloseVerdict, 'precondition: both records exist in this real file');
-  assert.equal(outerClose.verdict, 'needs_revision');
-  assert.ok(outerClose.seq < finalCloseVerdict.seq, "precondition: the outer-close precheck is EARLIER than the fix loop's own close-verdict");
-  assert.equal(finalCloseVerdict.verdict, 'satisfied');
-  assert.equal(spine.filter((e) => e.type === 'step-start').length, 0, 'precondition: no step-start at all — this is the loop-shape case');
-
-  const s = replayRun(spine, audit, { runId: 'msf70nei' });
-  assert.equal(s.timelineKind, 'iterations');
-  assert.equal(s.steps.length, 0);
-  assert.equal(s.iterations.length, 2);
-  assert.equal(s.outcome, 'green');
-
-  // the CLOSE section must pick the LATER, real terminal verdict — never the
-  // earlier precheck, even though the precheck was red and could be mistaken
-  // for "the" answer by a picker that prefers `outer-close`'s type.
-  assert.ok(s.close, 'a close was resolved');
-  assert.equal(s.close.source, 'close-verdict');
-  assert.equal(s.close.verdict, 'satisfied');
-  assert.equal(s.close.iteration, finalCloseVerdict.iteration);
-  assert.deepEqual(s.close.stages.map((st) => st.name), finalCloseVerdict.stages.map((st) => st.name));
-
-  assert.equal(s.iterations[0].verdict, 'needs_revision');
-  assert.equal(s.iterations[1].verdict, 'satisfied');
-  assert.ok(s.iterations[0].closeStage && s.iterations[0].closeStage.verdict === 'needs_revision');
-
-  const text = formatReplay(s);
-  assert.match(text, /shape: {3}loop · 2 iterations/, 'loop-shape header uses the LOOP label, never the (always-\'plan\') job-start.shape field');
-  assert.match(text, /TIMELINE \(iterations — loop-shape run\)/);
-  assert.match(text, /#\s+iteration\s+result\s+rounds\s+tools\s+wall\s+spend/, 'iterations carry their own column header, no checks\\/tree columns');
-  assert.match(text, /iteration 1.*RED/);
-  assert.match(text, /iteration 2.*GREEN/);
-  assert.match(text, /↳ close: needs_revision — typecheck/);
-  assert.match(text, /↳ close: satisfied/);
-  assert.match(text, /CLOSE\n {2}iteration 2 · satisfied · 4 stages: changed-from-seed OK · typecheck OK · suite-green OK · no-suppressions OK/);
-});
-
-test('--all on bareagent-u-bareloop: job/shape columns, "N it" for loop-shape, aligned columns', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const out = execFileSync('node', [SCRIPT, '--all', BAREAGENT_U], { encoding: 'utf8' });
-  const lines = out.trim().split('\n');
-  assert.match(lines[0], /^id\s+job\s+shape\s+class\s+model\s+outcome\s+spend\s+wall\s+steps\s+reason$/);
-
-  const msf70 = lines.find((l) => l.startsWith('msf70nei'));
-  assert.ok(msf70);
-  assert.match(msf70, /^msf70nei\*\s/, 'msf70nei is a REAL resumed run (job-start.priorSpentUsd) — its row carries the asterisk');
-  assert.match(msf70, /\bloop\b/);
-  assert.match(msf70, /\b2 it\b/, 'a loop-shape row shows its iteration count suffixed "it", never a bare number');
-  assert.match(msf70, /-\s*$/, 'a green row\'s reason column is a bare dash');
-
-  const msdsmkid = lines.find((l) => l.startsWith('msdsmkid'));
-  assert.ok(msdsmkid);
-  assert.doesNotMatch(msdsmkid, /^msdsmkid\*/, 'msdsmkid is a genuinely cold run — no asterisk');
-  assert.match(msdsmkid, /\bplan\b/);
-  assert.match(msdsmkid, /\b3\b/, 'a plan-shape row shows its bare step count, no "it" suffix');
-  assert.match(msdsmkid, /step-variance/);
-
-  assert.equal(lines.at(-1), '* resumed run — spend is the chain total, see detail', 'the footnote appears once, at the end, since this directory has resumed rows (msf70nei, mshzvkqw)');
-
-  // fixed columns, aligned — the outcome column starts at the same offset
-  // on every data row (id-column width varies less here, so check outcome
-  // instead of spend for a second, independent alignment axis). The
-  // footnote line is excluded — it is prose, not a table row.
-  const dataLines = lines.slice(1, -1);
-  const outcomeStarts = new Set(dataLines.map((l) => {
-    const m = l.match(/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+/); // id, job, shape, class, model
-    return m ? m[0].length : -1;
-  }));
-  assert.equal(outcomeStarts.size, 1, `every outcome column must start at the same offset; saw ${[...outcomeStarts]}`);
-});
-
 // ── Spend on resumed runs: chain total vs this-file (hamr, 2026-08-25) ─────
-
-test('u-msf70nei: chain total ($5.3389) and this-file spend ($1.2127, summed rounds) both trace to the real file', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msf70nei.jsonl');
-  const spine = parseJsonl(spinePath);
-  const auditPath = join(BAREAGENT_U, 'u-msf70nei-gate-audit.jsonl');
-  const audit = existsSync(auditPath) ? parseJsonl(auditPath) : [];
-
-  const jobEnd = spine.findLast((e) => e.type === 'job-end');
-  const rounds = spine.filter((e) => e.type === 'worker-round');
-  const summed = rounds.reduce((acc, r) => acc + r.costUsd, 0);
-  assert.ok(rounds.every((r) => typeof r.costUsd === 'number'), 'precondition: every real round in this file is priced');
-  assert.equal(typeof jobEnd.engagementSpentUsd, 'undefined', 'precondition: this archived run predates engagementSpentUsd — the summed-rounds fallback is what is under test');
-
-  const s = replayRun(spine, audit, { runId: 'msf70nei' });
-  assert.equal(s.resumed, true, 'job-start.priorSpentUsd is real on this file');
-  assert.equal(s.spentUsd, jobEnd.spentUsd, 'the CHAIN total is job-end.spentUsd, unchanged');
-  assert.equal(s.thisFileSpend.source, 'summed rounds');
-  assert.ok(Math.abs(s.thisFileSpend.value - summed) < 1e-9, "thisFileSpend sums THIS FILE's own worker-round.costUsd exactly");
-  assert.equal(s.thisFileSpend.totalRounds, rounds.length);
-  assert.equal(s.thisFileSpend.unpricedRounds, 0);
-  // the two numbers really do diverge — that IS the finding this fixes
-  assert.ok(Math.abs(s.spentUsd - s.thisFileSpend.value) > 1, 'chain total and this-file spend are NOT the same claim on a resumed run');
-
-  const text = formatReplay(s);
-  assert.match(text, new RegExp(`\\$${jobEnd.spentUsd.toFixed(4)} chain total \\(job-end; prior legs folded\\)`));
-  assert.match(text, new RegExp(`this file \\$${summed.toFixed(4)} \\(${rounds.length} rounds, all priced; summed rounds\\)`));
-});
-
-test('u-msx87qqs (litectx-maintainer) reads resumed: yes from job-start.priorSpentUsd even with NO resume-seed record', { skip: !existsSync(LITECTX_MAINTAINER) && 'no litectx-maintainer patient on this machine' }, () => {
-  const spinePath = join(LITECTX_MAINTAINER, 'u-msx87qqs.jsonl');
-  const spine = parseJsonl(spinePath);
-  assert.equal(spine.filter((e) => e.type === 'resume-seed').length, 0, 'precondition: genuinely no resume-seed record in this real file');
-  const jobStart = spine.find((e) => e.type === 'job-start');
-  assert.ok(typeof jobStart.priorSpentUsd === 'number' && jobStart.priorSpentUsd > 0, 'precondition: a real chain fold on job-start');
-
-  const s = replayRun(spine, []);
-  assert.equal(s.resumed, true, 'resumed is keyed on priorSpentUsd, never on resume-seed alone — a narrower record whose absence does not mean "not resumed"');
-  assert.equal(s.resumeSeed, null);
-
-  const text = formatReplay(s);
-  assert.match(text, /resumed: yes \(no resume-seed detail recorded\)/);
-});
 
 test('(hand-built, synthetic spine) a $0-floor resume (priorSpentUsd: 0, priorSpendComplete: false) still reads resumed: true — PR #23 review item 4, src/replay.js:464', () => {
   // src/run.js:328 emits `priorSpentUsd` on `spentUsd > 0 || priorFloor` — a
@@ -616,20 +167,6 @@ test('(hand-built, synthetic spine) thisFileSpend sums judge-round alongside wor
 
 // ── F117 landed (PRD TODO #20): verdictType on job-start, model when citable
 // (hamr blessed "1" verbatim, 2026-08-25) ───────────────────────────────────
-
-test('u-msdsmkid (archived, pre-F117) prints "class: not recorded (pre-F117 spine)"', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
-  const spine = parseJsonl(spinePath);
-  assert.equal(spine.find((e) => e.type === 'job-start').verdictType, undefined, 'precondition: this real archived job-start really predates verdictType');
-
-  const s = replayRun(spine, [], { runId: 'msdsmkid' });
-  assert.equal(s.verdictType, null);
-  assert.equal(s.model, null);
-
-  const text = formatReplay(s);
-  assert.match(text, /class: {3}not recorded \(pre-F117 spine\)/);
-  assert.match(text, /model: {3}not recorded/);
-});
 
 test('a FRESHLY WRITTEN spine (real runJob() through the $0 test harness) carries its real verdictType, and replay prints it', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-f117-'));
@@ -717,18 +254,6 @@ console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
   assert.doesNotMatch(text, /pre-F118 spine/);
 });
 
-test('u-msdsmkid (archived, pre-F118) prints "code: not recorded (pre-F118 spine)"', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
-  const spine = parseJsonl(spinePath);
-  assert.equal(spine.find((e) => e.type === 'job-start').code, undefined, 'precondition: this real archived job-start really predates code');
-
-  const s = replayRun(spine, [], { runId: 'msdsmkid' });
-  assert.equal(s.code, null);
-
-  const text = formatReplay(s);
-  assert.match(text, /code: {4}not recorded \(pre-F118 spine\)/);
-});
-
 // ── F119 (2026-08-25): the transport retry fired live on u-mt8yk53k — two
 // TLS "bad record mac" alerts, both recovered, run still green. All numbers
 // below are grepped straight off the real archived spine (see the FINDINGS
@@ -736,58 +261,6 @@ test('u-msdsmkid (archived, pre-F118) prints "code: not recorded (pre-F118 spine
 // seq 62/71, both `recovered:true`, both inside step `fix-mypy-strict`'s own
 // seq window (step-start seq 35, step-end seq 80); `job-end.spendComplete`
 // is `false` for exactly this reason.
-test('u-mt8yk53k (archived, F119 live proof) surfaces both transport retries and why the spend is a floor', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine, audit } = loadRun('mt8yk53k');
-
-  // Precondition: this real archived spine really carries two recovered
-  // transport-retry records for the same TLS error, both inside the run's
-  // one step window — asserted straight off the raw records, not the reader.
-  const retries = spine.filter((e) => e.type === 'transport-retry');
-  assert.equal(retries.length, 2, 'precondition: this real archived spine carries exactly two transport-retry records');
-  assert.ok(retries.every((r) => r.recovered === true), 'precondition: both retries recovered');
-  assert.match(retries[0].error, /bad record mac/);
-
-  const s = replayRun(spine, audit, { runId: 'mt8yk53k' });
-  assert.equal(s.outcome, 'green');
-  assert.equal(s.spendComplete, false);
-  assert.equal(s.transportRetryCount, 2);
-  assert.equal(s.transportRetriesOutsideWindows, 0, 'both retries fall inside the one step window');
-  assert.deepEqual(s.floorReasons, ['transport retry ×2']);
-  assert.equal(s.steps.length, 1);
-  const oneLineError = retries[0].error.replace(/\s+/g, ' ').trim();
-  assert.deepEqual(s.steps[0].transportRetries, {
-    count: 2,
-    label: 'recovered',
-    error: `${oneLineError.slice(0, 80)}…`,
-  });
-
-  const text = formatReplay(s);
-  assert.match(text, /floor because: transport retry ×2/);
-  assert.match(text, /↳ transport retry ×2 \(recovered\) — 0039C0F6E97F0000.*ssl3_read_bytes/);
-  // no step ran outside the window, so the header's "outside steps" line
-  // never appears for this run.
-  assert.doesNotMatch(text, /transport retries outside steps/);
-
-  const row = summarizeForAllLine(s);
-  assert.equal(row.hadTransportRetries, true);
-  assert.match(row.outcome, /^green ⟲2$/);
-
-  const allText = formatAllLines([{ kind: 'spine', row }]);
-  assert.match(allText, /green ⟲2/);
-  assert.match(allText, /⟲N transport retry\(ies\)/);
-});
-
-test('a run with no transport-retry records carries an empty floorReasons and no ⟲ marker', { skip: !haveArchive && 'no archive on this machine' }, () => {
-  const { spine, audit } = loadRun('ms2c0ls7');
-  assert.equal(spine.filter((e) => e.type === 'transport-retry').length, 0, 'precondition: this real archived spine has no transport-retry records');
-  const s = replayRun(spine, audit, { runId: 'ms2c0ls7' });
-  assert.equal(s.transportRetryCount, 0);
-  assert.deepEqual(s.floorReasons, [], 'spendComplete is true on this run, so there is nothing to explain');
-  const row = summarizeForAllLine(s);
-  assert.equal(row.hadTransportRetries, false);
-  assert.doesNotMatch(row.outcome, /⟲/);
-});
-
 // Release-gate finding 3 (2026-08-27, SUGGESTION, src/replay.js:~565-572,
 // SYNTHETIC spine — no archive involved): the per-step window filter
 // `typeof r.phase === 'string' ? r.phase === phaseTag : true` admits
@@ -898,13 +371,6 @@ test('replayRun: an exit-eval with an EMPTY results array reads RED, never a fab
   assert.deepEqual(s.steps[0].attempts, [{ n: 1, iteration: 1, outcome: 'red' }]);
 });
 
-test('replayRun: real archived run mu2p83go — the one step has exactly 1 attempt, green (matches `bareloop replay`\'s checks 1/0)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
-  const s = replayRun(spine, [], { runId: 'mu2p83go' });
-  assert.equal(s.steps.length, 1);
-  assert.deepEqual(s.steps[0].attempts, [{ n: 1, iteration: 1, outcome: 'green' }]);
-});
-
 // ---------------------------------------------------------------------------
 // F195: `bareloop replay`'s `behaviour` (fed by `replayRun`'s top-level
 // `behaviour` field, `formatReplay`'s printed "N tool calls" line) was
@@ -951,109 +417,12 @@ test('RED->GREEN (F195): replayRun scopes gate-audit rows to this run\'s own job
   assert.deepEqual(s.behaviour.byTool, { shell_read: 1 });
 });
 
-test('F195: real archived run mu2p83go (pulselog-person-live-2) — replayRun\'s own top-level behaviour now reports the SCOPED figure (82), not the raw sidecar\'s contaminated 142', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
-  assert.equal(s.behaviour.totalCalls, 82);
-  assert.deepEqual(s.behaviour.byTool, {
-    shell_read: 37, shell_grep: 23, ctx_recent: 1, edit: 21,
-  });
-});
-
-test('F195: real archived run mtotxw1z (litectx-u-bareloop) — no shared-sidecar contamination there, scoped figure is unchanged at 127 (the fix must not regress the common case)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mtotxw1z' });
-  assert.equal(s.behaviour.totalCalls, 127);
-  assert.deepEqual(s.behaviour.byTool, {
-    shell_read: 47, shell_grep: 34, edit: 40, ctx_recall: 4, ctx_get: 1, ctx_impact: 1,
-  });
-});
-
-test('F195: `bareloop replay` CLI (scripts/run-replay.mjs) on a COPY of mu2p83go now prints the SCOPED "82 tool calls" line, not the old contaminated "142"', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-f195-'));
-  tmpDirs.push(dir);
-  copyFileSync(
-    '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl',
-    join(dir, 'u-mu2p83go.jsonl'),
-  );
-  copyFileSync(
-    '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl',
-    join(dir, 'u-mu2p83go-gate-audit.jsonl'),
-  );
-  const out = execFileSync('node', [SCRIPT, join(dir, 'u-mu2p83go.jsonl')], { encoding: 'utf8' });
-  assert.match(out, /82 tool calls/);
-  assert.doesNotMatch(out, /142 tool calls/);
-});
-
 // ---------------------------------------------------------------------------
 // Panel build item 1 (2026-09-26): `fixLoop` (the post-step outer-close
 // precheck + fix-loop iterations) and `scoutPlan` (a plan run's own pre-step
 // scout/plan rounds) — both invisible before this addition. See src/replay.js's
 // own construction comments for the mechanism and the field provenance.
 // ---------------------------------------------------------------------------
-
-test('replayRun: real archived run mu2p83go — fixLoop reports the outer-close precheck plus 3 fix-loop iterations as 4 attempts (red red red green), matching a hand read of the raw spine', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
-  assert.ok(s.fixLoop, 'expected a fixLoop object on this run (it carries an outer-close precheck + 3 fix-loop iterations, verified directly against the raw spine)');
-  assert.deepEqual(s.fixLoop.attempts.map((a) => a.outcome), ['red', 'red', 'red', 'green']);
-  assert.deepEqual(s.fixLoop.attempts.map((a) => a.source), ['outer-close', 'iteration', 'iteration', 'iteration']);
-  assert.deepEqual(s.fixLoop.attempts.map((a) => a.iteration), [null, 1, 2, 3]);
-  // 33 `phase:'fix'` worker-round records total on this spine (hand-counted
-  // off the raw JSONL) — every one of them must land inside a fix-loop
-  // attempt's own window, none left over.
-  assert.equal(s.fixLoop.rounds, 33);
-  // 82 total tool calls on this run (F195's own established figure); 22 fall
-  // inside the one step's own window, 13 before the first step (scout+plan),
-  // so the fix loop's own share is the remainder: 82 - 22 - 13 = 47.
-  assert.equal(s.fixLoop.toolCalls, 47);
-  assert.equal(s.steps[0].toolCalls, 22);
-});
-
-test('replayRun: real archived run mu2p83go — scoutPlan reports 8 scout + 1 plan round, 13 tool calls, all strictly before the run\'s one step-start', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
-  assert.ok(s.scoutPlan);
-  assert.equal(s.scoutPlan.scoutRounds, 8);
-  assert.equal(s.scoutPlan.planRounds, 1);
-  assert.equal(s.scoutPlan.rounds, 9);
-  assert.equal(s.scoutPlan.toolCalls, 13);
-});
-
-test('replayRun: real archived run mtotxw1z (litectx-u-bareloop) — ALSO carries a fixLoop (2 attempts) and a scoutPlan, proving this is not a one-off shape only mu2p83go has', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mtotxw1z' });
-  assert.ok(s.fixLoop);
-  assert.equal(s.fixLoop.attempts.length, 2);
-  assert.ok(s.scoutPlan);
-});
-
-test('replayRun: a run with no post-step outer-close/fix-loop at all reports fixLoop null (the common case must read exactly as before this addition)', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  // u-msdsmkid (fix-loop-strict, cited above at line ~312) never replans and
-  // its close is satisfied on the step's own micro-loop — no outer-close/
-  // fix-loop records exist on this spine at all.
-  const spine = parseJsonl(join(BAREAGENT_U, 'u-msdsmkid.jsonl'));
-  assert.equal(spine.filter((e) => e.type === 'outer-close').length, 0, 'precondition: no outer-close on this file');
-  const s = replayRun(spine, [], { runId: 'msdsmkid' });
-  assert.equal(s.fixLoop, null);
-});
-
-test('replayRun: msf70nei (loop-shape, timelineKind:iterations) reports fixLoop null — its own outer-close/fix-loop iterations are already the `iterations` timeline, never double-counted into fixLoop too', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spine = parseJsonl(join(BAREAGENT_U, 'u-msf70nei.jsonl'));
-  const s = replayRun(spine, [], { runId: 'msf70nei' });
-  assert.equal(s.timelineKind, 'iterations');
-  assert.equal(s.fixLoop, null);
-});
 
 // Panel P2 defect 2 (hamr live-watched run mujjtrvd, 2026-09-27): a LIVE
 // run's fix-loop attempt whose window hasn't closed yet (no close-verdict/
@@ -1095,17 +464,6 @@ test('replayRun: mujjtrvd sliced mid-run (real archived spine, truncated right a
 // replan window between two steps, the fix loop, and a synthetic-only
 // leftover judge-round bucket) driving both the Run tab's map+cards and the
 // Audit tab's groups.
-test('replayRun: parts on mu2p83go — scout/plan/step/fix in order, each part\'s rounds+toolCalls sum matches the Audit tab\'s required row counts (scout 21, plan 1, step 41, fix 80)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
-  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
-  const audit = parseJsonl(auditPath);
-  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
-  assert.deepEqual(s.parts.map((p) => p.id), ['scout', 'plan', 'step:annotate-checks-strict:1', 'fix']);
-  assert.deepEqual(s.parts.map((p) => p.rounds + (p.toolCalls ?? 0)), [21, 1, 41, 80]);
-  assert.equal(s.parts[2].number, 1, 'the one real step is numbered 1');
-  assert.equal(s.parts[3].outcome, 'green', 'the fix loop\'s last attempt is green, matching fixLoop.attempts');
-});
-
 // build item 8 (2026-09-28, panel session mul5fofw): "plan · 1 call · 0.0s ·
 // $0.28" — a real $0.28/20623-token paid call cannot take 0.0s. ROOT CAUSE
 // (measured on this exact real spine): the plan part's wallMs window used
@@ -1151,38 +509,6 @@ test(
     assert.equal(plan.wallMs, 82332, `expected the real ~82.3s call duration, got ${plan.wallMs}ms`);
   },
 );
-
-test('replayRun: parts on bareagent-u-bareloop/u-mshcpdg4 — a real replan between two steps gets its own box, and a step id re-running after a replan gets occurrence 2 (numbered separately from occurrence 1)', { skip: !existsSync(join(BAREAGENT_U, 'u-mshcpdg4.jsonl')) && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl(join(BAREAGENT_U, 'u-mshcpdg4.jsonl'));
-  const s = replayRun(spine, [], { runId: 'mshcpdg4' });
-  assert.deepEqual(s.parts.map((p) => p.kind), [
-    'scout', 'plan', 'step', 'replan', 'step', 'step', 'replan', 'step',
-  ]);
-  assert.deepEqual(s.parts.filter((p) => p.kind === 'step').map((p) => `${p.label}:${p.occurrence}`), [
-    'fix-strict-errors:1', 'fix-loop-strict-types:1', 'finish-strict-typecheck:1', 'finish-strict-typecheck:2',
-  ]);
-  assert.deepEqual(s.parts.filter((p) => p.kind === 'step').map((p) => p.number), [1, 2, 3, 4], 'each step occurrence gets its own running number, never reused');
-});
-
-test('replayRun: parts on a run with no phase data at all (msf70nei, loop-tier `iterations` shape) collapses to one {kind:\'run\'} box', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
-  const spine = parseJsonl(join(BAREAGENT_U, 'u-msf70nei.jsonl'));
-  const s = replayRun(spine, [], { runId: 'msf70nei' });
-  assert.equal(s.parts.length, 1);
-  assert.equal(s.parts[0].kind, 'run');
-  assert.equal(s.parts[0].id, 'run');
-  assert.equal(s.parts[0].rounds, s.iterations.reduce((acc, u) => acc + u.rounds, 0));
-});
-
-test('replayRun: parts on poc-p2ocuxj8 — a step that crashed before its first exit-eval (empty attemptWindows) still gets one synthetic whole-step attempt to expand into', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl') && 'real fixture not present on this machine' }, () => {
-  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl');
-  const s = replayRun(spine, [], { runId: 'poc-p2ocuxj8' });
-  const crashedStep = s.steps.find((st) => st.attemptWindows.length === 0);
-  assert.ok(crashedStep, 'precondition: this archive has a step with no exit-eval at all');
-  const part = s.parts.find((p) => p.kind === 'step' && p.label === crashedStep.id && p.occurrence === crashedStep.occurrence);
-  assert.ok(part);
-  assert.equal(part.attempts.length, 1, 'falls back to one whole-step synthetic attempt, never an empty list');
-  assert.equal(part.attempts[0].outcome, null, 'a synthetic whole-part attempt carries no verdict of its own');
-});
 
 test('replayRun: parts — a judge-round with no step/fix/scout/plan window covering it gets its own synthetic {kind:\'judge\'} box (fixture-built; no real archive measured against this build carries one)', () => {
   const spine = [

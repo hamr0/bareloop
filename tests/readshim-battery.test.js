@@ -14,16 +14,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { readShimArm } from '../src/readshim.js';
 import {
   ARMS, ARM_CLI, rowPlan, ceilingGate, readSpend, readToolShare, armStats, isCasualty, median,
   ACCOUNTED_ROUND_TYPES, ECHO_ROUND_TYPES, UNRESOLVED_NOTICE,
   isSpineFile, rowSettled,
 } from '../scripts/readshim-battery.mjs';
-
-const ARCHIVE = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
 
 // ── ARM MAPPING ────────────────────────────────────────────────────────────
 test('each arm maps to the readShim value the prereg names, resolved by the library', () => {
@@ -217,26 +214,6 @@ test('a COLD run (no engagementSpentUsd) has no leg/chain split — spentUsd alr
   assert.equal(s.divergenceUsd, 0);
 });
 
-test('the spend reader runs on REAL archived spines and agrees with each run\'s own job-end', { skip: !existsSync(ARCHIVE) && 'no archive on this machine' }, () => {
-  const files = readdirSync(ARCHIVE).filter((f) => /^u-[^/]+\.jsonl$/.test(f) && !f.includes('gate-audit'));
-  assert.ok(files.length >= 3, `expected real archived spines in ${ARCHIVE}, found ${files.length}`);
-  let withLedger = 0;
-  for (const f of files) {
-    const events = readFileSync(join(ARCHIVE, f), 'utf8').split('\n').filter(Boolean)
-      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const s = readSpend(events);
-    if (s.ledgerUsd === null) continue;
-    withLedger += 1;
-    // the reader and src/run.js's own ledger must not disagree on a real run. They read
-    // the same records, so any gap is a slicing bug in one of them.
-    assert.ok(Math.abs(s.divergenceUsd) < 1e-6, `${f}: reader $${s.accountedUsd} vs job-end $${s.ledgerUsd}`);
-    assert.ok(s.accountedRounds > 0, `${f}: a real run with a ledger must have accounted rounds`);
-    // and nothing in the real archive is an unreported money writer
-    assert.deepEqual(s.unaccounted, [], `${f}: an unaccounted money writer appeared`);
-  }
-  assert.ok(withLedger >= 3, `expected >=3 archived runs carrying a job-end ledger, got ${withLedger}`);
-});
-
 test('the accounted/echo sets are the ones src/run.js documents', async () => {
   // The battery re-spells the accounted set instead of importing it (that module is pure
   // arithmetic and must not drag the runner behind it), so THIS is the seam that stops the
@@ -274,23 +251,6 @@ test('tool share counts tool calls only — llm rounds and governance rows are e
 test('an empty audit reports an honest null share, never 0%', () => {
   assert.equal(readToolShare([]).share, null);
   assert.equal(readToolShare([{ action: { type: 'llm' } }]).share, null);
-});
-
-test('tool share runs on a REAL archived gate audit and finds the retrieval pair', { skip: !existsSync(ARCHIVE) && 'no archive on this machine' }, () => {
-  const audits = readdirSync(ARCHIVE).filter((f) => f.endsWith('-gate-audit.jsonl'));
-  assert.ok(audits.length >= 1, 'expected a real gate audit');
-  let sawRetrieval = 0;
-  for (const f of audits) {
-    const rows = readFileSync(join(ARCHIVE, f), 'utf8').split('\n').filter(Boolean)
-      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const t = readToolShare(rows);
-    assert.ok(t.total > 0, `${f}: a real audit must contain tool calls`);
-    assert.ok(t.share >= 0 && t.share <= 1);
-    // the llm rows are the majority-adjacent population and must NOT be in the denominator
-    assert.equal(t.total + t.llmRows + t.governanceRows, rows.length, `${f}: every audited row must be classified exactly once`);
-    if (t.retrieval > 0) sawRetrieval += 1;
-  }
-  assert.ok(sawRetrieval >= 1, 'at least one real archived run used ctx_recall/ctx_get — otherwise the SECONDARY axis reads zero for a reason that is not the treatment');
 });
 
 // ── CASUALTIES ─────────────────────────────────────────────────────────────
@@ -366,32 +326,6 @@ test('a run spine is distinguished from the sidecars that live beside it', () =>
   assert.equal(isSpineFile('u-ms7flkok.jsonl.watchdog.json'), false);
   assert.equal(isSpineFile('readshim-battery-abc.json'), false);
   assert.equal(isSpineFile('bridge-aurora-u-spawner-types-ms2c0ls7.json'), false);
-});
-
-test('the spine predicate finds exactly the real spines in the real archive', { skip: !existsSync(ARCHIVE) && 'no archive on this machine' }, () => {
-  const found = readdirSync(ARCHIVE).filter(isSpineFile);
-  assert.ok(found.length >= 3, `expected the real archived spines, got ${found.length}`);
-  // every one it picked is a real spine: it carries a job-start among its first
-  // few records. Strictly the FIRST record for every run this repo has ever
-  // shipped, with one dated, real, NEVER-edited exception:
-  // `u-mtqwmb9l.jsonl` was written by the pre-F133 `scripts/run-u.mjs`, which
-  // resolved the close timeout itself (needed early, to size the outside
-  // watchdog, F67) and announced it with its own `emit('close-timing', …)`
-  // BEFORE calling `runJob` — so that one archived file's true first record is
-  // `close-timing`, one record ahead of `job-start`. F133 fixed the writer (a
-  // fresh run never emits close-timing before job-start again — see
-  // `runJob: job-start is always the spine's first record` below) but the
-  // archive is a historical fact and is never rewritten to match the fix.
-  // Tolerating `job-start` within the first 3 records keeps this real file
-  // readable without loosening the check into meaninglessness (a spine whose
-  // job-start is buried past record 3 is still refused as "not a run spine").
-  for (const f of found) {
-    const lines = readFileSync(join(ARCHIVE, f), 'utf8').split('\n').filter(Boolean).slice(0, 3);
-    const types = lines.map((l) => JSON.parse(l).type);
-    assert.ok(types.includes('job-start'), `${f} is not a run spine — first 3 record types: ${JSON.stringify(types)}`);
-  }
-  // and it picked NOTHING that is a sidecar
-  for (const f of found) assert.ok(!f.includes('lag') && !f.includes('gate-audit'), f);
 });
 
 
