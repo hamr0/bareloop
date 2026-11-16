@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authorClose, GREEN_QUESTIONS } from '../src/authorflow.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
-import { CheckBlock, renderCard } from '../src/checkblock.js';
+import { CheckBlock, renderCard, REASON } from '../src/checkblock.js';
 import { questionsOfBlock, applyChoices } from '../src/blockasks.js';
 import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { draftStopText } from '../src/authorreadout.js';
@@ -136,36 +136,34 @@ function askedBlock() {
   return b;
 }
 
-test('the panel\'s choices into rows (one rule in, one rule out, 2026-11-14): agree REPLACES the asked rule (same number) and the fact carries no aiProposal; drop leaves the rule Not checked; a typed rule replaces its asked rule as a typed row', () => {
+test('the panel\'s choices into rows (one rule in, one rule out): agree REPLACES the asked rule (same number) and the fact carries no aiProposal; a rule nothing can check is never asked (option A, 2026-11-15) and reads Not checked with code\'s reason', () => {
   const b = askedBlock();
   const asks = questionsOfBlock(b);
-  assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[1, 'reading'], [2, 'cant-check'], [3, 'cant-check']]);
-  const refused = applyChoices(b, [
-    { key: asks[0].key, choice: 'agree', text: '' },
-    { key: asks[1].key, choice: 'drop', text: 'drop it' },
-    { key: asks[2].key, choice: 'rule', text: 'be gentle in tone' },
-  ]);
+  assert.deepEqual(asks.map((a) => [a.rule, a.ask]), [[1, 'reading']], 'rules 2 and 3 have no check to agree to, so they are not asked');
+  const refused = applyChoices(b, [{ key: asks[0].key, choice: 'agree', text: '' }]);
   assert.deepEqual(refused, []);
   const rules = b.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(rules.map((r) => [r.rule, r.origin, r.left ?? false]), [[1, 'job', false], [2, 'job', true], [3, 'typed', false]], 'three rules stay three; rule 2 is left; the typed answer replaced rule 3');
+  assert.deepEqual(rules.map((r) => [r.rule, r.origin, r.left ?? false]), [[1, 'job', false], [2, 'job', false], [3, 'job', false]], 'three rules stay three');
   assert.match(rules[0].text, /^Departure time between /, 'the agreed reading replaced rule 1');
-  assert.equal(rules[2].text, 'be gentle in tone');
   assert.equal(rules.find((r) => r.rule === 1)?.state, 'built');
   const fact = b.closeCache.parts.find((/** @type {any} */ p) => p.class === 'fact').facts.find((/** @type {any} */ f) => f.name === 'Departure time');
   assert.equal(Object.hasOwn(fact, 'aiProposal'), false, 'the bound is now the person\'s own words');
-  assert.equal(rules.length, 3, 'no follower row');
-  assert.equal(rules.find((r) => r.rule === 2)?.reason, 'You chose to leave it Not checked, so you judge it at Accept.');
+  for (const n of [2, 3]) {
+    const r = rules.find((x) => x.rule === n);
+    assert.equal(r?.state, 'not-checked');
+    assert.equal(r?.reason, REASON.noRule);
+  }
   assert.equal(b.hasOpenQuestions(), false);
 });
 
-test('a choice the block refuses stays open with its plain reason, nothing changes (agree where nothing is proposed, an empty own rule)', () => {
+test('a choice the block refuses stays open with its plain reason, nothing changes (an unknown question, a choice that is not one)', () => {
   const b = askedBlock();
   const asks = questionsOfBlock(b);
   const before = JSON.stringify(b.rows);
-  const refused = applyChoices(b, [{ key: asks[1].key, choice: 'agree', text: '' }, { key: asks[2].key, choice: 'rule', text: '  ' }, { key: 'L9.~9:cant-check', choice: 'drop', text: '' }]);
-  assert.deepEqual(refused.map((x) => x.why), ['that choice is not offered for this question', 'an answer is needed', 'out of date']);
+  const refused = applyChoices(b, [{ key: 'L9.~9:cant-check', choice: 'drop', text: '' }]);
+  assert.deepEqual(refused.map((x) => x.why), ['out of date']);
   assert.equal(JSON.stringify(b.rows.map((r) => [r.key, r.left ?? null, r.cantAsked ?? null])), JSON.stringify(JSON.parse(before).map((r) => [r.key, r.left ?? null, r.cantAsked ?? null])));
-  assert.equal(b.open.length, 3, 'all three questions are still open');
+  assert.equal(b.open.length, asks.length, 'the question is still open');
 });
 
 test('the check list is not restated to the drafter (invariant 5): across every try the message is the job, the look and the inputs, and a revise carries only the refusals', async () => {

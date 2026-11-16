@@ -49,7 +49,7 @@ import {
 import { resolveJobJudge } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
+import { rubricGoal, cardOfClose, signedFactNames, carriesOneList, stageNameOfKey } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { FLOW_TYPES, flowTypeOf, oldJobWords } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
@@ -58,23 +58,24 @@ import { newestUnrunTicket } from '../ticketnext.js';
 import { readTicket } from '../ticket.js';
 import { readRunList } from '../runlist.js';
 import { fetchPageText } from '../pagefetch.js';
-import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
+import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
+import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
-import { appendDraftLog, readDraftLedger } from '../draftspend.js';
-import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
+import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
+import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
-import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
+import { boxFor, offersOf, panelQuestionText, answerEffectWords, refuseChoice, resolveChoice, CHOICE_SAYS } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
 
@@ -171,7 +172,7 @@ const SOURCE_CHECK_CODES = new Set([
 ]);
 
 /** the line under the plan bubble, in plain words (the bubble itself is drawn by the page's one `renderJobPlan`) */
-export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.';
+export const PLAN_FOOTER = 'Draft the plan to see its checks, or Revise to edit the boxes.';
 
 /**
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
@@ -493,7 +494,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -667,7 +668,9 @@ export function createSession(card, deps = {}) {
         const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
         appendDraftLog(outDir, {
           kind: 'human', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, source: typeof step.source === 'string' ? step.source : 'confirm',
-          question: redactSecrets(step.question), answer: said, ...(answeredChoice === null ? {} : { choice: answeredChoice }), ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
+          question: redactSecrets(step.question), answer: said, ...(answeredChoice === null ? {} : { choice: answeredChoice }),
+          // what was decided, for the readout (it never prints a question that quotes the rule's old words): the agreed reading, or the person's own correction
+          ...(answeredChoice === 'agree' && typeof step.agreeWords === 'string' ? { words: redactSecrets(step.agreeWords) } : answeredChoice === 'rule' ? { words: said } : {}), ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
         });
       }
       resolveFn0(value);
@@ -682,7 +685,7 @@ export function createSession(card, deps = {}) {
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
     } else if (step.kind === 'answer' && (step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
-    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}`);
+    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}${answerEffectWords(/** @type {any} */ (step)) === null ? '' : ` ${answerEffectWords(/** @type {any} */ (step))}`}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -716,6 +719,7 @@ export function createSession(card, deps = {}) {
     // the one check list of a rubric job: each row once when it is built and once at the end, and each try's refusals (kind `ledger` / `ledger-try`)
     if (name === 'note-answered') appendDraftLog(outDir, { kind: 'note-ask', no: Math.max(0, state.steps.length - 1), state: data.state, answers: data.answers, ...(data.reason ? { reason: redactSecrets(String(data.reason)) } : {}), at: new Date().toISOString() });
     if (name === 'ledger-built' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'built', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
+    if (name === 'fence-point-done') appendDraftLog(outDir, { kind: 'fence-point', no: Math.max(0, state.steps.length - 1), edits: redactSecrets(JSON.stringify(data.edits ?? [])), results: redactSecrets(JSON.stringify(data.results ?? [])), reason: data.reason == null ? null : redactSecrets(String(data.reason)), at: new Date().toISOString() });
     if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, kept: data.kept, refused: data.refused, at: new Date().toISOString() });
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
@@ -1147,6 +1151,8 @@ export function createSession(card, deps = {}) {
     // R10 (fwd am16): the check-suggestion call's own model boundary (SUGGEST_SYSTEM, the drafter's thinking); a test that replaces the model boundary never reaches it unless it brings `deps.pickGenerate`
     const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     // the one check list's call has its own model boundary (LEDGER_SYSTEM, the drafter's thinking); like the others, a test that replaces the model boundary never reaches it unless it brings `deps.ledgerGenerate`
+    // the repo job's pointing call: its own model boundary (FENCE_POINT_SYSTEM), the drafter's thinking (off); a test that replaces the model boundary never reaches it unless it brings `deps.fenceGenerate`
+    const fenceGenerate = deps.fenceGenerate !== undefined ? deps.fenceGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: FENCE_POINT_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     const ledgerGenerate = deps.ledgerGenerate !== undefined ? deps.ledgerGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     // the row-edit turn (the drafter's reply of a rubric job, src/rowedit.js) has its own model boundary; a test that replaces `generate` need not bring one
     const editGenerate = deps.editGenerate !== undefined ? deps.editGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: ROW_EDIT_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
@@ -1213,15 +1219,18 @@ export function createSession(card, deps = {}) {
       const left = [];
       /** R10: the picks the person made (fwd am16): the check agreed to, or their own words with no check @type {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}[]} */
       const picks = [];
-      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string, text: string}[]} */
+      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string, text?: string}[]} */
       const choices = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
-        /** the button the person used for this question (src/questionbox.js), or null when they typed words (the CLI, an old page): a typed choice decides, never the words */
+        /** the button the person used for this question (src/questionbox.js); null only for the drafter's own typed question: a typed choice decides, never the words */
         let via = null;
         for (;;) {
-          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q) } : {}) });
+          // a try-3 question (the drafter's own) says what its answer does: it REPLACES the rule it names, or ADDS a new one (Addendum 2026-11-14 (c) piece 5); a look question has its own words
+          const asked = q.source === 'look' ? null : jobLines.find((l) => l.n === q.line);
+          const replaces = asked && Number.isInteger(q.rule) ? asked.rules[/** @type {number} */ (q.rule) - 1] : undefined;
+          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q), agreeWords: q.ask === 'check' && q.check ? plainWords(/** @type {any} */ (q.check)) : typeof q.reading === 'string' ? q.reading : undefined } : {}), ...(typeof replaces === 'string' ? { replaces } : {}), ...(q.source !== 'look' && /** @type {any} */ (q).new === true ? { adds: true } : {}) });
           if (a === null) return null;
           via = takeChoice();
           // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
@@ -1229,23 +1238,15 @@ export function createSession(card, deps = {}) {
           if (text) break;
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
-        // PRD v1.107 Part 5b: a code-forced look question about a `~` rule. A can't-check ask answered "drop it" adds NO rule; the caller puts that
-        // rule on the look's Not checked list. A reading ask answered "agree" adds the code's reading, in plain words, as the `~` rule (so the
-        // bound is now the person's own words); anything else typed is the person's own rule, word for word.
-        // F240: "yes, check it as ..." is the person's own words minus the leading "yes,"
-        // a choice from the question box decides what the answer does; the box's own words (`rule`) are kept whole, even when they read "agree" or "drop it"
-        if (q.source === 'look' && via === null) text = stripAgreeLead(text);
-        const agrees = via === 'agree' || (via === null && isAgree(text));
-        const dropsIt = via === 'drop' || (via === null && isDropIt(text));
+        // a code-forced look question about a `~` rule is answered by a BUTTON (hamr 2026-11-15; `send` refuses words with no choice): `agree` writes the code's reading (a reading ask) or the proposed check (a check ask)
+        // as the rule, `drop` leaves the rule Not checked. Only a READING question also takes the person's own correction (`rule`, the box's words), which REPLACES the asked rule. The choice decides, never the words.
+        const agrees = via === 'agree';
+        const dropsIt = via === 'drop';
+        const corrects = via === 'rule' && q.source === 'look' && q.ask === 'reading';
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
-        // the person's CHOICE, for the check block (the choice decides, never the words): agree only where agree is offered, drop only where drop is
-        const canAgree = q.source === 'look' && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== undefined && q.check !== null));
-        const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'no-check' || q.ask === 'check') && Number.isInteger(q.rule);
-        if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
-        if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
-        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked; anything else
-        // is the person's own words, which replace the asked rule word for word (no check unless the words are the check: they judge it at Accept)
-        const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
+        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt || corrects)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : corrects ? 'rule' : 'agree', ...(corrects ? { text } : {}) });
+        // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked
+        const isPick = q.source === 'look' && q.ask === 'check' && Number.isInteger(q.rule);
         if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && agrees;
@@ -1256,8 +1257,14 @@ export function createSession(card, deps = {}) {
         }
         // one rule in, one rule out (hamr 2026-11-14): an answer about a rule of the check list REPLACES that rule, and the list is the one owner (the caller rebuilds the job text from it: `onJobLines`).
         // Only an answer that is not about a list row (a model's own try-3 question) is still added word for word as a new `~` rule on its line.
+        // A try-3 question (the drafter's own) names the rule it is about (the answer REPLACES it, one in one out) or says `new` (the answer is added); the draft log counts each under its own kind
         const line = jobLines.find((l) => l.n === q.line);
-        if (q.source !== 'look' && line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (q.source !== 'look' && line) {
+          const old = Number.isInteger(q.rule) ? line.rules[/** @type {number} */ (q.rule) - 1] : undefined;
+          if (typeof old === 'string') line.rules[/** @type {number} */ (q.rule) - 1] = text; else line.rules.push(text);
+          line.rule = line.rules.join('; ');
+          appendDraftLog(outDir, { kind: 'try3-question', no: Math.max(0, state.steps.length - 1), line: q.line, ...(typeof old === 'string' ? { rule: q.rule, ruleText: redactSecrets(old) } : { new: true }), how: typeof old === 'string' ? 'replaced' : 'added', question: redactSecrets(q.question), answer: redactSecrets(text), at: new Date().toISOString() });
+        }
       }
       const said = left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.';
       // a check-list ask (every question carries a list key): the list has not yet replaced the asked rules, so the message waits for the rebuilt lines (`onJobLines`) and is drawn from them
@@ -1286,7 +1293,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
@@ -1325,7 +1332,8 @@ export function createSession(card, deps = {}) {
     // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
     const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
     // PART 1a (run mv5bk400): the card AFTER drafting is built from the signed close itself (cardOfClose), never from what the confirm turn planned.
-    if (RUBRIC_FILES) {
+    // a repo job that signs the one list gets the same card: its rows, never what the confirm turn planned (Addendum 2026-11-15 (d))
+    if (RUBRIC_FILES || carriesOneList(spec.closeDecl)) {
       const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines, ledger: readDraftLedger(outDir) });
       // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
       appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
@@ -1336,17 +1344,35 @@ export function createSession(card, deps = {}) {
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy, protections: authored.confirmed?.protections ?? [], signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef, authored.hasBuiltCheck ?? null);
+    if (state.phase === 'prepared') finalCtx = { spec, seedRef: authored.seedRef, tree: prep.tree, repo: !RUBRIC_FILES };
     if (state.finalPlan && state.phase === 'prepared') {
       // The confirm turn's plan bubble (and a try-3 "answers are in" one) is the DRAFTER's wording of the checks, written before
       // any close existed. Once the close is signed-ready its card is the only plan the person sees: the earlier ones are
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [] }, jobLines),
+        ...finalPlanMessage(),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }
   }
+
+  /** the signed-ready card as a chat message; a repo job's agent rows can be Dropped on it (the person shapes the spec they sign: `dropStage`) */
+  const finalPlanMessage = () => ({ ...finalPlanCard(), readout: draftReadout() });
+  /** the draft readout of the signed-ready plan (hamr 2026-11-15): text + head indexes, display only, built from the signed spec in `finalCtx`, the draft log and this session's own figures; one function, so Drop never carries a stale or a second one */
+  const draftReadout = () => {
+    const steps = readDraftSteps(outDir);
+    const text = buildReadout({
+      spec: finalCtx?.spec, name: String(finalCtx?.spec?.job ?? card.jobName), modelId: String(card.model), rounds: steps.reduce((n, x) => n + x.calls.length, 0),
+      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: String(card.destination ?? ''),
+      humans: steps.flatMap((x) => x.humans), ledger: readDraftLedger(outDir),
+    });
+    return { text, heads: readoutHeadIndexes(text) };
+  };
+  const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : {}) }, jobLines);
+  /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean}|null} the spec the final card shows and the seed it was gated against */
+  let finalCtx = null;
+  let dropping = false;
 
   // fire-and-forget — the caller (src/panel/server.js) never awaits this; it
   // polls `state` instead. A crash anywhere in `run()` is caught here so it
@@ -1363,6 +1389,8 @@ export function createSession(card, deps = {}) {
       if (!state.pendingAsk) return { ok: false, error: 'nothing is being asked right now' };
       if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run for a plan, never Send — the chat can never sign or pick a plan action' };
       if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
+      // a check question (a look's reading, a proposed check) is answered by its button only (hamr 2026-11-15): typed words with no choice are refused and the question stays open
+      if (choice === undefined && state.pendingAsk.kind === 'answer' && state.pendingAsk.source === 'look') return { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.bad };
       if (choice !== undefined) {
         // hamr 2026-11-12 (fwd am29/am31): the question box posts a typed choice. A refusal leaves the question open: nothing said, nothing logged, nothing resolved.
         const no = refuseChoice(state.pendingAsk, choice);
@@ -1423,6 +1451,54 @@ export function createSession(card, deps = {}) {
       if (Array.isArray(r.choices)) { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: r.choices }); } catch { /* a convenience */ } }
       appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op, key: redactSecrets(String(key)), at: new Date().toISOString() });
       return { ok: true };
+    },
+    /**
+     * Drop on a repo `! [agent]` stage row of the FINAL card (hamr 2026-11-15, spec 2 pick b): the person shaping the spec they are about to sign. The stage and its list row leave a COPY of the spec; the $0 signing gates (the validator and the seed read)
+     * run again on it and the hash is recomputed before the card is drawn again. A gate that refuses (a line left with no check, no work stage red at the seed) refuses the Drop in plain words and nothing changes. Add: a repo has no Suggested rows, so there is none.
+     * @param {unknown} key @returns {Promise<{ok: true}|{ok: false, error: string, refused: string}>}
+     */
+    dropStage: async (key) => {
+      if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || !finalCtx.repo || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped right now' };
+      const name = stageNameOfKey(key);
+      const rowOk = name !== '' && Array.isArray(finalCtx.spec.closeDecl?.list) && finalCtx.spec.closeDecl.list.some((/** @type {any} */ r) => r && r.key === key && r.kind === 'stage' && r.state === 'built');
+      if (!rowOk) return { ok: false, refused: 'bad-row', error: 'only a check the agent added can be dropped' };
+      dropping = true;
+      try {
+        const droppedLine = Number(finalCtx.spec.closeDecl.list.find((/** @type {any} */ r) => r && r.key === key)?.line ?? 1);
+        const spec = structuredClone(finalCtx.spec);
+        spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
+        spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
+        const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
+        if (signing === null || !signing.ok) {
+          // the plain-words owners (src/authorreadout.js): a validator red is told in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it
+          /** @type {any} */
+          const uncovered = signing === null ? jv.reds.find((/** @type {any} */ r) => r.code === 'job-line-uncovered' && Number.isInteger(r.line)) : undefined;
+          const why = uncovered
+            ? `Dropping that check would leave line ${uncovered.line} with no check, so it stays. Use Revise to change the job instead.`
+            : signing === null
+              ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
+              : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+          return { ok: false, refused: 'gates', error: uncovered ? why : `Dropping that check is refused: ${why}` };
+        }
+        writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
+        writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
+        state.specHash = signing.specHash;
+        finalCtx = { ...finalCtx, spec };
+        const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines, ledger: readDraftLedger(outDir) });
+        state.finalPlan = { ...state.finalPlan, checkItems: rec.checkItems, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy };
+        const at = state.messages.findLastIndex((/** @type {any} */ m) => m.kind === 'plan');
+        const msg = { ...finalPlanMessage(), text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.' };
+        if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
+        appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op: 'drop', key: redactSecrets(String(key)), at: new Date().toISOString() });
+        // the same record a rubric Drop writes (the check block's own `choiceEntries`): a Revise keeps this Drop, code still judging it (never the last check on a line)
+        try {
+          const entry = choiceEntries(jobLines.map((/** @type {any} */ l) => ({ n: l.n, text: l.text })), [{ line: droppedLine, key: String(key), choice: 'drop' }]);
+          const had = readRowChoices(join(outDir, RECORD_FILE)) ?? [];
+          writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: [...had.filter((/** @type {any} */ c) => !entry.some((e) => e.lineWords === c.lineWords && e.occurrence === c.occurrence && e.tail === c.tail)), ...entry] });
+        } catch { /* a convenience: a disk fault only means the next draft starts without it */ }
+        return { ok: true };
+      } finally { dropping = false; }
     },
     /** click 1 — the confirm pick. Never signs on its own. */
     signPrepare: () => {

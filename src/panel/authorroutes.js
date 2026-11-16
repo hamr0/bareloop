@@ -475,6 +475,11 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'row-edit') {
       // hamr 2026-11-13 (N-2): the confirm card's Drop / Add. $0 and instant: a row edit through the live check block, never a model call
+      // the FINAL repo card's Drop (hamr 2026-11-15): the signing gates run again, so the answer comes when they have
+      if (session.state.phase === 'prepared' && body?.op === 'drop') {
+        session.dropStage(body?.key).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }), () => send(500, { ok: false, error: 'could not drop that check' }));
+        return true;
+      }
       const r = session.rowEdit(body?.op, body?.key);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
@@ -536,7 +541,7 @@ export function signRun(session, claimedHash, o) {
   if (session.state.finalPlan) {
     try {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-      const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
+      const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl, spec.jobLines ?? null);
       if (!m.ok) return { ok: false, error: m.error };
       // B2: a close that carries the one check list must agree with it: every built row points at a check the close runs, and every check has a row
       const lm = listMatchesClose(spec.closeDecl);

@@ -69,6 +69,7 @@
 // a leaked worktree outlives the process that made it.
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
+import { guardKeyOf } from './rubricstep.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -99,15 +100,15 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'list', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
-export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts']);
+export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts', 'fence']);
 /** the states a signed row may end in */
 export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
 const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
 const SIGNED_BY = Object.freeze(['you', 'agent', 'default']);
-const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor']);
+const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor', 'guard', 'prose', 'fence', 'stage']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
@@ -313,7 +314,9 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         const w = `${at}.list[${i}]`;
         if (!isObj(row)) { red('invalid-value', w, 'a row: { line, key, from, by, kind, state, rule?, part?, reason? }'); return; }
         for (const k of Object.keys(row)) if (!SIGNED_ROW_FIELDS.includes(k)) red('unknown-field', `${w}.${k}`, `not a signed row field (the row's own words are never signed); fields: ${SIGNED_ROW_FIELDS.join(', ')}`);
-        if (!Number.isInteger(row.line) || row.line < 1) red('invalid-value', `${w}.line`, 'the job line number');
+        // a `guard` or `fence` row is the job's (line 0, once for the whole job); every other row names its job line
+        const jobWide = row.kind === 'guard' || row.kind === 'fence';
+        if (!Number.isInteger(row.line) || row.line < (jobWide ? 0 : 1) || (jobWide && row.line !== 0)) red('invalid-value', `${w}.line`, jobWide ? 'a guard or fence row belongs to the whole job: line 0' : 'the job line number');
         if (!isNonEmptyString(row.key)) red('invalid-value', `${w}.key`, 'the row key, a non-empty string');
         if (!SIGNED_FROM.includes(row.from)) red('invalid-value', `${w}.from`, `menu: ${SIGNED_FROM.join('|')}`);
         if (!SIGNED_BY.includes(row.by)) red('invalid-value', `${w}.by`, `menu: ${SIGNED_BY.join('|')}`);
@@ -322,8 +325,15 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         if (row.rule !== undefined && !Number.isInteger(row.rule)) red('invalid-value', `${w}.rule`, 'the ~ rule number');
         if (row.part !== undefined && !(isObj(row.part) && Number.isInteger(row.part.line) && Number.isInteger(row.part.part))) red('invalid-value', `${w}.part`, '{ line, part }: the job line and the index of the part that carries the row');
         if (row.reason !== undefined && typeof row.reason !== 'string') red('invalid-value', `${w}.reason`, 'plain words');
+        if (row.fence !== undefined && !isNonEmptyString(row.fence)) red('invalid-value', `${w}.fence`, 'the path the write fence keeps, a non-empty string (a repo job\'s ~ rule row the fence keeps)');
         if (row.facts !== undefined && !(Array.isArray(row.facts) && row.facts.every((/** @type {unknown} */ x) => typeof x === 'string'))) red('invalid-value', `${w}.facts`, 'the names of the facts the row built, an array of strings');
       });
+    }
+  }
+  // an OLD signed repo spec may carry the drafter's fence claim (`fenceKept`, unreleased dev sessions): it still loads and Reuses; only its SHAPE is read, nothing reads its words, and a new draft never writes it
+  if (closeDecl.fenceKept !== undefined) {
+    if (!Array.isArray(closeDecl.fenceKept) || !closeDecl.fenceKept.every((/** @type {any} */ c) => isObj(c) && Number.isInteger(c.line) && c.line >= 1 && Number.isInteger(c.rule) && c.rule >= 1 && isNonEmptyString(c.path))) {
+      red('invalid-value', `${at}.fenceKept`, '{line, rule, path} entries (an older signed spec\'s fence claim)');
     }
   }
   // PART 1a: a genre is bound to its language — code languages are TYPES, the rubric-files language is TEXT, and neither may
@@ -528,13 +538,14 @@ function translate(r, redact) {
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
- *   onRubricEvidence?: ((e: any) => void)|null}} [opts]
+ *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null}} [opts]
+ *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null,
+    onRubricEvidence = null, list = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -567,6 +578,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     humanRuling,
     // REPORT-ONLY seam: what a rubric-step stage's cited checks read (bareguard `full.evidence`); the runner records it, nothing here reads it
     onRubricEvidence,
+    ...(Array.isArray(list) ? { list } : {}),
     seedTrees,
   };
   try {
@@ -591,6 +603,8 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
         // an earlier green's announcement would otherwise be lost behind the
         // stage that decided.
         ...(t.notes !== undefined ? { notes: t.notes } : {}),
+        // a RESULT PER ROW of the signed list (report-only): a rubric step's rows come from its own graded gaps; a guard stage is its own job-level row. Masked at this boundary like every recorded string
+        ...rowsRecordOf(list, st, r, t, redact),
       });
       last = t;
       if (t.verdict !== 'satisfied') {
@@ -612,6 +626,24 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   } finally {
     if (owned) await seedTrees.cleanup();
   }
+}
+
+/**
+ * The per-row results one stage entry records (Addendum 2026-11-14 (c) piece 4): `{rows, unclaimed?}` or nothing. A rubric step's come from its detail (the runner graded them against the signed list);
+ * a guard stage with a signed `guard` row is that row, passed when the stage was satisfied. The stage's own verdict is never changed by any of this.
+ * @param {any[]|null} list @param {any} st the declared stage @param {any} r the stage result @param {any} t its translation @param {(s: string) => string} redact
+ * @returns {{rows?: any[], unclaimed?: string[]}}
+ */
+function rowsRecordOf(list, st, r, t, redact) {
+  if (!Array.isArray(list)) return {};
+  if (st?.kind === 'rubric-step' && Array.isArray(r?.detail?.rows)) {
+    return {
+      rows: r.detail.rows.map((/** @type {any} */ x) => ({ key: x.key, result: x.result, ...(typeof x.why === 'string' ? { why: redact(x.why) } : {}) })),
+      ...(Array.isArray(r.detail.unclaimed) && r.detail.unclaimed.length ? { unclaimed: r.detail.unclaimed.map((/** @type {string} */ u) => redact(String(u))) } : {}),
+    };
+  }
+  const guard = list.find((/** @type {any} */ x) => x && x.kind === 'guard' && x.key === guardKeyOf(String(st?.name)));
+  return guard ? { rows: [{ key: guard.key, result: t.verdict === 'satisfied' ? 'passed' : 'failed' }] } : {};
 }
 
 /**

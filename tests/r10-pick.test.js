@@ -7,8 +7,8 @@ import { mkdtempSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keepOrDrop, scopedRules, rowsFromAnswer, SUGGEST_SCHEMA, SUGGEST_TOOL, plainWords, CANT_CHECK_WORDS } from '../src/checkpick.js';
-import { CheckBlock } from '../src/checkblock.js';
+import { keepOrDrop, scopedRules, rowsFromAnswer, SUGGEST_SCHEMA, SUGGEST_TOOL, plainWords } from '../src/checkpick.js';
+import { CheckBlock, REASON } from '../src/checkblock.js';
 import { questionsOfBlock } from '../src/blockasks.js';
 import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { runCheckSuggest } from '../src/checksuggest.js';
@@ -65,16 +65,18 @@ test('scopedRules: every ~ rule of a local-file job; a page job only for a rule 
 });
 
 // ---- the asks: fwd's exact words; a proposal is not counted, a can't-check is ---------------------------------------------------------------
-test('the asks (questionsOfBlock): fwd\'s words, `counted` only for "I can\'t check this"', () => {
+test('the asks (questionsOfBlock): fwd\'s words for a proposal, not counted; a rule with no check ("be nice") is NOT asked (option A, hamr 2026-11-15) and reads Not checked with code\'s reason', () => {
   const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'] });
   b.fromJob([{ n: 1, text: 'Summarise', rules: ['under 80 words', 'be nice'] }]);
   b.addLook([]);
   b.applyDelta({ label: 'pre', pre: true, edits: [{ op: 'pick', line: 1, rules: [1], check: { rule: 'maxWords', value: 80 } }] });
   b.reconcile();
-  const [a, c] = questionsOfBlock(b, [{ line: 1, rule: 1 }, { line: 1, rule: 2 }]);
-  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words. Answer "agree" to use it, or type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.');
-  assert.equal(c.question, `Line 1, guardrail "be nice": ${CANT_CHECK_WORDS} Type your own words (your answer replaces that ~ rule on line 1), or answer "drop it" to leave it Not checked.`);
-  assert.deepEqual([a.counted, c.counted, a.ask, c.ask, a.source], [false, true, 'check', 'no-check', 'look']);
+  const asks = questionsOfBlock(b);
+  assert.equal(asks.length, 1);
+  const [a] = asks;
+  assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
+  assert.deepEqual([a.counted, a.ask, a.source], [false, 'check', 'look']);
+  assert.equal(b.rows.find((r) => r.kind === 'rule' && r.rule === 2)?.reason, REASON.noRule);
   assert.equal(rowsFromAnswer([{ line: 1, rule: 1, text: 'x' }], { checks: [] })[0].why, 'no entry');
 });
 
@@ -194,32 +196,30 @@ async function doorWorld(lines, { answer, suggest, look = { facts: [], prose: []
   return { r, order, asked, get seen() { return seen; }, survey };
 }
 const L2 = [{ n: 1, text: 'Summarise', rule: 'under 80 words; be nice', rules: ['under 80 words', 'be nice'] }];
-test('the door: a proposal and a "can\'t check" are asked before any draft; agree/own words become ~ rules; the drafter gets the picks; the suggestion call\'s cost joins the survey\'s', async () => {
-  const w = await doorWorld(L2, { suggest: { checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }, { line: 1, guardrail: 2, rule: 'none' }] }, answer: (q) => (q.ask === 'check' ? 'agree' : 'be gentle') });
+test('the door: a proposal is asked before any draft and a rule with no check is not (option A); agree becomes the ~ rule; the drafter gets the picks; the suggestion call\'s cost joins the survey\'s', async () => {
+  const w = await doorWorld(L2, { suggest: { checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }, { line: 1, guardrail: 2, rule: 'none' }] }, answer: () => 'agree' });
   assert.deepEqual(w.order.filter((x) => ['check-suggest', 'check-ask', 'authorFn'].includes(x)), ['check-suggest', 'check-ask', 'authorFn']);
-  assert.deepEqual(w.asked[0].map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1], ['no-check', 1, 2]]);
+  assert.deepEqual(w.asked[0].map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1]]);
   const ruleRows = w.seen.block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(ruleRows.map((r) => [r.rule, r.pick?.rule ?? null, r.text]), [[1, 'maxWords', 'at most 80 words'], [2, null, 'be gentle']]);
-  assert.equal(ruleRows[1].cantAsked, true, 'the asked rule is settled by the person\'s own words (a typed row holds them)');
-  assert.deepEqual(w.seen.jobLines[0].rules, ['at most 80 words', 'be gentle']);
+  assert.deepEqual(ruleRows.map((r) => [r.rule, r.pick?.rule ?? null, r.text]), [[1, 'maxWords', 'at most 80 words'], [2, null, 'be nice']]);
+  assert.equal(ruleRows[1].reason, 'No rule can check this, so you judge it at Accept.');
+  assert.deepEqual(w.seen.jobLines[0].rules, ['at most 80 words', 'be nice']);
   assert.deepEqual(w.survey.calls.map((c) => c.label), ['check-suggest'], 'the call\'s spend joins the survey\'s, so the one ceiling holds it');
 });
-test('the cap: proposals never count; the look\'s asks plus "I can\'t check this" asks over MAX_QUESTIONS stop at $0 with the list and ask nothing', async () => {
+/** a kept look fact with a time reading the rule's words do not hold: a real ask, counted (the look's asks are the only counted ones since option A, 2026-11-15) */
+const readingOf = (k) => ({ line: 1, name: `Departure ${k}`, shape: 'time', source: 'Changelog', words: ['Unreleased'], forRule: k, reading: { op: 'between', lo: '06:00', hi: '21:00' } });
+test('the cap: proposals never count and a rule with no check is not asked at all; four reading asks over MAX_QUESTIONS stop at $0 with the list and ask nothing', async () => {
   const many = [{ n: 1, text: 'Do', rule: 'a; b; c; d', rules: ['a', 'b', 'c', 'd'] }];
-  const four = await doorWorld(many, { suggest: { checks: [] }, answer: () => 'drop it' });
+  const nothing = await doorWorld(many, { suggest: { checks: [] }, answer: () => 'agree' });
+  assert.equal(nothing.asked.length, 0, 'four rules with no check: nothing is asked, nothing counts, no stop');
+  assert.equal(nothing.r.stop, 'max-revisions', 'the draft goes on (the fixture\'s drafter fails it)');
+  const four = await doorWorld(many, { suggest: { checks: [] }, answer: () => 'agree', look: { facts: [1, 2, 3, 4].map(readingOf), prose: [], notFound: [] } });
   assert.equal(four.r.stop, 'look-asks-too-many');
   assert.equal(four.asked.length, 0);
   assert.match(four.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
-  assert.match(four.r.reds[0].detail, /line 1 "a" → I can't check this/);
-  // the look's own ask counts with the pick asks: one look ask + three "I can't check this" = four = refused, and nothing is put to the person (the block knows every ask before it asks one)
-  const withLook = [{ n: 1, text: 'List flights', rule: 'not a red-eye; b; c; d', rules: ['not a red-eye', 'b', 'c', 'd'] }];
-  const lookFacts = { facts: [{ line: 1, name: 'Departure', shape: 'time', source: 'Changelog', words: ['Unreleased'], forRule: 1, reading: { op: 'between', lo: '06:00', hi: '21:00' } }], prose: [], notFound: [] };
-  const five = await doorWorld(withLook, { suggest: { checks: [] }, answer: () => 'drop it', look: lookFacts });
-  assert.equal(five.r.stop, 'look-asks-too-many');
-  assert.equal(five.asked.length, 0, 'nothing is asked: the block counts every ask up front (the old flow put the look ask to the person first and refused after), and the stop lists every ask');
-  assert.match(five.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
+  assert.match(four.r.reds[0].detail, /line 1 "a" → Departure 1 between 06:00 and 21:00/);
   const three = [{ n: 1, text: 'Do', rule: 'a; b; c', rules: ['a', 'b', 'c'] }];
-  const exactly = await doorWorld(three, { suggest: { checks: [] }, answer: () => 'drop it' });
+  const exactly = await doorWorld(three, { suggest: { checks: [] }, answer: () => 'agree', look: { facts: [1, 2, 3].map(readingOf), prose: [], notFound: [] } });
   assert.equal(exactly.asked[0].length, 3, 'exactly MAX_QUESTIONS counted asks are asked, not refused');
   const proposals = [{ n: 1, text: 'Do', rule: 'under 1 words; under 2 words; under 3 words; under 4 words', rules: ['under 1 words', 'under 2 words', 'under 3 words', 'under 4 words'] }];
   const ok = await doorWorld(proposals, { suggest: { checks: [1, 2, 3, 4].map((n) => ({ line: 1, guardrail: n, rule: 'maxWords', value: n })) }, answer: () => 'agree' });

@@ -69,7 +69,7 @@ const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('r
 
 test('3: the Always checked rows (and a guard under a line) carry the [default] tag, the same markup as the other tags', () => {
   const h = renderJobPlan({ lines: [{ n: 1, text: 'a', checks: [], always: ['changed-from-seed'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: ['no-suppressions', 'changed-from-seed'], older: false });
-  assert.equal((h.match(/<span class="by" data-testid="plan-by" data-by="default">\[default\]<\/span>/g) ?? []).length, 3, h);
+  assert.equal((h.match(/<span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span>/g) ?? []).length, 3, h);
   assert.match(h, /plan-alwayson"><summary>Always checked · 2<\/summary><ul><li>no-suppressions <span class="by"[^>]*data-by="default">/);
 });
 

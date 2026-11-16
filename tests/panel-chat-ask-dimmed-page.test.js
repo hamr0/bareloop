@@ -22,12 +22,31 @@ function renderMainWith(state) {
   const mainBtn = { textContent: '', disabled: false };
   const mainHint = { textContent: '' };
   const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('reviseButtonFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
-    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();\nreturn mainAction;';
+    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var chatRowEl = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();\nreturn mainAction;';
   // eslint-disable-next-line no-new-func
   new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', src)(
     msg, mainBtn, mainHint, state.sessionLive, state.lastState, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) });
   return { msg, mainBtn };
 }
+/** the same render, reporting whether the chat's typing row is drawn */
+function rowHiddenWith(state) {
+  const msg = { value: '', disabled: false, style: {}, scrollHeight: 10, offsetHeight: 0, clientHeight: 0 };
+  const row = { hidden: null };
+  const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('reviseButtonFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
+    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();';
+  // eslint-disable-next-line no-new-func
+  new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', 'chatRowEl', src)(
+    msg, { textContent: '', disabled: false }, { textContent: '' }, state.sessionLive, state.lastState, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) }, row);
+  return row.hidden;
+}
+
+test('chat typing box (hamr 2026-11-15): not drawn at all with no ask, on the final card, or beside a question box (buttons only); drawn only for a typed ask (language, goal)', () => {
+  assert.equal(rowHiddenWith({ sessionLive: false, lastState: null }), true, 'no session');
+  assert.equal(rowHiddenWith({ sessionLive: true, lastState: { phase: 'prepared', pendingAsk: null } }), true, 'the final card');
+  assert.equal(rowHiddenWith({ sessionLive: true, lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' } } }), true, 'the plan menu');
+  assert.equal(rowHiddenWith({ sessionLive: true, lastState: { phase: 'asking', pendingAsk: { kind: 'answer', box: { choices: [] } } } }), true, 'a question with its own box');
+  assert.equal(rowHiddenWith({ sessionLive: true, lastState: { phase: 'asking', pendingAsk: { kind: 'language' } } }), false, 'a typed ask keeps the box');
+});
 
 test('ask box: disabled (and emptied) with no session, no pending ask, or while waiting on install', () => {
   const none = renderMainWith({ sessionLive: false, lastState: null, typed: 'leftover' });
@@ -41,12 +60,12 @@ test('ask box: disabled (and emptied) with no session, no pending ask, or while 
   assert.equal(install.mainBtn.textContent, 'Check again');
 });
 
-test('ask box: dimmed at the plan menu (Sign & run or Revise, never typed text), enabled for any question the session asks', () => {
+test('ask box: dimmed at the plan menu (Draft the plan or Revise, never typed text), enabled for any question the session asks', () => {
   const menu = renderMainWith({ sessionLive: true, lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' } } });
   assert.equal(menu.msg.disabled, true);
   const typed = renderMainWith({ sessionLive: true, typed: 'shorter goal', lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' } } });
   assert.equal(typed.msg.value, '', 'a change request typed at the plan is dropped, not sent');
-  assert.equal(typed.mainBtn.textContent, 'Sign & run');
+  assert.equal(typed.mainBtn.textContent, 'Draft the plan');
   const typedQ = renderMainWith({ sessionLive: true, typed: 'my answer', lastState: { phase: 'asking', pendingAsk: { kind: 'question' } } });
   assert.equal(typedQ.msg.value, 'my answer', 'enabled keeps typed text');
   assert.equal(typedQ.mainBtn.textContent, 'Send');

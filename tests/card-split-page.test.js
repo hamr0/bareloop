@@ -41,7 +41,8 @@ test('draft A, the signed preview: [agent] rows carry Drop, [you] rows none, Non
   const sug = h.slice(h.indexOf('plan-suggested'));
   assert.match(sug, /must say &quot;Nonstop&quot;[^]*data-rowop="add" data-rowkey="L1\.phrase\.nonstop"/);
   assert.match(h, /<summary>Not checked · \d/);
-  assert.match(h, /every claim quotes its input[^<]*<span class="by"[^>]*data-by="default">\[default\]/);
+  // (this saved draft's close has no guard rows: an older close keeps today's Not checked row)
+  assert.match(h, /every claim quotes its input[^<]*<span class="by"[^>]*data-by="default">\$ \[default\]/);
   // the section sits between the lines and the Not checked fold
   assert.ok(h.indexOf('plan-suggested') > h.indexOf('fact · results') && h.indexOf('plan-suggested') < h.indexOf('plan-notchecked'));
 });

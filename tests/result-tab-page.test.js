@@ -20,13 +20,13 @@ const src = (name) => {
 };
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
 const NONE = /var RESULT_NONE = "([^"]+)";/.exec(PAGE)[1];
-const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultProofHtml', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultLineCard', 'resultDoorHtml',
+const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultProofHtml', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultCheckRowsHtml', 'resultLineCard', 'resultDoorHtml',
   'stageQuestionText', 'stageNumberText', 'stageTriedText', 'stateDotHTML', 'resultDiffHtml', 'resultTicketCard', 'resultJobCard', 'resultChangedCard', 'resultChecksCard', 'resultWorkCard', 'resultRunCard', 'resultGenericHtml'];
 // cut lazily so a missing page function fails ITS test, not the whole file
 let cut = null;
 const fns = new Proxy({}, { get: (_, k) => { cut ??= new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)(); return cut[k]; } });
 // the rubric tab's own functions only: this test must pass on the page as it was before the generic tab
-const rnames = names.slice(0, 10);
+const rnames = names.slice(0, 11);
 const rub = new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${rnames.map(src).join('\n')}\nreturn {${rnames.join(', ')}};`)();
 const readJson = (f) => JSON.parse(readFileSync(join(HERE, 'fixtures', 'result-tab', f), 'utf8'));
 const strip = (h) => h.replace(/<[^>]+>/g, '');

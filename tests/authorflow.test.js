@@ -2499,14 +2499,15 @@ test('P7: with jobLines the author prompt orders fromLine tagging and carries th
     ...args, jobLines: [{ n: 1 }, { n: 2 }], inputs: [{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }],
   });
   assert.ok(tagged.includes(jobLineTagBlock(2, greenGuards('js').map((g) => g.name))));
-  // guardLines: the drafter is told the always-on checks exist, never to declare them again, and how to link a covered line (legal example)
+  // the drafter is told the always-on checks exist and never to declare them again; guardLines is no longer offered (Addendum 2026-11-15 (d)): a rule needs no stage, and the fence claim has one legal example
   const gnames = greenGuards('js').map((g) => g.name);
   const gblock = jobLineTagBlock(2, gnames);
-  assert.match(gblock, /guardLines/);
+  assert.doesNotMatch(gblock, /guardLines/);
   assert.match(gblock, /NEVER declare any of them again as a stage/);
   assert.match(gblock, /no second files-changed or scope stage/);
-  assert.ok(gblock.includes(`{"guard": "${gnames[0]}", "lines": [2]}`), 'a legal example links a guard to a line');
-  assert.ok(!/guardLines/.test(jobLineTagBlock(2)), 'no guards named = no guardLines paragraph (old callers byte-identical)');
+  assert.doesNotMatch(gblock, /fenceKept/, 'the drafter no longer states a fence claim: code decides what the write fence keeps, from the person\'s own words');
+  assert.match(gblock, /you never list one in "refused"/);
+  assert.ok(!/never list one/.test(jobLineTagBlock(2)), 'no guards named = no always-on paragraph (old callers byte-identical)');
   assert.ok(!/guardLines/.test(plain));
   assert.match(tagged, /fromLine/);
   assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);
@@ -2546,7 +2547,7 @@ const greenDecl = (/** @type {string} */ note) => {
   d.notes = [note];
   return d;
 };
-const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question });
+const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question, new: true });
 const offeredAt = (/** @type {any[]} */ calls) => calls.map((c) => Boolean(c.tools[0]?.parameters?.properties?.questions));
 
 test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 3 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {

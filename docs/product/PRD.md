@@ -2293,3 +2293,12 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - [x] A facts-only rubric line is asked ONCE at drafting whether it also wants written words; yes adds a `$` countable text row (brief FACTS AND TEXT, text-present floored), no changes nothing, a failed call shows a Not checked row. The "carry text" protection is derived from the signed close. Run mwgjlezb.
 - [x] An agreed or typed answer REPLACES the asked `~` rule (same line, same number); the check list is the one owner, no follower rows, no F318 dedupe, no re-ask of a rule whose words already are the proposal. Supersedes the 2026-11-12 ruling "an agreed answer is a new `~` line". Run mwgjnrkz.
 - Pointer: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-14 (b). Built 2026-11-14 on fix/after-0.56; test-proven, not seen live.
+
+### Rubric checks on the one list; try-3 question replaces (v1.136 — 2026-11-14)
+
+- [ ] Rubric checks all on the one list; try-3 question replaces — spec signed 2026-11-14, ITEM33-BUILD addendum (c); not built.
+
+### Repo jobs on the one list (v1.137 — 2026-11-15)
+
+- [ ] Repo jobs on the one list under hamr's law (a rule shows as kept only when code proves it, else Not checked) — spec signed 2026-11-15, `docs/product/ITEM33-BUILD.md` Addendum 2026-11-15 (d); built on feat/one-list-rubric, not live-proven.
+

@@ -2,7 +2,8 @@
 
 > What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08. Updated 2026-10-24: cross-run learnings, the thinking rule,
 > rubric jobs on pages (page-word map, fit check, asks, Result tab), the launcher.
-> The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/logs/FINDINGS.md`, not here.
+> Updated 2026-11-15: the one check list (`~` you, `!` agent, `$` default) for rubric and repo jobs; the fit check and calibration are gone (see "One list, one flow").
+> The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/wiki/FINDINGS.md`, not here.
 
 ---
 
@@ -22,17 +23,18 @@ YOU (the panel, started with `bareloop start`; or the CLI)
   │  describe the job in Chat; the drafter asks a few questions
   ▼
 JOB CARD: goal · source · destination · check type · $ cap · time cap · model
-  │  check type = Deterministic (a command decides) / Rubric (a judge model reads,
-  │  code decides). Reuse workflow is a button on every run, not a check type.
+  │  check type = Deterministic (a command decides; every repo job) / Rubric (a judge model
+  │  reads, code decides; pages, sheets, docs, and Tickets). Reuse workflow is a button on
+  │  every run, not a check type.
   │  a web page can be an input: it is fetched at drafting and again at run start
-  │  rubric on a page: the AI maps the page's own words, code keeps only words really
-  │  on the page; a fit check asks one question if the page lacks something the job asks;
-  │  up to 3 more questions when a rule can't be tied to the page (never a NO)
+  │  every job builds ONE check list (~ you, ! agent, $ default); the AI only points, code
+  │  proves it against your own words; what code cannot prove is Not checked, with a reason
+  │  a question is buttons only (Agree / Drop it); see "One list, one flow" below
   ▼
 bareloop checks everything at $0, before any token:
-  source and destination are real · the check runs · rubric: the judge must pass its
-  10-case test (calibration) · secrets refused or masked · the monthly $ limit has room
-  anything dropped from a rubric job shows as "Not checked", never silently
+  source and destination are real · the check runs · secrets refused or masked · the
+  monthly $ limit has room · a run needs at least one check
+  anything code cannot prove shows as "Not checked", never silently
   │
   ▼
 YOU SIGN  (the hash covers the job, the check and the caps; any change = sign again)
@@ -108,7 +110,7 @@ human**. The agent can never touch it. Every layer runs inside it.
 | green | changed | new workflow `<name>-N` | yes |
 | green | same | run-N | no, it reuses that run's proven plan |
 
-"Job" = the job lines, ~ rules, ~ PASS/~ FAIL, check type, thinking. The run boxes (source/inputs,
+"Job" = the job lines, ~ rules, check type, thinking. The run boxes (source/inputs,
 destination, model, $ cap, time cap) never make a new workflow. An already-green run counts as
 green. The button reads Sign & run only in the green+same row, Start drafting otherwise. Editing
 never clears a schedule; a new workflow has no schedule until its own first green. Schedule run /
@@ -176,6 +178,45 @@ Names we use: carry memo, last failure, cut-off, numbers trend, step results, se
 
 ---
 
+## One list, one flow (2026-11-15)
+
+Every job has ONE check list. Nothing a screen shows about checks lives outside it. Three kinds of row, each tagged:
+
+- **`~ [you]`**: a rule you wrote on a job line.
+- **`! [agent]`**: a check the AI proposed. Only from what it sees (the page, or the repo's own work stages), and only if code can prove it.
+- **`$ [default]`**: code's always-on checks: the guards (once per job) and the write fence.
+
+The plan card, the Job tab, the Audit, the Result tab, the CLI print and the close all read this one list. Each row has its own pass or fail. Owner: `src/checkblock.js`; plain wording of `!` stage rows and `$` guard/fence rows: `src/stagewords.js`.
+
+**Same flow for every job kind, no exceptions** (hamr, 2026-11-15). Rubric jobs (page, sheet, doc, Tickets) and repo jobs (Deterministic) both go through the same CheckBlock. Only the TYPE of check differs:
+
+- rubric: facts, phrases and counts, each quoted from the saved page.
+- repo: catalogue commands (the test suite, typecheck), plus the write fence.
+
+Repo jobs had a side path first. It was removed because it broke on real drafts: a rule shown kept AND Not checked, reasons swapped between rules, and a false "fence keeps it" on a leftover copy of a file. The fit check, the calibration test and PASS/FAIL examples are gone for the same reason (one place for all checks).
+
+**The law.** The AI only points. Code proves it against your own words. What code cannot prove is **Not checked**, with a reason from code's one table (`REASON`), and you judge it at Accept. Examples: a repo rule "don't edit test/" is kept by the write fence, because the rule names `test/` and that folder is outside the fence. "Be friendly" is Not checked, because no check can prove it.
+
+**Questions are buttons only.**
+- A reading question ("I read 'under 500' as 500 US dollars") offers Agree, Drop it, and a box to type the right reading. A typed correction replaces that rule and code proves it again; words code cannot prove go to Not checked.
+- A proposed check offers Agree / Drop it. No box.
+- A rule whose only answer would be Drop it is not asked. It goes straight to Not checked. Unasked rules do not count toward the 3-question stop.
+- The drafter's own try-3 questions and the Destination question still take typed words.
+
+**Changing the list.** On the card: Drop, Add and Suggested rows; the last check on a line is never dropped. To change a rule's words, use Revise on the final card (2 revises, then Start over). One rule in, one rule out: an answer replaces the rule it is about.
+
+**Hidden from the repo file list:** bareloop's own folders `.bareloop/`, `.smoke/`, `.litectx/` (a leftover worktree copy once made the fence "keep" a rule falsely).
+
+**Built since (2026-11-15/16):**
+- When the AI's phrase is not in your rule's words, it becomes its own `! [agent]` check (Drop, or Suggested with Add when the phrase is not in your job text either), and your rule stays Not checked. An AI-written fact name is no proof that a phrase or place came from you.
+- fwd's draft readout (v0.34.0) is in the Chat above the signed-ready card, and the CLI prints it under SIGNING PREPARED. Display only: not signed, not in the hash, secrets masked, the same rows as the card. YOUR ANSWERS and the Audit's drafting rows say what was decided (agreed, you wrote, dropped), never the question that quotes a replaced rule's old words.
+
+**Proof, honestly.**
+- Seen live on 2026-11-15, repo job: "don't edit test/" kept by the fence in 3 of 3 drafts and again after Revise; "package.json" kept after Revise; run walk-sum3 went green. Rubric job: "be friendly please" came out Not checked; run walk-flight1-2.
+- Test-proven only, not seen live: the CLI readout, the reading-question correction box, a rule dropped to Not checked without a question (option A), and phone width of the new cards.
+
+---
+
 ## When something goes wrong
 
 | what happened | what bareloop does | what you see | who decides |
@@ -226,6 +267,8 @@ That never changes. Mom is the **shell**.
 
 - **The sticky-note board.** After each build, mom jots what went wrong and what fixed it. Before planning the next one, the kid may read the board (if mom turned that on). Only the planner reads it, never the builder.
 
+- **The one checklist.** Mom's checklist has three kinds of line: the ones you wrote (`~`), the ones the helper suggested after looking (`!`), and the ones mom always adds herself (`$`: nobody changes the shelf rules, nobody cheats). It is ONE sheet. Every screen reads that sheet. If mom cannot prove a line, she writes "not checked" and says why, and you look at it yourself at the end.
+
 Two more characters. The **ruler** is a check the kid may use mid-build on one wall. It settles
 nothing; mom's inspection is still the only verdict. For rubric jobs, mom has a **reader** who
 only points at what the castle says and where, and mom's rulebook decides pass or fail.
@@ -251,7 +294,7 @@ pre-printed checklist. Mom signs it. Nothing is built until she does.
 |---|---|
 | the contract | `docs/product/PRD.md` |
 | how to use it | `bareloop.context.md` |
-| what we learned | `docs/logs/FINDINGS.md` |
+| what we learned | `docs/wiki/FINDINGS.md` |
 | why it is shaped this way | `docs/product/2026-07-10-agentic-automation-successor-design.md` |
 | the panel | `docs/product/PANEL-BUILD.md` |
 | the launcher (`bareloop start\|stop\|status\|install`) | `src/launcher.js` |
@@ -266,7 +309,8 @@ The one place implementation names appear:
 | reuse (Layer 3) | `src/bridges.js`, `src/reuse.js`; export in `src/bundle.js` |
 | learnings | `src/learn.js` (cards, fold, climb, hints), `src/learnstore.js` (the ledger, the `learningHints` setting) |
 | thinking | `src/thinking.js` |
-| the page-word map, fit check | `src/pagemap.js`, `src/pagerules.js`, `src/fitcheck.js` |
+| the page-word map | `src/pagemap.js`, `src/pagerules.js` |
+| the one check list (rows, questions) | `src/checkblock.js`, `src/stagewords.js`, `src/questionbox.js` |
 | web-page inputs | `src/pagefetch.js` |
 | the worker loop, the gate (fence, budget) | `bare-agent`, `bareguard` |
 | `recall` / `get` | `litectx` |

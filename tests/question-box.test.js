@@ -36,22 +36,22 @@ test('the static markup: head, line, question, the labelled one-line box, an ale
   assert.match(PAGE, /<div class="hint q-err" id="chat-q-error"[^>]*role="alert"><\/div>/);
   assert.match(PAGE, /<button class="btn primary wide" type="button" id="chat-q-send"[^>]*>Send<\/button>/);
   assert.match(PAGE, /placeholder="Your answer, on one line"/);
-  assert.match(PAGE, /<div class="chat-input-row">/, 'the chat input stays for the asks that have no box');
+  assert.match(PAGE, /<div class="chat-input-row" hidden>/, 'the chat input stays for the asks that have no box');
   assert.ok(PAGE.indexOf('id="chat-question"') < PAGE.indexOf('class="chat-input-row"'), 'the box sits where the chat input is');
   assert.match(PAGE, /\.chat-question\{[^}]*box-sizing:border-box/);
   assert.match(PAGE, /\.chat-question \.q-text\{[^}]*overflow-wrap:anywhere/);
   assert.match(PAGE, /\.chat-question \.q-choices \.btn\{[^}]*white-space:normal/, 'long button words wrap instead of scrolling the page sideways');
 });
 
-test('session: a look question carries its box and its thread message is held back until it is answered; the answer closes it', async () => {
-  const { session, bot } = rubricSession({ jobText: '1. Find the last 3 releases\n~ one per week' });
+test('session: a check question carries its box and its thread message is held back until it is answered; the answer closes it', async () => {
+  const { session, bot } = rubricSession({ jobText: '1. Summarise the latest release\n~ under 80 words', picks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const box = session.state.pendingAsk.box;
   assert.equal(box.head, 'A question the plan raised (1 of 1)');
   assert.equal(box.line, 'About job line 1');
-  assert.match(box.text, /^Your line 1 says "one per week"\. I can't check this on the page\./);
+  assert.equal(box.text, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
   assert.equal(bot().at(-1).askOpen, true, 'the box shows the question, so the thread holds the message back');
-  assert.equal(session.send('each release is a weekly build').ok, true);
+  assert.equal(session.send('', 'agree').ok, true);
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
   assert.equal(bot().some((m) => m.askOpen === true), false, 'answered: the question joins the thread');
   assert.equal(session.state.pendingAsk.box, undefined);
@@ -69,18 +69,17 @@ function boxHarness() {
 }
 const ASK = (text, over = {}) => ({ pendingAsk: { kind: 'answer', index: 1, source: 'look', box: { head: 'A question the plan raised (1 of 2)', line: 'About job line 1', text, choices: [], orLabel: 'Type your answer:' }, ...over } });
 
-test('page: an open question shows the box and takes the chat input\'s place; closing brings the chat input back', () => {
+test('page: an open question shows the box and takes the chat input\'s place; closing brings the main button back', () => {
   const { e, render } = boxHarness();
   render(ASK('Which one?'));
   assert.equal(e.qBox.hidden, false);
-  assert.equal(e.row.hidden, true, 'the chat input is hidden while the box is open');
+  assert.equal(e.row.hidden, true, 'the chat input row is renderMain\'s (hidden beside a box, and when nothing asks to be typed); renderQuestionBox leaves it alone');
   assert.equal(e.mainBtn.hidden, true, 'the box has its own Send');
   assert.equal(e.qHead.textContent, 'A question the plan raised (1 of 2)');
   assert.equal(e.qLine.textContent, 'About job line 1');
   assert.equal(e.qText.textContent, 'Which one?');
   render({ pendingAsk: { kind: 'menu' } });
   assert.equal(e.qBox.hidden, true);
-  assert.equal(e.row.hidden, false);
   assert.equal(e.mainBtn.hidden, false);
   render(null);
   assert.equal(e.qBox.hidden, true);

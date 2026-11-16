@@ -1,0 +1,272 @@
+{
+  "schema": "job-v1",
+  "job": "onelist-repo1",
+  "description": "onelist-repo1 — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass",
+      "rule": "don't edit test/; no new dependencies; keep the comment at the top of src/sum.js",
+      "rules": [
+        "don't edit test/",
+        "no new dependencies",
+        "keep the comment at the top of src/sum.js"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/bareloop-live-sum"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass, without editing test/, without adding new dependencies, and keeping the comment at the top of src/sum.js.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "expectExit": 0,
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "no-failing-tests",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "tests-kept",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed",
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Rule 1 of line 1 says don't edit test/ — test/sum.test.js lies outside the write scope (src/), so the write fence keeps it; declared in fenceKept, no stage.",
+      "Rule 2 of line 1 (no new dependencies) has no catalogue kind that can check it: there is no lockfile and no node_modules at the seed, and the facts object records zero dependencies, but 'no dependency was added' would require diffing package.json's dependency fields — no kind reads a file's content. Left unchecked; the write fence does at least keep package.json read-only since it is outside src/.",
+      "Rule 3 of line 1 (keep the comment at the top of src/sum.js) is a content-preservation ask inside the write scope; no kind in the catalogue checks that a comment survived. Left unchecked for the person to judge at Accept.",
+      "There is no type checker in this repository (typecheck is null, no tsconfig/jsconfig/typescript dependency), so no typecheck or typecheck-outside stage exists — none was fabricated.",
+      "Node test patterns are taken verbatim from the genre's known instruments (node-test-total-count, node-test-fail-count); the seed run confirms they match (value 2 and value 1 respectively).",
+      "suite-green is two assertions in the template (clean exit AND zero failing tests); the catalogue's command-exit covers the exit and no-failing-tests covers the zero-fail figure, so they are declared as two stages.",
+      "tests-kept is green at seed by design: it is a floor at the seed's own executed-test count (2), so it grades nothing until a change is made — it exists to catch a run that satisfies the suite by deleting or skipping a test."
+    ],
+    "fenceKept": [
+      {
+        "line": 1,
+        "rule": 1,
+        "path": "test/sum.test.js"
+      }
+    ],
+    "list": [
+      {
+        "line": 1,
+        "key": "L1.~1",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "rule": 1,
+        "state": "built",
+        "fence": "test/sum.test.js"
+      },
+      {
+        "line": 1,
+        "key": "L1.~2",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "rule": 2,
+        "state": "not-checked",
+        "reason": "no check code can prove keeps this rule — you judge it at Accept"
+      },
+      {
+        "line": 1,
+        "key": "L1.~3",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "rule": 3,
+        "state": "not-checked",
+        "reason": "no check code can prove keeps this rule — you judge it at Accept"
+      },
+      {
+        "line": 1,
+        "key": "S.suite-green",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 1,
+        "key": "S.no-failing-tests",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 1,
+        "key": "S.tests-kept",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$guard.changed-from-seed",
+        "from": "default",
+        "by": "default",
+        "kind": "guard",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$guard.no-suppressions",
+        "from": "default",
+        "by": "default",
+        "kind": "guard",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$fence",
+        "from": "default",
+        "by": "default",
+        "kind": "fence",
+        "state": "built"
+      }
+    ]
+  }
+}

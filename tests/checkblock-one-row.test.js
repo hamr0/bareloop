@@ -19,17 +19,16 @@ test('a look-dropped time fact on a ~ rule, then the person\'s Drop: one not-che
   b.fromJob(JOB);
   b.addLook([{ line: 1, name: 'price', shape: 'money', source: 'flights', words: ['From'], unit: ['US dollars'], currency: ['$'], decimal: '.', forRule: 1 }], DROPPED);
   b.reconcile();
-  const q = b.open.find((x) => x.rowKey === 'L1.~2');
-  assert.ok(q, 'the look asks about the dropped rule');
-  assert.equal(b.applyAnswer(q.key, 'drop').ok, true);
+  assert.equal(b.open.find((x) => x.rowKey === 'L1.~2'), undefined, 'option A (hamr 2026-11-15): a rule nothing can check is not asked');
   const view = b.closeView();
   const rule2 = view.list.filter((r) => r.line === 1 && r.rule === 2);
   assert.equal(rule2.length, 1, 'one row for the rule in signedRows');
   assert.equal(rule2[0].state, 'not-checked');
-  assert.equal(rule2[0].reason, 'You chose to leave it Not checked, so you judge it at Accept.');
+  const why = rule2[0].reason;
+  assert.ok(typeof why === 'string' && why !== '' && why !== 'You chose to leave it Not checked, so you judge it at Accept.', `code's own reason: ${why}`);
   const card = cardOfClose({ closeDecl: { stages: view.stages, list: view.list }, jobLines: b.jobLinesView(JOB) });
   const mine = card.notChecked.filter((t) => /departure time/i.test(t));
-  assert.deepEqual(mine, ['line 1: "departure time between 05:00 and 21:59" — You chose to leave it Not checked, so you judge it at Accept.']);
+  assert.deepEqual(mine, [`line 1: "departure time between 05:00 and 21:59" — ${why}`]);
   // the confirm card also lists the look's own drop sentence; the block says which rules it already says
   const lookLines = dropRows(DROPPED).map((r) => dropLine(r, JOB, lineRules));
   assert.equal(lookLines.length, 1);

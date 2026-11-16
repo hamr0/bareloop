@@ -196,6 +196,7 @@
   .rp-status{font-size:13px;color:var(--text-dim);min-width:0;overflow-wrap:anywhere;}
   .rp-sep{color:var(--text-faint);margin-right:6px;}
   .st-word{font-weight:700;color:var(--text);}
+  .audit-checks-label{font-size:12px;}
   .wf-ended-inline{flex:1 1 auto;white-space:normal;}
   .wf-compact{flex-wrap:wrap;}
   .wf-runno{color:var(--accent);flex:none;}
@@ -479,6 +480,7 @@
   /* PRD v1.107 Part 6: the Result tab. Boxes are the Job tab's own (.job-card, .field, .ro-value, .field-row); text wraps, nothing scrolls the page. */
   #result-body{min-width:0;overflow-wrap:anywhere;}
   .rs-ok{color:var(--green);font-weight:700;}
+  .rs-bad{color:var(--red);font-weight:700;}
   #result-body mark{background:var(--rl-accent-bg-strong);color:var(--text);border-radius:2px;padding:0 1px;}
   #result-door-card{border-color:var(--amber);}
   #result-door-card .st-word{color:var(--amber);}
@@ -706,6 +708,9 @@
   .jp-qs .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
   .jp-qs ul{margin:4px 0;padding-left:26px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
+  /* the draft readout above the signed-ready card: plain text, wrapped, the server names the heading lines (bold) */
+  .jp-readout{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+  .jp-readout b{font-weight:700;}
   /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
   #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
   /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
@@ -1057,13 +1062,13 @@
             <button class="btn primary wide" type="button" id="chat-q-send" data-testid="chat-q-send">Send</button>
           </div>
 
-          <div class="chat-input-row">
+          <div class="chat-input-row" hidden>
             <label for="chat-msg" style="display:none">Message</label>
             <textarea id="chat-msg" rows="2" placeholder="Answer here when the draft asks you a question…" data-testid="chat-msg"></textarea>
           </div>
           <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
-          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
+          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown while a plan waits for the OK and on the final card (phase prepared). -->
           <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
           <!-- fwd M4e am14 item 3: "N revises left"; after the second revise this same button reads Start over (a fresh draft, its own 2 revises) -->
           <span id="chat-left-count" data-testid="revises-left" class="hint" hidden></span>
@@ -3671,7 +3676,7 @@
       });
       // PRD v1.106 Part 5 Q1: each question the person answered, under its step, in the server's own words (asked, then said); wraps
       (Array.isArray(st.humans) ? st.humans : []).forEach(function(h){
-        rows += '<tr class="human-row" data-testid="drafting-human"><td colspan="5" style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(h.askedText) + "<br>" + escapeXml(h.saidText) + "</td></tr>";
+        rows += '<tr class="human-row" data-testid="drafting-human"><td colspan="5" style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(h.askedText) + (h.saidText ? "<br>" + escapeXml(h.saidText) : "") + "</td></tr>";
       });
     });
     rows += '<tr class="drafting-total"><td><b>total</b></td><td>' + (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) +
@@ -3845,7 +3850,7 @@
   // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
   function auditCheckRowHtml(r){
     var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : r.result === "not-reached" ? ["grey", r.word || "not reached"] : ["grey", "no result recorded"];
-    return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
+    return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + (r.result === "failed" && r.why ? ' <span class="hint" data-testid="audit-check-why">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
   }
   // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
   function auditChecksSignClass(rows){
@@ -3861,7 +3866,7 @@
     var nPass = all.filter(function(r){ return r.result === "passed" || r.result === "held"; }).length;
     var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
     var nUnreached = all.filter(function(r){ return r.result === "not-reached"; }).length;
-    var head = "checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + (nUnreached ? " &middot; " + nUnreached + " not reached" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
+    var head = '<b class="st-word audit-checks-label">checks</b>' + " &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + (nUnreached ? " &middot; " + nUnreached + " not reached" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn audit-part-toggle";
@@ -4153,7 +4158,7 @@
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
   // the tag of a row by its kind (F-c, code-owned): `~` rows [you], `!` rows [agent], `$` rows [default]; one spelling for the confirm card, the signed card, the Job tab and the Result tab
-  function byTagOf(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">[default]</span>' : ""; }
+  function byTagOf(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">~ [you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">! [agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">$ [default]</span>' : ""; }
   function renderJobPlan(plan, ctl){
     // the legend promises \u203A checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
     var hasCheck = (plan.loose || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
@@ -4343,6 +4348,15 @@
     }
     return h;
   }
+  // each row of the line with its OWN mark (Addendum 2026-11-14 (c) piece 4): \u2713 passed, \u2717 failed (with the check's reason), \u00B7 no result; a gap no row owns is its own failed item. The server decides every mark and word
+  function resultCheckRowsHtml(line){
+    var rows = line.checkRows || [], gaps = line.unclaimed || [];
+    if(!rows.length && !gaps.length) return "";
+    var mark = function(res){ return res === "passed" ? '<span class="rs-ok">\u2713</span>' : res === "failed" ? '<span class="rs-bad">\u2717</span>' : '<span class="hint">\u00B7</span>'; };
+    return resultField("Each check", '<div class="ro-value" data-testid="result-checkrows">' + rows.map(function(r){
+      return '<div data-testid="result-checkrow" data-result="' + escapeXml(r.result) + '">' + mark(r.result) + " " + escapeXml(r.text) + byTagOf(r.by) + (r.result === "failed" && r.why ? ' <span class="hint">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
+    }).join("") + gaps.map(function(g){ return '<div data-testid="result-checkrow" data-result="failed"><span class="rs-bad">\u2717</span> ' + escapeXml(g) + "</div>"; }).join("") + "</div>");
+  }
   function resultTextLine(line){
     var h = resultFileWords(line.file);
     if(typeof line.answer === "string") h += resultField("Answer", '<div class="ro-value" data-testid="result-answer" style="color:var(--text);white-space:pre-wrap">' + escapeXml(line.answer) + '</div>');
@@ -4369,7 +4383,7 @@
   function resultLineCard(line, own, note){
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
       (own ? resultPageLink(line.page, note, "result-page-line") : "") +
-      (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
+      (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) + resultCheckRowsHtml(line) +
       resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }
   // ---- the generic Result tab (R7b item 4): every ended non-rubric run. The server sends the facts and the words (`kind: "generic"`); the page only draws.
@@ -5458,6 +5472,8 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
+    // hamr 2026-11-15: the chat's typing box is shown only while something asks to be typed (the language, the goal); a check question has buttons and no box (renderQuestionBox), and with no ask the box is not drawn dimmed
+    var chatRowEl = document.querySelector(".chat-input-row");
     var qBox = document.getElementById("chat-question");
     var qHead = document.getElementById("chat-q-head");
     var qLine = document.getElementById("chat-q-line");
@@ -5746,7 +5762,7 @@
       document.getElementById("jf-cap-time").parentNode.hidden = false;
       document.getElementById("chat-clear-btn").hidden = false;
       ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = false; });
-      document.querySelector(".chat-input-row").hidden = false;
+      document.querySelector(".chat-input-row").hidden = true;
     }
     function openNewCard(){
       card.hidden = false;
@@ -6071,6 +6087,13 @@
     function planControlHTML(op, key){
       return ' <button type="button" class="btn jp-btn" data-testid="plan-' + op + '" data-rowop="' + op + '" data-rowkey="' + escapeXml(key) + '">' + (op === "add" ? "Add" : "Drop") + "</button>";
     }
+    // the draft readout is plain text; the server names which lines are headings (src/authorreadout.js readoutHeadIndexes), drawn bold
+    function readoutHtml(r){
+      var heads = Array.isArray(r.heads) ? r.heads : [];
+      return r.text.replace(/\s+$/, "").split("\n").map(function(l, i){
+        return heads.indexOf(i) >= 0 ? "<b>" + escapeXml(l) + "</b>" : escapeXml(l);
+      }).join("\n");
+    }
     function renderMessages(state){
       var sig = JSON.stringify(state.messages);
       if(sig === lastMsgSig) return;
@@ -6081,11 +6104,12 @@
         var who = chatWhoLabel(m.role);
         var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
         if(m.kind === "plan" && m.plan){
+          var ro = m.readout && typeof m.readout.text === "string" ? '<div class="jp-readout" data-testid="plan-readout">' + readoutHtml(m.readout) + "</div>" : "";
           // P7: the confirm turn's plan is drawn by the one job-plan renderer (the Job tab uses the same)
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
               m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");
@@ -6162,7 +6186,8 @@
         if(st.phase === "prepared" && st.signClicked){
           return {text: "Sign " + (st.specHash || "").slice(0, 8) + " & run", action: "sign", disabled: false, hint: hint};
         }
-        return {text: "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
+        // at the plan menu this click only confirms the plan and starts drafting the checks (it never signs): it says so. A drafted card's first click (a Reuse) keeps "Sign & run"
+        return {text: atMenu ? "Draft the plan" : "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
       }
       return {text: "Sign & run", action: "none", disabled: true, hint: ""};
     }
@@ -6172,9 +6197,9 @@
     function askBoxOpenFor(st){
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed" && st.pendingAsk.kind !== "menu";
     }
-    // pure: Revise shows only while a plan waits for the OK
+    // pure: Revise shows while a plan waits for the OK (the plan menu) AND on the final signed-ready card (phase "prepared": the pending ask is null there, which is why it never showed)
     function reviseShownFor(st){
-      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
+      return !!st.session && ((!!st.pendingAsk && st.pendingAsk.kind === "menu") || (st.phase === "prepared" && !st.pendingAsk));
     }
     // fwd M4e am14 item 3 (pure): 2 revises per draft, shown as "2 revises left" / "1 revise left"; with none left the same button reads Start over. The SERVER counts (revisesLeft); an
     // absent number (a state from before the count) reads as 2.
@@ -6193,6 +6218,7 @@
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
+      chatRowEl.hidden = !open || !!(st.pendingAsk && st.pendingAsk.box);
       msgInput.disabled = !open;
       if(!open) msgInput.value = "";
       var b = mainButtonFor(st, !msgInput.value.trim(), reusePathNow() || verdictValue() === "reuse");
@@ -6288,7 +6314,6 @@
       var ask = state && state.pendingAsk;
       var b = ask && ask.box ? ask.box : null;
       qBox.hidden = b === null;
-      document.querySelector(".chat-input-row").hidden = b !== null;
       mainBtn.hidden = b !== null; mainHint.hidden = b !== null;
       if(b === null){ qKey = null; return; }
       var key = String(sessionId) + ":" + String(ask.index) + ":" + String(ask.source) + ":" + b.text;

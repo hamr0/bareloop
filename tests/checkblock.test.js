@@ -46,9 +46,9 @@ function barsBroken(/** @type {any} */ b, /** @type {any} */ snapshots = null) {
     if (!code || p.aiPart) broken.push(`b3 an AI-format part reached the close: ${JSON.stringify(p).slice(0, 80)}`);
   }
   for (const m of b.closeCache?.map ?? []) if (m.origin !== 'code') broken.push(`b3 a part of origin ${m.origin}`);
-  // b4 the card is built from rows only: changing a row changes the card, and a card line exists for every non-floor row
+  // b4 the card is built from rows only: changing a row changes the card, and a card line exists for every row (the floor too, Addendum 2026-11-14 (c) piece 1)
   const card = renderCard(rows);
-  if (card.map((/** @type {any} */ x) => x.key).join() !== rows.filter((/** @type {any} */ r) => r.kind !== 'floor').map((/** @type {any} */ r) => r.key).join()) broken.push('b4 card keys are not the rows');
+  if (card.map((/** @type {any} */ x) => x.key).join() !== rows.map((/** @type {any} */ r) => r.key).join()) broken.push('b4 card keys are not the rows');
   const copy = strip(rows); const t = copy.find((/** @type {any} */ r) => r.kind !== 'floor');
   if (t && JSON.stringify(renderCard(copy)) === JSON.stringify(renderCard(copy.map((/** @type {any} */ r) => (r === t ? { ...r, text: `${r.text ?? ''} X`, name: `${r.name ?? ''} X`, state: r.state === 'built' ? 'not-checked' : 'built' } : r))))) broken.push('b4 the card did not move when a row changed');
   // b5/b6 a bad edit refused alone removes no row; no row is dropped after the last try
@@ -309,9 +309,17 @@ test('drop on a question leaves the rule Not checked and adds no row; typed word
   assert.equal(b.rows.find((r) => r.kind === 'rule')?.reason, REASON.left);
   const c = new CheckBlock({ texts: { f: 'x y z' }, labels: ['f'] });
   c.fromJob([{ n: 1, text: 'Say it', rules: ['be nice'] }]); c.reconcile();
-  assert.equal(c.open[0].ask, 'cant-check');
-  c.applyAnswer(c.open[0].key, 'rule', 'mention x'); c.reconcile();
-  assert.deepEqual(c.rows.filter((r) => r.kind === 'rule').map((r) => [r.rule, r.origin, r.text]), [[1, 'typed', 'mention x']]);
+  assert.equal(c.open.length, 0, 'option A (hamr 2026-11-15): a rule no check can prove is not asked');
+});
+
+test('option A: a rule no check can prove is Not checked at once with the "no rule can check this" reason, and it asks nothing (rubric and repo)', () => {
+  const c = new CheckBlock({ texts: { f: 'x y z' }, labels: ['f'], asks: true });
+  c.fromJob([{ n: 1, text: 'Say it', rules: ['be nice'] }]); c.reconcile();
+  assert.equal(c.open.length, 0);
+  assert.equal(c.ask().length, 0);
+  const row = c.rows.find((r) => r.kind === 'rule');
+  assert.equal(row?.state, 'not-checked');
+  assert.equal(row?.reason, REASON.noRule);
 });
 
 test('an agreed count pick: pick part carries the rule and its added line; carry() keeps a last draft pick on the rule with those words and a left rule left', () => {
@@ -344,14 +352,14 @@ test('ruling 4: a whole fact the look dropped shows Not checked with its plain s
   b.fromJob([{ n: 1, text: 'Find it', rules: ['cheap enough'] }]);
   b.addLook([], [{ line: 1, rule: 1, fact: 'price', reason: 'no-label' }, { line: 1, fact: 'seats', reason: 'no-label' }, { line: 1, rule: 1, fact: 'price', reason: 'person-left' }]);
   b.reconcile();
-  b.applyAnswer(b.open[0].key, 'drop'); b.reconcile();
+  assert.equal(b.open.length, 0, 'option A: nothing is asked');
   const loose = b.rows.find((r) => r.kind === 'fact');
   assert.equal(loose?.state, 'not-checked');
   assert.match(String(loose?.reason), /No word on this page reads "seats" safely/);
   const c = new CheckBlock({ texts: { f: 'x' }, labels: ['f'] });
   c.fromJob([{ n: 1, text: 'Find it', rules: ['cheap enough'] }]);
   c.addLook([], [{ line: 1, rule: 1, fact: 'price', reason: 'no-label' }]);
-  c.reconcile(); c.applyAnswer(c.open[0].key, 'rule', 'mention x'); c.reconcile();
+  c.reconcile();
   assert.match(String(c.rows.find((r) => r.rule === 1)?.reason), /No word on this page reads "price" safely/);
 });
 

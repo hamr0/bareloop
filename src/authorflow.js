@@ -89,7 +89,8 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText } from './rubricstep.js';
+import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -129,8 +130,10 @@ export const MAX_QUESTIONS = 3;
  * word anywhere in it (a test greps this): the machine, not the prompt, bounds the count.
  */
 export const QUESTIONS_DESCRIPTION = 'Optional. Add a question only if a refusal in the measured results names a job line that cannot be drafted '
-  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question}: '
-  + '"line" is the number of the job line it is about. If the refusals can be fixed without asking, fix them and leave this out. '
+  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question} plus the tag that says what the answer does: '
+  + '"line" is the number of the job line it is about; "rule" is the number of that line\'s own rule the question is about (the answer then replaces that rule) '
+  + 'or "new": true when it is about nothing the line already says (the answer is added as a new rule). Name a rule only if the line really has it, and tag each question with a rule or with new, never with a mix. '
+  + 'If the refusals can be fixed without asking, fix them and leave this out. '
   + 'Never ask about a budget, a cap or a time limit (the person signs those). Still deliver the complete corrected declaration.';
 
 /**
@@ -161,13 +164,14 @@ export function linesNamedByReds(reds, declaration, lineNums) {
 }
 
 /**
- * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
- * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
- * @param {any} raw @param {number[]} failedLines
- * @returns {{kept: {line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
+ * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named, its text is non-blank, at most {@link MAX_QUESTIONS}, and its TAG is sound
+ * (Addendum 2026-11-14 (c) piece 5): the drafter names the `rule` the question is about (a `~` rule number the line really has: the answer REPLACES it) or says `new` (the answer is added as a new rule).
+ * A rule the line does not have, a question with neither tag and one with both are dropped; code never guesses which the drafter meant. Every drop comes back with its reason, for the draft's log.
+ * @param {any} raw @param {number[]} failedLines @param {{n: number, rules?: string[], rule?: string}[]|null} [jobLines] the person's numbered lines (their rules are what a tag may name)
+ * @returns {{kept: {line: number, question: string, rule?: number, new?: true, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
  */
-export function normalizeQuestions(raw, failedLines) {
-  /** @type {{line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
+export function normalizeQuestions(raw, failedLines, jobLines = null) {
+  /** @type {{line: number, question: string, rule?: number, new?: true, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
   const kept = [];
   /** @type {{reason: string, raw: any}[]} */
   const dropped = [];
@@ -177,11 +181,15 @@ export function normalizeQuestions(raw, failedLines) {
     if (!q || typeof q !== 'object' || !Number.isInteger(q.line)) { dropped.push({ reason: 'no line', raw: q }); continue; }
     if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
     if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
+    const named = Number.isInteger(q.rule);
+    if (named && q.new === true) { dropped.push({ reason: `line ${q.line}: the question names both a rule and new`, raw: q }); continue; }
+    if (!named && q.new !== true) { dropped.push({ reason: `line ${q.line}: the question names neither a rule nor new`, raw: q }); continue; }
+    if (named && !(q.rule >= 1 && q.rule <= lineRules((jobLines ?? []).find((/** @type {any} */ l) => l?.n === q.line)).length)) { dropped.push({ reason: `line ${q.line} has no rule ${q.rule}`, raw: q }); continue; }
     if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
     kept.push({
       line: q.line, question: redactSecrets(q.question.trim()),
       // PRD v1.106 Part 5 Q3: a code-forced question (the early look ask) names the `~` rule it is about and says so; a model's question has neither
-      ...(Number.isInteger(q.rule) ? { rule: q.rule } : {}), ...(typeof q.source === 'string' ? { source: q.source } : {}),
+      ...(named ? { rule: q.rule } : { new: /** @type {const} */ (true) }), ...(typeof q.source === 'string' ? { source: q.source } : {}),
       // PRD v1.107 Part 5b: the kind of a code-forced ask, and (reading asks) the plain words `agree` writes as the `~` rule
       ...(q.ask === 'reading' || q.ask === 'cant-check' ? { ask: q.ask } : {}), ...(q.ask === 'reading' && typeof q.reading === 'string' ? { reading: redactSecrets(q.reading) } : {}),
     });
@@ -589,27 +597,13 @@ export const ANSWER_QUESTION_FIELD = Object.freeze({
  * @type {Record<'confirm'|'fix'|'type-goal'|'start-over', string>}
  */
 export const CONFIRM_MENU = Object.freeze({
-  confirm: 'Confirm — sign this plan and goal as shown',
+  confirm: 'Confirm — draft the checks for this plan and goal as shown',
   fix: 'Fix — describe what to change',
   'type-goal': 'Type the goal sentence yourself',
   'start-over': 'Start over — rerun the interview from the beginning',
 });
 
-/**
- * PLAIN-ENGLISH lines for the guards `classGuards` can compose, keyed by
- * guard NAME — frozen beside {@link CONFIRM_MENU} because both are constants
- * the confirm turn shows a person verbatim. One entry per guard that exists
- * in `MECHANICAL_GUARDS` (`src/authoring.js`); {@link confirmProtections}
- * throws if a guard `classGuards` hands back has no line here, so a battery
- * that grows a guard fails loudly instead of showing a blank description.
- * @type {Record<string, string>}
- */
-export const GUARD_DESCRIPTIONS = Object.freeze({
-  'changed-from-seed': 'the run must actually change at least one file in scope — a close that reports done '
-    + 'without touching anything is refused',
-  'no-suppressions': 'the run may not silence a checker instead of fixing what it flags (things like @ts-ignore, '
-    + 'eslint-disable, or # type: ignore) — none of those may appear in the diff',
-});
+export { GUARD_DESCRIPTIONS };
 
 /**
  * THE REAL PROTECTIONS a person is shown, and what {@link runConfirmTurn}
@@ -629,7 +623,9 @@ export const GUARD_DESCRIPTIONS = Object.freeze({
  * @returns {string[]}
  */
 export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null, closeDecl = null }) {
-  const guards = classGuards({ verdictType, lang });
+  // (one list, Addendum 2026-11-14 (c) piece 2: a guard the signed list already holds as a `$` row is said THERE, once for the job; an older close with no guard row keeps its line here)
+  const rowed = Array.isArray(closeDecl?.list) ? closeDecl.list.filter((/** @type {any} */ r) => r && r.kind === 'guard' && r.state === 'built').map((/** @type {any} */ r) => guardNameOfKey(r.key)) : [];
+  const guards = classGuards({ verdictType, lang }).filter((g) => !rowed.includes(g.name));
   const lines = guards.map((g) => {
     const desc = GUARD_DESCRIPTIONS[g.name];
     if (!desc) {
@@ -638,13 +634,16 @@ export function confirmProtections({ verdictType, lang, writeScope = null, jobLi
     }
     return `${g.name} — ${desc}`;
   });
-  if (Array.isArray(writeScope) && writeScope.length > 0) {
+  // (a close whose signed list holds the fence row says it THERE, as a `$` row; only an older close keeps this line)
+  if (Array.isArray(writeScope) && writeScope.length > 0 && !(Array.isArray(closeDecl?.list) && closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'fence'))) {
     lines.push(`write fence — the run may only change files matching: ${writeScope.join(', ')}`);
   }
   // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
   // JSON and has text — a fact of the close's shape (`rubric-step`), not a plan of the model's, so it is listed from code
+  // (one list, Addendum 2026-11-14 (c) piece 1: a close whose signed list already holds a line's `$` floor row says it THERE, once; only an older close with no floor row keeps this note)
   if (lang === RUBRIC_LANG && Array.isArray(jobLines)) {
-    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
+    const floors = Array.isArray(closeDecl?.list) ? closeDecl.list.filter((/** @type {any} */ r) => r && r.kind === 'floor' && r.state === 'built').map((/** @type {any} */ r) => r.line) : [];
+    for (const l of jobLines) if (!floors.includes(l.n)) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
   }
   return lines;
 }
@@ -939,26 +938,14 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
           type: 'object',
           properties: {
             line: { type: 'integer', minimum: 1, description: 'the number of a job line no stage checks' },
-            rule: { type: 'integer', minimum: 1, description: 'optional: the number of ONE ~ rule of that line that nothing checks (the line itself still has a stage)' },
+            // a `~` rule is never a repo drafter's to refuse (code decides what keeps it and asks about the rest); only the rubric class keeps the rule number (its rows are code-assembled)
+            ...(Array.isArray(kinds) && kinds.includes('rubric-step') ? { rule: { type: 'integer', minimum: 1, description: 'optional: the number of ONE ~ rule of that line that nothing checks (the line itself still has a stage)' } } : {}),
             reason: { type: 'string', minLength: 1, description: 'why, in plain words the person can read' },
           },
           required: ['line', 'reason'],
           additionalProperties: false,
         },
-        description: 'job lines (or single ~ rules of a line) you could not turn into a check, each with a reason in the person\'s words — a note does not cover a line or a rule',
-      },
-      guardLines: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            guard: { type: 'string', minLength: 1, description: 'the name of a mandatory guard stage' },
-            lines: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line(s) that guard already checks' },
-          },
-          required: ['guard', 'lines'],
-          additionalProperties: false,
-        },
-        description: 'optional: which job lines the always-on guards already cover (a line whose every ask a mandatory guard checks needs no stage of its own)',
+        description: 'job lines you could not turn into a check, each with a reason in the person\'s words — a note does not cover a line. A ~ rule is never listed here: code decides what keeps it and asks the person about the rest',
       },
       ...(ticket ? {
         ticketFilter: {
@@ -976,7 +963,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
           type: 'array',
           items: {
             type: 'object',
-            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 } },
+            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 }, rule: { type: 'integer', minimum: 1 }, new: { type: 'boolean' } },
             required: ['line', 'question'],
           },
           description: QUESTIONS_DESCRIPTION,
@@ -1224,7 +1211,7 @@ export function confirmedBlock(confirmed) {
  * names the ONE numbered job line it serves, or the line is refused with a reason; the mandatory guards serve no line.
  * The $0 validator (validateDeclaration, `jobLines`) enforces it and the revise loop feeds a miss back.
  * @param {number} count how many numbered job lines the person wrote
- * @param {string[]} [guardNames] the mandatory guards' names; present = the block also tells how a line they already cover is covered
+ * @param {string[]} [guardNames] the mandatory guards' names; present = the block also tells that a rule needs no stage and no refusal (code decides what keeps a rule)
  */
 export function jobLineTagBlock(count, guardNames = []) {
   return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
@@ -1234,17 +1221,10 @@ export function jobLineTagBlock(count, guardNames = []) {
     + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
     + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".'
     + (guardNames.length
-      ? '\n\nA job line whose every ask the always-on checks (the mandatory guards) already do needs no stage of its own and no refusal: '
-        + 'name the guard(s) that do it in "guardLines", beside "stages" — for example {"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [N]}]}. '
-        + 'Never write a second stage that repeats a guard, and keep "refused" for a line nothing can check.'
-        + '\n\nTHE ALWAYS-ON CHECKS ALREADY EXIST in this close, in plain words: ' + guardNames.map((n) => n + ' (' + (GUARD_DESCRIPTIONS[n] ?? n) + ')').join('; ')
+      ? '\n\nTHE ALWAYS-ON CHECKS ALREADY EXIST in this close, in plain words: ' + guardNames.map((n) => n + ' (' + (GUARD_DESCRIPTIONS[n] ?? n) + ')').join('; ')
         + '; and the write fence (changes stay inside the write scope). They are already among the guard stages you were given — keep those exactly as given, and NEVER declare any of them again as a stage of your own — '
-        + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line they already cover '
-        + '(for example "Fix the cause in the source code under src/" with the rule "no suppression comments") is linked to them with "guardLines", '
-        + 'not given a stage and not refused. Legal example for a two-line job whose line 1 is a test run and whose line 2 is covered by the guards: '
-        + '{"stages": [{"name": "suite-green", "kind": "command-exit", "fromLine": [1], "params": {"cmd": "npm", "args": ["test"], "expectExit": 0}}], '
-        + '"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [2]}' + (guardNames[1] ? ', {"guard": "' + guardNames[1] + '", "lines": [2]}' : '') + ']} — '
-        + 'line 2 has no stage of its own and is not refused.'
+        + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line whose every ask they already do needs no stage of its own: list it in "refused" with a reason, never a stage that repeats them.'
+        + '\n\nA "~" rule needs no stage and no refusal, and you never list one in "refused". Write a stage only for what a kind in the catalogue really measures; never write one to stand in for a rule nothing can check — code decides which rules the write fence keeps (from the person\'s own words) and asks the person about the rest.'
       : '');
 }
 
@@ -2041,6 +2021,10 @@ export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are t
   + 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
   + 'and write ONE sentence saying what the job does, from the numbered job lines.';
 
+/** What the confirm turn tells the model about a REPO job (model-facing, registered; Addendum 2026-11-15 (d)): the turn plans the goal only, the job's checks are the one list's rows, built by code after the draft. */
+export const REPO_CONFIRM_NOTE = 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
+  + 'and write ONE sentence saying what the job does, from the numbered job lines.';
+
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
   + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
@@ -2103,6 +2087,7 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   // PART 1a: a rubric job on the person's own text files. The model is told what a check CAN be here, so that anything
   // needing judgement lands in `notChecked` instead of being promised as a check
   if (lang === RUBRIC_LANG) lines.push('', RUBRIC_CONFIRM_NOTE);
+  else if (isRepo === true) lines.push('', REPO_CONFIRM_NOTE);
   // R10: the `~` rules code settles from the person's own picks are not yours to plan: a check for them is code's, a gap is code's Not checked row
   // MCP + tickets R5 (F285): a Tickets job's confirm turn is told the ticket is picked per run and a priority/label line is code's, so it never asks the person which ticket
   if (ticket) lines.push('', ticketPerRunFacts());
@@ -2159,7 +2144,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy?: Record<string, string>}|null, block?: CheckBlock|null, cardOf?: (() => any)|null}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy?: Record<string, string>, closeDecl?: any}|null, block?: CheckBlock|null, cardOf?: (() => any)|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2190,8 +2175,8 @@ export async function runConfirmTurn({
   // the live check block of a rubric job and the reader that draws its rows (`() => cardOfClose(...)`): the confirm card's Drop and Add are instant row edits ($0, no AI) through the block, and the card is redrawn from its rows
   block = null, cardOf = null,
 }) {
-  /** a rubric job's confirm turn plans the goal only (its checks are the list's) */
-  const goalOnly = lang === RUBRIC_LANG;
+  /** a rubric or a repo job's confirm turn plans the goal only (its checks are the list's rows) */
+  const goalOnly = lang === RUBRIC_LANG || isRepo === true;
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
   const base = () => ({ ok: false, stop: null, rounds: 0, accepted: null, reds: [], cost: book.report() });
@@ -2216,7 +2201,7 @@ export async function runConfirmTurn({
   // the prompt below so the model can check `notChecked` against it, and
   // reused (never recomputed) after the call so the shown, prompted, and
   // recorded protections are always the exact same list.
-  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : null });
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : (card?.closeDecl ?? null) });
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */
@@ -2305,7 +2290,8 @@ export async function runConfirmTurn({
     for (const { text } of lookRows) if (!notChecked.includes(text)) notChecked.push(text);
     // ONE row per `~` rule on the CARD (hamr 2026-11-14, run mwgsl7zx): a rule the check list says Not checked is said by its row alone (its reason is the look's sentence, or the person's kept Drop, which wins),
     // so the look's own line for that rule is not drawn beside it. `accepted.notChecked` below stays the full list the drafter is told.
-    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && l.row.rule !== undefined && block !== null && block.saysRule(l.row.line, l.row.rule)));
+    // live run mwi76vh8 (session smwi75mbqjjbs): a drop with no `~` rule (a place fact) is the block's own `!` row too ("boston place"), so its look line is not drawn beside it either
+    const shownNotChecked = () => notChecked.filter((t) => !lookRows.some((l) => l.text === t && block !== null && (l.row.rule !== undefined ? block.saysRule(l.row.line, l.row.rule) : block.rows.some((r) => r.key === `L${l.row.line}.fact.${String(l.row.fact).toLowerCase().replace(/\s+/g, ' ').trim()}`))));
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
@@ -2663,6 +2649,8 @@ export async function authorClose({
     block.addLook(Array.isArray(facts?.look?.facts) ? facts.look.facts : [], Array.isArray(facts?.look?.dropped) ? facts.look.dropped : []);
     block.reconcile();
   }
+  // the mandatory guards are job-level `$` rows of the signed list (piece 2): the block that signs knows their names, whoever built it
+  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;
   const draftGenerate = rowEdits && editGenerate ? editGenerate : generate;
@@ -2801,7 +2789,7 @@ export async function authorClose({
         // `questions` is never part of the declaration: stripped before validation, kept only through the machine's filter
         const { questions: rawQuestions, ...rest } = ask.declaration;
         ask.declaration = rest;
-        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines));
+        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines), jobLines);
         askedQuestions = nq.kept;
         droppedQuestions = nq.dropped;
       }

@@ -66,7 +66,8 @@ const baseArgs = (over = {}) => ({
   facts: { sourcePaths: ['src/'] },
   listing: null,
   writeScope: ['src/**'],
-  isRepo: true,
+  // (a repo job's confirm turn plans the goal only since Addendum 2026-11-15 (d); these tests are about the turn's own mechanics, which a plain code folder still carries whole)
+  isRepo: false,
   lang: 'js',
   mode: 'tool',
   ...over,

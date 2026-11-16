@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { offersOf, panelQuestionText, refuseChoice, resolveChoice, CHOICE_SAYS, boxFor } from '../src/questionbox.js';
-import { readingTail, cantCheckTail } from '../src/pagemap.js';
 import { join } from 'node:path';
+import { DEST_ANSWER } from '../src/destpoint.js';
 import { createSession } from '../src/panel/authorsession.js';
-import { parseMapAnswer } from '../src/pagemap.js';
+import { parseMapAnswer, readingQuestion, readingOfQuestion } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { lookFactOf } from '../src/inputlook.js';
 import { rubricSession, until, tmp, HERE } from './qbox-world.mjs';
@@ -27,98 +27,95 @@ async function pickDraft(jobText = PICK_JOB) {
 const human = (w) => w.log().filter((e) => e.kind === 'human');
 
 test('offersOf: Agree only with a proposal; Drop it only on a look ask about one of the person\'s ~ rules where "drop it" leaves it Not checked (fwd am29 + am30)', () => {
-  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', reading: 'x between 1 and 2', rule: 1 }), { agree: true, drop: false }, 'a reading ask: agree it, or type; drop it has no effect on a reading ask today');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', reading: 'x between 1 and 2', rule: 1 }), { agree: true, drop: true }, 'a reading ask: agree it, drop it, or type the right reading (hamr 2026-11-15 ruling)');
   assert.deepEqual(offersOf({ source: 'look', ask: 'check', check: { rule: 'maxWords', value: 80 }, rule: 1 }), { agree: true, drop: true });
-  assert.deepEqual(offersOf({ source: 'look', ask: 'no-check', rule: 2 }), { agree: false, drop: true });
-  assert.deepEqual(offersOf({ source: 'look', ask: 'cant-check', rule: 2 }), { agree: false, drop: true });
-  assert.deepEqual(offersOf({ source: 'look', ask: 'cant-check' }), { agree: false, drop: false }, 'no rule number: nothing to drop');
-  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', rule: 1 }), { agree: false, drop: false }, 'a reading ask with no reading words proposes nothing');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'cant-check', rule: 2 }), { agree: false, drop: false }, 'a rule with nothing to agree to is not asked at all (hamr 2026-11-15)');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'check', check: { rule: 'maxWords', value: 80 } }), { agree: true, drop: false }, 'no rule number: nothing to drop');
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', rule: 1 }), { agree: false, drop: true }, 'a reading ask with no reading words offers no Agree');
   assert.deepEqual(offersOf({ source: 'try-3', rule: 1 }), { agree: false, drop: false }, 'a drafter question: box and Send only');
 });
 
-test('panelQuestionText: the exact known tails are cut as a suffix, nothing else; the stored question is not changed', () => {
-  const reading = `Your line 2 says "not a red-eye". I read it as: departure time between 06:00 and 21:00. Agree?${readingTail(2)}`;
-  assert.equal(panelQuestionText({ question: reading, source: 'look', line: 2 }), 'Your line 2 says "not a red-eye". I read it as: departure time between 06:00 and 21:00. Agree?');
-  const cant = `Your line 3 says "nonstop". I can't check this on the page. Drop it?${cantCheckTail(3)}`;
-  assert.equal(panelQuestionText({ question: cant, source: 'look', line: 3 }), 'Your line 3 says "nonstop". I can\'t check this on the page. Drop it?');
-  assert.equal(panelQuestionText({ question: cant, source: 'look', line: 4 }), cant, 'another line number: not the tail, kept whole');
-  assert.equal(panelQuestionText({ question: cant, source: 'try-3', line: 3 }), cant, 'only a look question is cut');
+test('panelQuestionText: a look question carries no typed-answer words and is shown whole; only the Destination question\'s own tail is cut (an exact suffix)', () => {
+  const reading = readingQuestion(2, 'not a red-eye', 'departure time between 06:00 and 21:00');
+  assert.equal(reading, 'Your line 2 says "not a red-eye". I read it as: departure time between 06:00 and 21:00. Agree?');
+  assert.equal(panelQuestionText({ question: reading, source: 'look', line: 2 }), reading);
+  assert.equal(readingOfQuestion(reading), 'departure time between 06:00 and 21:00');
+  assert.equal(readingOfQuestion(`${reading} Answer "agree", or type your own reading (your answer replaces that ~ rule on line 2).`), 'departure time between 06:00 and 21:00', 'an archived question with the old answer words still reads');
   const own = 'Your line 1 says "x". Answer "agree" somewhere in the middle of my own prose, then more.';
-  assert.equal(panelQuestionText({ question: own, source: 'look', line: 1 }), own, 'a pattern over the prose never cuts: only the exact suffix');
+  assert.equal(panelQuestionText({ question: own, source: 'look', line: 1 }), own);
+  assert.equal(panelQuestionText({ question: `Set it? ${DEST_ANSWER}`, source: 'dest-point' }), 'Set it? ');
 });
 
 test('refuseChoice / resolveChoice: the door\'s words, word for word (fwd am31)', () => {
   const step = (over) => ({ kind: 'answer', source: 'look', rule: 1, offers: { agree: false, drop: true }, ...over });
   assert.equal(CHOICE_SAYS.bad, 'That answer is not one of the choices. Nothing was saved.');
   assert.equal(CHOICE_SAYS.notOffered, 'That choice is not offered for this question. Nothing was saved.');
-  assert.equal(CHOICE_SAYS.noRule, 'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Agree, or type your own words. Nothing was saved.');
+  assert.equal(CHOICE_SAYS.noRule, 'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Nothing was saved.');
   for (const bad of ['maybe', '', 5, null, {}, 'Agree', 'go-on']) assert.equal(refuseChoice(step({}), bad), CHOICE_SAYS.bad, String(bad));
   assert.equal(refuseChoice(step({}), 'agree'), CHOICE_SAYS.notOffered, 'agree with no proposal');
   assert.equal(refuseChoice(step({ rule: undefined, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.noRule, 'drop on a question with no ~ rule number');
-  assert.equal(refuseChoice(step({ source: 'try-3', rule: undefined, offers: undefined }), 'drop'), CHOICE_SAYS.notOffered, 'a drafter question offers no drop');
-  assert.equal(refuseChoice(step({ rule: 3, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.notOffered, 'a rule number but "drop it" has no effect (a reading ask)');
+  assert.equal(refuseChoice(step({ source: 'try-3', rule: undefined, offers: undefined }), 'drop'), CHOICE_SAYS.bad, 'a drafter question has no buttons: only its typed words');
+  assert.equal(refuseChoice(step({ source: 'try-3', rule: undefined, offers: undefined }), 'rule'), null, 'the drafter\'s own question keeps its typed answer');
+  assert.equal(refuseChoice(step({ rule: 3, offers: { agree: false, drop: false } }), 'drop'), CHOICE_SAYS.notOffered, 'a rule number but nothing to drop is not offered');
   assert.equal(refuseChoice({ kind: 'menu' }, 'rule'), CHOICE_SAYS.notOffered, 'only a question the person answers takes a choice');
-  for (const ok of ['agree', 'drop', 'rule']) assert.equal(refuseChoice(step({ offers: { agree: true, drop: true } }), ok), null);
+  for (const ok of ['agree', 'drop']) assert.equal(refuseChoice(step({ offers: { agree: true, drop: true } }), ok), null);
+  assert.equal(refuseChoice(step({ ask: 'check', offers: { agree: true, drop: true } }), 'rule'), CHOICE_SAYS.notOffered, 'a proposed-check question has no typed words (hamr 2026-11-15)');
+  assert.equal(refuseChoice(step({ ask: 'reading', offers: { agree: true, drop: true } }), 'rule'), null, 'a reading question takes the right reading in words');
   assert.deepEqual(resolveChoice('agree', 'ignored'), { value: 'agree', shown: 'Agree' });
   assert.deepEqual(resolveChoice('drop', ''), { value: 'drop it', shown: 'Drop it' });
   assert.deepEqual(resolveChoice('rule', 'agree, why not\nplease'), { value: 'agree, why not please', shown: 'agree, why not please' }, 'the box\'s words, kept whole, one line');
   assert.deepEqual(resolveChoice('rule', '  '), { error: CHOICE_SAYS.blank });
 });
 
-test('boxFor: Agree and Drop it buttons follow the offers; the box label says "Or type a new rule:" beside buttons; a drafter question has the box and Send only', () => {
+test('boxFor: Agree and Drop it buttons follow the offers; a check question has NO typing box (buttons only); a drafter question has the box and Send only', () => {
   const both = boxFor({ kind: 'answer', source: 'look', index: 1, total: 2, line: 1, question: 'q', offers: { agree: true, drop: true } });
   assert.deepEqual(both?.choices, [{ choice: 'agree', label: 'Agree' }, { choice: 'drop', label: 'Drop it' }]);
-  assert.equal(both?.orLabel, 'Or type a new rule:');
+  assert.equal(both?.orLabel, null, 'buttons only: no box to type a new rule');
   assert.deepEqual(boxFor({ kind: 'answer', source: 'look', line: 1, question: 'q', offers: { agree: false, drop: true } })?.choices, [{ choice: 'drop', label: 'Drop it' }]);
   const plain = boxFor({ kind: 'answer', source: 'try-3', line: 1, question: 'q' });
   assert.deepEqual(plain?.choices, []);
   assert.equal(plain?.sendChoice, 'rule');
+  assert.equal(plain?.orLabel, 'Type your answer:', 'the drafter\'s own question has no button, so it keeps its one line');
 });
 
-test('session: a proposal ask carries Agree + Drop it, its box shows the question without the typed-answer words, the stored question keeps them; Agree = today\'s agree', async () => {
+test('session: a proposal ask carries Agree + Drop it, its box shows the question without the typed-answer words, the stored question keeps them; Agree = today\'s agree; the rule with no check is not asked', async () => {
   const w = await pickDraft();
   const ask = w.session.state.pendingAsk;
+  assert.equal(ask.total, 1, 'only the proposal is a question (option A, hamr 2026-11-15)');
   assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree', 'drop']);
   assert.equal(ask.box.text, 'Line 1, guardrail "under 80 words": I propose at most 80 words.');
-  assert.match(ask.question, /I propose at most 80 words\. Answer "agree" to use it, or type your own words \(your answer replaces that ~ rule on line 1\), or answer "drop it" to leave it Not checked\.$/);
+  assert.equal(ask.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words.', 'no typed-answer words: buttons only');
+  assert.equal(ask.box.orLabel, null, 'no box to type in');
   assert.equal(w.bot().at(-1).text.endsWith('I propose at most 80 words.'), true, 'the thread holds the panel copy');
   assert.deepEqual(w.session.send('', 'agree'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  assert.equal(w.session.state.pendingAsk.box.text, 'Line 1, guardrail "be nice": I can\'t check this. Your own words, or Not checked?');
-  assert.deepEqual(w.session.state.pendingAsk.box.choices.map((c) => c.choice), ['drop'], 'no proposal: no Agree button');
-  assert.deepEqual(w.session.send('', 'drop'), { ok: true });
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   assert.equal(w.session.signPrepare().ok, true);
   assert.ok(await until(() => w.legs.length === 1));
   // ruling 1 (2026-11-12): agree writes a `~` line into the signed job lines AND a row with the SAME rule number; the agreed rule's row carries the pick (no aiProposal)
   assert.deepEqual(w.legs[0].jobLines[0].rules, ['at most 80 words', 'be nice'], 'one rule in, one rule out: the agreed words REPLACED "under 80 words"');
   const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, true]]);
+  assert.deepEqual(blockRows.map((r) => [r.rule, r.text, r.pick ?? null, r.left ?? false]), [[1, 'at most 80 words', { rule: 'maxWords', value: 80 }, false], [2, 'be nice', null, false]]);
+  assert.equal(blockRows[1].reason, 'No rule can check this, so you judge it at Accept.');
   const rows = human(w);
-  assert.deepEqual(rows.map((r) => [r.answer, r.choice]), [['agree', 'agree'], ['drop it', 'drop']], 'the human row keeps the answer words, and says which button');
-  assert.match(rows[0].question, /Answer "agree" to use it/, 'the logged question keeps its words');
-  assert.deepEqual(w.log().filter((e) => e.kind === 'check-pick').map((e) => [e.rule, e.how]), [[1, 'agree'], [2, 'drop it']]);
-  assert.deepEqual(w.session.state.messages.filter((m) => m.role === 'you').map((m) => m.text), ['Agree', 'Drop it']);
+  assert.deepEqual(rows.map((r) => [r.answer, r.choice]), [['agree', 'agree']], 'the human row keeps the answer words, and says which button');
+  assert.deepEqual(w.log().filter((e) => e.kind === 'check-pick').map((e) => [e.rule, e.how]), [[1, 'agree']]);
+  assert.deepEqual(w.session.state.messages.filter((m) => m.role === 'you').map((m) => m.text), ['Agree']);
 });
 
-test('the box\'s own words are a rule WHOLE, even when they read "agree" or "drop it" (fwd walk: "agree, why not" became a rule word for word)', async () => {
+test('Drop it on a proposal leaves the rule Not checked (the person\'s own choice, REASON.left)', async () => {
   const w = await pickDraft();
-  assert.deepEqual(w.session.send('agree, why not', 'rule'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  assert.deepEqual(w.session.send('drop it', 'rule'), { ok: true });
+  assert.deepEqual(w.session.send('', 'drop'), { ok: true });
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
   assert.ok(await until(() => w.legs.length === 1));
-  assert.deepEqual(w.legs[0].jobLines[0].rules, ['agree, why not', 'drop it'], 'both typed answers kept word for word, each REPLACING the rule it was asked about');
-  const blockRows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
-  assert.deepEqual(blockRows.map((r) => [r.rule, r.origin, r.pick ?? null, r.left ?? false, r.cantAsked ?? false]), [[1, 'typed', null, false, true], [2, 'typed', null, false, true]], 'own words: the asked rule is settled (a pick with no check), a typed row holds the words; nothing was left Not checked by words');
-  assert.deepEqual(human(w).map((r) => [r.answer, r.choice]), [['agree, why not', 'rule'], ['drop it', 'rule']]);
+  const rows = w.legs[0].block.rows.filter((r) => r.kind === 'rule');
+  assert.deepEqual(rows.map((r) => [r.rule, r.left ?? false]), [[1, true], [2, false]]);
 });
 
-test('a refused choice leaves the question open: nothing said, nothing logged, nothing resolved (bad value, not offered, blank box)', async () => {
+test('a refused choice leaves the question open: nothing said, nothing logged, nothing resolved (bad value, not offered)', async () => {
   const w = await pickDraft();
   const before = JSON.stringify(w.session.state.messages);
-  for (const [text, choice, say] of [['', 'maybe', CHOICE_SAYS.bad], ['', 7, CHOICE_SAYS.bad], ['x', null, CHOICE_SAYS.bad], ['', 'rule', CHOICE_SAYS.blank], ['  ', 'rule', CHOICE_SAYS.blank]]) {
+  for (const [text, choice, say] of [['', 'maybe', CHOICE_SAYS.bad], ['', 7, CHOICE_SAYS.bad], ['x', null, CHOICE_SAYS.bad]]) {
     const r = w.session.send(text, choice);
     assert.equal(r.ok, false, `${choice}`);
     assert.equal(r.error, say);
@@ -127,38 +124,18 @@ test('a refused choice leaves the question open: nothing said, nothing logged, n
   assert.equal(w.session.state.pendingAsk.kind, 'answer');
   assert.equal(w.session.state.pendingAsk.box.text.includes('under 80 words'), true, 'still the first question');
   assert.deepEqual(human(w), [], 'nothing logged');
-  // and the question still takes a good answer afterwards
   assert.deepEqual(w.session.send('', 'agree'), { ok: true });
-  assert.ok(await until(() => /\(2 of 2\)/.test(w.bot().at(-1).text)));
-  // question 2 has no proposal: agree is not offered
-  assert.equal(w.session.send('', 'agree').error, CHOICE_SAYS.notOffered);
-  assert.equal(w.session.state.pendingAsk.box.text.includes('be nice'), true);
+  assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
 });
 
-test('a can\'t-check ask (real look path): Drop it leaves the rule Not checked; the box\'s "drop it" words are a rule; the old words reading still works with no choice', async () => {
-  const job = '1. Find the last 3 releases\n~ one per week';
-  const a = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(a.session)));
-  assert.deepEqual(a.session.state.pendingAsk.box.choices.map((c) => c.choice), ['drop']);
-  assert.match(a.session.state.pendingAsk.box.text, /Drop it\?$/);
-  assert.match(a.session.state.pendingAsk.question, /Answer "drop it", or type how to check it/);
-  a.session.send('', 'drop');
-  assert.ok(await until(() => a.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(a.session.state.messages.some((m) => /Noted: those stay Not checked/.test(m.text)));
-  const b = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(b.session)));
-  b.session.send('drop it', 'rule');
-  assert.ok(await until(() => b.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(b.session.state.messages.some((m) => /Your answers are in on those job lines/.test(m.text)), 'a rule, not a drop');
-  b.session.signPrepare();
-  assert.ok(await until(() => b.legs.length === 1));
-  assert.deepEqual(b.legs[0].jobLines[0].rules, ['drop it']);
-  const c = rubricSession({ jobText: job });
-  assert.ok(await until(() => asking(c.session)));
-  c.session.send('drop it');
-  assert.ok(await until(() => c.session.state.pendingAsk?.kind === 'menu'));
-  assert.ok(c.session.state.messages.some((m) => /Noted: those stay Not checked/.test(m.text)), 'no choice = today\'s words reading');
-  assert.equal(human(c).at(-1).choice, undefined, 'a words answer carries no choice');
+test('a rule nothing can check (real look path) is not asked: the draft goes straight to the plan with the rule Not checked', async () => {
+  const a = rubricSession({ jobText: '1. Find the last 3 releases\n~ one per week' });
+  assert.ok(await until(() => a.session.state.pendingAsk?.kind === 'menu'), `${a.session.state.phase} / ${a.session.state.error}`);
+  a.session.signPrepare();
+  assert.ok(await until(() => a.legs.length === 1));
+  assert.deepEqual(a.legs[0].jobLines[0].rules, ['one per week']);
+  assert.equal(a.legs[0].block.rows.find((r) => r.kind === 'rule').reason, 'No rule can check this, so you judge it at Accept.');
+  assert.equal(human(a).length, 0, 'no question, no human row');
 });
 
 test('the send route hands the body\'s `choice` to the session', () => {
@@ -197,13 +174,13 @@ function readingSession() {
   });
   return { session, legs };
 }
-test('a reading ask: Agree writes the reading as a ~ rule; no Drop it (it has no effect on a reading ask); the box shows the question without the typed words; the box\'s "agree" is a rule', async () => {
+test('a reading ask: Agree writes the reading as a ~ rule; Drop it and a box for the right reading are offered; typed words with no choice are refused', async () => {
   const w = readingSession();
   assert.ok(await until(() => asking(w.session)), `${w.session.state.phase} / ${w.session.state.error}`);
   const ask = w.session.state.pendingAsk;
-  assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree']);
+  assert.deepEqual(ask.box.choices.map((c) => c.choice), ['agree', 'drop']);
+  assert.equal(ask.box.orLabel, 'Or type the right reading:');
   assert.equal(ask.box.text, 'Your line 1 says "not a red-eye". I read it as: departure time between 06:00 and 21:00. Agree?');
-  assert.equal(w.session.send('', 'drop').error, CHOICE_SAYS.notOffered, 'drop is not offered on a reading ask');
   w.session.send('', 'agree');
   assert.ok(await until(() => w.session.state.pendingAsk?.kind === 'menu'));
   w.session.signPrepare();
@@ -211,9 +188,5 @@ test('a reading ask: Agree writes the reading as a ~ rule; no Drop it (it has no
   assert.deepEqual(w.legs[0].jobLines[0].rules, ['under $450', 'departure time between 06:00 and 21:00', 'nonstop']);
   const w2 = readingSession();
   assert.ok(await until(() => asking(w2.session)));
-  w2.session.send('agree', 'rule');
-  assert.ok(await until(() => w2.session.state.pendingAsk?.kind === 'menu'));
-  w2.session.signPrepare();
-  assert.ok(await until(() => w2.legs.length === 1));
-  assert.equal(w2.legs[0].jobLines[0].rules[1], 'agree', 'kept whole as the person\'s own rule word, replacing the asked rule');
+  assert.equal(w2.session.send('agree').ok, false, 'typed words with no choice are refused');
 });

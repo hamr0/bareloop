@@ -75,18 +75,18 @@ const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${f
 test('renderJobPlan draws the mark on a check row, one markup for the plan card and the Job tab', () => {
   const { renderJobPlan } = page();
   const html = renderJobPlan(planFromSpec(spec));
-  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
-  assert.match(html, /data-by="agent">\[agent\]<\/span>/);
+  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/div>/);
+  assert.match(html, /data-by="agent">! \[agent\]<\/span>/);
   assert.equal((html.match(/\[you\]/g) ?? []).length, 2);
   // the confirm turn: [agent] on the drafter's check, the pick's own row unchanged
   const conf = renderJobPlan(planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] }));
-  assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">\[agent\]<\/span>/);
-  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
+  assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span>/);
+  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/div>/);
   assert.doesNotMatch(conf, /You picked/);
   // a not-known check carries no mark; an always-on guard is `[default]` (live draft 3, hamr 2026-11-13)
   const g = renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false });
   assert.doesNotMatch(g, /plan-check"><span class="mk">›<\/span> check · c <span class="by"/);
-  assert.match(g, /always-on: g <span class="by" data-testid="plan-by" data-by="default">\[default\]<\/span>/);
+  assert.match(g, /always-on: g <span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span>/);
   assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by,\.job-card \.by\{color:var\(--text-dim\)/);
 });
 

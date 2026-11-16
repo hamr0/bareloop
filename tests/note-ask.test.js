@@ -10,7 +10,7 @@ import { confirmProtections } from '../src/authorflow.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 
 const PAGE = 'Issue #19\nTitle: Crash on start when config is empty\nOpened by alice\nThe app crashes when config.json is empty.\n';
-const LINES = [{ n: 1, text: 'Write a one-sentence triage note for the ticket, quoting its title word for word', rules: ['the title must be quoted'] }];
+const LINES = [{ n: 1, text: 'Write a one-sentence triage note for the ticket, quoting its title "Crash on start when config is empty" word for word', rules: ['the title must be quoted'] }];
 const LOOK = { facts: [{ line: 1, name: 'title', shape: 'phrase', source: 'Ticket', words: ['Crash on start when config is empty'], forRule: 1 }], dropped: [] };
 
 function made(lines = LINES, look = LOOK) {
@@ -88,14 +88,16 @@ test('a failed call leaves the line facts-only with a Not checked row in plain w
   assert.ok(b.signedRows().some((r) => r.kind === 'note' && r.state === 'not-checked'));
 });
 
-test('the protections line says "carry text" only for a line whose signed close has text-present', async () => {
+test('the floor row says "carry text" only for a line whose signed close has text-present (the protections no longer say it a second time)', async () => {
   const facts = made();
   const jl = [{ n: 1 }];
-  const before = confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, jobLines: jl, closeDecl: close(facts) }).filter((l) => l.startsWith('line 1 file'));
-  assert.deepEqual(before, ['line 1 file — output/steps/1.json must exist, be complete JSON'], 'absent on a facts-only line');
+  const floor = () => checksOfClose(close(facts)).find((c) => c.key === 'L1.$floor')?.text;
+  const protections = () => confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, jobLines: jl, closeDecl: close(facts) }).filter((l) => l.startsWith('line 1 file'));
+  assert.match(String(floor()), /must exist, be complete JSON; this line finds facts, so it has no text check/, 'absent on a facts-only line');
+  assert.deepEqual(protections(), [], 'said once, by the floor row');
   await askNotes({ block: facts, jobLines: LINES, noteFn: stub(yes()) });
-  const after = confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, jobLines: jl, closeDecl: close(facts) }).filter((l) => l.startsWith('line 1 file'));
-  assert.deepEqual(after, ['line 1 file — output/steps/1.json must exist, be complete JSON, and carry text']);
+  assert.match(String(floor()), /must exist, be complete JSON, and carry text/);
+  assert.deepEqual(protections(), []);
 });
 
 test('the call: the POC wording, one retry on a malformed reply, no repair; a second malformed reply fails', async () => {

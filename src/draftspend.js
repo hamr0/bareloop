@@ -183,15 +183,31 @@ export function sessionDirForRow(row, opts = {}) {
 }
 
 /**
+ * What an answered look question DECIDED, in one spelling for every view (the draft readout and the Audit drafting table): agreed / you wrote / dropped.
+ * `null` for any other answer, and for an old log row with no `words` (those keep the question-and-answer form).
+ * @param {{choice?: string, words?: string}} h
+ * @returns {string|null}
+ */
+export function decidedWords(h) {
+  if (h.choice === 'agree' && typeof h.words === 'string') return `agreed \u2014 ${h.words}`;
+  if (h.choice === 'rule' && typeof h.words === 'string') return `you wrote \u2014 ${h.words}`;
+  if (h.choice === 'drop') return 'dropped \u2014 Not checked';
+  return null;
+}
+
+/**
  * PRD v1.106 Part 5 Q1: one answered question as the two lines the Audit's drafting table shows under its step. ONE place owns the words.
- * @param {{question: string, answer: string, source?: string, line?: number, at?: string}} h
- * @returns {{question: string, answer: string, source: string, line?: number, at?: string, askedText: string, saidText: string}}
+ * @param {{question: string, answer: string, source?: string, line?: number, at?: string, choice?: string, words?: string}} h
+ * @returns {{question: string, answer: string, source: string, line?: number, at?: string, choice?: string, words?: string, askedText: string, saidText: string}}
  */
 export function humanRowWords(h) {
+  const decided = decidedWords(h);
   return {
     question: h.question, answer: h.answer, source: typeof h.source === 'string' ? h.source : 'confirm',
     ...(Number.isInteger(h.line) ? { line: h.line } : {}), ...(h.at ? { at: h.at } : {}),
-    askedText: `you were asked: ${h.question}`, saidText: `you said: ${h.answer}`,
+    ...(typeof h.choice === 'string' ? { choice: h.choice } : {}), ...(typeof h.words === 'string' ? { words: h.words } : {}),
+    // a rule the answer replaced is shown by what was decided, never by the question that quotes its old words
+    askedText: decided ?? `you were asked: ${h.question}`, saidText: decided === null ? `you said: ${h.answer}` : '',
   };
 }
 
@@ -228,7 +244,7 @@ export function readDraftSteps(dir) {
       x.status = 'running';
       x.endedAt = null;
     } else if (ev.kind === 'human' && byNo.has(ev.no) && typeof ev.question === 'string' && typeof ev.answer === 'string') {
-      byNo.get(ev.no).humans.push(humanRowWords({ question: ev.question, answer: ev.answer, source: ev.source, ...(Number.isInteger(ev.line) ? { line: ev.line } : {}), at: ev.at }));
+      byNo.get(ev.no).humans.push(humanRowWords({ question: ev.question, answer: ev.answer, source: ev.source, ...(typeof ev.choice === 'string' ? { choice: ev.choice } : {}), ...(typeof ev.words === 'string' ? { words: ev.words } : {}), ...(Number.isInteger(ev.line) ? { line: ev.line } : {}), at: ev.at }));
     } else if (ev.kind === 'call') {
       const c = { label: String(ev.label), model: typeof ev.model === 'string' ? ev.model : null, costUsd: typeof ev.costUsd === 'number' ? ev.costUsd : null, unpricedRounds: Number(ev.unpricedRounds) || 0, at: String(ev.at) };
       byNo.get(ev.no)?.calls.push(c);

@@ -34,6 +34,12 @@ import { ANTH_CFG } from './helpers.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 
+/** a fake pointing-call model boundary: the AI points the given edits at repo files (src/fencepointcall.js); code proves each */
+const pointAt = (/** @type {any[]} */ edits) => async (/** @type {any} */ _m, /** @type {any[]} */ tools) => {
+  await tools.find((t) => t.name === 'submit_edits').execute({ edits });
+  return { text: '', error: null, msgs: [], metrics: { costUsd: 0, unpricedRounds: 0 } };
+};
+
 /** @type {string[]} */
 const tmpDirs = [];
 test.after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
@@ -108,7 +114,7 @@ const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...over
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  jobText: 'fix things\n~ no new deps\ntsc clean',
+  jobText: 'fix things\ntsc clean',
   inputs: `repo: ${source}`,
   destination: 'src/',
   capUsd: 2,
@@ -566,9 +572,11 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1);
   assert.equal(shown.kind, 'plan');
   assert.equal(shown.text, PLAN_FOOTER);
+  // a repo job's confirm turn plans the goal only (Addendum 2026-11-15 (d)): no AI check is drafted onto a line; the card is the job's rows, the `$ [default]` guards and the fence
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
-    [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
-  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always checked');
+    [[1, 'fix things', '', []], [2, 'tsc clean', '', []]]);
+  assert.ok(shown.plan.loose.length > 0 && shown.plan.loose.every((c) => c.by === 'default'), 'the real protections are `$ [default]` rows');
+  assert.deepEqual(shown.plan.alwaysOn, []);
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
@@ -1201,7 +1209,7 @@ test('planMessage: a structured plan — lines with their checks, loose checks, 
   }, lines);
   assert.equal(m.kind, 'plan');
   assert.equal(m.role, 'bot');
-  assert.equal(m.text, 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  assert.equal(m.text, 'Draft the plan to see its checks, or Revise to edit the boxes.');
   assert.deepEqual(m.plan.lines.map((l) => l.checks.map((c) => c.name)), [['a'], ['b']]);
   assert.deepEqual(m.plan.loose.map((c) => c.name), ['c']);
   assert.deepEqual(m.plan.notChecked, ['the doc is accurate']);
@@ -1223,14 +1231,14 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
         ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
         questions: [{ line: 2, question: 'which tests?' }, { line: 1, question: 'which folder?' }],
         iterations: [{ droppedQuestions: [{ reason: 'blank question', raw: {} }] }],
-        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [...(o.scout?.calls ?? []), { label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
       };
     }
     return fakeAuthorFn()();
   };
   const sessionsRoot = tmp('panel-author-sess-q-');
-  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 2, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot,
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('unused'); },
     confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
@@ -1259,15 +1267,60 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
   assert.equal(legs.length, 2, 'the draft ran again, once');
   assert.equal(legs[1].offerQuestions, false, 'the redraft may not ask');
   assert.equal(legs[1].priorCalls, 1, 'the first leg\'s spend is carried so the one cap still binds');
-  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'no new deps; only the date tests, not the rest']],
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'leave package.json alone; only the date tests, not the rest']],
     'word for word (newlines folded to a space), joined to an existing rule with "; "');
-  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: no new deps; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: leave package.json alone; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
   const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1);
-  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
+  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'leave package.json alone; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
   const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'signed with the spec');
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'leave package.json alone; only the date tests, not the rest'], 'signed with the spec');
   const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8');
   assert.match(log, /questions-dropped/, 'a dropped question is logged');
+});
+
+test('piece 5 (Addendum 2026-11-14 (c)): a try-3 question about a rule REPLACES that rule (one in, one out), a `new` question adds one; the ask says which, and each is logged as try3-question', async () => {
+  /** @type {any[]} */ const legs = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    legs.push({ jobLines: JSON.parse(JSON.stringify(o.jobLines)), answers1: o.answers[1] });
+    if (legs.length === 1) {
+      return {
+        ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
+        questions: [{ line: 2, rule: 1, question: 'which dependencies?' }, { line: 1, new: true, question: 'which folder?' }],
+        iterations: [], cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+      };
+    }
+    return fakeAuthorFn()();
+  };
+  const sessionsRoot = tmp('panel-author-sess-try3-');
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-replace', jobText: 'fix things\ntidy the tests\n~ leave package.json alone' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 2, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn, prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer');
+  const say = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
+  assert.equal(session.state.pendingAsk.replaces, 'leave package.json alone', 'the ask carries the old words of the rule it replaces');
+  assert.match(say(), /which dependencies\? This replaces: leave package.json alone/);
+  assert.match(session.state.pendingAsk.box.line, /About job line 2.*This replaces: leave package.json alone/);
+  session.send('pin every dependency');
+  await untilTrue(() => /\(2 of 2\)/.test(say()));
+  assert.equal(session.state.pendingAsk.adds, true);
+  assert.match(say(), /which folder\? This adds a new rule to line 1/);
+  session.send('src/date');
+  await untilTrue(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule, l.rules]), [[1, 'src/date', ['src/date']], [2, 'pin every dependency', ['pin every dependency']]],
+    'line 2: the rule was REPLACED, not joined with the old one; line 1: the new rule was added');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: pin every dependency$/m);
+  const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'pin every dependency']);
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'try3-question');
+  assert.deepEqual(log.map((e) => [e.line, e.rule ?? null, e.new ?? null, e.how, e.ruleText ?? null]), [[2, 1, null, 'replaced', 'leave package.json alone'], [1, null, true, 'added', null]]);
+  assert.equal(log[0].answer, 'pin every dependency');
 });
 
 test('P7 item 6: ANY drafting stop says why in plain words on the card — a provider-red names the provider fault, the spend and what to do (not the bare code)', async () => {
@@ -1486,4 +1539,119 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
   assert.equal(refused[0].no, session.state.steps.findIndex((/** @type {any} */ x) => x.id === 'draft'), 'it is filed under the drafting step');
   assert.match(session.state.steps.find((/** @type {any} */ x) => x.id === 'draft').detail, /^revise-1: refused — no check was failing/);
   assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
+});
+
+const sessionsRootFinal = tmp('panel-author-sess-final-');
+test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL Sign & run card draws every `! [agent]` stage row on its line and every `~ [you]` rule with its status', async () => {
+  const repo = makeRepo();
+  const decl = { ...fakeDeclaration(), refused: [], fenceKept: [{ line: 1, rule: 1, path: 'package.json' }] };
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-final-card', jobText: 'fix the bug\n~ do not touch package.json\n~ keep it small' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 1, rule: 1, path: 'package.json' }]), home: keysHomeWith(),
+    sessionsRoot: sessionsRootFinal,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('never called'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),
+    authorFn: async () => ({ ok: true, declaration: decl, genreEnv: null, cost: { costUsd: 0.002, knownUsd: 0.002, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.signPrepare().ok, true);
+  // the pointing call's reply and each edit's verdict are in the draft log (live session smwi20ir86wxj showed none)
+  for (let i = 0; i < 500 && !readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').includes('"kind":"fence-point"'); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  const fp = readFileSync(join(sessionsRootFinal, session.id, 'draft-log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === 'fence-point');
+  assert.deepEqual([JSON.parse(fp.edits), JSON.parse(fp.results).map((/** @type {any} */ e) => e.accepted)], [[{ op: 'fence', line: 1, rule: 1, path: 'package.json' }], [true]]);
+  // `keep it small` names no repo path and has no check to agree to: option A (hamr 2026-11-15), it is NOT asked; it is Not checked with code's reason
+  for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  // the SAME structure as the rubric card (one renderer): per line its `› check` rows with tags, then "other checks" (the `$` guards and fence), then the "Not checked" fold with each rule as `line N: "<rule>" — <reason>` tagged [you]
+  const shown = session.state.messages.filter((m) => m.kind === 'plan').at(-1);
+  const plan = shown.plan;
+  const line = plan.lines[0];
+  assert.deepEqual(line.checks.map((c) => [c.by, c.key ?? null]), [['agent', 'S.verdict'], ['you', 'L1.~1']], 'under the line: the `! [agent]` stage row, then the `~ [you]` rule the fence keeps');
+  assert.match(line.checks[1].name, /^"do not touch package\.json" — kept by the write fence: package\.json is outside the places the run may change$/);
+  assert.deepEqual(line.refused, [], 'a Not checked rule is told in the Not checked section, as on the rubric card');
+  assert.deepEqual(plan.loose.map((c) => [c.by, c.key]), [['default', 'J.$guard.changed-from-seed'], ['default', 'J.$guard.no-suppressions'], ['default', 'J.$fence']], 'other checks: the `$` rows');
+  assert.deepEqual(plan.notChecked, ['line 1: "keep it small" — No rule can check this, so you judge it at Accept.']);
+  assert.equal(plan.notCheckedBy[plan.notChecked[0]], 'you');
+  assert.deepEqual(plan.alwaysOn, []);
+  // the CLI print draws the same rows
+  const { confirmPlanLines } = await import('../src/authorrun.js');
+  const cli = confirmPlanLines({ goal: 'g', checkItems: session.state.finalPlan.checkItems, notChecked: session.state.finalPlan.notChecked, notCheckedBy: session.state.finalPlan.notCheckedBy, protections: [], questions: [] }).join('\n');
+  assert.match(cli, /line 1: ! \[agent\] does "node -e " exit clean\?/);
+  assert.match(cli, /line 1: ~ \[you\] "do not touch package\.json" — kept by the write fence/);
+  assert.match(cli, /\$ \[default\] only files in /);
+  assert.match(cli, /you asked for these, but nothing checks them:\n    · line 1: "keep it small"/);
+});
+
+/** a repo session driven to the FINAL card with two work stages; `signing(n)` answers the n-th signing-gates call (1 = the draft's own) */
+async function finalRepoSession(/** @type {(n: number, spec: any) => any} */ signing, /** @type {{only?: boolean}} */ o = {}) {
+  const repo = makeRepo();
+  const g = fakeDeclaration().stages;
+  const decl = { stages: o.only ? [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[2]] : [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, { name: 'verdict-2', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }, g[2]], refused: [], notes: [] };
+  let n = 0;
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-drop', jobText: 'fix the bug\n~ leave package.json alone' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, fenceGenerate: pointAt([{ op: 'fence', line: 1, rule: 1, path: 'package.json' }]), home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-drop-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('never called'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix the bug', checks: [], questions: [], notChecked: [] }]),
+    authorFn: async () => ({ ok: true, declaration: decl, genreEnv: null, cost: { costUsd: 0.002, knownUsd: 0.002, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+    prepareSigningFn: async (/** @type {any} */ o) => { n += 1; return signing(n, o.spec); },
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  session.signPrepare();
+  for (let i = 0; i < 500 && !['prepared', 'refused', 'error'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  return session;
+}
+const okSigning = (/** @type {string} */ hash) => ({ ok: true, specHash: hash, seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} });
+
+test('Drop on a repo `! [agent]` stage row of the FINAL card: the stage and its row leave the spec, the $0 signing gates run again, the hash is the new one and the card is drawn again', async () => {
+  const session = await finalRepoSession((n) => okSigning(`hash${n}`));
+  const card0 = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
+  assert.equal(card0.editable, true, 'the final repo card offers Drop on the agent\'s rows');
+  assert.equal(session.state.specHash, 'hash1');
+  const r = await session.dropStage('S.verdict-2');
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(session.state.specHash, 'hash2', 'the hash is recomputed by the gates');
+  const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(spec.closeDecl.stages.map((s) => s.name).filter((x) => x.startsWith('verdict')), ['verdict']);
+  assert.equal(spec.closeDecl.list.some((x) => x.key === 'S.verdict-2'), false);
+  const card = session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan;
+  assert.deepEqual(card.lines[0].checks.map((c) => c.key), ['S.verdict', 'L1.~1']);
+  assert.equal(session.state.messages.filter((m) => m.kind === 'plan').length, 1);
+  // the draft readout is on the redrawn plan message exactly once, and it is the NEW plan's (the dropped stage gone, the new hash)
+  const ro = session.state.messages.filter((m) => m.kind === 'plan').at(-1).readout;
+  assert.equal(ro.text.split('DRAFT READOUT').length - 1, 1);
+  assert.match(ro.text, /Plan hash: hash2\n/);
+  assert.equal(ro.text.includes(card.lines[0].checks[0].name), true);
+  assert.equal(ro.text.includes('verdict-2'), false);
+  assert.deepEqual(ro.heads.map((i) => ro.text.split('\n')[i]).slice(0, 3), [ro.text.split('\n')[0], 'INPUTS', 'STEPS']);
+  // the Drop goes into the same record a rubric Drop writes (the check block's `choiceEntries`), so a Revise keeps it
+  const { readRowChoices, RECORD_FILE } = await import('../src/pickrecord.js');
+  assert.deepEqual(readRowChoices(join(dirname(session.state.resolvedSpecPath), RECORD_FILE)), [{ lineWords: 'fix the bug', occurrence: 0, tail: 'S.verdict-2', choice: 'drop' }]);
+});
+
+test('Drop refused by the gates: plain words, and the plan, the spec file and the hash stay as they were; only an agent stage row can be dropped', async () => {
+  const session = await finalRepoSession((n) => (n === 1 ? okSigning('hash1') : { ok: false, reds: [], refusal: null, specHash: null }));
+  const before = readFileSync(session.state.resolvedSpecPath, 'utf8');
+  const r = await session.dropStage('S.verdict');
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, 'gates');
+  assert.match(r.error, /^Dropping that check is refused: /);
+  assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
+  assert.equal(session.state.specHash, 'hash1');
+  assert.deepEqual(session.state.messages.filter((m) => m.kind === 'plan').at(-1).plan.lines[0].checks.map((c) => c.key), ['S.verdict', 'S.verdict-2', 'L1.~1']);
+  assert.equal((await session.dropStage('J.$guard.changed-from-seed')).refused, 'bad-row');
+  assert.equal((await session.dropStage('S.nope')).refused, 'bad-row');
+});
+
+test('Drop that makes the job validator red (the only stage serving a line): the refusal is plain words, never a raw red code', async () => {
+  const session = await finalRepoSession((n) => okSigning(`hash${n}`), { only: true });
+  const before = readFileSync(session.state.resolvedSpecPath, 'utf8');
+  const r = await session.dropStage('S.verdict');
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, 'gates');
+  assert.doesNotMatch(r.error, /job-line-uncovered|invalid-value|missing-field|spec-invalid|unknown-field|[a-z]+(-[a-z]+)+ at /);
+  assert.equal(r.error, 'Dropping that check would leave line 1 with no check, so it stays. Use Revise to change the job instead.');
+  assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before);
 });

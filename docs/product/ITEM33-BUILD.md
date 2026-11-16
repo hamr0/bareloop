@@ -4460,3 +4460,137 @@ Change:
 5. The signed record (picks, list rows) stores the final rule only.
 
 Fail-first tests: Agree on "~ exactly 3 bullets" proposing "exactly 3 list items" leaves ONE rule, "exactly 3 list items", in the job text, the rows and the signed rows. Typed words replace the same way. A re-draft from that job text asks nothing for that rule (count asks = 0). A flights "~ not a red-eye" Agree leaves only the departure-time rule. Old F318/follower tests are rewritten or deleted (listed in the commit).
+
+## Addendum 2026-11-14 (c): every rubric check on the one list; the try-3 question replaces (signed by hamr in chat)
+
+Goal (hamr, 2026-11-14): one path for every job — URL, sheet, doc, and later repo. One list per job:
+
+- `~ [you]` rules the person writes.
+- `! [agent]` checks the AI proposes after reading the input.
+- `$ [default]` checks code adds per input type.
+
+Code decides, built on bareguard, and is honest about what it cannot check (Not checked + reason). Any clarification, substitution, Add or Drop replaces or removes a row on that one list. One rule, one check. No other judges. Labels on every screen read `~ [you]`, `! [agent]`, `$ [default]`. Order: rubric gaps first (this addendum), then repo jobs join the same list (own spec, $0 test on saved repo drafts first).
+
+Why: a read-only audit of v0.57.0 found the list (`src/checkblock.js`, rubric only, :5) has checks beside it.
+
+- The `$floor` row is built and graded but hidden (`checkblock.js:140`, filtered at renderCard :61).
+- Mandatory guards (`MECHANICAL_GUARDS`, `src/authoring.js:817-835`) show in a separate "Always checked" box (`GUARD_DESCRIPTIONS` / `confirmProtections`, `src/authorflow.js:607-650`).
+- The Result tab (`src/panel/server.js` checksOf ~:1542, rubricStagesOf ~:1238), the Job tab (successFromSpec ~:3365) and the prose/Not-checked notes (`proseNotCheckedItems` `src/rubricstep.js:935`, confirm-card notChecked merge `src/authorflow.js:2304-2310`, `closeDecl.notes` `src/authorjob.js:918`) are built from close stages or AI free text, not list rows.
+- The Audit gives one verdict per stage, so every row of a line shares one result (`src/panel/jobplan.js:186`).
+- A model's try-3 question answer is appended as a new `~` rule beside existing ones (`src/panel/authorsession.js` ~:1265, `q.source !== 'look'`).
+
+### Build (one commit per piece, each with a real fail-first test)
+
+1. The floor shows. The `$floor` row is drawn on every line as `$ [default]`. The separate "line N file — must exist, be complete JSON, and carry text" note (`authorflow.js:644-646`) folds into it: one row, not two.
+2. Guards are `$ [default]` rows, ONCE for the whole job, not per line (hamr's pick a). The separate "Always checked" box goes away for rubric jobs. The write fence line stays as is.
+3. Every view reads only the list's rows: plan card, Job tab, Result tab, Audit, the CLI print (`src/authorrun.js:725-726`). Prose "you judge it at Accept" lines and Not checked notes come from rows only. Nothing a view shows exists outside the list.
+4. Each check gets its own pass/fail (hamr's pick b). The close records a result per row (for example which claim's quote or number failed). The Result tab and the Audit show a pass or fail mark per row, not one shared result per line.
+5. The try-3 question replaces (option B).
+   - The drafter tags each question with the rule it is about (`rule` = that line's `~` rule number) or `new`.
+   - Code checks the tag in normalizeQuestions (`src/authorflow.js` ~:169). A named rule that exists: the answer replaces it. `new`: it is added as a new `~` rule. A named rule that does not exist: the question is dropped with its reason, and that is logged.
+   - The question box shows "This replaces: <old words>" or "This adds a new rule to line N".
+   - The answer reaches the list through the same one-owner path as the check-list answers (syncJobLines / onJobLines), and the list is rebuilt from the new lines.
+   - Try-3 questions are logged under their own draft-log kind so they can be counted.
+
+### Not in this build
+
+- "A guard covers line N" (guardLines) goes to the repo spec.
+- Ticket filter/watch as rows comes from fwd M17's release tag.
+- Run stops stay stops with plain words, not checks: place rule finds nothing, input sha changed, step file too big.
+
+### Proof
+
+First a $0 test on saved rubric drafts: every rule shows once, nothing a view shows comes from outside the list, signed greens stay green and reds stay red. Then build, then the full gate (typecheck, build:types, npm test). Then live: one page job and one Tickets job on DeepSeek direct deepseek-flash, about 10 cents. Live proof decides done.
+
+## Addendum 2026-11-15 (d): repo jobs on the one list (signed by hamr in chat)
+
+The law (hamr, 2026-11-15): "if you can't prove it it goes to not checked like every thing else." A rule shows as kept only when CODE proves it; anything code cannot prove is Not checked with a reason. No AI link between a stage and a rule is ever shown as kept or offered for approval.
+
+### What is signed
+
+1. A repo job signs a list (`closeDecl.list`, null for repo until now), built by ONE small row builder (`src/repolist.js`, `buildRepoRows`; `src/checkblock.js` stays rubric-only):
+   - `~ [you]` one row per `~` rule (the old joined `rule` and the new `rules[]` both read). Key `L<line>.~<rule>`, kind `rule`.
+   - `! [agent]` one row per AI work stage, on its line (`fromLine` stays line-level; one row, on the first line it serves). Key `S.<stage name>`, kind `stage`. It is a real check (code already proves the stage reads red at the seed). It never carries `fromRule`, and no stage-to-rule tie exists.
+   - `$ [default]` the mandatory guard rows once per job and the write-fence row once per job (line 0, as spec 1).
+2. The fence claim, the only way a `~` rule shows as kept. The drafter may say for a `~` rule "the fence keeps it" with a path: `closeDecl.fenceKept: [{line, rule, path}]` (carried through `CLOSE_DECL_FIELDS`, shape-checked, signed). Code proves it at $0 (`proveFenceClaim`): the path is in the repo listing and no file it names is a place the run may change (outside `writeScope`). Proven: the `~` row is built with `fence: <path>` and shows kept by the write fence (its result is the gate's record, `held · N writes blocked`). Not proven (inside the scope, or absent): the claim is dropped (no red, no revise: refusals pushed the paid POC model to invent checks) and the rule is Not checked with a code reason ("the AI said the fence keeps it, but <path> is a place the run may change"). The drafter prompt names the claim with ONE legal example in the same change.
+3. Every other `~` rule is Not checked with a code-written reason ("no check code can prove keeps this rule — you judge it at Accept"). A rule with no tie is never a validator red. `guardLines` and guard-covers-rule claims are not offered to new drafts (unprovable: Not checked); an old signed spec keeps today's display. A line the drafter refuses without naming a rule is a `!` Not checked row on that line.
+4. The repo confirm turn is goal-only (the model is told to plan none, code discards what it sends; `accepted.goalOnly`). New repo drafts' free-text `closeDecl.notes` are no view item of a list-carrying close. Every view reads rows only: confirm card (the `$` guard and fence rows, known before drafting), signed card, Job tab, Audit, success line, sign-time match (`planMatchesClose` takes the job lines). Per-row result: an `!` row is its recorded stage verdict, a guard row its guard stage, the fence row and a fence-kept `~` row the gate audit; a Not checked row has no result.
+5. The try-3 answer (replace or add, built in 421e06ef) rebuilds the repo rows through the one owner: the rows are built from the job lines that stand when the draft stands.
+6. An old signed repo spec (no list) keeps today's display, never crashes; verdicts are unchanged.
+
+### Why
+
+Both POCs, on real data. $0 POC on 18 saved repo drafts (`.claude/scratch/poc-repo-list/RESULTS.md`): FAIL, 26 of 28 `~` rules tied to nothing in the signed data; a line-level tie would have shown a green suite "checking" "no new dependencies" (saved draft smw6ssquvtvqs). Paid drafter POC on DeepSeek flash, 12 drafts, $0.18 (`.claude/scratch/poc-repo-tag/RESULTS.md`): FAIL on the AI stage-to-rule tag, 75% accuracy and 2 false ticks on "no new dependencies" (the revise loop invented a stage to own the rule); the fence claims WORKED: every correct one was proven by code at $0, every wrong one (a path inside the scope) was caught and never shown ticked. So the AI tag is dropped and the one claim code can prove is kept.
+
+### Proof plan
+
+The full gate (typecheck, build:types, npm test), then one live repo run on DeepSeek direct deepseek-flash. Built here is test-proven only; the fence-claim drafting, the Result tab rows and the phone width are not seen live.
+
+
+## Addendum 2026-11-15 (e): repo jobs on the SAME CheckBlock; fwd's draft readout in the Chat (signed by hamr in chat)
+
+Supersedes (d) items 2-3. The repo side path is removed: `buildRepoRows`, `proveFenceClaim`, `closeDecl.fenceKept`, the drafter-written rule `refused` reasons, `NO_CHECK_WORDS` and the repo-only view code. hamr: "same flow as rubric, no exceptions; same CheckBlock, not another one; only the type of checks varies — rubric checks vs repo checks".
+
+### Why
+
+Live, 2026-11-15, three drafts (smwhxoarri6xz, smwhxqks2yc9s, smwhxsqgr5gub) on `/home/hamr/bareloop-live-sum`:
+
+- A rule shown kept AND Not checked: two stores (the drafter's `refused`, merged back by `refusedOf`).
+- Reasons swapped between rules: the drafter mis-numbered rules and code believed it.
+- A false keep of "keep the comment at the top of src/sum.js" through a leftover `.bareloop/wt/<session>/src/sum.js`. The fence proof only checked "outside the write scope", never the person's words, and the seed listing included bareloop's own tracked `.bareloop/` files.
+
+A side-path fix (fa94a85b, a fence-point call) made it worse and was reverted (b8562817).
+
+### Build, in order
+
+1. The seed listing drops `.bareloop/`, `.smoke/` and `.litectx/`.
+2. Repo jobs build the CheckBlock. The check TYPE varies by job kind: rubric fact/phrase/count rows versus repo catalogue stage rows and fence-kept rule rows.
+3. A repo `~` rule is kept by the fence only when code finds a listing path that is word-found in the person's own rule text and lies outside the write scope. Otherwise it goes to the same question box (Agree / Drop it / own words, one in one out). One REASON table.
+4. The drafter writes no rule-level `refused` and no `fenceKept`. `refused` is built from the rows, in code.
+5. Repo `!` stage rows get the rubric Drop/Add and the Revise carry, and never drop the last check on a line.
+6. The repo-only code is deleted.
+
+### Then: fwd's draft readout in the Chat
+
+After (1)-(6) are green and live-proven, copy fwd's DRAFT READOUT block into bareloop's Chat, above the card, from fwdloop's tagged release v0.33.0. fwd reads the CLI's readout.txt (`fwdloop/src/panel/author.js:229`); `fwdloop/src/authoring.js:197` builds it. bareloop today shows only the card in Chat. Elements bareloop lacks are skipped. Build from fwd's released tag, not a commit sha.
+
+### Proof plan
+
+Per-piece fail-first tests with the rubric batches green, then the full gate. Then a live round of 3 drafts of the job "Fix the bug in src/sum.js so the tests in test/sum.test.js pass" with the rules "don't edit test/", "no new dependencies at all", "keep the comment at the top of src/sum.js".
+
+Pass bar, fixed before drafting: in all 3 drafts, rule 1 shows kept by the fence; rules 2 and 3 appear as questions in the question box (never silently Not checked, never falsely kept); no rule is shown twice; `$` rows read as plain questions. Any miss is a FAIL, reported, never re-tuned.
+
+## Addendum 2026-11-15 (f): button-only questions; Revise on the card (signed by hamr in chat)
+
+Applies to rubric and repo jobs alike (one flow). Supersedes the own-words answer of addendum 2026-11-14 (b) ("one rule in, one rule out": a typed answer replaced the asked rule): typed own-words answers to a check question are retired. A rule is now changed only by Revise.
+
+### Why
+
+Live walk on the panel, 2026-11-15 (repo job, DeepSeek flash, run `mwhvvvap`; draft sessions smwi35txtmgcg, smwi3di3vbemi):
+
+- The Revise button and its text box on the final plan card were never usable; to change the job the person had to clear everything and start over.
+- Clicking "Drop it" on a question still left a text box to add a comment.
+- The chat box "answer here when the draft asks you" is not needed: the question buttons cover it.
+
+### Build
+
+1. Revise works on the final card (rubric and repo): the person edits the job boxes and drafts again without clearing everything. The limit stays: 2 revises per draft, then Start over (as fwd).
+2. A check question is buttons only: no comment / own-words box in the question box, and no typed own-words path in code (the `rule` choice of the check block, the "or type how to check it" wording). The drafter's own try-3 questions, the Destination question and the CLI keep their typed answers (they have no buttons to answer with).
+3. Option A: a question whose only answer would be Drop it (a rule no check can prove, no proposal to Agree to) is NOT asked. The rule goes straight to Not checked with the code REASON that says no check can prove it. Questions that offer Agree stay as they are. Unasked rules do not count toward the 3-question stop (MAX_QUESTIONS), which counts asked questions only.
+4. Tests that pinned the removed wording or path are updated; rubric and repo batches stay green after each item.
+
+### Ruling, same day: a READING question keeps a text box
+
+Item 2 left a reading question (Agree only) with no way out. hamr's ruling: a READING question (a rubric look's reading, e.g. "I read 'under 500' as 500 US dollars") offers three answers: Agree, Drop it, and a text box to correct it ("Or type the right reading:"). Only reading questions get the box; a proposed-check question stays Agree / Drop it with no box; a rule nothing can check stays unasked (option A). Drop it on a reading leaves the rule Not checked with REASON.left (the person chose it). A typed correction REPLACES that rule (one in, one out) and code re-proves it as before; words code cannot prove go to Not checked with REASON.noRule, never a second question. Typing stays retired for everything else.
+
+### Fixes, same day (live run `mwi76vh8`, draft session smwi75mbqjjbs; hamr GO)
+
+- A look phrase or place link counts only when the person's own `~` rule words contain it (case-blind); else the rule is Not checked. Before, "be friendly" was signed as a `~ [you]` phrase check "must say Select flight" because the phrase was on the page (`matchRule`, `src/checkblock.js`). Version and date phrases keep the place-rule path.
+- The confirm card lists a look-dropped fact with no `~` rule once (the block's own row), not also as the look's own line (`shownNotChecked`, `src/authorflow.js`). Display only.
+- Revised, same day (hamr): the unnamed phrase is not dropped; it becomes an ordinary `!` [agent] row at `addLook` (the existing split/`inJob` path then places it) and the `~` rule is Not checked. The matchRule-side filter was removed. Note: `inJob` also counts a fact asked for by NAME, so a fact the AI named "friendly" (a word of the rule) lands job-derived (built, Drop), not Suggested.
+- Pick A, same day (hamr): `inJob` no longer counts the AI-written fact name for a phrase or place (money, time, number, date keep it). A phrase whose words are not in the job line or a `~` rule is Suggested, so "Select flight" lands under Suggested (Add). tests/note-ask.test.js: the fixture job line now quotes the title words so its phrase is job-derived.
+
+### As built, same day: pointer to (e) item 3 and the readout (dated pointer, (e) is not rewritten)
+
+- (e) item 3 as built (968eb3d4, 19c9625b, f07472b5): a repo `~` rule is kept by the write fence only when the AI points at it and code proves it, in the rubric's order. One small call before the asks (`src/fencepointcall.js`, `runFencePoint`) answers row edits `{op: 'fence', line, rule, path}`; each goes through `CheckBlock.applyDelta` (`editFence`) and `provesFence` decides (path on the listing, the rule's own words name it as a whole token, no path it names lies where the run may change). Every other `~` rule is Not checked at once with `REASON.noRule`: a repo rule is never asked (option A of (f)). The call's reply and each edit's accept or refusal are in the draft log (`kind: fence-point`). This is the pointing shape (e) first called the reverted side path (fa94a85b), now on the one block's row edits instead of its own module. `closeDecl.fenceKept` stays readable for old signed specs only.
+- The draft readout of (e) is built (`buildReadout`, `src/authorreadout.js`, from fwdloop v0.34.0): panel Chat above the signed-ready card and the CLI under SIGNING PREPARED; display only. The CLI print is test-proven only.

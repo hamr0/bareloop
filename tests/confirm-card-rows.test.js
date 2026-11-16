@@ -55,6 +55,7 @@ test('the confirm card draws every row the block built under its line, and every
   const notChecked = fx.ledgerRows.filter((/** @type {any} */ r) => r.state === 'not-checked');
   assert.equal(built.length, 5, 'the session built two ~ rules, two look facts and a count');
   assert.equal(notChecked.length, 1);
+  assert.equal(plan.notChecked.some((/** @type {string} */ n) => /no text to quote/.test(n)), false);
   const names = plan.lines[0].checks.map((/** @type {any} */ c) => c.name);
   // each built row, by what the signed card's readers say it is: a ~ rule is the fact it limits, a look fact its name, the count its range
   const shows = {
@@ -63,6 +64,9 @@ test('the confirm card draws every row the block built under its line, and every
     'L1.count.3-3': /^fact · results — exactly 3 results/,
   };
   for (const r of built) assert.ok(names.some((/** @type {string} */ n) => /** @type {RegExp} */ (/** @type {any} */ (shows)[r.key]).test(n)), `${r.key} is not on the card: ${JSON.stringify(names)}`);
-  assert.equal(names.length, built.length, 'one card row per built row, no more');
-  for (const r of notChecked) assert.ok(plan.notChecked.some((/** @type {string} */ n) => n.includes(r.reason)), `${r.key} (${r.reason}) is not under Not checked: ${JSON.stringify(plan.notChecked)}`);
+  // plus the line's `$` floor row (one list, Addendum 2026-11-14 (c) piece 1), nothing else
+  assert.equal(names.filter((/** @type {string} */ n) => /^its file output\/steps\/1\.json must exist/.test(n)).length, 1, 'the floor row is drawn once');
+  assert.equal(names.length, built.length + 1, 'one card row per built row and the floor, no more');
+  // a facts line's `$` cited default is no Not checked item (hamr 2026-11-15)
+  for (const r of notChecked.filter((/** @type {any} */ x) => x.rowKind !== 'cited')) assert.ok(plan.notChecked.some((/** @type {string} */ n) => n.includes(r.reason)), `${r.key} (${r.reason}) is not under Not checked: ${JSON.stringify(plan.notChecked)}`);
 });

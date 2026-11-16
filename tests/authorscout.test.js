@@ -477,6 +477,15 @@ test('seedFileList reads the SEED commit, never the working tree', async (t) => 
   assert.deepEqual([...r.files].sort(), ['README.md', 'src/a.js', 'src/b.js']);
 });
 
+test('seedFileList hides the engine\'s own stores (.bareloop/, .smoke/, .litectx/) tracked in the patient, never a lookalike path', async (t) => {
+  const { dir, seed } = makeRepo(t, {
+    'src/a.js': 'a', '.bareloop/wt/s1/src/sum.js': 'x', '.bareloop/notes.md': 'n', '.smoke/x.json': '{}', '.litectx/i.db': 'i', 'src/.bareloop-notes.md': 'keep', 'docs/.smoke/keep.md': 'keep',
+  });
+  const r = await seedFileList(dir, seed);
+  assert.equal(r.stop, null);
+  assert.deepEqual([...r.files].sort(), ['docs/.smoke/keep.md', 'src/.bareloop-notes.md', 'src/a.js']);
+});
+
 test('seedFileList: a seed that does not exist is a named stop, never an empty listing', async (t) => {
   const { dir } = makeRepo(t, { 'a.js': 'a' });
   const r = await seedFileList(dir, '0000000000000000000000000000000000000000');

@@ -33,9 +33,14 @@ test('A1 rows: a ~ rule is by you, a look fact by the agent, the word proof leav
   assert.match(String(by(b, 'L1.fact.invented')?.reason), /not in the input/);
   // by design (spec section 3, addLook): a look fact tied to a `~` rule is a link on that row, never a drop and never a second row (a COUNTING rule, "exactly 3 bullets", is the pick path's: its tied fact stays a fact of its own)
   assert.equal(by(b, 'L1.fact.bullets')?.by, 'agent');
-  const tied = made({ jobLines: [{ n: 1, text: 'Say it', rules: ['the version must be named'] }], look: { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['### Fixed'], forRule: 1 }] } });
+  // the rule's own words name the phrase: a link on the rule's row (live run mwi76vh8: a phrase the rule's words do NOT name is an ordinary `!` row instead, and the rule goes Not checked)
+  const tied = made({ jobLines: [{ n: 1, text: 'Say it', rules: ['the ### Fixed heading must be named'] }], look: { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['### Fixed'], forRule: 1 }] } });
   assert.equal(by(tied, 'L1.fact.version'), undefined);
   assert.equal(by(tied, 'L1.~1')?.links?.[0].name, 'version');
+  const unnamed = made({ jobLines: [{ n: 1, text: 'Say it', rules: ['the version must be named'] }], look: { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['### Fixed'], forRule: 1 }] } });
+  assert.equal(by(unnamed, 'L1.fact.version')?.by, 'agent');
+  assert.equal(by(unnamed, 'L1.~1')?.links, undefined);
+  assert.equal(by(unnamed, 'L1.~1')?.state, 'not-checked');
   assert.equal(new Set(b.rows.map((r) => r.key)).size, b.rows.length);
 });
 
@@ -159,6 +164,21 @@ test('A9 every row ends built or Not checked with a plain reason (no row is drop
   c.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, min: 2 }] });
   c.reconcile();
   assert.equal(c.rows.find((r) => r.kind === 'count')?.reason, REASON.countNeedsFact);
+});
+
+// live run mwi76vh8: the count row's Audit reason said "this line has none" while a fact sat under Suggested. With a held (Suggested) fact on the line the reason says to add it; with none it keeps the old words.
+test('A9b a result count whose line has only a Suggested fact says to add that fact; a line with no fact at all keeps "this line has none"', () => {
+  const b = new CheckBlock({ texts: { Changelog: TEXT }, labels: ['Changelog'], asks: false, split: true });
+  b.fromJob([{ n: 1, text: 'Find the latest release heading', rules: [] }]);
+  b.addLook([{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] }], []);
+  b.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, min: 1, max: 1 }] });
+  b.reconcile();
+  assert.equal(b.rows.find((r) => r.key === 'L1.fact.release heading')?.state, 'suggested');
+  const c = b.rows.find((r) => r.kind === 'count');
+  assert.equal(c?.state, 'not-checked');
+  assert.equal(c?.reason, REASON.countNeedsSuggested);
+  assert.match(String(c?.reason), /add the suggested fact/);
+  assert.doesNotMatch(String(c?.reason), /has none/);
 });
 
 // ---- the draft gate's own word checks run per fact on the block (src/factwords.js checkFactWords): a word the gate would refuse makes THIS row Not checked in the gate's plain words, never a red on code's whole plan ----

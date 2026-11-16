@@ -4,6 +4,8 @@ import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { OFFERED, plainWords } from './checkwords.js';
+import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
+import { stageQuestionsByName, guardQuestionText, fenceQuestionText } from './stagewords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -476,7 +478,7 @@ export function plainStepGap(step, why, g, params = null) {
  *   the manifest's recorded sha via `inputShas`.
  * @param {Record<string, string>} inputShas the manifest's recorded sha256 per cited label
  * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>,
- *   evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
+ *   rawGaps?: any[], extraGaps?: string[], evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
  *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
 export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [] }, inputShas) {
@@ -528,8 +530,10 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     ...(Array.isArray(r.full.evidence) && r.full.evidence.length > 0 ? { evidence: r.full.evidence } : {}),
     ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
   };
-  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...seen };
-  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...seen };
+  // bareguard's own structured gaps (id, check, field, kind, items) and the tie's own lines: what the per-row results (src/rowresults.js) read; no verdict or sentence is derived from them here
+  const raw = { rawGaps: r.full.gaps, extraGaps: extra };
+  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
+  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -878,6 +882,7 @@ const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input',
  */
 export function listRowName(kind, key, words) {
   const k = typeof kind === 'string' && kind ? kind : 'check';
+  if (k === 'prose') return '';
   if (k === 'cited' || k === 'numbers' || k === 'note') return DEFAULT_ROW_WORDS[k];
   const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
   const w = Array.isArray(words) && words.length ? words : [tail || key];
@@ -899,6 +904,8 @@ export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
     const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
+    // a `prose` row is said by its own reason alone ("line N: what the text says — you judge it at Accept")
+    if (r.kind === 'prose' || (r.kind === 'stage' && !Number.isInteger(r.rule))) return { text: `line ${r.line}: ${r.reason}`, ...by };
     if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
     return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
@@ -915,10 +922,15 @@ export function refusedOf(closeDecl) {
   const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
   if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));
-  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor').map((/** @type {any} */ r) => ({
+  // a `$` default that does not apply to a line kind is not a Not checked item: a facts line's cited default ("this line finds facts, so it has no text to quote") is said by the line's floor row (one-list closes)
+  const factLines = new Set((Array.isArray(closeDecl.stages) ? closeDecl.stages : []).filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && factPartOf(st.params)).map((/** @type {any} */ st) => st.params.step));
+  const notApplicable = (/** @type {any} */ r) => carriesOneList(closeDecl) && r.kind === 'cited' && r.by === 'default' && factLines.has(r.line);
+  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor' && !notApplicable(r)).map((/** @type {any} */ r) => ({
     line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(['you', 'agent', 'default'].includes(r.by) ? { by: r.by } : {}), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
   }));
-  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
+  // a line-level refusal a repo job's list already holds as its own `!` Not checked row (same line, same reason) is not told twice
+  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule))
+    || (!Number.isInteger(r.rule) && rows.some((x) => x.kind === 'stage' && x.line === r.line && x.reason === r.reason));
   return [...rows, ...old.filter((/** @type {any} */ r) => !seen(r)).map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }))];
 }
 
@@ -933,9 +945,11 @@ export function proseNotChecked(closeDecl) {
 
 /** the same items as {@link proseNotChecked} with the job line each belongs to (the stage's own `step`) @param {any} closeDecl @returns {{line: number, text: string}[]} */
 export function proseNotCheckedItems(closeDecl) {
+  // a list-built close (Addendum 2026-11-14 (c), Q2) says it from its signed `prose` rows, which `refusedOf` reads; only an older close derives it from its stages
+  if (carriesOneList(closeDecl)) return [];
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
-    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: what the text says — you judge it at Accept` }));
+    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: ${PROSE_WORDS}` }));
 }
 
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────
@@ -989,14 +1003,57 @@ export function lineCarriesText(closeDecl, n) {
 }
 
 /**
+ * Does this signed close carry the ONE list in full (Addendum 2026-11-14 (c)): a list that holds its job-level guard rows? Such a close is built by the check block alone, so every view reads its rows and
+ * the model's free-text `notes` (which the block never writes) are not a source; an older close (no list, or a list with no guard row) keeps today's display.
+ * @param {any} closeDecl @returns {boolean}
+ */
+export const carriesOneList = (closeDecl) => isRec(closeDecl) && Array.isArray(closeDecl.list) && closeDecl.list.some((/** @type {any} */ r) => isRec(r) && r.kind === 'guard');
+
+/** the key of a job-level guard row: `J.$guard.<name>` (the one list, Addendum 2026-11-14 (c) piece 2) @param {string} name @returns {string} */
+export const guardKeyOf = (name) => `J.$guard.${name}`;
+/** the guard a row key names, or '' @param {unknown} key @returns {string} */
+export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWith('J.$guard.') ? key.slice('J.$guard.'.length) : '');
+/** the key of a repo job's `!` work-stage row (Addendum 2026-11-15 (d)) and the stage a key names, or '' */
+export const stageKeyOf = (/** @type {string} */ name) => `S.${name}`;
+export const stageNameOfKey = (/** @type {unknown} */ key) => (typeof key === 'string' && key.startsWith('S.') ? key.slice(2) : '');
+/** the words of a text line's `prose` row: the person judges what the text says at Accept (the same words the stage-derived line always used) */
+export const PROSE_WORDS = 'what the text says — you judge it at Accept';
+/** the key of the job-level write fence row (the one list, hamr 2026-11-15: the fence is a `$` row like every other rule) */
+export const FENCE_KEY = 'J.$fence';
+/** the words of the fence row: its plain question (src/stagewords.js, the one owner) @param {string[]} scope @returns {string} */
+export const fenceRowText = (scope) => fenceQuestionText(scope);
+/** the fence a close's row names: `closeDecl.fence` (the confirm card's view of it) or the allowed prefixes its own `changed-from-seed` guard stage signs @param {any} closeDecl @returns {string[]|null} */
+export function fenceOfClose(closeDecl) {
+  if (!isRec(closeDecl)) return null;
+  if (Array.isArray(closeDecl.fence) && closeDecl.fence.length) return closeDecl.fence.map(String);
+  const g = (Array.isArray(closeDecl.stages) ? closeDecl.stages : []).find((/** @type {any} */ st) => isRec(st) && st.name === 'changed-from-seed' && isRec(st.params));
+  return g && Array.isArray(g.params.allowPrefixes) && g.params.allowPrefixes.length ? g.params.allowPrefixes.map(String) : null;
+}
+/** the words of a guard row: its plain question (src/stagewords.js, the one owner); a guard with none keeps its name and its one frozen line (GUARD_DESCRIPTIONS) @param {string} name @returns {string} */
+export const guardRowText = (name) => guardQuestionText(name) ?? `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
+
+/**
+ * The words of a line's `$` floor row (Addendum 2026-11-14 (c) piece 1), written by code from the signed close: the line's file must exist and be complete JSON, and carry text only when the close
+ * really puts a text check on it ({@link lineCarriesText}); a facts-only line says it has none. ONE owner: the card, the Job tab and the Audit read it.
+ * @param {any} closeDecl @param {number} n @returns {string}
+ */
+export function floorText(closeDecl, n) { return floorWords(n, lineCarriesText(closeDecl, n)); }
+
+/** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @returns {string} */
+export function floorWords(n, carriesText) {
+  return `its file ${stepFileRel(n)} must exist, be complete JSON${carriesText ? ', and carry text' : '; this line finds facts, so it has no text check'}`;
+}
+
+/**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
- * @param {any} closeDecl
- * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string}[]}
+ * A repo job's list (Addendum 2026-11-15 (d)) adds its rows here: an `!` row per work stage (the stage's name) and a `~` row the write fence keeps (the rule in the person's words, from `jobLines`; else its number), `fence` holding the path.
+ * @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines, so a `~` row reads in their own words
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true, fence?: string}[]}
  */
-export function checksOfClose(closeDecl) {
+export function checksOfClose(closeDecl, jobLines = null) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built') : [];
@@ -1010,20 +1067,46 @@ export function checksOfClose(closeDecl) {
     const r = list.find((/** @type {any} */ x) => x.line === line && x.kind === 'count' && isRec(x.part) && x.part.part === pi);
     return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
   };
-  return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
-    ? st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+  // the `$` floor of a line (piece 1): its signed row, built; the words are code's (floorText). A close with no list (an older job) has no floor row to read, so none is drawn
+  const floorOf = (/** @type {any} */ st) => {
+    const r = list.find((/** @type {any} */ x) => x.kind === 'floor' && x.line === st.params.step);
+    return r ? [{ line: st.params.step, text: floorText(closeDecl, st.params.step), by: /** @type {'default'} */ ('default'), key: String(r.key) }] : [];
+  };
+  // a repo job's own row kinds (the list is built by the one CheckBlock, src/checkblock.js `repo` type): the `!` work stages in the order the close runs them, then the `~` rules the write fence keeps, each on its line
+  // an `!` stage row reads the stage's plain question (src/stagewords.js, the one owner the Audit and the Result tab read), the stage's own name only when no honest question exists
+  const questions = stageQuestionsByName({ closeDecl });
+  const repoRows = [
+    ...list.filter((/** @type {any} */ x) => x.kind === 'stage' && stageNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: Number(x.line), text: questions.get(stageNameOfKey(x.key)) ?? stageNameOfKey(x.key), by: /** @type {'agent'} */ ('agent'), key: String(x.key) })),
+    ...list.filter((/** @type {any} */ x) => x.kind === 'rule' && typeof x.fence === 'string').map((/** @type {any} */ x) => {
+      const said = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === x.line))[Number(x.rule) - 1];
+      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${x.fence} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
+    }),
+  ].sort((a, b) => a.line - b.line);
+  // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows
+  const guardRows = list.filter((/** @type {any} */ x) => x.kind === 'guard' && guardNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: 0, text: guardRowText(guardNameOfKey(x.key)), by: /** @type {'default'} */ ('default'), key: String(x.key) }));
+  // the job-level `$` write fence row (hamr 2026-11-15): once, after the guards; its words need the fence the close signs
+  const fence = fenceOfClose(closeDecl);
+  const fenceRows = fence ? list.filter((/** @type {any} */ x) => x.kind === 'fence').map((/** @type {any} */ x) => ({ line: 0, text: fenceRowText(fence), by: /** @type {'default'} */ ('default'), key: String(x.key) })) : [];
+  return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
+    ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      if (p.class !== 'fact') return [{ line: st.params.step, text: partSentence(p), by }];
+      if (p.class !== 'fact') {
+        // the built row that carries this countable part (piece 3: every check is a row): a row points at its part, or a `~` rule row is named in the part's own `rules`; the first one keys it
+        const row = list.find((/** @type {any} */ x) => ['rule', 'cited', 'numbers', 'note'].includes(x.kind) && x.line === st.params.step
+          && ((isRec(x.part) && x.part.line === st.params.step && x.part.part === pi) || (x.kind === 'rule' && Array.isArray(p.rules) && p.rules.includes(x.rule))));
+        // `pick`: the person's own count/word pick (the confirm card draws it once, from the picks record, never also as this row)
+        return [{ line: st.params.step, text: partSentence(p), by, ...(row ? { key: String(row.key) } : {}), ...(by === 'you' ? { pick: true } : {}) }];
+      }
       const facts = Array.isArray(p.facts) ? p.facts : [];
       return factRows(p).map((/** @type {string} */ text, /** @type {number} */ i) => {
         const own = i < facts.length ? factBy(st.params.step, facts[i]?.name) : countBy(st.params.step, pi);
         return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
       });
-    })
-    : []));
+    }), ...floorOf(st)]
+    : [])), ...repoRows, ...guardRows, ...fenceRows];
 }
 
 /**
@@ -1042,16 +1125,16 @@ export function signedFactNames(closeDecl) {
  * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
  * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
  * @param {{closeDecl: any, jobLines?: any[]|null, ledger?: {key: string, words: string[]}[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words; `ledger` the draft log's final list rows, so a phrase row is named by its words
- * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string, pick?: true}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
  */
 export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
-  const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
+  const notes = isRec(closeDecl) && !carriesOneList(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
   const items = ruleNotCheckedItems(closeDecl, jobLines, ledger);
   /** @type {Record<string, 'you'|'agent'|'default'>} */
   const notCheckedBy = {};
   for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}) })),
+    checkItems: checksOfClose(closeDecl, jobLines).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}) })),
     notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
     notCheckedBy,
   };
@@ -1068,8 +1151,13 @@ export function listMatchesClose(closeDecl) {
   if (list === null) return { ok: true };
   const stages = Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const partsOn = (/** @type {number} */ n) => stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)).flatMap((/** @type {any} */ st) => st.params.parts);
-  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor');
-  const bad = built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])));
+  // a job-level guard row (line 0) points at a guard STAGE the close runs, by name; it has no part
+  const stageNames = stages.filter((/** @type {any} */ st) => isRec(st)).map((/** @type {any} */ st) => st.name);
+  const guardBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'guard' && r.state === 'built' && !stageNames.includes(guardNameOfKey(r.key)));
+  // a repo job's rows (Addendum 2026-11-15 (d)): an `!` stage row names a stage the close runs; a `~` rule row the fence keeps points at no part (`fence` holds the path)
+  const stageBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'stage' && r.state === 'built' && !stageNames.includes(stageNameOfKey(r.key)));
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard' && r.kind !== 'fence' && r.kind !== 'stage' && !(r.kind === 'rule' && typeof r.fence === 'string'));
+  const bad = [...guardBad, ...stageBad, ...built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])))];
   const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
   const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))
     .filter(({ p }) => isRec(p) && (p.class === 'countable' || p.class === 'fact'))
@@ -1086,12 +1174,12 @@ export function listMatchesClose(closeDecl) {
 /**
  * The sign-time invariant: the checks the person was shown (`shown`, from the plan card) are exactly the checks the signed
  * close runs (`checksOfClose`), per line. Pure.
- * @param {{text: string, fromLine: number[]|null}[]} shown @param {any} closeDecl
+ * @param {{text: string, fromLine: number[]|null}[]} shown @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines (a repo job's `~` row reads the rule in their words)
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function planMatchesClose(shown, closeDecl) {
+export function planMatchesClose(shown, closeDecl, jobLines = null) {
   const key = (/** @type {number|null|undefined} */ line, /** @type {string} */ text) => `line ${line ?? '?'}: ${text}`;
-  const ran = checksOfClose(closeDecl).map((c) => key(c.line, c.text));
+  const ran = checksOfClose(closeDecl, jobLines).map((c) => key(c.line, c.text));
   const saw = shown.map((c) => key(Array.isArray(c.fromLine) ? c.fromLine[0] : null, c.text));
   const onlyShown = saw.filter((k) => !ran.includes(k));
   const onlyRan = ran.filter((k) => !saw.includes(k));

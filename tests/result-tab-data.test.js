@@ -145,6 +145,8 @@ test('RUBRIC = A: the real rubric runs\' /result payload is exactly what the old
   for (const id of ['mve5y8fa', 'mvdg1xo3']) {
     const now = JSON.parse(JSON.stringify(getRunResult(id, { home: w.home })).split(delivered).join('<DELIVERED>'));
     assert.equal('kind' in now, false, `${id}: no kind key`);
+    // piece 4 (Addendum 2026-11-14 (c)) ADDS two keys to each line (`checkRows`, `unclaimed`); every key the old code produced is unchanged, and the new ones are only additions
+    for (const l of now.lines) { assert.ok(Array.isArray(l.checkRows) && Array.isArray(l.unclaimed), `${id}: the new keys are there`); delete l.checkRows; delete l.unclaimed; }
     assert.deepEqual(now, golden[id], `${id}: payload unchanged`);
   }
 });

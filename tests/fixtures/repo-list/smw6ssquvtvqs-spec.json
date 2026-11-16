@@ -1,0 +1,203 @@
+{
+  "schema": "job-v1",
+  "job": "r7-sched",
+  "description": "r7-sched — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass",
+      "rule": "no new dependencies",
+      "rules": [
+        "no new dependencies"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/mcp-tickets/r7/paid/work/sum-seed"
+    },
+    {
+      "n": 2,
+      "label": "issues",
+      "value": "https://github.com/hamr0/hol-guard/issues"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.3,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/**"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Fix the bug in src/sum.js so that `node --test test/sum.test.js` reports all its tests passing, with no new dependencies added to the package and the files changed only under src/.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "node-test-executed-count",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/sum.test.js"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "node-test-fail-count",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/sum.test.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The confirmed plan's second check — 'package.json dependencies/devDependencies unchanged from the seed, and no lockfile or node_modules appeared' — has NO stage. I could not express it with the kinds available: the seed tree listing is only package.json, src, test (no lockfile, no node_modules, so there is no seed path to measure a lockfile count against), and I have no read-only parsing of package.json that is not also a new command I would have to invent. Nesting it under the changed-from-seed guard's allowPrefixes (src/) would only partially help: any write to package.json, a lockfile or node_modules is already outside src/ and therefore already refused by the write fence, which is why I did not add a stage for it. If the person wants it explicit, the write fence is the check that covers it.",
+      "NOT CHECKED, per the person's own list: test/sum.test.js being left untouched or the tests not being weakened — I only check that the suite passes and that no more/fewer tests execute; the fix inside src/sum.js being a general fix rather than a special case that satisfies the two tests; the ticket at https://github.com/hamr0/hol-guard/issues (its URL is the only ticket input, and no priority or label is named anywhere in the job, so there is no ticketFilter and no ticket-content stage).",
+      "No typecheck stage exists and none is composed: the survey found no tsconfig.json, no jsconfig.json, no typescript dependency and no lint script, so there is no checker to run. The genre's typecheck/typecheck-outside stages would be instruments pointing at nothing here.",
+      "Tests are invoked as `node --test test/sum.test.js` from the package root, the command the survey read off package.json scripts.test; node is the language module runner for this ESM package (\"type\": \"module\"), and the test file uses explicit .js specifiers.",
+      "The TAP patterns (# tests / # fail) are the genre's measured node-test-total-count and node-test-fail-count spellings, read as figures with aggregate 'first'; Node prints both counters on every run including a green one, so a green zero is a reported zero, not an unreported one. The 'suite-green' stage is the exit-code half of the same assertion.",
+      "The scope objects on the two counting stages name which population they count (the single test file), not a path inside lineMatch, so a clean run matches the TAP line rather than losing the instrument."
+    ]
+  },
+  "flowType": "tickets",
+  "mcp": {
+    "server": "github",
+    "tools": [
+      "get_label",
+      "issue_read",
+      "list_issue_fields",
+      "list_issue_types",
+      "list_issues",
+      "list_pull_requests",
+      "pull_request_read",
+      "search_issues",
+      "search_pull_requests"
+    ]
+  },
+  "trigger": {
+    "kind": "new-ticket",
+    "input": "issues"
+  }
+}

@@ -31,9 +31,9 @@ test('mainButtonFor: the table (state, typed-text-empty, reuse) -> wording, acti
     [{ session: true, phase: 'install-needed', pendingAsk: ask('install-needed') }, false, false, { text: 'Check again', action: 'check-deps', disabled: false, hint: '' }],
     [{ session: true, phase: 'confirming', pendingAsk: ask('question') }, false, false, { text: 'Send', action: 'send', disabled: false, hint: '' }],
     [{ session: true, phase: 'confirming', pendingAsk: ask('question') }, true, false, { text: 'Send', action: 'send', disabled: true, hint: '' }],
-    // hamr 2026-10-09: at the plan menu there is no typed change request; the button is Sign & run whatever is typed
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, false, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, true, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
+    // hamr 2026-10-09: at the plan menu there is no typed change request; the button is the same whatever is typed. 2026-11-15: that button only confirms the plan and starts drafting (it never signs), so it says so; "Sign & run" is for the card whose checks are drafted
+    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, false, false, { text: 'Draft the plan', action: 'sign-prepare', disabled: false, hint: '' }],
+    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, true, false, { text: 'Draft the plan', action: 'sign-prepare', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: false }, true, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: true, specHash: 'abcdef0123456789' }, true, false, { text: 'Sign abcdef01 & run', action: 'sign', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: true, specHash: 'abcdef0123456789' }, true, true, { text: 'Sign abcdef01 & run', action: 'sign', disabled: false, hint: '' }],
@@ -56,12 +56,16 @@ test('page: ONE button below the message box; Send, Check again, Revise, the sig
   assert.match(PAGE, /id="chat-main-btn"[^>]*class="btn primary wide"|class="btn primary wide"[^>]*id="chat-main-btn"/);
 });
 
-test('page: Revise is its own button, shown only while a plan waits for the OK, and it reopens the boxes (no typed change request, no /revise route)', () => {
+test('page: Revise is its own button, shown while a plan waits for the OK and on the final card, and it reopens the boxes (no typed change request, no /revise route)', () => {
   const shown = new Function(`${fnSrc('reviseShownFor')}\nreturn reviseShownFor;`)();
   assert.equal(shown({ session: true, pendingAsk: ask('menu') }), true);
   assert.equal(shown({ session: true, pendingAsk: ask('question') }), false);
   assert.equal(shown({ session: true, pendingAsk: null }), false);
   assert.equal(shown({ session: false, pendingAsk: ask('menu') }), false);
+  // hamr 2026-11-15: the FINAL card (signed-ready, phase `prepared`, no pending ask) is where Revise is needed most; it was hidden there (reviseShownFor looked only at a pending menu)
+  assert.equal(shown({ session: true, phase: 'prepared', pendingAsk: null }), true, 'Revise shows on the final card');
+  assert.equal(shown({ session: true, phase: 'drafting', pendingAsk: null }), false);
+  assert.equal(shown({ session: false, phase: 'prepared', pendingAsk: null }), false);
   assert.match(PAGE, /id="chat-reopen-btn"[^>]*hidden>Revise<\/button>/);
   assert.match(fnSrc('renderMain'), /reopenBtn\.hidden = !reviseShownFor\(st\)/);
   const reopen = fnSrc('doReopen');
@@ -74,4 +78,9 @@ test('page: Revise is its own button, shown only while a plan waits for the OK, 
 test('page: the button is dispatched from mainButtonFor and re-rendered on typing', () => {
   assert.match(PAGE, /msgInput\.addEventListener\("input", renderMain\)/);
   assert.match(fnSrc('renderMain'), /mainButtonFor\(/);
+});
+
+test('the CLI confirm menu says what Confirm does: it drafts the checks, it does not sign', async () => {
+  const { CONFIRM_MENU } = await import('../src/authorflow.js');
+  assert.equal(CONFIRM_MENU.confirm, 'Confirm — draft the checks for this plan and goal as shown');
 });

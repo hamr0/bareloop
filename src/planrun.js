@@ -1773,6 +1773,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // arbiter-owned fact reaches a stage: through the ctx, never through the
       // declaration. A command close has no human stage to hand it to.
       humanRuling: liveRuling,
+      // the signed one check list: each stage entry of the close's records carries a RESULT PER ROW (report-only; no verdict reads it)
+      list: Array.isArray(job.closeDecl?.list) ? job.closeDecl.list : null,
       // REPORT-ONLY: what a rubric-step stage's cited checks read (bareguard `full.evidence`), recorded as `rubric-evidence` for the Result
       // tab's highlights. No verdict, gap, governor or money path reads it. Masked HERE with the run's one `scrub`: the `text` is a quote from
       // the frozen page record, and the spine is append-only. Masking moves offsets, so an entry whose text changed keeps NO spans.

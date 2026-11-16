@@ -105,7 +105,7 @@ import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import {
-  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
@@ -116,7 +116,7 @@ import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, tooManyAsksText } from './pagemap.js';
-import { CheckBlock } from './checkblock.js';
+import { CheckBlock, REASON } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
 import { renderJobLines } from './jobblock.js';
@@ -124,6 +124,7 @@ import { scopedRules, codeScope, plainWords, obviousCheck } from './checkpick.js
 import { matchRecord, entriesFromAnswers, KEPT_WORDS } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
 import { runLedgerSuggest, ledgerRecord } from './checklist.js';
+import { runFencePoint } from './fencepointcall.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -439,7 +440,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -480,6 +481,8 @@ export async function authorCloseForJob({
   // the model boundary of the list call (a `makeLoopGenerate` bound to LEDGER_SYSTEM), rubric jobs only. ABSENT = the list is built from the look and the defaults with no suggestion call
   // (a test seam, like `pickGenerate`); the CLI and the panel always bring it.
   ledgerGenerate = null,
+  // the repo job's pointing call (src/fencepointcall.js): ONE small call BEFORE the asks that points a `~` rule at a file the write fence keeps; code proves it. ABSENT = no pointing: every unproven rule is asked
+  fenceGenerate = null,
   // 2026-11-14 (b): the note question (src/noteask.js), asked ONLY when a rubric line is facts-only; ABSENT = never asked (every older caller and test)
   noteFn = null,
   // one rule in, one rule out: called with the job lines rebuilt from the check list after an answer (the seam that shows the job text updates itself); ABSENT = nothing shows it
@@ -659,10 +662,45 @@ export async function authorCloseForJob({
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
   }
 
+  /**
+   * The code-forced ask rounds of the check block, ONE flow for every job (hamr 2026-11-15): the rows code cannot settle are asked (cap 3 counted), the person's choice goes back through the block, and the job text is rebuilt
+   * from the list. Only a rule with something to Agree to is asked (a look's reading, a proposed count check); a rule no check can prove is Not checked at once, never asked (option A, hamr 2026-11-15). Returns `{stop}` (a finished return) or `{answered}`.
+   * @param {import('./checkblock.js').CheckBlock} blk @param {NonNullable<typeof answerQuestions>} answerFn the seam that asks the person @returns {Promise<{stop: any}|{answered: {picks: any[], left: any[]}}>}
+   */
+  const askRounds = async (blk, answerFn) => {
+    /** what the person answered, across the rounds: the picks and the rules they left, for the record this draft hands on @type {{picks: any[], left: any[]}} */
+    const answered = { picks: [], left: [] };
+    for (let round = 0; round < 3 && blk.open.length > 0; round += 1) {
+      const asks = questionsOfBlock(blk);
+      const counted = asks.filter((a) => a.counted);
+      if (counted.length > MAX_QUESTIONS) {
+        return { stop: { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(asks, blk.repo !== null ? '' : undefined) }], stop: 'look-asks-too-many', cost: null } };
+      }
+      // the asks go to the person whole (key, check, reading, counted, pairRule): normalizeQuestions keeps only a model's question fields and would drop the proposal an Agree button needs
+      const shown = asks.map((a) => ({ ...a, question: redactSecrets(a.question) }));
+      if (shown.length === 0) break;
+      onPhase(shown.every((a) => a.ask === 'check') ? 'check-ask' : 'look-ask', { questions: shown.length });
+      const updated = await answerFn({ questions: shown, dropped: [], confirmed: null });
+      if (updated === null) return { stop: { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null } };
+      jobLines = updated.jobLines;
+      interview.answers = updated.answers;
+      answered.picks.push(...(Array.isArray(updated.picks) ? updated.picks : []));
+      answered.left.push(...(Array.isArray(updated.left) ? updated.left : []));
+      const refused = applyChoices(blk, Array.isArray(updated.choices) ? updated.choices : []);
+      // one rule in, one rule out (hamr 2026-11-14): the list replaced each answered rule, so the job text is rebuilt FROM the list (its one owner) and handed back to the seam that shows it
+      const rebuilt = blk.jobLinesView(jobLines);
+      jobLines = rebuilt;
+      interview.answers = { ...interview.answers, 1: renderJobLines(rebuilt) };
+      if (typeof onJobLines === 'function') onJobLines(rebuilt);
+      if (refused.length === 0) break;
+    }
+  return { answered };
+  };
+
   // THE CHECK BLOCK of a rubric job (src/checkblock.js; hamr 2026-11-12: "one flow one place ai suggestes ! code adds $ and code decides what worked/doable"). It is made once here, after the look:
   // the person's `~` rules and `$` defaults, then the look's facts (a fact tied to a `~` rule is a link on that row), then the last draft's picks Revise keeps (am17/am18/am21). The AI's two
   // helpers (the pick call for count rules, the call for extra `!` checks) send ROW EDITS through the SAME door as the drafter's reply (`applyDelta`). Code then asks (cap 3) about what it
-  // cannot settle and applies the person's CHOICE (agree | drop | their own words) with `applyAnswer`. Every check comes from the rows; no other store holds one.
+  // cannot settle and applies the person's CHOICE (agree | drop, buttons only) with `applyAnswer`. Every check comes from the rows; no other store holds one.
   /** @type {import('./checkblock.js').CheckBlock|null} */
   let block = null;
   /** the picks the person made (kept and answered) this draft, as the picks record carries them */
@@ -672,6 +710,7 @@ export async function authorCloseForJob({
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
     block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
+    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
@@ -715,32 +754,9 @@ export async function authorCloseForJob({
     // the code-forced asks (PRD v1.106 Part 5 Q3 T2, v1.107 Part 5b, R10): a reading code proposes, a rule the page cannot check, a check proposed for a counting rule. More than
     // MAX_QUESTIONS counted asks is a job to rewrite, not a questionnaire: nothing is asked and the stop lists every ask.
     if (answerQuestions) {
-      /** what the person answered, across the rounds: the picks and the rules they left, for the record this draft hands on @type {{picks: any[], left: any[]}} */
-      const answered = { picks: [], left: [] };
-      for (let round = 0; round < 3 && block.open.length > 0; round += 1) {
-        const asks = questionsOfBlock(block, pickGenerate ? scoped : []);
-        const counted = asks.filter((a) => a.counted);
-        if (counted.length > MAX_QUESTIONS) {
-          return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(asks) }], stop: 'look-asks-too-many', cost: null };
-        }
-        // the asks go to the person whole (key, check, reading, counted, pairRule): normalizeQuestions keeps only a model's question fields and would drop the proposal an Agree button needs
-        const shown = asks.map((a) => ({ ...a, question: redactSecrets(a.question) }));
-        if (shown.length === 0) break;
-        onPhase(shown.every((a) => a.ask === 'check' || a.ask === 'no-check') ? 'check-ask' : 'look-ask', { questions: shown.length });
-        const updated = await answerQuestions({ questions: shown, dropped: [], confirmed: null });
-        if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
-        jobLines = updated.jobLines;
-        interview.answers = updated.answers;
-        answered.picks.push(...(Array.isArray(updated.picks) ? updated.picks : []));
-        answered.left.push(...(Array.isArray(updated.left) ? updated.left : []));
-        const refused = applyChoices(block, Array.isArray(updated.choices) ? updated.choices : []);
-        // one rule in, one rule out (hamr 2026-11-14): the list replaced each answered rule, so the job text is rebuilt FROM the list (its one owner) and handed back to the seam that shows it
-        const rebuilt = block.jobLinesView(jobLines);
-        jobLines = rebuilt;
-        interview.answers = { ...interview.answers, 1: renderJobLines(rebuilt) };
-        if (typeof onJobLines === 'function') onJobLines(rebuilt);
-        if (refused.length === 0) break;
-      }
+      const ar = await askRounds(block, answerQuestions);
+      if ('stop' in ar) return ar.stop;
+      const answered = ar.answered;
       // the record this draft hands on, written whether or not anything was asked (a draft that kept every pick still carries them forward): the picks it kept, as they were, and the picks just answered, keyed by words
       if (scoped.length > 0) {
         // the record keeps the FINAL words of each rule (an answer replaced the rule it was asked about), numbered on this card
@@ -751,6 +767,15 @@ export async function authorCloseForJob({
         });
       }
     } else block.reconcile();
+  }
+
+  // A repo job runs through the SAME check block (hamr 2026-11-15: "same flow as rubric, no exceptions; only the TYPE of checks varies"): its `$` rows are known now (the confirm card draws them); its `~` rule rows
+  // are made once the repo listing is read, and its `!` work-stage rows once the draft stands.
+  /** @type {import('./checkblock.js').CheckBlock|null} */
+  let repoBlock = null;
+  if (block === null && isRepo && lang !== RUBRIC_LANG && Array.isArray(jobLines) && jobLines.length > 0) {
+    repoBlock = new CheckBlock({ texts: {}, labels: [], asks: Boolean(answerQuestions), repo: { files: null, writeScope: Array.isArray(writeScope) && writeScope.length ? [...writeScope] : null } });
+    repoBlock.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : null);
   }
 
   // ── THE CONFIRM TURN'S PAID HALF (PRD item 33 M3 piece 4) ──────────────────
@@ -802,6 +827,11 @@ export async function authorCloseForJob({
         const cardOf = () => cardOfClose({ closeDecl: block.closeView(), jobLines, ledger: block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) })) });
         return { card: cardOf(), cardOf, block };
       })() : {}),
+      // a repo job's card is its rows too (Addendum 2026-11-15 (d)): the `$ [default]` guards and the write fence, known before drafting, read from the same block; the `~` rules and the `!` stages get their rows later
+      ...(repoBlock ? (() => {
+        const closeDecl = repoBlock.closeView();
+        return { card: { ...cardOfClose({ closeDecl, jobLines }), closeDecl } };
+      })() : {}),
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
     // per round when a plan arrives) — this is the WRAPPER's own line, once,
@@ -836,6 +866,29 @@ export async function authorCloseForJob({
     // the count is only knowable AFTER, so it rides the done line rather than
     // being guessed onto the start one
     onPhase('listing-done', { files: seeds?.files?.length ?? null, stop: seeds?.stop ?? null });
+  }
+
+  // a repo job's `~` rule rows (a rule is kept only when code finds a repo path in the person's own words that the write fence keeps; every other rule is asked about, as a rubric rule is), once the listing is read
+  if (repoBlock !== null && seeds != null && seeds.stop == null && Array.isArray(seeds.files)) {
+    repoBlock.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : null);
+    repoBlock.setListing(seeds.files);
+    repoBlock.fromJob(jobLines ?? []);
+    repoBlock.reconcile();
+    // point -> code proves -> asks -> draft (the rubric's order): the AI points a rule at a listing path, row edits judge it alone; only when the job has `~` rules and the listing has paths outside the fence
+    // the folders holding outside files are listed too (`test/`), so a rule that names a folder can be pointed at it
+    const outside = [...repoBlock.outsideFolders().map((d) => `${d}/`), ...repoBlock.outsideScope()];
+    if (fenceGenerate && outside.length > 0 && repoBlock.rows.some((r) => r.kind === 'rule')) {
+      onPhase('fence-point', {});
+      const fp = await runFencePoint({ jobLines: jobLines ?? [], outside, writeScope, generate: fenceGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
+      if (survey != null) { survey.calls = [...(survey.calls ?? []), ...fp.calls]; survey.raws = [...(survey.raws ?? []), ...fp.raws]; }
+      const rec = repoBlock.applyDelta({ label: 'pre:fence-point', pre: true, edits: fp.edits });
+      repoBlock.reconcile();
+      onPhase('fence-point-done', { edits: fp.edits, results: rec.edits.map((/** @type {any} */ e) => ({ op: e.op, line: e.line, rule: e.rule, path: e.path, accepted: e.accepted === true, ...(e.accepted === true ? {} : { refusedBecause: String(e.refusedBecause) }) })), sent: fp.edits.length, kept: rec.edits.filter((/** @type {any} */ e) => e.accepted === true).length, reason: fp.reason, refused: rec.edits.filter((/** @type {any} */ e) => e.accepted !== true).map((/** @type {any} */ e) => String(e.refusedBecause)) });
+    }
+    if (answerQuestions) {
+      const ar = await askRounds(repoBlock, answerQuestions);
+      if ('stop' in ar) return ar.stop;
+    }
   }
 
   // The declaration ladder. The REVISION CAP is deliberately not quoted here:
@@ -940,6 +993,23 @@ export async function authorCloseForJob({
       ? { guardLines: authored.declaration.guardLines.map((/** @type {any} */ g) => ({ guard: g.guard, lines: [...g.lines] })) }
       : {}),
   };
+
+  // A repo job signs its list through the same block (hamr 2026-11-15): its `~` rule rows (kept by the fence or Not checked with a REASON), the drafter's work stages as `!` rows, the `$` guards and the fence.
+  // `refused` is built from the rows in code, as a rubric job's is: the drafter's line-level refusals, then each `~` rule row no check carries.
+  if (repoBlock !== null && closeDecl.list === undefined && !closeDecl.stages.some((/** @type {any} */ s) => s && s.kind === 'rubric-step')) {
+    const guardNames = classGuards({ verdictType: picked, lang }).map((g) => g.name);
+    repoBlock.setGuards(guardNames, Array.isArray(writeScope) && writeScope.length ? writeScope : null);
+    repoBlock.asks = false; // nobody is asked after the draft stands: a rule not settled now is Not checked
+    repoBlock.syncJob(jobLines ?? []);
+    repoBlock.addStages(closeDecl.stages, { guardNames, refused: closeDecl.refused ?? [], guardLines: closeDecl.guardLines ?? [] });
+    if (Array.isArray(carriedChoices)) { repoBlock.carryChoices(carriedChoices); onChoices(repoBlock.choicesRecord()); }
+    const view = repoBlock.closeView();
+    const lineRefusals = repoBlock.rows.filter((r) => r.kind === 'stage' && r.refusal === true).map((r) => ({ line: r.line, reason: REASON.noRule }));
+    const ruleRefusals = repoBlock.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
+    closeDecl.stages = view.stages;
+    closeDecl.list = view.list;
+    if (lineRefusals.length || ruleRefusals.length) closeDecl.refused = [...lineRefusals, ...ruleRefusals]; else delete closeDecl.refused;
+  }
 
   return {
     ok: true,

@@ -121,6 +121,7 @@ import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
 import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
+import { FENCE_POINT_SYSTEM } from './fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from './rowedit.js';
 import { moveFile } from './movefile.js';
 import { GATE_AUDIT_FILE } from './kinds.js';
@@ -129,9 +130,10 @@ import { commandFor } from './invoke.js';
 import { readSourceManifest, missingDependencies, nonRepoSourceMessage, isRubricFilesManifest } from './source.js';
 import { tallyCalls } from './text.js';
 import { splitReadNotes } from './pagedropwords.js';
+import { answerEffectWords } from './questionbox.js';
 import {
   declarationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText,
+  openQuestionLines, answeredQuestionLines, fellBackLines, signingStopText, buildReadout,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -159,6 +161,60 @@ class ExitSignal extends Error {
  *   `'bareloop author'` so a person who typed that is told to re-run THAT,
  *   never a script path they never invoked and may not have on disk.
  */
+
+/**
+ * The lines the CLI prints for one question the plan raised: the ask, then (try-3 question, Addendum 2026-11-14 (c) piece 5) what the answer does, in the panel's own words ("This replaces: ..." or
+ * "This adds a new rule to line N"). Pure.
+ * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean, [k: string]: any}} step @returns {string[]}
+ */
+export function answerPromptLines(step) {
+  const effect = answerEffectWords(step);
+  return [
+    `Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can be signed (pick "Start over" or "Fix" instead if you cannot answer it):`,
+    `  ? ${step.question}`,
+    ...(effect === null ? [] : [`  ${effect}`]),
+  ];
+}
+
+/** the tag of a row by its kind, one spelling with the panel: `~ [you]`, `! [agent]`, `$ [default]` (a check with no row kind says nothing) @param {unknown} by @returns {string} */
+const rowTag = (by) => (by === 'you' ? '~ [you]' : by === 'agent' ? '! [agent]' : by === 'default' ? '$ [default]' : '');
+
+/**
+ * The confirm turn's plan as the CLI prints it, read from the SAME rows the panel card draws (Addendum 2026-11-14 (c) piece 3): every check is its row (line, tag, words), the protections are the
+ * write fence only for a job whose list holds the guards. A plan that carries no row items (a repo job) prints its plain `checks` as before. Pure: one string per printed line.
+ * @param {any} p the confirm plan @returns {string[]}
+ */
+export function confirmPlanLines(p) {
+  /** @type {string[]} */
+  const out = ['THE PLAN — read before you pick:', `  goal          ${JSON.stringify(p.goal ?? '')}`, '  checks it will compose:'];
+  const items = Array.isArray(p.checkItems) && p.checkItems.length ? p.checkItems : null;
+  if (items) {
+    for (const c of items) {
+      const line = Array.isArray(c.fromLine) && Number.isInteger(c.fromLine[0]) && c.fromLine[0] >= 1 ? `line ${c.fromLine[0]}: ` : '';
+      const tag = rowTag(c.by);
+      out.push(`    · ${line}${tag ? `${tag} ` : ''}${c.text}`);
+    }
+  } else for (const c of p.checks ?? []) out.push(`    · ${c}`);
+  // (a one-list job's guards and fence are rows above; the heading shows only when something is left)
+  if ((p.protections ?? []).length) {
+    out.push('  protections (always-on guards, never named in the goal):');
+    for (const g of p.protections) out.push(`    · ${g}`);
+  }
+  const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
+  if (unchecked.length) {
+    out.push('  you asked for these, but nothing checks them:');
+    for (const n of unchecked) out.push(`    · ${n}`);
+  }
+  if (readNotes.length) {
+    out.push(`  how the page was read · ${readNotes.length}:`);
+    for (const n of readNotes) out.push(`    · ${n}`);
+  }
+  if ((p.questions ?? []).length) {
+    out.push('  open questions:');
+    for (const q of p.questions ?? []) out.push(`    ? ${q}`);
+  }
+  return out;
+}
 
 /**
  * Parses this script's own argv shape and runs the authoring pipeline
@@ -716,26 +772,7 @@ export async function main(argv, deps = {}) {
       return readFreeText(false);
     }
     if (step.kind === 'menu') {
-      const p = step.plan ?? {};
-      out('THE PLAN — read before you pick:');
-      out(`  goal          ${JSON.stringify(p.goal ?? '')}`);
-      out('  checks it will compose:');
-      for (const c of p.checks ?? []) out(`    · ${c}`);
-      out('  protections (always-on guards, never named in the goal):');
-      for (const g of p.protections ?? []) out(`    · ${g}`);
-      const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
-      if (unchecked.length) {
-        out('  you asked for these, but nothing checks them:');
-        for (const n of unchecked) out(`    · ${n}`);
-      }
-      if (readNotes.length) {
-        out(`  how the page was read · ${readNotes.length}:`);
-        for (const n of readNotes) out(`    · ${n}`);
-      }
-      if ((p.questions ?? []).length) {
-        out('  open questions:');
-        for (const q of p.questions ?? []) out(`    ? ${q}`);
-      }
+      for (const l of confirmPlanLines(step.plan ?? {})) out(l);
       const keys = /** @type {(keyof typeof CONFIRM_MENU)[]} */ (Object.keys(CONFIRM_MENU));
       keys.forEach((k, i) => out(`  ${i + 1}. ${CONFIRM_MENU[k]}`));
       for (;;) {
@@ -754,9 +791,7 @@ export async function main(argv, deps = {}) {
       // "Confirm"/"Type the goal yourself" cannot proceed until it is
       // answered, right here, with no extra model call. A blank line re-asks
       // the same question ("Start over" or "Fix" are the ways out).
-      out(`Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can `
-        + 'be signed (pick "Start over" or "Fix" instead if you cannot answer it):');
-      out(`  ? ${step.question}`);
+      for (const l of answerPromptLines(step)) out(l);
       return readFreeText(false);
     }
     if (step.kind === 'goal') {
@@ -854,6 +889,7 @@ export async function main(argv, deps = {}) {
       ask, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
       // the one check list of a rubric job (src/checklist.js): same list as the panel, its one call bound to its own system text; this door asks nothing for it
       ledgerGenerate: RUBRIC_FILES ? makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: authorPrice?.rates ?? null }) : null,
+      fenceGenerate: RUBRIC_FILES ? null : makeLoopGenerate(provider, { system: FENCE_POINT_SYSTEM, rates: authorPrice?.rates ?? null }),
       // the drafter's row-edit reply of a rubric job (src/rowedit.js), its own system text
       editGenerate: RUBRIC_FILES ? makeLoopGenerate(provider, { system: ROW_EDIT_SYSTEM, rates: authorPrice?.rates ?? null }) : null,
     });
@@ -1095,6 +1131,9 @@ export async function main(argv, deps = {}) {
           out('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
           out(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
           out('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
+          // the same draft readout the panel Chat shows (hamr 2026-11-15; src/authorreadout.js, the one owner): what the person is about to sign, from the signed spec through the card's own readers
+          out('');
+          for (const l of buildReadout({ spec, rounds: totalCost.calls.length, costUsd: totalCost.knownUsd, spendComplete: totalCost.spendComplete, specHash: hash }).trimEnd().split('\n')) out(`  ${l}`);
           for (const l of openQuestionLines(authored.confirmed)) out(`  ${l}`);
           for (const l of answeredQuestionLines(authored.confirmed)) out(`  ${l}`);
           // F185 — the loose end this fix closes: until now this screen named no

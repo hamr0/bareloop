@@ -1,14 +1,17 @@
-// THE CHECK BLOCK of a rubric job (hamr 2026-11-12: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable").
+// THE CHECK BLOCK of a job (hamr 2026-11-12: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable").
 // ONE store: `rows`. Nothing else holds a check. Rows are `~` (the person's own rule), `!` (the agent's suggestion: a look fact, or an AI edit) and `$` (code's defaults).
 // The AI's whole part is a list of proposed ROW EDITS; code judges each edit alone, matches every row against the saved page, builds every check through the bareguard-backed
 // shapes, and says why a row it cannot build is Not checked. The block never removes a row: only the person (`applyAnswer`) or code (`match`) changes one.
 //   fromJob -> addLook -> reconcile( match -> build -> ask ), then, while a question is open or a reply waits: apply it and reconcile the WHOLE list again.
-// Pure: no I/O, no clock, no model. Rubric jobs only (repo jobs never run through it).
+// Pure: no I/O, no clock, no model. ONE block for every job (hamr 2026-11-15: "same flow as rubric, no exceptions; same CheckBlock, only the TYPE of checks varies"). A rubric job's rows are facts, phrases and
+// counts built into rubric-step parts; a repo job (`repo` option) holds `~` rule rows the write fence keeps (or that the person answers about), `!` rows for the drafter's catalogue work stages, and the same `$` rows.
+// The same rows store, the same asks, the same Drop/carry, the same signedRows and closeView serve both.
+import { globToPrefix } from './validate.js';
 import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.js';
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult } from './pagedry.js';
-import { boundInWords, rubricStepShapeReds, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, floorWords, stageKeyOf, guardKeyOf, FENCE_KEY, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -26,7 +29,7 @@ import { factSentence, countSentence } from './facts.js';
 export const CARD_T = Object.freeze({ count: 'result count', cited: 'every claim is backed by a quote copied from', theInput: 'the input', numbers: 'every number in the text is in a checked quote of line', withWords: 'with the words' });
 
 /** the four row edits an AI reply may hold */
-export const EDIT_OPS = Object.freeze(['add', 'reading', 'pick', 'not-checkable']);
+export const EDIT_OPS = Object.freeze(['add', 'reading', 'pick', 'not-checkable', 'fence']);
 
 const norm = (/** @type {unknown} */ t) => String(t ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -40,7 +43,6 @@ const wordSet = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}
 export const REASON = Object.freeze({
   left: 'You chose to leave it Not checked, so you judge it at Accept.',
   nothingOnPage: 'Your own words are on the line; the machine has no check for them, so you judge it at Accept.',
-  cantCheck: "I can't check this on the page; waiting for your answer",
   noRule: 'No rule can check this, so you judge it at Accept.',
   waitingPick: 'waiting for your answer on the proposed check',
   waitingReading: 'waiting for your answer on the reading',
@@ -48,6 +50,7 @@ export const REASON = Object.freeze({
   manyInputs: 'the job has more than one input and code cannot pick which one the claims quote',
   oneSidedTime: 'a time limit the AI proposes must be a range, so you judge it at Accept.',
   countNeedsFact: 'a result count needs a fact to count; this line has none',
+  countNeedsSuggested: 'a result count needs a fact to count; add the suggested fact on this line to count its results',
   lookNoWords: "the page does not hold the words of the look's fact for this rule",
   afterLast: 'no more tries: Start over (rows are never changed by the AI after the last try)',
   noPick: 'No check was picked for it, so you judge it at Accept.',
@@ -58,9 +61,11 @@ export const REASON = Object.freeze({
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
 export function renderCard(rows) {
-  return rows.filter((r) => r.kind !== 'floor' && r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
+  return rows.filter((r) => r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
     let body;
-    if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
+    if (r.kind === 'floor') body = floorWords(r.line, r.carriesText !== false);
+    else if (r.kind === 'prose') body = PROSE_WORDS;
+    else if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
     else if (r.kind === 'count') body = `${CARD_T.count} ${r.min ?? ''}-${r.max ?? ''}`;
     else if (r.kind === 'cited') body = `${CARD_T.cited} "${r.source ?? CARD_T.theInput}"`;
     else if (r.kind === 'note') body = defaultNoteText(r.line);
@@ -82,9 +87,25 @@ function placeFacts(name, strips, mk) {
   return strips.map((s) => mk(nm(s.kind), { shape: 'phrase', phrase: s.value, place: s.rule }));
 }
 
+/**
+ * The Drop/Add choices of rows, tied to the line's words (not its number) and the row's own name, so a Revise keeps them. ONE owner for the block's own record and for a Drop made on a signed card.
+ * @param {{n: number, text: string}[]} lines @param {{line: number, key: string, choice: string}[]} picks @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]}
+ */
+export function choiceEntries(lines, picks) {
+  const seen = new Map();
+  const key = new Map(lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return [l.n, { lineWords: w, occurrence: o }]; }));
+  return picks.map((p) => ({ ...(key.get(p.line) ?? { lineWords: '', occurrence: 0 }), tail: p.key.replace(/^L\d+\./, ''), choice: String(p.choice) }));
+}
+
 export class CheckBlock {
-  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
-  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false }) {
+  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean, repo?: {files: string[]|null, writeScope: string[]|null}|null}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
+  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false, repo = null }) {
+    /** a repo job's check TYPE (the only thing that varies): `files` = the repo listing at the seed (null until it is read), `writeScope` = the signed write fence. Null = a rubric job @type {{files: string[]|null, writeScope: string[]|null}|null} */
+    this.repo = repo;
+    /** @type {any[]} a repo job's drafted stages as the drafter wrote them (guards included); the rows of the work stages are in `rows`, the close's stages are these minus the dropped ones */
+    this.declared = [];
+    /** the job lines a mandatory guard already covers (`guardLines`): a repo stage is never dropped when it is the last thing covering a line @type {Set<number>} */
+    this.guardCover = new Set();
     /** the product path sets it: `!` rows split into job-derived and suggested, a suggestion code cannot build is hidden (hamr 2026-11-13). Off, every `!` row is built as before (the older callers and their tests) */
     this.split = split;
     this.countScope = countScope;
@@ -113,7 +134,14 @@ export class CheckBlock {
     this.closeCache = null;
     /** @type {Map<number, 'yes'|'no'|'failed'>} the note question's answer per facts-only line (src/noteask.js; code decides what it means) */
     this.notes = new Map();
+    /** @type {string[]} the NAMES of the mandatory guards the close carries (Addendum 2026-11-14 (c) piece 2): each is a job-level `$` row of the signed list, never a row of `rows` (no line, so no check of a line) */
+    this.guards = [];
+    /** @type {string[]|null} the write fence of the job: a job-level `$` row of the signed list (hamr 2026-11-15), never a row of `rows` */
+    this.fence = null;
   }
+
+  /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names @param {string[]|null} [fence] the signed write fence, when the job has one */
+  setGuards(names, fence = null) { this.guards = [...new Set(names)]; this.fence = Array.isArray(fence) && fence.length ? [...fence] : null; }
 
   textOf(/** @type {string|undefined} */ source) { return this.texts[source ?? this.labels[0] ?? ''] ?? Object.values(this.texts)[0] ?? ''; }
   /** @param {number} line @param {string} [kind] */
@@ -137,7 +165,7 @@ export class CheckBlock {
     for (const l of jobLines) {
       this.lines.push({ n: l.n, text: l.text });
       (l.rules ?? []).forEach((t, i) => this.addRow({ key: `L${l.n}.~${i + 1}`, line: l.n, kind: 'rule', by: 'you', from: 'rule', origin: 'job', text: t, rule: i + 1 }));
-      this.addRow({ key: `L${l.n}.$floor`, line: l.n, kind: 'floor', by: 'default', from: 'default', state: 'built', reason: null, text: "the file exists and its text is not empty (code's own floor)" });
+      if (this.repo === null) this.addRow({ key: `L${l.n}.$floor`, line: l.n, kind: 'floor', by: 'default', from: 'default', state: 'built', reason: null, text: "the file exists and its text is not empty (code's own floor)" });
     }
   }
 
@@ -159,7 +187,10 @@ export class CheckBlock {
       this.lookFacts.push(f);
       // a fact the look tied to a COUNTING `~` rule stays a fact of its own: the pick path owns that rule (R10, hamr 2026-11-09), so the rule uses no link
       const tied = Number.isInteger(f.forRule) ? this.ruleRows(f.line).find((r) => r.rule === f.forRule) : undefined;
-      const row = tied && !isCountable(tied.text) ? tied : undefined;
+      // hamr 2026-11-15 (live run mwi76vh8, "be friendly" + "Select flight"): a phrase or place the person's own `~` rule words do not contain is no check of that rule; it is an ordinary `!` row (the split/inJob path
+      // decides Drop or Suggested) and the rule goes Not checked. A version or a date keeps the place-rule path; money, time, number and date links are unchanged.
+      const named = !tied || !['phrase', 'place'].includes(f.shape) || (f.words ?? []).some((/** @type {string} */ w) => weekOnly(w) || norm(tied.text).includes(norm(w)));
+      const row = tied && named && !isCountable(tied.text) ? tied : undefined;
       const carried = { name: f.name, shape: f.shape, words: [...(f.words ?? [])], unit: f.unit, currency: f.currency, decimal: f.decimal, lang: f.lang, source: f.source };
       if (row) { (row.links ??= []).push({ ...carried, reading: f.reading }); continue; }
       this.addRow({ key: `L${f.line}.fact.${norm(f.name)}`, line: f.line, kind: 'fact', by: 'agent', from: 'look', ...carried });
@@ -176,6 +207,7 @@ export class CheckBlock {
       if (r.kind === 'floor') continue;
       if (r.left) r.can = { ok: false, why: REASON.left };
       else if (r.lookWhy && r.kind === 'fact' && !r.words.length) r.can = { ok: false, why: r.lookWhy };
+      else if (r.kind === 'stage') r.can = r.refusal ? { ok: false, why: r.said } : { ok: true, how: 'stage' };
       else if (r.kind === 'rule') this.matchRule(r);
       else if (r.kind === 'fact' || r.kind === 'phrase') this.matchBang(r);
       else if (r.kind === 'count') this.matchCount(r);
@@ -212,8 +244,9 @@ export class CheckBlock {
   inJob(/** @type {Row} */ r) {
     const said = this.said(r.line);
     if (r.kind === 'count') return [r.min, r.max].filter((x) => Number.isInteger(x)).some((n) => new RegExp(`(?<![\\d.])${n}(?![\\d.])`).test(said));
-    // a fact the person asked for BY NAME ("the release heading") is in the job too: the look's page words rarely echo the job's own words
-    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w)) || (r.kind === 'fact' && typeof r.name === 'string' && inText(said, r.name));
+    // a money, time, number or date fact the person asked for BY NAME ("the release heading") is in the job too: the look's page words rarely echo the job's own words. A phrase or place is job-derived
+    // only when its own words are in the person's text: a name the AI gave it is no proof (hamr 2026-11-15, live run mwi76vh8: "friendly" for "Select flight")
+    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w)) || (r.kind === 'fact' && r.shape !== 'phrase' && r.shape !== 'place' && typeof r.name === 'string' && inText(said, r.name));
   }
 
   /** a `!` count row is built unless a `~` rule on its line already names the number */
@@ -224,6 +257,7 @@ export class CheckBlock {
   }
 
   matchRule(/** @type {Row} */ r) {
+    if (this.repo !== null) { this.matchRepoRule(r); return; }
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
     // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
     const negated = NEGATING_RE.test(r.text);
@@ -253,6 +287,7 @@ export class CheckBlock {
         if (reading === undefined || !validReading(l.shape, reading)) continue; // code does not guess a limit; the AI may still propose one
         const bounds = reading.op === 'between' ? [reading.lo, reading.hi] : [reading.value];
         const unsaid = bounds.some((b) => !boundInWords(b, said));
+        if (unsaid && r.corrected) { r.can = { ok: false, why: REASON.noRule }; return; } // the person's corrected words do not carry the look's bound: never built from the AI's reading, never asked again
         if (unsaid && !r.agreed && this.asks) { r.can = { ok: false, ask: 'reading', link: l, reading, proposal: `${l.name} ${ruleWords({ shape: l.shape, unit: l.unit, currency: l.currency, rule: reading })}`, why: REASON.waitingReading }; return; }
         if (unsaid && l.shape === 'time' && reading.op !== 'between') { r.can = { ok: false, why: REASON.oneSidedTime }; return; }
         r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords && !r.agreed, ...(ownWords ? { readBy: 'your words' } : {}) };
@@ -271,9 +306,12 @@ export class CheckBlock {
     }
     if (otherCurrency) { r.can = { ok: false, why: `the amount in your rule is in another currency than the page's prices, so it is not checked.` }; return; }
     if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
+    // a READING the person corrected in words (applyAnswer `rule`): code tried the new words above; what it cannot prove is Not checked with REASON.noRule, never a second question
+    if (r.corrected) { r.can = { ok: false, why: REASON.noRule }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
     if (r.links?.length) { r.can = { ok: false, why: r.aiReason ?? `the look tied a fact to this rule but gave no limit, and ${ownWhy ? `in your words ${ownWhy}` : 'your own words give none code can read'}, so you judge it at Accept.` }; return; }
-    r.can = this.asks ? { ok: false, ask: 'cant-check', why: r.lookWhy ?? REASON.cantCheck } : { ok: false, why: r.lookWhy ?? REASON.noRule };
+    // hamr 2026-11-15 (option A): a rule no check can prove has only one answer (Drop it), so it is NOT asked: it is Not checked with code's reason at once
+    r.can = { ok: false, why: r.lookWhy ?? REASON.noRule };
   }
 
   /** a `~` rule that counts words, bullets, lines or sections: a settled pick builds it; else code proposes the check and asks */
@@ -289,7 +327,7 @@ export class CheckBlock {
     const proposal = r.pickProposal ?? countCheck(r.text);
     if (!this.asks) r.can = { ok: false, why: REASON.noRule };
     else if (proposal) r.can = { ok: false, ask: 'check', proposal, why: REASON.waitingPick };
-    else r.can = r.origin === 'typed' ? { ok: false, why: REASON.noRule } : { ok: false, ask: 'cant-check', why: REASON.cantCheck };
+    else r.can = { ok: false, why: REASON.noRule };
   }
 
   /** a `!` fact or phrase row: its words must be on the page; a version or a date is true only today, so only a place rule's fit may carry it */
@@ -320,6 +358,7 @@ export class CheckBlock {
 
   // 4. code makes every check from the rows; a row it cannot build keeps its place with its plain reason. Returns the close's stages, parts and the row map.
   build() {
+    if (this.repo !== null) return this.buildRepo();
     /** @type {any[]} */ const stages = [];
     /** @type {any[]} */ const parts = [];
     /** @type {{part: number, line: number, rows: string[], origin: string}[]} */ const map = [];
@@ -329,6 +368,15 @@ export class CheckBlock {
       /** @type {string[][]} */ const lineRows = [];
       this.buildLine(l, lineParts, lineRows, factLines);
       if (lineParts.length) stages.push({ name: `line-${l.n}`, kind: 'rubric-step', fromLine: [l.n], params: { step: l.n, parts: lineParts } });
+      // the line's `$` floor row says whether its file carries text (a facts-only line has no text check): code's own reading of the parts just built
+      // a line that writes text (a stage with no fact part) gets its `$` prose row: Not checked, the person judges what the text says at Accept (one owner; never a check, so hasBuiltCheck skips it)
+      const writesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'fact');
+      const prose = this.rowsOn(l.n, 'prose')[0];
+      if (writesText) {
+        const row = prose ?? this.addRow({ key: `L${l.n}.$prose`, line: l.n, kind: 'prose', by: 'default', from: 'default' });
+        row.state = 'not-checked'; row.reason = PROSE_WORDS;
+      } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
+      for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
         map.push({ part: parts.length, line: l.n, rows: lineRows[i] ?? [], origin: 'code' });
@@ -373,7 +421,7 @@ export class CheckBlock {
     /** the person's picks of this line: they follow the line's fact part on the card, as they always did (the facts, then the picks, then the defaults) @type {{p: any, key: string}[]} */
     const pickParts = [];
     for (const r of this.rowsOn(l.n)) {
-      if (r.kind === 'floor') continue;
+      if (r.kind === 'floor' || r.kind === 'prose') continue;
       r.part = null;
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
       if (r.held) { r.state = 'suggested'; r.reason = r.choice === 'drop' ? REASON.dropped : REASON.suggested; continue; }
@@ -402,7 +450,7 @@ export class CheckBlock {
       const reds = rubricStepShapeReds({ step: l.n, parts: [part] }, 'trial');
       if (reds.length) for (const x of [...factRows.map((f) => f.r), ...(countRow ? [countRow] : [])]) { x.state = 'not-checked'; x.reason = `code could not build the line's fact part: ${reds[0]?.detail}`; x.part = null; }
       else { lineParts.push(part); lineRows.push([...factRows.map((f) => f.r.key), ...(countRow ? [countRow.key] : [])]); factLines.add(l.n); if (countRow) { countRow.state = 'built'; countRow.reason = null; } }
-    } else if (countRow) { countRow.state = 'not-checked'; countRow.reason = REASON.countNeedsFact; }
+    } else if (countRow) { countRow.state = 'not-checked'; countRow.reason = this.rowsOn(l.n).some((x) => x.held && (x.kind === 'fact' || x.kind === 'phrase')) ? REASON.countNeedsSuggested : REASON.countNeedsFact; }
     for (const { p, key } of pickParts) { lineParts.push(p); lineRows.push([key]); }
     this.buildDefaults(l, lineParts, lineRows, factLines);
   }
@@ -484,6 +532,145 @@ export class CheckBlock {
   /** the note question's answers, `{line, answer: 'yes'|'no'|'failed'}`; the whole list is reconciled again @param {{line: number, answer: 'yes'|'no'|'failed'}[]} answers */
   setNotes(answers) { for (const a of answers) this.notes.set(a.line, a.answer); this.reconcile(); }
 
+  // ── a repo job's check TYPE (hamr 2026-11-15: "same flow as rubric, no exceptions; only the TYPE of checks varies") ──────────────────────────────────────────────────────────────────────────
+  // The rows are the same rows. A `~` rule is kept (built) only when CODE finds a repo path in the person's own words that the write fence keeps; every other rule is asked about (Agree / Drop it / own
+  // words, the same ask the rubric flow uses) or Not checked with a REASON. A `!` row is a work stage the drafter wrote from the catalogue (the check type), droppable like any `!` row, never the last one on a line.
+
+  /**
+   * The person's job lines as they stand now (a try-3 answer replaced or added a `~` rule): a rule whose words changed is the person's own typed words (its old answer is void), a new rule is a new row, a rule that is gone leaves.
+   * @param {{n: number, text: string, rules?: string[]}[]} jobLines
+   */
+  syncJob(jobLines) {
+    this.lines = jobLines.map((l) => ({ n: l.n, text: l.text }));
+    const keep = new Set();
+    for (const l of jobLines) {
+      (l.rules ?? []).forEach((t, i) => {
+        const key = `L${l.n}.~${i + 1}`;
+        keep.add(key);
+        const row = this.rows.find((r) => r.key === key);
+        if (!row) { this.addRow({ key, line: l.n, kind: 'rule', by: 'you', from: 'rule', origin: 'typed', cantAsked: true, text: t, rule: i + 1 }); return; }
+        if (row.text !== t) { row.text = t; row.origin = 'typed'; row.left = false; row.cantAsked = true; }
+      });
+    }
+    this.rows = this.rows.filter((r) => r.kind !== 'rule' || keep.has(r.key));
+  }
+
+  /** the repo listing at the seed, once it is read (the rule rows are judged against it) @param {string[]|null} files */
+  setListing(files) { if (this.repo !== null) this.repo.files = Array.isArray(files) ? [...files] : null; }
+
+  /**
+   * The drafter's work stages as `!` rows (a mandatory guard is not one), and a Not checked `!` row for each line the drafter refused: the refusal is only the SIGNAL, the reason is code's (`REASON.noRule`, the one table). Idempotent: the stage rows are made again from `stages`.
+   * @param {any[]} stages the declaration's stages, guards included @param {{guardNames?: string[], refused?: any[], guardLines?: any[]}} [o]
+   */
+  addStages(stages, { guardNames = [], refused = [], guardLines = [] } = {}) {
+    this.rows = this.rows.filter((r) => r.kind !== 'stage');
+    this.declared = Array.isArray(stages) ? stages : [];
+    this.guardCover = new Set((Array.isArray(guardLines) ? guardLines : []).flatMap((/** @type {any} */ g) => (Array.isArray(g?.lines) ? g.lines : [])));
+    const guards = new Set(guardNames);
+    // a line a live stage or a guard's `guardLines` covers is never refused (the rubric's rule: only a line no check could be built for is refused)
+    const covered = new Set([...this.guardCover, ...this.declared.filter((st) => st && !guards.has(st.name) && Array.isArray(st.fromLine)).flatMap((st) => st.fromLine)]);
+    for (const l of this.lines) {
+      for (const st of this.declared) {
+        if (!st || typeof st.name !== 'string' || guards.has(st.name) || !Array.isArray(st.fromLine) || st.fromLine.length === 0 || Math.min(...st.fromLine) !== l.n) continue;
+        this.addRow({ key: stageKeyOf(st.name), line: l.n, kind: 'stage', by: 'agent', from: 'agent', stageName: st.name, cover: [...st.fromLine] });
+      }
+      (Array.isArray(refused) ? refused : []).filter((/** @type {any} */ x) => x && x.line === l.n && !Number.isInteger(x.rule) && typeof x.reason === 'string' && !covered.has(l.n))
+        .forEach((/** @type {any} */ x, /** @type {number} */ i) => this.addRow({ key: `L${l.n}.refused.${i + 1}`, line: l.n, kind: 'stage', by: 'agent', from: 'agent', refusal: true, said: REASON.noRule }));
+    }
+  }
+
+  /** the repo paths outside the write scope (the pointing call is shown these); empty when there is no listing or no fence @returns {string[]} */
+  outsideScope() {
+    const files = this.repo?.files;
+    const scope = this.repo?.writeScope;
+    return Array.isArray(files) && Array.isArray(scope) && scope.length ? files.filter((f) => !this.inScope(f)) : [];
+  }
+
+  /** the folders every file of which lies outside the write scope (a rule may ask such a folder to stay as it is, written `folder/`); the pointing call is shown them beside the files @returns {string[]} */
+  outsideFolders() {
+    const files = this.repo?.files;
+    if (!Array.isArray(files) || this.outsideScope().length === 0) return [];
+    const all = new Set();
+    for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
+    return [...all].filter((d) => !files.some((f) => f.startsWith(`${d}/`) && this.inScope(f)));
+  }
+
+  /** is this repo file a place the run may change? @param {string} f */
+  inScope(f) {
+    return (this.repo?.writeScope ?? []).some((s) => { const pre = String(globToPrefix(String(s))).trim().replace(/^\.\//, '').replace(/\/+$/, ''); return pre === '' || pre === '.' || pre === '/' || f === pre || f.startsWith(`${pre}/`); });
+  }
+
+  /** the listing paths (a file, or a folder written `folder/`) a text names as whole tokens @param {string} text @returns {string[]} */
+  namedPaths(text) {
+    const files = this.repo?.files;
+    if (!Array.isArray(files)) return [];
+    const said = ` ${String(text).replace(/(^|[\s"'(])\.\//g, '$1')} `;
+    const all = new Set(files);
+    for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
+    const esc = (/** @type {string} */ t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return [...all].filter((p) => new RegExp(`(?<![\\w./-])${esc(p)}${files.includes(p) ? '(?![\\w-]|\\.\\w)' : '/(?![\\w.-])'}`).test(said));
+  }
+
+  /**
+   * Code's proof of a fence pointer: `path` is on the listing, the rule's own words name it (whole token; a folder as `folder/`), and neither it nor any other path those words name holds a place the run may change.
+   * @param {string} text the rule's own words @param {string} path @returns {boolean}
+   */
+  provesFence(text, path) {
+    const files = this.repo?.files;
+    if (!Array.isArray(files) || this.outsideScope().length === 0) return false;
+    const p = String(path).trim().replace(/^\.\//, '').replace(/\/+$/, '');
+    const named = this.namedPaths(text);
+    if (!named.includes(p)) return false;
+    return !named.some((n) => files.some((f) => (f === n || f.startsWith(`${n}/`)) && this.inScope(f)));
+  }
+
+  /** the AI's pointer at a repo `~` rule ({op:'fence', line, rule, path}): judged ALONE; code's proof decides, the AI only points @param {any} e */
+  editFence(e) {
+    if (this.repo === null) return { refusedBecause: 'a fence pointer is for a repo job' };
+    const r = this.ruleRows(e.line).find((x) => x.rule === e.rule);
+    if (!r) return { refusedBecause: 'names no ~ rule of this line' };
+    const path = typeof e.path === 'string' ? e.path.trim().replace(/^\.\//, '').replace(/\/+$/, '') : '';
+    if (!path) return { refusedBecause: 'no path given' };
+    if (!(this.repo.files ?? []).some((f) => f === path || f.startsWith(`${path}/`))) return { refusedBecause: `${path} is not on the repo listing` };
+    if (!this.provesFence(r.text, path)) return { refusedBecause: `the rule's own words do not name ${path}, or it names a place the run may change` };
+    r.pointed = path;
+    return { accepted: true, landedKey: r.key };
+  }
+
+  /** a repo `~` rule: kept by the write fence when the AI pointed at a path and code proves it from the person's words; else the same ask the rubric flow uses (the person's Agree / Drop it / own words), Not checked when nobody can be asked @param {Row} r */
+  matchRepoRule(r) {
+    // the AI points, code proves (never kept without a pointer; own words that replaced the rule are proved again against the same pointer)
+    if (typeof r.pointed === 'string' && this.provesFence(r.text, r.pointed)) { r.can = { ok: true, how: 'fence', path: r.pointed }; return; }
+    if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: REASON.nothingOnPage }; return; }
+    r.can = { ok: false, why: REASON.noRule };
+  }
+
+  /** a repo job's rows: a rule is built with the path the fence keeps for it or Not checked with its reason; a work stage is built, or dropped when the person dropped it and it is not the last thing on its line */
+  buildRepo() {
+    for (const r of this.rows) {
+      if (r.kind !== 'rule' && r.kind !== 'stage') continue;
+      r.part = null;
+      if (r.can?.ok) { r.state = 'built'; r.reason = null; if (r.kind === 'rule') r.fence = r.can.path; } else { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; delete r.fence; }
+    }
+    for (const r of this.rows) {
+      if (r.kind !== 'stage' || r.state !== 'built' || r.choice !== 'drop') continue;
+      if (this.dropOk(r)) { r.state = 'dropped'; r.reason = REASON.dropped; } else r.choice = undefined;
+    }
+    const gone = new Set(this.rows.filter((r) => r.kind === 'stage' && r.state === 'dropped').map((r) => r.stageName));
+    this.closeCache = { stages: this.declared.filter((st) => !gone.has(st?.name)), parts: [], map: [] };
+    return this.closeCache;
+  }
+
+  /** may this repo work-stage row be dropped? Never the last check on a line it serves (another live stage, a guard's `guardLines` or a line refusal still covers it), and never the last work stage of the job @param {Row} r */
+  dropOk(r) {
+    const others = this.rows.filter((x) => x !== r && x.kind === 'stage');
+    const live = others.filter((x) => !x.refusal && x.state === 'built');
+    return live.length > 0 && (r.cover ?? [r.line]).every((/** @type {number} */ n) => this.guardCover.has(n) || live.some((x) => (x.cover ?? []).includes(n)) || others.some((x) => x.refusal && x.line === n));
+  }
+
+  /** a row the person can Drop (and Add back): a `!` fact, phrase or count; in a repo job also a work stage the drafter wrote @param {Row} r */
+  droppable(r) { return this.isBang(r) || (this.repo !== null && r.kind === 'stage' && r.refusal !== true); }
+
   // 5. the code-forced questions for rows code cannot settle (a person answers; the CHOICE decides, never the words). Cap 3 is the caller's (MAX_QUESTIONS).
   ask() {
     this.open = [];
@@ -496,9 +683,9 @@ export class CheckBlock {
   hasOpenQuestions() { return this.open.length > 0; }
   hasPendingDelta() { return this.queue.length > 0; }
 
-  // 6. the person's answer: a row edit from the typed CHOICE (agree | drop | rule). ONE rule in, ONE rule out (hamr 2026-11-14, superseding the 2026-11-12 ruling that an agreed answer is a new `~` line):
-  // the answer REPLACES the asked rule, same line and same rule number; this list is the one owner (the job text is rebuilt from it, `jobLinesView`).
-  /** @param {string} qKey @param {string} choice @param {string} [text] @returns {{ok: true} | {ok: false, why: string}} */
+  // 6. the person's answer: a row edit from the typed CHOICE (agree | drop), buttons only (hamr 2026-11-15: a typed own-words answer is retired; a rule is changed by Revise). ONE rule in, ONE rule out (hamr 2026-11-14):
+  // an agreed answer REPLACES the asked rule, same line and same rule number; this list is the one owner (the job text is rebuilt from it, `jobLinesView`).
+  /** @param {string} qKey @param {string} choice @param {string} [text] the person's correction (a reading question only) @returns {{ok: true} | {ok: false, why: string}} */
   applyAnswer(qKey, choice, text) {
     const q = this.open.find((x) => x.key === qKey);
     const r = q ? this.rows.find((x) => x.key === q.rowKey) : undefined;
@@ -516,11 +703,11 @@ export class CheckBlock {
       return { ok: true };
     }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
-    if (choice === 'rule') {
+    // only a READING question takes the person's words (hamr 2026-11-15 ruling): they REPLACE the asked rule (one in, one out) and code proves them as it proves any rule; no second question
+    if (choice === 'rule' && q.ask === 'reading') {
       const said = String(text ?? '').replace(/\s+/g, ' ').trim();
       if (!said) return { ok: false, why: 'an answer is needed' };
-      // the person's own words are the rule now (typed); a counting rule is judged again as written (settled when its words are the proposal), any other stays the person's to judge
-      r.text = said; r.origin = 'typed'; r.cantAsked = !isCountable(said);
+      r.text = said; r.origin = 'typed'; r.cantAsked = !isCountable(said); r.corrected = true;
       return { ok: true };
     }
     return { ok: false, why: 'not one of the choices' };
@@ -578,6 +765,7 @@ export class CheckBlock {
       if (res.accepted) kept.adds += 1;
       return res;
     }
+    if (e.op === 'fence') return this.editFence(e);
     if (e.op === 'reading') return this.editReading(e);
     if (e.op === 'pick') return this.editPick(e);
     return this.editNot(e);
@@ -681,7 +869,7 @@ export class CheckBlock {
   // 8. whole-list reconcile, every time
   reconcile() { this.match(); const c = this.build(); this.ask(); return c; }
 
-  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice, text} or null (a person who did not answer) */
+  /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice, text?} or null (a person who did not answer) */
   drive({ answer }) {
     this.unanswered = [];
     this.reconcile();
@@ -710,7 +898,7 @@ export class CheckBlock {
    */
   closeView() {
     const c = this.reconcile();
-    return { stages: c.stages, picks: this.picksOf(c), list: this.signedRows() };
+    return { stages: c.stages, picks: this.picksOf(c), list: this.signedRows(), ...(this.fence ? { fence: [...this.fence] } : {}) };
   }
 
   /** the picks code records: a countable part carrying the `~` rule numbers it settles @param {{parts: any[], map: {part: number, line: number}[]}} c the build @returns {{line: number, part: any}[]} */
@@ -726,11 +914,12 @@ export class CheckBlock {
    * `dropped` with code's reason (it is on the Audit, never on the card), and a built row carries the names of the facts it made (`facts`), so every reader can tag each fact by its row's kind.
    */
   signedRows() {
-    return this.rows.map((r) => {
+    const rows = (this.repo !== null ? [...this.rows].sort((a, b) => a.line - b.line) : this.rows).map((r) => {
       const gone = r.state === 'suggested' || r.hidden === true;
       const row = { ...r, ...(gone ? { state: 'dropped' } : {}), ...(r.state === 'built' && r.factNames?.length ? { facts: r.factNames } : {}) };
       return Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => row[f] !== undefined && row[f] !== null).map((f) => [f, row[f]]));
     });
+    return [...rows, ...this.guards.map((name) => ({ line: 0, key: guardKeyOf(name), from: 'default', by: 'default', kind: 'guard', state: 'built' })), ...(this.fence ? [{ line: 0, key: FENCE_KEY, from: 'default', by: 'default', kind: 'fence', state: 'built' }] : [])];
   }
 
   /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */
@@ -753,8 +942,17 @@ export class CheckBlock {
     const r = this.rows.find((x) => x.key === key);
     if (!r) return { ok: false, why: 'there is no such check on the list' };
     if (r.by === 'you') return { ok: false, why: 'that check comes from a rule you wrote; edit the job to change it' };
-    if (r.by !== 'agent' || !this.isBang(r)) return { ok: false, why: 'that check is code\'s own and stays' };
+    if (r.by !== 'agent' || !this.droppable(r)) return { ok: false, why: 'that check is code\'s own and stays' };
     if (choice !== 'drop' && choice !== 'add') return { ok: false, why: 'not one of the choices' };
+    if (r.kind === 'stage') {
+      // a repo work stage: Drop takes it out of the close (never the last check on its line), Add puts it back
+      if (choice === 'drop' && r.state !== 'built') return { ok: false, why: 'only a check that is on the card can be dropped' };
+      if (choice === 'add' && r.state !== 'dropped') return { ok: false, why: 'only a dropped check can be added back' };
+      if (choice === 'drop' && !this.dropOk(r)) return { ok: false, why: `Dropping that check would leave line ${r.line} with no check, so it stays.` };
+      r.choice = choice === 'drop' ? 'drop' : undefined;
+      this.reconcile();
+      return { ok: true };
+    }
     if (choice === 'drop' && r.state !== 'built') return { ok: false, why: 'only a check that is on the card can be dropped' };
     if (choice === 'add' && r.state !== 'suggested') return { ok: false, why: 'only a suggested check can be added' };
     const before = r.choice;
@@ -766,9 +964,7 @@ export class CheckBlock {
 
   /** the person's Drop/Add choices, tied to the line's words (not its number) and the row's own name, so a Revise keeps them @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]} */
   choicesRecord() {
-    const seen = new Map();
-    const key = new Map(this.lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return [l.n, { lineWords: w, occurrence: o }]; }));
-    return this.rows.filter((r) => r.choice === 'drop' || r.choice === 'add').map((r) => ({ ...(key.get(r.line) ?? { lineWords: '', occurrence: 0 }), tail: r.key.replace(/^L\d+\./, ''), choice: String(r.choice) }));
+    return choiceEntries(this.lines, this.rows.filter((r) => r.choice === 'drop' || r.choice === 'add').map((r) => ({ line: r.line, key: r.key, choice: String(r.choice) })));
   }
 
   /** a Revise keeps the last draft's Drop/Add choices on the rows that are still there (same line words, same row); code still judges every one @param {{lineWords: string, occurrence: number, tail: string, choice: string}[]} rec */
@@ -778,7 +974,7 @@ export class CheckBlock {
     for (const c of Array.isArray(rec) ? rec : []) {
       if (!c || (c.choice !== 'drop' && c.choice !== 'add')) continue;
       const line = lines.find((l) => l.w === c.lineWords && l.o === c.occurrence);
-      const r = line ? this.rows.find((x) => x.line === line.n && this.isBang(x) && x.key.replace(/^L\d+\./, '') === c.tail) : undefined;
+      const r = line ? this.rows.find((x) => x.line === line.n && this.droppable(x) && x.key.replace(/^L\d+\./, '') === c.tail) : undefined;
       if (r) { r.choice = c.choice; r.keptFromLast = true; }
     }
   }
