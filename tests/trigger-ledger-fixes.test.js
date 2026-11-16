@@ -6,8 +6,9 @@ import path from 'node:path';
 import { appendFileSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { appendRow, readLedger, withoutReleased } from '../src/triggerledger.js';
+import { track } from './tmp-track.mjs';
 
-const dir = () => mkdtempSync(path.join(tmpdir(), 'tledger-'));
+const dir = () => track(mkdtempSync(path.join(tmpdir(), 'tledger-')));
 
 test('a torn line is skipped and the next append does not glue', () => {
   const f = path.join(dir(), 'ledger.jsonl');

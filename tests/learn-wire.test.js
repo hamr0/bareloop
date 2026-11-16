@@ -21,6 +21,9 @@ import { readRunList } from '../src/runlist.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
 import { tcall, makePatient, JOB, PLAN, collector, countRun, todos } from './planrun-fixtures.js';
 import { loadRun } from './learn-fixtures.js';
+import { track } from './tmp-track.mjs';
+// the run's spine directory lands beside the patient, directly in the tmp dir, under this fixed name
+track(join(tmpdir(), 'learn-wire-bareloop'));
 
 const ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 'l', GIT_AUTHOR_EMAIL: 'l@t', GIT_COMMITTER_NAME: 'l', GIT_COMMITTER_EMAIL: 'l@t' };
 const git = (/** @type {string} */ cwd, /** @type {string[]} */ a) => execFileSync('git', a, { cwd, encoding: 'utf8', env: ENV }).trim();

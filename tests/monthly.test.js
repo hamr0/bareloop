@@ -22,6 +22,9 @@ import { TIMING_PREFLIGHT_CEILING_MS as TIMING_CEILING_MS } from '../src/closeti
 import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
+import { track } from './tmp-track.mjs';
+// the run's spine directory lands beside the patient, directly in the tmp dir, under this fixed name
+track(join(tmpdir(), 'monthly-seam-fixture-bareloop'));
 
 // above Linux's hard pid ceiling (2^22): no process can ever hold it, so the runner reads as dead on any machine
 const DEAD_PID = 2 ** 22 + 1;

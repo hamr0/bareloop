@@ -11,8 +11,9 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { queueOf as queueOfSync, createFileTrigger, readSeen, recordArrived, recordDropped, recordRan, STABLE_POLLS } from '../src/triggerfiles.js';
 import { appendRow } from '../src/triggerledger.js';
+import { track } from './tmp-track.mjs';
 
-const root = () => mkdtempSync(path.join(tmpdir(), 'tfiles-'));
+const root = () => track(mkdtempSync(path.join(tmpdir(), 'tfiles-')));
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 /** @returns {{dir:string, ledger:string, base:string}} */
 function setup() {

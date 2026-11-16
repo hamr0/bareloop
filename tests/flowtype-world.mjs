@@ -2,6 +2,7 @@
 // config.json), and the REAL panel server on a port the OS picks. FAKE: the MCP server (tests/fixtures/ticket-write-mcp.mjs: four tools, two of them WRITE tools).
 // HOME itself is a scratch dir too (npm test is hermetic); the real ~/.mcp.json and ~/.config/bareloop are never touched.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { track } from './tmp-track.mjs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,7 @@ export function fakeServer(dir) {
  * @param {{ files?: Record<string, any>, serve?: boolean, panel?: Record<string, any> }} [o] `files` = {path under the person's home: json}; `serve:false` skips the panel server; `panel` = extra createPanelServer options
  */
 export async function world(t, o = {}) {
-  const base = mkdtempSync(path.join(tmpdir(), 'bareloop-r4-'));
+  const base = track(mkdtempSync(path.join(tmpdir(), 'bareloop-r4-')));
   const home = path.join(base, 'person');
   const cfg = path.join(base, 'cfg');
   const proj = path.join(base, 'proj');

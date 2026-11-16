@@ -22,11 +22,12 @@ import { keyRows } from '../src/providerrows.js';
 import { ANTH_CFG } from './helpers.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash, workflowKey, validateJob } from '../src/job.js';
+import { track } from './tmp-track.mjs';
 
 /** @type {string[]} */ const dirs = [];
 /** @type {import('node:child_process').ChildProcess[]} */ const kids = [];
 test.after(() => { for (const k of kids) { try { k.kill('SIGKILL'); } catch { /* gone */ } } for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
-const tmp = (p = 'p5-sf-') => { const d = mkdtempSync(join(tmpdir(), p)); dirs.push(d); return d; };
+const tmp = (p = 'p5-sf-') => { const d = track(mkdtempSync(join(tmpdir(), p))); dirs.push(d); return d; };
 const git = (dir, args) => execFileSync('git', args, {
   cwd: dir, encoding: 'utf8',
   env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },

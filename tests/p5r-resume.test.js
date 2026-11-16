@@ -16,6 +16,9 @@ import { readRunList, appendRun, isSettled } from '../src/runlist.js';
 import { updateConfig } from '../src/config.js';
 import { legsOf, parseSpineText } from '../src/legs.js';
 import { scriptedProvider } from './helpers.js';
+import { track } from './tmp-track.mjs';
+// the run's spine directory lands beside the patient, directly in the tmp dir, under this fixed name
+track(join(tmpdir(), 'p5r-fixture-bareloop'));
 
 /** @param {import('node:test').TestContext} t */
 const tmp = (t) => {

@@ -35,6 +35,7 @@ import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
 import { doorTimingRedLines } from '../src/u-readout.js';
+import { track } from './tmp-track.mjs';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -314,7 +315,7 @@ test('runPlan: a close script needing BARELOOP_CLOSE_DIR and given none refuses 
 
 test('runPlan: BARELOOP_CLOSE_DIR actually reaches the spawned close as the value the runner passed', async (t) => {
   const wd = makePatient(t);
-  const closeDir = join(wd, '..', 'the-close-books');
+  const closeDir = track(join(wd, '..', 'the-close-books'));
   mkdirSync(closeDir, { recursive: true });
   // The received value is written to a file in the PATIENT (relative path,
   // no absolute literal baked into the script's own source — a baked literal
