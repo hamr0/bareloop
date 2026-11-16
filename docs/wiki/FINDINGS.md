@@ -15900,3 +15900,5 @@ Panel, DeepSeek flash, job walk-redeye-typed ("List 3 flights from Boston to Chi
 Contrast: run mwi76vh8 (walk-flight1, same page shape, same label) passed because its worker quoted both lines in one quote (output/steps/1.json holds the link text and the "Departure time: ..." line together). The agree walk's draft (flight-walk3) hit the same label pick and noted that "at" does not show the same values as "Departure time:", so it did not use it as a second way to read it.
 
 Reading: pass or fail depends on whether the worker happens to copy one line or both. Not caused by the typed-correction box, readout or Audit (the readout showed "you wrote - departure time between 06:00 and 22:00" correctly); an older class. n=1 fail vs n=1 pass is an anecdote on the rate; no fix designed. Status: hamr ruled 2026-11-16 to log now and fix on the NEXT branch, not feat/one-list-rubric.
+
+*Update 2026-11-16: the fix is filed upstream as BG-6 (`docs/product/UPSTREAM-ASKS.md`), a bareguard ask proven by POC rounds 1-2 (`.claude/scratch/poc-f337/`, round 2 PASS, single site); nothing built in bareloop.*
