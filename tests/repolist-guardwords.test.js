@@ -38,7 +38,7 @@ test('Job tab, signed card, sign-time match, CLI print: the `$` rows say the sam
 test('Audit: the `$` rows read the plain questions; the fence row still reads the gate record, the guard rows their stage verdict', () => {
   const plan = planFromSpec(spec);
   const ac = auditChecksOf(plan, [], new Map([['changed-from-seed', true], ['no-suppressions', false]]), 2, true);
-  const rows = ac.checks.filter((c) => c.by === 'default');
-  assert.deepEqual(rows.map((c) => c.text), WORDS.map((w) => `other · ${w}`));
+  const rows = ac.always.filter((c) => c.by === 'default');
+  assert.deepEqual(rows.map((c) => c.text), WORDS);
   assert.deepEqual(rows.map((c) => c.result), ['passed', 'failed', 'held']);
 });

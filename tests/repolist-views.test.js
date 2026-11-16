@@ -43,7 +43,7 @@ test('Audit: a fence-kept `~` row reads the gate\'s record; an `!` row its own s
   const plan = planFromSpec(specWith({ kept: true }));
   const results = new Map([['node-test-executed-count', true], ['node-test-fail-count', true], ['suite-green', false], ['changed-from-seed', true], ['no-suppressions', true]]);
   const a = auditChecksOf(plan, [], results, 2, true);
-  const by = (/** @type {string} */ k) => a.checks.find((c) => c.key === k);
+  const by = (/** @type {string} */ k) => [...a.checks, ...a.always].find((c) => c.key === k);
   assert.deepEqual([by('L1.~1')?.result, by('L1.~1')?.word], ['held', 'held · 2 writes blocked']);
   assert.equal(by('S.suite-green')?.result, 'failed');
   assert.equal(by('S.node-test-fail-count')?.result, 'passed');

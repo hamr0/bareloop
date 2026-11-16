@@ -196,7 +196,8 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * A gap no row owns is its own failed item of its line, in the gap's words.
  * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked] @param {boolean} [closeRan] the results are a CLOSE's (the latest), so a declared stage missing from them was not reached (the close stops at its first red); else a stage no verdict was recorded for reads none
  * @param {{results: Map<string, {result: string, why?: string}>, unclaimed: Map<number, string[]>}|null} [rowRes]
- * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[]}}
+ * `loose` = the job-level rows with their `other · ` words, for the Result tab's reader only (not drawn on the Audit)
+ * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[]}}
  */
 export function auditChecksOf(plan, guards, results, blocked = null, closeRan = false, rowRes = null) {
   /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'|'not-reached'} */
@@ -221,14 +222,18 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
     for (const c of l.checks) checks.push(rowOf(c, `line ${l.n} · ${c.name}`));
     for (const u of rowRes?.unclaimed.get(l.n) ?? []) checks.push({ text: `line ${l.n} · ${u}`, by: null, result: 'failed' });
   }
-  for (const c of plan.loose) checks.push(rowOf(c, `other · ${c.name}`));
+  // the job-level rows no line owns (the `$` defaults, the write fence) are the Audit's "Always checked" (fwdloop); `loose` keeps them with their old `other · ` words for the Result tab's one reader
+  const loose = plan.loose.map((c) => rowOf(c, `other · ${c.name}`));
+  const looseAlways = plan.loose.map((c, i) => ({ ...loose[i], text: c.name }));
   /** @type {AuditRow[]} */
   const notChecked = [];
   const by = plan.notCheckedBy ?? {};
   for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: `line ${l.n} · ${r}`, by: by[r] ?? null, result: 'not-checked' });
   for (const r of plan.notChecked) notChecked.push({ text: r, by: by[r] ?? null, result: 'not-checked' });
   const names = guards.length > 0 ? guards : plan.alwaysOn;
-  const always = names.map((g) => {
+  // a guard/fence row the loose rows already show (same signed row: the fence key, the guard's stage or key) is shown once, as the loose row
+  const shown = (/** @type {string} */ head) => plan.loose.some((c) => (head === 'write fence' ? c.key === FENCE_KEY : (c.stage === head || (typeof c.key === 'string' && c.key.endsWith(`.$guard.${head}`)))));
+  const always = [...looseAlways, ...names.filter((g) => !shown(g.split(' — ')[0])).map((g) => {
     const head = g.split(' — ')[0];
     const file = /^line (\d+) file$/.exec(head);
     // the write fence is held by the gate (the row reads the gate's own record, above), never another stage's verdict
@@ -239,7 +244,7 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
         : { text: g, by: /** @type {'default'} */ ('default'), result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked` };
     }
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
-  });
-  for (const r of [...checks, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
-  return { checks, notChecked, always };
+  })];
+  for (const r of [...checks, ...loose, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
+  return { checks, notChecked, always, loose };
 }

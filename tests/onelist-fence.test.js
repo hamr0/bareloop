@@ -45,10 +45,11 @@ test('every view draws the fence once as a `$ [default]` check that serves no li
   assert.equal(plan.loose.filter((c) => c.name === FENCE && c.by === 'default').length, 1);
   assert.deepEqual(plan.alwaysOn, []);
   const ac = auditChecksOf(plan, [], null, 2);
-  assert.deepEqual(ac.always, []);
-  const row = ac.checks.find((c) => c.key === 'J.$fence');
+  assert.equal(ac.checks.some((c) => c.key === 'J.$fence'), false);
+  assert.equal(ac.always.filter((c) => c.key === 'J.$fence').length, 1);
+  const row = ac.always.find((c) => c.key === 'J.$fence');
   assert.deepEqual([row?.result, row?.word], ['held', 'held · 2 writes blocked']);
-  assert.equal(auditChecksOf(plan, [], null, null).checks.find((c) => c.key === 'J.$fence')?.result, 'record-missing');
+  assert.equal(auditChecksOf(plan, [], null, null).always.find((c) => c.key === 'J.$fence')?.result, 'record-missing');
   const cli = AR.confirmPlanLines({ goal: 'g', checkItems: items, protections: [], notChecked: [], questions: [] }).join('\n');
   assert.match(cli, /\$ \[default\] only files in output\/ changed\?/);
   assert.doesNotMatch(cli, /protections \(always-on/);

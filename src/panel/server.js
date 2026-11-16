@@ -1580,7 +1580,7 @@ function repoRowChecks(base, row, records, spec, opts) {
                 : { passed: false, notReached: true, status: grey('no result recorded') };
     return { name: r.key ?? r.text, question: `${tag(r.by)}${r.text}`, ...standing, value: null, baseline: null, direction: null, baselineKind: null, notes: typeof r.why === 'string' && r.why ? r.why : null };
   };
-  return { ...base, stages: [...ac.checks, ...ac.notChecked].map(mk) };
+  return { ...base, stages: [...ac.checks, ...ac.loose, ...ac.notChecked].map(mk) };
 }
 
 /**

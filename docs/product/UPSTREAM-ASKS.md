@@ -3021,3 +3021,53 @@ F315: an "at most / up to / no more than / at least N bullets" rule builds an ex
 ### Status
 
 2026-11-11 — Asked by bareloop, approved by hamr, fwd agreed (ruling #81). SHIPPED in bareguard 0.35.0, adopted (pin bumped to ^0.35.0; the wording map follows in the same branch).
+
+
+## BG-6 — FILED 2026-11-16: read a value decide's label from the rest of the quote's own listitem block when the worker quoted only one line (F337)
+
+### Ask
+
+In bareguard's cited check, after a VALUE decide comes back `anchor-missing`, re-run that one decide on a wider window, under these rules:
+
+- The quote must occur exactly once in the run's saved page, and its first line must sit inside a `listitem` block (the listitem line itself counts as inside).
+- The window is the quote plus the lines AFTER it inside the nearest enclosing listitem block (the block is the listitem line plus every deeper-indented line). No line cap.
+- The label must occur exactly once in the window. Otherwise the decide stays red (`anchor-missing` / `anchor-ambiguous` kept).
+- No extension for a quote outside a listitem, for a quote that runs past its block, or for a container line such as `- main [ref=38]`. Text and phrase decides are untouched.
+
+bareguard owns the final design. This is the option our POC proved, not a demand; any design that keeps the label from being read across results is welcome.
+
+### Why
+
+F337. bareguard 0.36.0 `src/primitives/rubric-locate.js` `locateAnchor`, reached through `rubric.js` `runCited` -> `citedProven` -> `decideQuote(quote)`: a value decide sees only the worker's quote text. On a Google Flights page each result is a link line ("... Leaves ... at 10:24 AM ...") plus a separate sibling line `Departure time: 10:24 AM.` A worker that quotes the link line gets `the label "Departure time:" is not in the quote`. Live: run mwiw28wu (red, escalated, 3x anchor-missing) vs run mwi76vh8 (green, the worker happened to quote both lines). Same page shape, same label; pass or fail depends on which lines the worker copied. `runCited` already holds the raw saved page (`text`), so the line structure is reachable there.
+
+fwdloop has its own copy of this check (fwdloop `src/citedcheck.js:440`, `case 'anchor-missing'`), so fwd is affected the same way.
+
+### Evidence
+
+Full evidence sits in untracked scratch: `.claude/scratch/poc-f337/RESULTS.md` (round 1), `.claude/scratch/poc-f337/round2/RESULTS.md` (round 2), `round2/patch.diff` (the patch to a throwaway copy of bareguard 0.36.0, 89 lines), and both `PREREG.md` (sha-locked: `PREREG.sha256` verified unchanged after each run). Bareloop's real `gradeStep` ran unchanged on the patched copy; the unpatched code reproduced both live outcomes exactly. Data: 40 unique saved pages, of which 24 are Google Flights snapshots (599 result blocks).
+
+Round 2 (listitem-block window), VERDICT PASS (single-site, Google Flights only):
+
+- R1 (mwiw28wu red -> green): HOLDS. Unpatched red (3x anchor-missing), patched green 3/3; values 624 / 815 / 880 min = 10:24 AM / 1:35 PM / 2:40 PM = the claimed value = the page's link "at T" = the page's Departure line.
+- R2 (mwi76vh8 stays green): HOLDS. Green before and after, same values.
+- R3 (real-data sweep, wrong pairings allowed 0): HOLDS. 68,784 quotes (every indented line of every label-bearing page, raw line and inner-quote forms; "Departure time:" time and "From" money). Neighbour reads 3,594 (time 2,396, money 1,198), correct 3,594, wrong 0, no-truth 0. Result link-line quotes: 1,198 of 1,198 read and correct (599 results x 2 forms).
+- R4 (planted negatives, false greens allowed 0): HOLDS, 0 of 131 (a 23, b 60, c 23, e 21, m 4). Positive control 5/5. The probe can fail: with the listitem guard off (next 60 lines, no block), 27 false greens of 131.
+- R5 (bareloop's drafting dry read, `src/pagedry.js` `dryReadMoney` + `dryReadTimes`): 0 changes on all 40 pages, patched vs unpatched. Its quotes are the label-bearing lines, so the patch never fires.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+Round 1 (60-line window, stop at smaller indent or the next same-kind `link`) was VERDICT FAIL: R3 read 3,596 neighbours, 2 wrong. The 2 were quotes of the `- main [ref=38]` container line (two pages, same shape): its block holds the whole results list, the 60-line cap cut the window after exactly one result's `Departure time:` (9:09 AM), so a quote that is not a result got the first result's time. The cap turned what would be an ambiguous red into a read. That is why this ask requires a `listitem` block, has no line cap, and gives containers no extension. Round 1's R1, R2 and R4 (0 of 127) held.
+
+### Limits
+
+- Single site: Google Flights only, one snapshot shape (listitem > link "From ..." + generic "Departure time: ..."; routes BOS-ORD/DEN/MIA, ORD-BOS, SFO-LAX, LAX-SFO). Nothing is proven for other sites or snapshot shapes.
+- It depends on the snapshot having `listitem` nodes; a page without them keeps today's behaviour (red).
+- After-only: a label on a line BEFORE the quote in the block is not read.
+- The planted cases (R4) are authored by us; R3 is the real-data test.
+- Bareloop's dry read is unchanged (R5).
+
+### Status
+
+2026-11-16 — Filed here; to be relayed to the bareguard session by the main session on hamr's word. No target version. Nothing built in bareloop (the check lives in bareguard).
+
+**Status update 2026-11-16: WITHDRAWN** — bareguard declined (hamr's ruling in the guard session): caller-side fix; solved in bareloop by 577856a9, live run mwj9xe3c green.

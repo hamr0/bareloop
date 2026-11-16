@@ -359,6 +359,28 @@ function seedNoteBlock(text) {
 }
 
 /**
+ * F337, the planner's "as seen" example. A signed fact part keeps `asSeen` only when a fact's label sits on a different line than its result's
+ * first line (src/pagedry.js `asSeenOf`, written at signing). Each such part renders one block right after the goal, so the planner's step text tells
+ * the worker to copy whole lines down to the label line. The worker never sees the signed brief and is handed nothing new; the check is unchanged.
+ * No part with `asSeen` (every older spec, every job whose labels share the first line) renders '' - byte-identical to the prompt without it.
+ * The lines were secret-masked when they were picked; a spec read back carries them as signed.
+ * @param {any[]} stages the staged close
+ * @returns {string}
+ */
+export function asSeenBlock(stages) {
+  /** @type {string[]} */
+  const out = [];
+  for (const st of Array.isArray(stages) ? stages : []) {
+    for (const p of Array.isArray(st?.params?.parts) ? st.params.parts : []) {
+      const a = p?.class === 'fact' ? p.asSeen : null;
+      if (!a || !Array.isArray(a.lines) || !Array.isArray(a.labels) || a.lines.length === 0 || a.labels.length === 0) continue;
+      out.push(`At drafting, one result in "${a.input}" looked like this. It shows the shape only; each result has its own values.\n${a.lines.join('\n')}\nThe check reads each fact's label inside the result's quote, so tell the worker to copy each result's quote as whole lines, exactly as the input writes them — every space and mark included — from the result's first line down to the line holding ${a.labels.map((/** @type {string} */ l) => `"${l}"`).join(', ')}.`);
+    }
+  }
+  return out.length ? `\n\n${out.join('\n\n')}` : '';
+}
+
+/**
  * MODULE 8 — the signer's words, when this leg is a RERUN taken at a previous run's
  * review door (PRD v1.71 §3.4: *"redo/rerun comes with new authoring"*).
  *
@@ -810,7 +832,7 @@ are not accepted:
 ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
-${job.goal}
+${job.goal}${asSeenBlock(closeStages)}
 ${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;

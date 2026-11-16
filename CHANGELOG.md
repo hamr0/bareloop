@@ -5,6 +5,17 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.59.0] - 2026-11-16
+
+### Added
+
+- **The planner is shown one result's shape when a fact's label sits off the result's first line (F337).** At signing, code keeps the exact input lines (secret-masked) from the first result down to the line holding each such label as `asSeen: {input, lines, labels}` on the signed fact part (`asSeenOf` in `src/pagedry.js`, using the same result and label finders as the dry reads); the planner's prompt renders it right after the goal (`asSeenBlock` in `src/planrun.js`) and its steps tell the worker to copy whole lines down to the label line. Only new drafts carry it, it is part of the signed hash, old specs run as before, and the worker and the check are unchanged. Proof so far: a $0.60 paid POC on one page shape (Google Flights, DeepSeek flash, n=5 per cell, 4/5 and 5/5 green against 0/5 and 2/5); seen live once (run mwj9xe3c green, one site, n=1).
+
+### Changed
+
+- Audit lists the always-on default checks under "Always checked", like fwdloop (they no longer read "other · ..." under Checks); display only, each row keeps its own result.
+- Docs only: LAYERS gains a "Who gets what" section, the F337 findings are updated, the bareguard ask BG-6 (a label on a sibling line, in `docs/product/UPSTREAM-ASKS.md`) is withdrawn, and the context doc is swept.
+
 ## [0.58.0] - 2026-11-16
 
 ### Added

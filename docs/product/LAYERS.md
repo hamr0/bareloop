@@ -215,6 +215,26 @@ Repo jobs had a side path first. It was removed because it broke on real drafts:
 - Seen live on 2026-11-15, repo job: "don't edit test/" kept by the fence in 3 of 3 drafts and again after Revise; "package.json" kept after Revise; run walk-sum3 went green. Rubric job: "be friendly please" came out Not checked; run walk-flight1-2.
 - Test-proven only, not seen live: the CLI readout, the reading-question correction box, a rule dropped to Not checked without a question (option A), and phone width of the new cards.
 
+
+---
+
+## Who gets what (2026-11-16)
+
+Four parts touch a job. Each sees a different slice. This is the map, grounded in source.
+
+- **The drafter** (before signing, with the person) gets the job box (the lines and the `~` rules) and the page, sheet or doc. It proposes checks. Code checks them. The person looks, drops, adds and signs. What is left is the **signed record**: the rules, and the labels such as `Departure time:`.
+- **The planner** (at run start, and again on each replan) gets the signed brief (written by code from the signed record), the scout's notes, the check names, the money and time limits, the learning hints, and on a replan what failed. It writes the steps in its own words. It does NOT get the memo. (`planPrompt`, `src/planrun.js:713`.)
+- **The worker** (each step, each fix try) gets only the planner's step text, the folder and the file to write, the memo (code's note of what earlier workers read, edited and failed), and on a retry the check's failure text. It does NOT get the signed brief. (Step ask `src/planrun.js:3671`; fix ask `src/planrun.js:4425`; worker system text `src/planrun.js:2700`.)
+- **The check** (code, no AI) gets the signed record and the worker's file. It says green or red.
+
+The picture:
+
+signed record -> planner (brief + example) -> steps -> worker (steps + memo) -> check (signed record)
+
+**New in this change: the "as seen" example.** The worker never sees the signed brief, so the planner's steps are the only way a rule reaches it. One rule did not reach it: when a fact's label sits on a different line than the result's first line (Google Flights writes the price on one line and `Departure time:` on the next), the worker copied only the first line, and the check could not find the label in the quote. So when this happens, the signed record also keeps one "as seen" example: the exact input lines from drafting, from the result's first line down to the label line. The planner gets it right after the signed brief. Its steps then tell the worker to copy whole lines down to the label line. The worker and the check are unchanged. Old specs have no example and run as before.
+
+Evidence: F337 and a $0.60 POC (3 rounds). Worker-side rounds 1 and 2 failed. Planner round 3 passed: page A 4 of 5 green, page B 5 of 5, against 0 of 5 and 2 of 5 today. One page shape (Google Flights), one model (DeepSeek flash), n=5 per cell.
+
 ---
 
 ## When something goes wrong

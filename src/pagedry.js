@@ -9,6 +9,8 @@
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
 import { linesOf, numberAtEnd, numberAtEndComma, NUM_COMMA } from './pagerules.js';
+import { asList } from './facts.js';
+import { redactSecrets } from './validate.js';
 
 /** @typedef {import('./pagerules.js').KeptFact} KeptFact @typedef {import('./pagerules.js').Dropped} Dropped */
 
@@ -228,4 +230,50 @@ export async function dryReadTimes(text, facts) {
     dropped.push({ line: k.line, ...(k.forRule === undefined ? {} : { rule: k.forRule }), fact: k.name, other: k.words[0], reason: 'reads-no-time' });
   }
   return { facts: kept, dropped, reads, results };
+}
+
+/** the longest "as seen" example kept: more lines or characters than this is not a result's few label lines, so nothing is stored */
+export const AS_SEEN_MAX_LINES = 12;
+export const AS_SEEN_MAX_CHARS = 3000;
+
+/**
+ * AS SEEN (F337): the planner's example of one result's shape. When a signed fact's label sits on a different line than the result's first line
+ * (Google Flights: the price line, then `Departure time:` on the next), the worker must copy those lines whole; the planner is the one who can
+ * tell it, so the signed record keeps the exact input lines from the drafting copy. Result and label lines are found by the SAME finders the dry
+ * reads use (`moneyResultLines`, `timeCandidateLines`), one line at a time, so there is no second reader of "what holds this label". The first
+ * result is the first line holding the first labelled fact (money or time); its block runs to the next such line. Every other labelled fact must
+ * have its label on the first line or inside the block, else nothing is stored (never a half-example). Lines are the input's own bytes (secret-masked).
+ * @param {string} text the drafting copy of the input @param {any[]} facts the signed facts of one part @param {string} input the input's label
+ * @returns {{input: string, lines: string[], labels: string[]} | null} null when every label is on the first line, or nothing fits
+ */
+export function asSeenOf(text, facts, input) {
+  const lab = (Array.isArray(facts) ? facts : []).filter((f) => f && typeof f.anchor === 'string' && f.anchor !== '' && (f.shape === 'money' || f.shape === 'time'));
+  if (lab.length === 0) return null;
+  const raw = text.split('\n');
+  /** @type {(line: string, f: any) => boolean} */
+  const holds = (line, f) => {
+    /** @type {KeptFact} */
+    const k = { line: 0, name: String(f.name ?? ''), shape: f.shape, from: '', words: [f.anchor], ...(f.shape === 'money' ? { unit: asList(f.unit), currency: asList(f.currency), ...(f.decimal === undefined ? {} : { decimal: f.decimal }) } : {}) };
+    return (f.shape === 'money' ? moneyResultLines(line, k) : timeCandidateLines(line, k)).length > 0;
+  };
+  const starts = [];
+  for (let i = 0; i < raw.length && starts.length < 2; i++) if (holds(raw[i], lab[0])) starts.push(i);
+  if (starts.length === 0) return null;
+  const s = starts[0];
+  const end = starts[1] ?? raw.length;
+  /** @type {string[]} */
+  const labels = [];
+  let last = s;
+  for (const f of lab.slice(1)) {
+    if (holds(raw[s], f)) continue;
+    let at = -1;
+    for (let i = s + 1; i < end; i++) if (holds(raw[i], f)) { at = i; break; }
+    if (at < 0) return null;
+    labels.push(f.anchor);
+    last = Math.max(last, at);
+  }
+  if (labels.length === 0) return null;
+  const lines = raw.slice(s, last + 1);
+  if (lines.length > AS_SEEN_MAX_LINES || lines.join('\n').length > AS_SEEN_MAX_CHARS) return null;
+  return { input, lines: lines.map((l) => redactSecrets(l)), labels };
 }
