@@ -67,3 +67,7 @@
 ## [2026-11-01] index-flat | 94 row(s) (25 product, 66 logs, 3 archive)
 ## [2026-11-07] index-flat | 99 row(s) (25 product, 71 logs, 3 archive)
 ## [2026-11-12] index-flat | 100 row(s) (25 product, 72 logs, 3 archive)
+## [2026-11-14] index-flat | 100 row(s) (25 product, 72 logs, 3 archive)
+## [2026-11-16] reorg | discover only — 33 of 98 row(s) await the classification interview
+## [2026-11-16] index-flat | 100 row(s) (23 product, 74 logs, 3 archive)
+## [2026-11-16] apply-reorg | moved 2, skipped 0, 0 oversized split candidate(s), 3 link(s) rewritten, 0 sync failure(s), 0 empty dir(s) removed, CLAUDE.md updated: true

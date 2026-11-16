@@ -15032,7 +15032,7 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 
 **Status.** Logged; POC next (hamr, 2026-10-29). Cure ideas not decided (arbiter-adjacent; hamr's call).
 
-**POC + fix.** Option A (a rule sentence plus one legal example in the author prompt's parser description) passed its pre-registered POC (prereg 63a4c12, `docs/wiki/F255-OPTION-A-PREREG.md`): path-in-parser OLD 8/10 vs NEW 0/10; first-draft refusals 4 vs 0; $0.73. Fix commit 721ba33 (`src/authorflow.js` `catalogueBlock()`, test in `tests/authorflow.test.js`). Mechanism note: the NEW drafts copied the example's `lineMatch` verbatim, so the example does most of the work. Tested on the TYPES/pulselog job only; not yet proven in a live run.
+**POC + fix.** Option A (a rule sentence plus one legal example in the author prompt's parser description) passed its pre-registered POC (prereg 63a4c12, `docs/logs/F255-OPTION-A-PREREG.md`): path-in-parser OLD 8/10 vs NEW 0/10; first-draft refusals 4 vs 0; $0.73. Fix commit 721ba33 (`src/authorflow.js` `catalogueBlock()`, test in `tests/authorflow.test.js`). Mechanism note: the NEW drafts copied the example's `lineMatch` verbatim, so the example does most of the work. Tested on the TYPES/pulselog job only; not yet proven in a live run.
 
 ## F256 — DeepSeek drafter adds a whole-repo "typecheck exits 0" check the job never asked for; the worker then fixes every file (2026-10-29; live; run mvtatlxw, panel session smvtajlz28g16; green after resume, $0.4510)
 
