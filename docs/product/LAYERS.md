@@ -207,13 +207,13 @@ Repo jobs had a side path first. It was removed because it broke on real drafts:
 
 **Hidden from the repo file list:** bareloop's own folders `.bareloop/`, `.smoke/`, `.litectx/` (a leftover worktree copy once made the fence "keep" a rule falsely).
 
-**Being built right now (not done):**
-- When the AI's phrase is not in your rule's words, it becomes its own `! [agent]` check (Drop, or Suggested with Add), and your rule stays Not checked. The code that stops the wrong tie is in the working tree; the `!` row is not finished.
-- Next: fwd's draft readout copied into the Chat above the card, from fwdloop's v0.34.0 tag.
+**Built since (2026-11-15/16):**
+- When the AI's phrase is not in your rule's words, it becomes its own `! [agent]` check (Drop, or Suggested with Add when the phrase is not in your job text either), and your rule stays Not checked. An AI-written fact name is no proof that a phrase or place came from you.
+- fwd's draft readout (v0.34.0) is in the Chat above the signed-ready card, and the CLI prints it under SIGNING PREPARED. Display only: not signed, not in the hash, secrets masked, the same rows as the card. YOUR ANSWERS and the Audit's drafting rows say what was decided (agreed, you wrote, dropped), never the question that quotes a replaced rule's old words.
 
 **Proof, honestly.**
 - Seen live on 2026-11-15, repo job: "don't edit test/" kept by the fence in 3 of 3 drafts and again after Revise; "package.json" kept after Revise; run walk-sum3 went green. Rubric job: "be friendly please" came out Not checked; run walk-flight1-2.
-- Test-proven only, not seen live: the reading-question correction box, the `!` phrase row above, a rule dropped to Not checked without a question (option A), and phone width of the new cards.
+- Test-proven only, not seen live: the CLI readout, the reading-question correction box, a rule dropped to Not checked without a question (option A), and phone width of the new cards.
 
 ---
 
