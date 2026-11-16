@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun, appendRunEvent, runlistPath } from '../src/runlist.js';
+import { track } from './tmp-track.mjs';
 
 export const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'ticket-grid');
 export const JOB = 'tk-grid';
@@ -19,7 +20,7 @@ const DEAD = 2 ** 22 + 12345;
  * @param {{ skipped?: Array<{runid: string, ticket: number, at: string, words: string}>, real?: string[], refused?: boolean }} [o]
  */
 export function makeGridWorld(o = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'ticket-grid-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'ticket-grid-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   for (const id of o.real ?? Object.keys(REAL)) {

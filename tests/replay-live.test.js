@@ -12,13 +12,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRunAudit } from '../src/panel/server.js';
 import { readRunList } from '../src/runlist.js';
+import { track } from './tmp-track.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/replay-live.mjs', import.meta.url));
 const T0 = Date.parse('2026-09-01T00:00:00.000Z');
 const iso = (ms) => new Date(T0 + ms).toISOString();
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'replay-live-'));
+  const dir = track(mkdtempSync(join(tmpdir(), 'replay-live-')));
   const spine = join(dir, 'u-src1.jsonl');
   // a 2s gap before job-end (speed 1 => a real 2s pause) so "mid-replay" is deterministic
   writeFileSync(spine, [
@@ -48,7 +49,7 @@ async function until(fn, ms = 5000) {
 
 test('replay-live --live-audit: live fallback reads the sidecar mid-replay; sibling holds it after the end', async () => {
   const { dir, spine } = fixture();
-  const home = mkdtempSync(join(tmpdir(), 'replay-home-'));
+  const home = track(mkdtempSync(join(tmpdir(), 'replay-home-')));
   const cfg = join(home, '.config', 'bareloop');
   const out = join(dir, 'out');
   const { done } = run([spine, out, '--speed', '1', '--live-audit'], home);
@@ -74,7 +75,7 @@ test('replay-live --live-audit: live fallback reads the sidecar mid-replay; sibl
 
 test('replay-live WITHOUT the flag is unchanged: patient null, sibling sidecar present from the start, no patient dir', async () => {
   const { dir, spine } = fixture();
-  const home = mkdtempSync(join(tmpdir(), 'replay-home-'));
+  const home = track(mkdtempSync(join(tmpdir(), 'replay-home-')));
   const cfg = join(home, '.config', 'bareloop');
   const out = join(dir, 'out');
   const { done } = run([spine, out, '--speed', '1'], home);

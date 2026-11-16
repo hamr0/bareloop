@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun } from '../src/runlist.js';
+import { track } from './tmp-track.mjs';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'part5');
 export const RUNS = { mvdg1xo3: 'flights-bos-ord', mve5y8fa: 'flight-idea1' };
@@ -14,7 +15,7 @@ export const RUNS = { mvdg1xo3: 'flights-bos-ord', mve5y8fa: 'flight-idea1' };
  * @returns {{ home: string, out: (id: string) => string, spine: (id: string) => string }}
  */
 export function makePart5World() {
-  const root = mkdtempSync(join(tmpdir(), 'part5-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'part5-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   for (const [id, job] of Object.entries(RUNS)) {

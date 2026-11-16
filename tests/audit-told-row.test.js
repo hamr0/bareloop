@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun } from '../src/runlist.js';
 import { getRunDetail } from '../src/panel/server.js';
+import { track } from './tmp-track.mjs';
 
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
 function fnSrc(name) {
@@ -28,7 +29,7 @@ const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(',
 
 const RUNID = 'mvy0cx24';
 function detail() {
-  const root = mkdtempSync(join(tmpdir(), 'audit-told-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'audit-told-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   const dir = join(root, 'session', 'source-seed', 'pulselog-panel-strict-bareloop');

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { track } from './tmp-track.mjs';
 import { makeGridWorld } from './ticket-grid-world.mjs';
 import { makeResultWorld } from './result-tab-world.mjs';
 import { GROUP_OF, TICKET_GROUPS } from '../src/panel/tickets.js';
@@ -145,7 +146,7 @@ test('a job that read no ticket has no grid; an unknown run has none; the opened
 test('GET /api/runs/:runid/grid over HTTP: 200 for a ticket job, 404 for a plain job\'s run; a skipped run opens the same grid', async (t) => {
   const w = makeGridWorld({ skipped: SKIPS });
   const plain = makeResultWorld(['mvkj03w7']);
-  const sessionsRoot = mkdtempSync(join(tmpdir(), 'tg-sess-'));
+  const sessionsRoot = track(mkdtempSync(join(tmpdir(), 'tg-sess-')));
   const srv = await createPanelServer({ port: 0, home: w.home, env: {}, sessionsRoot });
   t.after(() => srv.close());
   const ok = await fetch(`http://127.0.0.1:${srv.port}/api/runs/sk-12/grid`);

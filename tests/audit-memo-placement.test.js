@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun } from '../src/runlist.js';
 import { getRunDetail } from '../src/panel/server.js';
+import { track } from './tmp-track.mjs';
 
 const RUNID = 'mvy0cx24';
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
@@ -42,7 +43,7 @@ const document = { getElementById: () => null, createElement: (t) => mk(t) };
 const { buildGridBody } = new Function('document', `function renderGridErrors(){}\nfunction loadRounds(){}\n${NAMES.map(fnSrc).join('\n')}\nreturn { buildGridBody };`)(document);
 
 function detail() {
-  const root = mkdtempSync(join(tmpdir(), 'audit-memo-place-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'audit-memo-place-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   const dir = join(root, 'session', 'source-seed', 'pulselog-panel-strict-bareloop');

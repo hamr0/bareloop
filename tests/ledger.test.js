@@ -13,6 +13,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASSES, VOUCHED_RATE_SOURCES, rateProvenance, spendProvenance } from '../src/ledger.js';
+import { track } from './tmp-track.mjs';
 
 // real-shaped spine events (see primitiveSmoke/runJob in run.js, ask/runOps in
 // interpret.js, ralph's escalations) — seq/ts as makeSpine stamps them
@@ -271,7 +272,7 @@ test('ledgerDeltas: append only when a key is new or its count grew; first-seen 
 });
 
 test('updateLedger end-to-end: derive → append → idempotent re-run → grow; spine files stay untouched', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bareloop-ledger-'));
+  const dir = track(mkdtempSync(join(tmpdir(), 'bareloop-ledger-')));
   const ledgerFile = join(dir, 'upstream.jsonl');
   const spineA = join(dir, 'run-a.jsonl');
   reset();
@@ -314,7 +315,7 @@ test('updateLedger end-to-end: derive → append → idempotent re-run → grow;
 });
 
 test('updateLedger with no incidents creates no ledger file (nothing to say, nothing written)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bareloop-ledger-'));
+  const dir = track(mkdtempSync(join(tmpdir(), 'bareloop-ledger-')));
   const spine = join(dir, 'green.jsonl');
   reset();
   writeFileSync(spine, [ev('job-start', {}), ev('primitive-smoke', { ok: true, primitive: 'litectx', detail: 'ok' }), ev('job-end', { outcome: 'green' })].map((e) => JSON.stringify(e)).join('\n') + '\n');
@@ -325,7 +326,7 @@ test('updateLedger with no incidents creates no ledger file (nothing to say, not
 });
 
 test('a malformed ledger line throws with position — corruption is never papered over', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'bareloop-ledger-'));
+  const dir = track(mkdtempSync(join(tmpdir(), 'bareloop-ledger-')));
   const ledgerFile = join(dir, 'upstream.jsonl');
   writeFileSync(ledgerFile, '{"type":"lib-incident"}\n{nope\n');
   assert.throws(() => updateLedger({ ledgerFile, spineFiles: [] }), /line 2/);
