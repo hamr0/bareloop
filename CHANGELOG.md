@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **A `~` rule tie needs the look's word as a whole word of the rule.** "Fri" no longer ties "be friendly please" (nor Sat/"satisfied", Mon/"money", Sun/"sunny"); the fact becomes an ordinary `!` row. `addLook` in `src/checkblock.js` now uses `inText`, not a substring test.
+
 ## [0.58.0] - 2026-11-16
 
 ### Added
