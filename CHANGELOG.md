@@ -5,13 +5,18 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.58.0] - 2026-11-16
+
+### Added
+
+- **Draft the plan button.** The plan menu's first button reads "Draft the plan" (it only starts drafting, never signs); its footer and the CLI Confirm line say the same.
+- **YOUR ANSWERS in the draft readout and the Audit drafting rows say what was decided** ("agreed", "you wrote", "dropped"), never the question that quotes a replaced rule's old words (found by the full test gate; walked live 2026-11-16). One owner, `decidedWords` in `src/draftspend.js`; older logs with no words keep "you were asked / you said".
 
 ### Changed
 
 - **The author CLI's "SIGNING PREPARED" block prints the same draft readout (hamr 2026-11-15).** `buildReadout` from the signed spec, the metered call count and cost, and the spec hash; the text the panel Chat shows. Pinned from source (the runner is reachable only after paid calls); not run end to end.
 - **The panel Chat shows the draft readout above the signed-ready plan card (hamr 2026-11-15, copied from fwdloop v0.34.0).** The final plan message carries `readout: {text, heads}` built by `buildReadout` from the signed spec, the draft log and the session's figures (rounds = draft-log calls, cost with "at least" when a call is unpriced, hash, your answers), redrawn on Drop with the new hash (never twice); the page draws it as wrapped text with bold heads. Rubric and repo jobs. Display only, not in the hash, no new store. Rendered check: see the commit notes.
-- **The draft readout's one owner (`buildReadout`, `READOUT_HEADS`, `readoutHeadIndexes` in `src/authorreadout.js`; hamr 2026-11-15, copied from fwdloop v0.34.0).** Pure plain text of what the person is about to sign, built from the signed spec through the card's own readers (`cardOfClose` rows and `[you]/[agent]/[default]` tags, `fenceRowText`, `refusedOf`), masked by `redactSecrets`; display only, never signed or stored. Not shown anywhere yet (the panel and CLI wire-up follow).
+- **The draft readout's one owner (`buildReadout`, `READOUT_HEADS`, `readoutHeadIndexes` in `src/authorreadout.js`; hamr 2026-11-15, copied from fwdloop v0.34.0).** Pure plain text of what the person is about to sign, built from the signed spec through the card's own readers (`cardOfClose` rows and `[you]/[agent]/[default]` tags, `fenceRowText`, `refusedOf`), masked by `redactSecrets`; display only, never signed or stored.
 - **Regression test for Add/Drop on a Suggested phrase through the panel's `rowEdit` (test only).** `tests/checklist-door.test.js`: before Add the phrase is Suggested with the cited default and the count Not checked (true reason); Add on the phrase gives a facts line and offers the count; Add on the count builds it; Drop returns to the first state.
 - **A result count's Not-checked reason is true when its fact is only Suggested (live run `mwi76vh8`).** The Audit said "a result count needs a fact to count; this line has none" while the line's fact sat under Suggested. With a Suggested fact on the line the reason now reads "a result count needs a fact to count; add the suggested fact on this line to count its results" (`REASON.countNeedsSuggested`, picked by code); a line with no fact keeps the old words.
 - **The Audit Checks header's word "checks" matches the row result words (hamr 2026-11-15).** It now uses the `.st-word` look at the same 12px as the "passed" below it. Display only.
@@ -43,7 +48,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
   - a `$` default that does not apply to a line kind is not a Not checked item: a facts line's cited default ("this line finds facts, so it has no text to quote") is no longer drawn (the floor row says the line has no text check); it stays in the list, and stays drawn on a text line that cannot quote (several inputs).
   - tags (hamr 2026-11-15): every row label reads `~ [you]`, `! [agent]`, `$ [default]` on the page (`byTagOf`) and in the CLI print.
   - A signed spec or old run is never repaired: a close with no list, or a list with no guard row, keeps today's display and the same verdicts.
-- **Repo jobs join the one list (hamr 2026-11-15, Addendum (d); docs/product/ITEM33-BUILD.md).** hamr's law: a rule shows as kept only when code proves it; everything else is Not checked. A repo job now signs `closeDecl.list` (`src/repolist.js`): `~ [you]` one row per rule, `! [agent]` one row per AI work stage, `$ [default]` the guards and the write fence once. A `~` rule is kept only by the fence claim: the drafter may add `closeDecl.fenceKept: [{line, rule, path}]` and code proves it at $0 (the path is in the repo listing and outside the write scope); a wrong claim is dropped, never a red, and the rule is Not checked with a code reason. Every other rule is Not checked ("no check code can prove keeps this rule — you judge it at Accept"). `guardLines` is no longer offered to new drafts. The repo confirm turn plans the goal only (`REPO_CONFIRM_NOTE`; code discards the model's checks, gaps and questions); every view (confirm card, signed card, Job tab, Audit, success line, sign-time match) reads the rows. A fence-kept `~` row reads the gate's record (`held · N writes blocked`). An old signed repo spec keeps today's display. Test-proven, not seen live.
+- **Repo jobs join the one list (hamr 2026-11-15, Addendum (d); docs/product/ITEM33-BUILD.md).** A repo job signs `closeDecl.list`: `~ [you]` one row per rule, `! [agent]` one row per AI work stage, `$ [default]` the guards and the write fence once. hamr's law: a rule shows as kept only when code proves it; everything else is Not checked. Every view reads the rows; an old signed repo spec keeps today's display. (The rows are now built by the one check block, see above.)
 
 ## [0.57.0] - 2026-11-14
 
