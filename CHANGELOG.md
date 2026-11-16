@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.59.0] - 2026-11-16
 
 ### Added
 
@@ -14,6 +14,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - Audit lists the always-on default checks under "Always checked", like fwdloop (they no longer read "other · ..." under Checks); display only, each row keeps its own result.
+- Docs only: LAYERS gains a "Who gets what" section, the F337 findings are updated, the bareguard ask BG-6 (a label on a sibling line, in `docs/product/UPSTREAM-ASKS.md`) is withdrawn, and the context doc is swept.
 
 ## [0.58.0] - 2026-11-16
 
