@@ -25,6 +25,13 @@ for (const key of PAGE_KEYS) {
   });
 }
 
+test('golden port: a page that writes a time label with a colon signs it with the colon, though the saved map gave it bare (jfk-lax; the compare above strips colons, this one does not)', () => {
+  const fx = loadFixture('jfk-lax');
+  assert.ok(fx.map.facts.some((f) => f.words.includes('Departure time')), 'the saved map gives the label bare');
+  const got = applyPageRules(fx.page, fx.map, JOBS.flights);
+  assert.ok(got.facts.some((f) => f.words.includes('Departure time:')), JSON.stringify(got.facts.map((f) => f.words)));
+});
+
 test('golden port: the eight pages between them exercise found-on-page, R1, R1L, U1 (units and an unanchored fact) - a golden with none of them would prove nothing', () => {
   const reasons = new Set();
   let anchorless = false;
