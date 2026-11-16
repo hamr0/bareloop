@@ -31,6 +31,25 @@ test('step try 1 red, try 2 red (strike 2), replan, new step: the note never say
   assert.match(note, /step "a" try 1: Its check failed\./);
 });
 
+test('a replan after a red try 2: the next step\'s first ask still carries try 2\'s failure (no retry prompt holds it)', async () => {
+  const s = mk('replan-fail');
+  await ask(s, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'red', failure: 'FAILED one F1' });
+  await ask(s, { phase: 'step:a', iteration: 2, prompt: RETRY, result: 'red', failure: 'FAILED two F2' });
+  const note = await ask(s, { phase: 'step:b', iteration: 1, prompt: 'a replanned step, no retry marker', result: 'green' });
+  assert.match(note, /FAILED two F2/, note);
+  assert.match(note, /FAILED one F1/, note);
+});
+
+test('a genuine retry: the last red try\'s failure is NOT duplicated in the memo (the retry prompt carries it)', async () => {
+  const s = mk('retry-nodup');
+  await ask(s, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'red', failure: 'FAILED one F1' });
+  const note = await ask(s, { phase: 'step:a', iteration: 2, prompt: RETRY, result: 'red', failure: 'FAILED two F2' });
+  assert.ok(!/FAILED one F1/.test(note), `the retry prompt carries F1, the memo must not:\n${note}`);
+  const note3 = await ask(s, { phase: 'step:a', iteration: 3, prompt: RETRY, result: 'red' });
+  assert.match(note3, /FAILED one F1/, note3);
+  assert.ok(!/FAILED two F2/.test(note3), `the retry prompt carries F2, the memo must not:\n${note3}`);
+});
+
 test('a green step followed by the next step: its check passed', async () => {
   const s = mk('green');
   await ask(s, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'green' });
