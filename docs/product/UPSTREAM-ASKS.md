@@ -3069,3 +3069,5 @@ Round 1 (60-line window, stop at smaller indent or the next same-kind `link`) wa
 ### Status
 
 2026-11-16 — Filed here; to be relayed to the bareguard session by the main session on hamr's word. No target version. Nothing built in bareloop (the check lives in bareguard).
+
+**Status update 2026-11-16: WITHDRAWN** — bareguard declined (hamr's ruling in the guard session): caller-side fix; solved in bareloop by 577856a9, live run mwj9xe3c green.
