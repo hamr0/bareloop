@@ -594,8 +594,13 @@ export class CheckBlock {
     const files = this.repo?.files;
     if (!Array.isArray(files) || this.outsideScope().length === 0) return [];
     const all = new Set();
-    for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
-    return [...all].filter((d) => !files.some((f) => f.startsWith(`${d}/`) && this.inScope(f)));
+    /** the folders above at least one file the run may change (one pass over the listing) */
+    const open = new Set();
+    for (const f of files) {
+      const inside = this.inScope(f);
+      for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) { all.add(f.slice(0, i)); if (inside) open.add(f.slice(0, i)); }
+    }
+    return [...all].filter((d) => !open.has(d));
   }
 
   /** is this repo file a place the run may change? @param {string} f */
@@ -611,7 +616,7 @@ export class CheckBlock {
     const all = new Set(files);
     for (const f of files) for (let i = f.indexOf('/'); i > 0; i = f.indexOf('/', i + 1)) all.add(f.slice(0, i));
     const esc = (/** @type {string} */ t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return [...all].filter((p) => new RegExp(`(?<![\\w./-])${esc(p)}${files.includes(p) ? '(?![\\w-]|\\.\\w)' : '/(?![\\w.-])'}`).test(said));
+    return [...all].filter((p) => said.includes(p) && new RegExp(`(?<![\\w./-])${esc(p)}${files.includes(p) ? '(?![\\w-]|\\.\\w)' : '/(?![\\w.-])'}`).test(said));
   }
 
   /**
