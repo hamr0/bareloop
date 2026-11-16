@@ -292,13 +292,8 @@ export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one J
  *                      a repo source (the M3 confirm turn, not built in this
  *                      piece, is where the repo-only half of it gets asked again
  *                      if needed).
- *   Judge examples     soft-green only — the old Q7 verbatim ("one you'd pass and
- *                      one you'd fail, and say why"). The old Q6 ("what separates
- *                      a pass from a fail") is retired as its own question: the
- *                      "why" lines of a real pass/fail pair are what the rubric
- *                      card compiles from (`cardauthor.js`), and asking the
- *                      differentiator twice — once in the abstract, once against
- *                      a real example — is the same double-ask Q3/Q5 already were.
+ *   Judge examples     RETIRED (PASS/FAIL pairs and the old judge are gone); no
+ *                      question asks for them any more.
  *
  * SOURCE and DESTINATION ARE MECHANICAL FIELDS, not entries in the numbered
  * question record below: `runInterview`'s `answers` dict is what a close's
@@ -394,7 +389,7 @@ export const GREEN_QUESTIONS = Object.freeze({
  * Field column", where {@link GREEN_QUESTIONS} is "the Holds column". Kept as a
  * SEPARATE map rather than folding the label into the question string itself:
  * every existing caller of `questionsFor`/`requiredAnswersFor`/`QUESTION_SETS`
- * (`src/authorjob.js`, `src/cardauthor.js`, `scripts/run-interview.mjs`) treats
+ * (`src/authorjob.js`, `scripts/run-interview.mjs`) treats
  * a question as a plain string handed verbatim into a prompt or a `Q<n>. `
  * line, and folding a label in would change that shape for every one of them.
  * A caller that wants the label calls {@link labelsFor} exactly the way it
