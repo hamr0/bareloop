@@ -2182,6 +2182,9 @@ function getRunDetailBody(runid, opts) {
       synthetic: true,
     });
   }
+  // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
+  const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
+  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always };
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never
@@ -2304,7 +2307,7 @@ function getRunDetailBody(runid, opts) {
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, specForParts),
-    auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
+    auditChecks,
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
     placeRules: placeRuleLines(rawSpineRecords),
