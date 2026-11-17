@@ -4862,3 +4862,68 @@ Round 2 (n=50 per job, deepseek-flash direct, $0.601, 0 casualties): shape 50/50
 - A moved sheet between draft and run is allowed (the signature locks the job, not the file); a column the new sheet lacks stops at $0 naming it. Not walked live.
 - Phone width of the new cards cannot be checked by barebrowse.
 - Signed-hash change is limited to new drafts, but any bridge/reuse minted on old specs is unaffected; reuse of a sheet job uses the whole signed plan (existing rule).
+
+## Addendum 2026-11-17 (b): only ~ lines are checked
+
+Status: rulings given by hamr in chat 2026-11-17; spec written, NOT yet approved for build — waits for hamr's go. One branch off bareloop main (or on the open S4 branch, hamr's call). Order: R1, R2, R3, R4.
+
+### Goal
+- Only `~` lines are captured and checked. A line without `~` says what to do and is never checked. The person is told so in the job box.
+- The job text always matches what is checked: an accepted suggestion becomes a real `~` line.
+
+### Rulings (fixed, hamr 2026-11-17)
+- The AI job rewrite is PARKED (F349, rounds 1-4, no stable pass). No AI rewrite, no guessing.
+- The AI may still SUGGEST a good missing rule the person did not write, from captured intent (the person's own words + what the input shows; code-checked words; the existing `!` rule). It shows under the existing Suggested box ("not in your job, not checked unless you add it").
+- Add writes a `~` line into the job text. Today Add only turns the card row on (`CheckBlock.rowChoice`, `src/checkblock.js` ~1141-1163, sets `choice 'add'`); it does not touch the job text.
+- `[default]` code checks (file exists, saved sheet copy, write fence, etc.) stay.
+- `[agent]` extra checks only when they belong to a `~` rule (e.g. "count rows over 500" for `~ Amount over 500`); never from step prose.
+- The S4 prose-word patches come out, in revertable commits: 3463d6bb (item 5: a word of a line's own prose is asked like a rule word and its answer swaps the word in the line) and 6e303060 (ruling A: every line of a sheet-only job is a sheet line; it ALSO added Drop it to the prose tie box, which goes away with item 5). The `~` rule column ask (S1, with the tie picker and its Drop it) STAYS.
+- Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
+
+### What the person sees
+- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (builder may tighten, hamr approves the final words)
+- Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)
+- Suggested row: unchanged look. Add now also shows the new `~` line in the job box under its step; Drop of that row removes the line again.
+
+### Pieces
+
+R1. Revert 3463d6bb and 6e303060
+- Files: those the two commits touched: `src/checkblock.js`, `src/sheetfind.js`, `src/sheetlook.js`, `src/authorflow.js`, `src/blockasks.js`, `src/questionbox.js`, `src/sheetoffer.js`, `src/sheetrows.js`, `tests/sheet-ask.test.js`, `tests/sheet-find.test.js`, `tests/sheet-prose-ask.test.js`, `tests/sheet-draft.test.js`, `tests/sheet-look-run.test.js`, `tests/sheet-rowedit.test.js`, `tests/sheet-rows.test.js`, `tests/sheet-tie-box.test.js`, CHANGELOG.md, `bareloop.context.md`.
+- Call site: none new (a removal).
+- Method: `git revert` of each commit (newest first). BEFORE doing it for real, do both reverts in a throwaway git worktree and check the result is byte-identical to the tree just before 3463d6bb for every file the later commits did not also touch (diff against `3463d6bb^`); report any file that differs and why (later S4 commits touching the same lines). Conflicts are reported, not hand-resolved blind.
+- Tests that change back: `tests/sheet-prose-ask.test.js` is deleted (it was added by 3463d6bb); `tests/sheet-tie-box.test.js` loses the Drop-it-on-prose-tie case; `sheet-ask`, `sheet-find`, `sheet-draft`, `sheet-look-run`, `sheet-rowedit`, `sheet-rows` return to their pre-S4-item-5 expectations. Kept: every S1 test (the `~` rule column ask and its tie picker with Drop it).
+- Fail-first: after the revert, the named tests must pass at the old expectations; one test of the S1 ask must still pass unchanged (proves S1 stayed).
+- Done when: full `npm test` exit 0, last line quoted; CHANGELOG lines of the two commits are gone; nothing else from S4 lost (builder lists the S4 commits and shows each still present).
+
+R2. Job box hint and prompt text that implies step prose is checked
+- Files: `src/panel/index.html` (hint under `#jf-job`, line ~952), the drafter/look prompts (`src/promptregisters.js`, `src/pagemap.js`, `src/sheetlook.js`, `src/authorflow.js`) — builder greps for wording that tells the AI or the person a step line is checked.
+- Call site: the hint is static markup in the job form; prompt text is read by the existing prompt builders. Conditional injection only; no blanket "what if" text.
+- Tests fail-first: a panel markup test that the hint text is on the page; a prompt test that the old wording is gone (grep the neighbour tests for the old wording first).
+- Done when: the hint shows in the real panel (builder's own screenshot), full gate green.
+
+R3. Checks come only from `~` lines
+- First, the builder REPORTS (a finding, not a guess): which code paths today build a check from step prose (look facts, sheet checks, `!` agent rows, `$` defaults). Expected: none after R1. Anything found is listed with file and line and goes back to hamr before any fix.
+- Then verify and pin by test: look facts, sheet checks and `[agent]` rows are built only for a `~` rule; `[default]` rows stay; a step with no `~` gives exactly one Not checked line as today.
+- Files: `src/checkblock.js`, `src/sheetfind.js`, `src/sheetlook.js` (read; change only what the report shows).
+- Call site: the existing draft flow (`CheckBlock` reconcile), nothing new wired.
+- Tests fail-first: a job with a step that hides a rule ("List laptops under 1500") and no `~` builds no check from that step; the same job with `~ under 1500` builds it; a `[default]` row is still there in both. Show each red against a mutated copy first (scratch copy, never `git checkout`).
+- Done when: report delivered, tests green, full gate exit 0.
+
+R4. Add on a Suggested row writes a `~` line (one owner: the job lines)
+- Files: `src/checkblock.js` (`rowChoice`, `choicesRecord`), `src/panel/authorsession.js` (the Drop/Add door ~1407-1430 and the final-card Suggested view ~1377), `src/panel/index.html` (job box follows the session job text, ~6349).
+- Behaviour: Add on a `suggested` row inserts a `~` line directly under its step in the job text; the card, job box, signed lines and Job tab all read that one text. Drop of an added suggestion removes that `~` line again. Revise keeps it (a `~` line is the person's own text from then on). $0, no AI call. A refused Add (code cannot build a legal check) changes nothing and says why in plain words, as today.
+- Call site: the panel Add/Drop action (`authorsession.js` ~1418) calls `rowChoice`; the job text edit happens in that one door and the row becomes a `~` (you) row, so `choice 'add'` is no longer a separate state.
+- Tests fail-first: Add writes the line (job text before/after); the card shows the rule once, tagged `~`; Drop removes the line and the row returns to Suggested; Revise after Add keeps the line; a refused Add leaves the text untouched; signed lines equal the job box lines.
+- Done when: gate green; builder's own screenshot of the job box before/after Add.
+
+### Out of scope
+- The AI rewrite (parked, F349). Mixed page + sheet (F347). New suggestion kinds. Any change to the `~` rule column ask (S1).
+
+### Live proof
+- One scratch-panel draft on `expenses.csv`: a job with a step that hides a rule and one `~` rule. Done when: only the `~` rule is checked, the hiding step reads Not checked, a Suggested rule appears, and Add puts it into the job box as a `~` line. DeepSeek direct, deepseek-flash, cap $0.10, port other than 4700, scratch HOME. Check at $0 first (close fails on seed, key readable, job matches the saved sheet).
+- hamr clicks through the panel himself before any done claim; phone width is unchecked (barebrowse cannot emulate it).
+
+### Known open risks
+- R1 revert may conflict with later S4 commits on the same lines; reported, not guessed.
+- A suggestion's Add writes a line the person did not type; the Suggested label says "not checked unless you add it", so the write is the person's own click.
+- Old signed jobs are untouched; only new drafts get the new text.
