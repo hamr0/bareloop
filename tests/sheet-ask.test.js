@@ -274,3 +274,10 @@ test('the tie question carries the REAL count and the columns in sheet order (th
   assert.equal(r.asks[0].question, "I found 3 columns matching 'Price': Amount, Tax, Total. Choose one. (your answer replaces that ~ rule on line 2).");
   assert.deepEqual(r.asks[0].columns, ['Amount', 'Tax', 'Total']);
 });
+
+test('a tie is never decided by code from another rule: "Tax under 50" on the line does not make "Price" Tax - it asks', () => {
+  const job = [{ n: 2, text: 'x', rules: ['Tax under 50', 'Price over 500'] }];
+  const r = applySheetWords(fixture('expenses.csv'), [W('Price', 'line 2 rule 2')], job, 'expenses');
+  assert.deepEqual(r.facts, []);
+  assert.deepEqual(r.asks.map((a) => [a.rule, a.word, a.columns]), [[2, 'Price', ['Amount', 'Tax']]]);
+});

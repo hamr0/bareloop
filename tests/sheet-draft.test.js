@@ -132,6 +132,17 @@ test('tie: picking Amount gives [\'Amount over 500\'], picking Tax gives [\'Tax 
   }
 });
 
+test('tie: another rule of the line naming Tax does NOT decide for Price - code asks (hamr 2026-11-17): `~ Tax under 50` + `~ Price over 500` asks one tie question for Price; picking Amount leaves rule 1 alone', async () => {
+  const rules = ['Tax under 50', 'Price over 500'];
+  const run = (/** @type {string} */ col) => draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules, answers: [sheetReply(W('Price', 'line 2 rule 2'))], choose: () => ({ choice: 'column', text: col }) });
+  const { asked, seen } = await run('Amount');
+  assert.equal(asked.questions.length, 1);
+  assert.deepEqual([asked.questions[0].line, asked.questions[0].rule], [2, 2]);
+  assert.deepEqual(asked.questions[0].columns, ['Amount', 'Tax']);
+  assert.deepEqual(seen.jobLines[1].rules, ['Tax under 50', 'Amount over 500']);
+  assert.deepEqual((await run('Tax')).seen.jobLines[1].rules, ['Tax under 50', 'Tax over 500']);
+});
+
 test('tie: Drop it leaves the rule as written (Not checked); the block refuses own words for a tie and the rule stays as written', async () => {
   assert.deepEqual((await tieAsk(() => ({ choice: 'drop' }))).seen.jobLines[1].rules, ['Price over 500']);
   assert.deepEqual((await tieAsk(() => ({ choice: 'rule', text: 'Amount plus Tax over 500' }))).seen.jobLines[1].rules, ['Price over 500']);
