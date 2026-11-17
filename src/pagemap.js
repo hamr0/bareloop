@@ -41,9 +41,14 @@ export const MAP_SYSTEM = 'You map a person\'s job to the exact words of ONE sav
 export function mapPrompt({ jobLines, label, text }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}${lineRules(l).map((r, i) => `\n~ rule ${i + 1}: ${r}`).join('')}`).join('\n');
   return `THE JOB (each ~ rule applies to the line above it):\n${job}\n\n`
-    + 'A "result" is one item the page lists (one flight, one stay, one row). For each job line and for each rule, say which fact(s) every result must carry, and give the PAGE\'S OWN WORDS for it.\n\n'
+    + 'Your goal: the ~ rules are the person\'s intent. For each rule, say which words on the page would let code check that every result keeps it. Code will look for the words you give, and the person will see them and can drop them.\n\n'
+    + 'A "result" is one item the page lists (one flight, one stay, one row).\n\n'
+    + 'For each job line and for each ~ rule, do ONE of two things:\n'
+    + '1. The page can show the rule. Give a fact: the PAGE\'S OWN WORDS that a result carries when it keeps the rule. The words do not have to be the rule\'s words, but they must carry the rule\'s MEANING. Add a one-line "why" that says what those words on a result mean for the rule.\n'
+    + '2. The page cannot show the rule: how the answer is written, its tone or style, or anything the page does not hold. Give NO fact for it. Put it in "cannot" with its line and rule number and a one-line "why".\n'
+    + 'Never tie a rule to page words that do not carry its meaning. A rule with no fact is a correct answer when the page cannot show it.\n\n'
     + 'Return ONLY a JSON object, no prose, no code fence:\n'
-    + `{"facts":[{"name":"<letters and spaces only>","from":"<line N | line N rule M>","shape":"place|money|time|date|number|phrase","words":["<page words>", ...],"currency":["<symbol>"],"unit":["<words after the amount>"],"lang":"<${MAP_LANGS.join("|")}>","decimal":"<. or ,>","reading":<optional, see below>}]}\n\n`
+    + `{"facts":[{"name":"<letters and spaces only>","from":"<line N | line N rule M>","shape":"place|money|time|date|number|phrase","words":["<page words>", ...],"why":"<one line>","currency":["<symbol>"],"unit":["<words after the amount>"],"lang":"<${MAP_LANGS.join("|")}>","decimal":"<. or ,>","reading":<optional, see below>}],"cannot":[{"from":"line N rule M","why":"<one line>"}]}\n\n`
     + 'shape meanings:\n'
     + '- place: words = ways the page writes the place (a city, an airport name), copied from the page.\n'
     + '- money: words = the label(s) written right BEFORE the amount, copied from the page. currency / unit = how the page writes the currency ("$") and/or the words after the amount ("US dollars"); give every spelling the page uses, as lists.\n'

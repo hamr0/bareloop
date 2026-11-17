@@ -37,10 +37,10 @@ test('A1 rows: a ~ rule is by you, a look fact by the agent, the word proof leav
   const tied = made({ jobLines: [{ n: 1, text: 'Say it', rules: ['the ### Fixed heading must be named'] }], look: { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['### Fixed'], forRule: 1 }] } });
   assert.equal(by(tied, 'L1.fact.version'), undefined);
   assert.equal(by(tied, 'L1.~1')?.links?.[0].name, 'version');
+  // piece 0 (2026-11-17): the `named` guard is withdrawn; a phrase the rule's words do not name links to the rule row again
   const unnamed = made({ jobLines: [{ n: 1, text: 'Say it', rules: ['the version must be named'] }], look: { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['### Fixed'], forRule: 1 }] } });
-  assert.equal(by(unnamed, 'L1.fact.version')?.by, 'agent');
-  assert.equal(by(unnamed, 'L1.~1')?.links, undefined);
-  assert.equal(by(unnamed, 'L1.~1')?.state, 'not-checked');
+  assert.equal(by(unnamed, 'L1.fact.version'), undefined);
+  assert.equal(by(unnamed, 'L1.~1')?.links?.[0].name, 'version');
   assert.equal(new Set(b.rows.map((r) => r.key)).size, b.rows.length);
 });
 

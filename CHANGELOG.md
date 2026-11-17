@@ -11,6 +11,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - The carry note keeps the last red try's failure unless the next ask is a retry of that try (its prompt carries the retry gap); after a strike-limit replan the new step's first ask used to lose that failure. (Corrects the 0.4x wording "left out only when that try failed".)
 - A `~` rule kept by the write fence now names the fence as a folder (`test/`, not the raw `test/**`), the same words the write-fence question uses; one helper (`fencePlace`) owns both.
+- The page look prompt is copied from fwd F201 (goal, one-of-two block, a `why` per fact, a `cannot` list the parser accepts and ignores) so a `~` rule the page cannot show is not tied to unrelated words; the code `named` guard in the check block (live run mwi76vh8, "be friendly" tied to "Select flight") is withdrawn.
 
 ## [0.59.0] - 2026-11-16
 
