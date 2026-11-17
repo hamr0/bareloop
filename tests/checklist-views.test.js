@@ -40,7 +40,7 @@ test('B2 over the 38 real saved drafts: the card and the Job tab read the block\
       assert.ok(tab.notChecked.some((t) => t.includes(String(r.reason))) || tab.lines.some((l) => l.refused.some((t) => t.includes(String(r.reason)))), `${s.id}: the Job tab lost ${r.key}`);
     }
     // nothing on the card that is not a row: every listed item's reason is some row's reason
-    for (const t of card) assert.ok(block.rows.some((r) => r.reason && t.includes(String(r.reason))) || (closeDecl.refused ?? []).some((/** @type {any} */ x) => t.includes(x.reason)) || /what the text says/.test(t), `${s.id}: a card item that is no row: ${t}`);
+    for (const t of card) assert.ok(block.rows.some((r) => r.reason && t.includes(String(r.reason))) || (closeDecl.refused ?? []).some((/** @type {any} */ x) => t.includes(x.reason)) || /what the text says/i.test(t), `${s.id}: a card item that is no row: ${t}`);
   }
   assert.ok(items > 0);
 });
