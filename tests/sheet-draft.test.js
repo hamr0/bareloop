@@ -132,9 +132,9 @@ test('tie: picking Amount gives [\'Amount over 500\'], picking Tax gives [\'Tax 
   }
 });
 
-test('tie: Drop it leaves the rule as written (Not checked); own words replace the rule one for one', async () => {
+test('tie: Drop it leaves the rule as written (Not checked); the block refuses own words for a tie and the rule stays as written', async () => {
   assert.deepEqual((await tieAsk(() => ({ choice: 'drop' }))).seen.jobLines[1].rules, ['Price over 500']);
-  assert.deepEqual((await tieAsk(() => ({ choice: 'rule', text: 'Amount plus Tax over 500' }))).seen.jobLines[1].rules, ['Amount plus Tax over 500']);
+  assert.deepEqual((await tieAsk(() => ({ choice: 'rule', text: 'Amount plus Tax over 500' }))).seen.jobLines[1].rules, ['Price over 500']);
 });
 
 test('tie: a column that is not one of the tied columns is refused by the block and the question stays open', async () => {
@@ -151,6 +151,7 @@ test('tie: a column that is not one of the tied columns is refused by the block 
   const refused = applyChoices(block, [{ key: q.key, choice: 'column', text: 'Date' }]);
   assert.equal(refused.length, 1);
   assert.match(refused[0].why, /not one of the columns/);
+  assert.match(applyChoices(block, [{ key: q.key, choice: 'rule', text: 'Amount over 500' }])[0].why, /not one of the choices/);
   assert.equal(block.open.length, 1, 'still asked');
   assert.deepEqual(applyChoices(block, [{ key: q.key, choice: 'agree' }]).map((x) => x.key), [q.key], 'there is no single reading to Agree to');
 });
@@ -163,10 +164,10 @@ test('tie: it counts toward the 3-ask cap like any ask - four tie questions stop
   assert.equal(r.stop, 'look-asks-too-many');
 });
 
-test('tie of five columns: own words still reach any column (the box lists all five in its picker, see tests/sheet-tie-box.test.js)', async () => {
+test('tie of five columns: a column pick reaches any of them (the box lists all five in its picker, see tests/sheet-tie-box.test.js)', async () => {
   const f = join(tmp(), 'five.csv');
   writeFileSync(f, `${['A,B,C,D,E', ...Array.from({ length: 5 }, (_, i) => `${i + 1},${i + 2},${i + 3},${i + 4},${i + 5}`)].join('\n')}\n`);
-  const { asked, seen } = await draftOver({ file: f, label: 'Five', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'rule', text: 'E over 500' }) });
+  const { asked, seen } = await draftOver({ file: f, label: 'Five', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'column', text: 'E' }) });
   assert.deepEqual(asked.questions[0].columns, ['A', 'B', 'C', 'D', 'E']);
   assert.deepEqual(seen.jobLines[1].rules, ['E over 500']);
 });

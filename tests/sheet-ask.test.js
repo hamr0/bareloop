@@ -92,7 +92,7 @@ test('two columns fit equally (hamr 2026-11-17): a `~` rule ASKS which column, o
 test('a tie about a word of the line\'s own prose (no `~` rule) cannot ask: it stays Not checked with the tie sentence', () => {
   const r = applySheetWords(SHEET(40, 40, 40), [W('Price', 'line 1')], JOB, 'aging');
   assert.deepEqual(r.asks, []);
-  assert.deepEqual(notChecked(r.dropped, JOB), ["line 1: \"Add up the price of every invoice\" — two columns fit 'Price' equally"]);
+  assert.deepEqual(notChecked(r.dropped, JOB), ["line 1: \"Price\" — two columns fit 'Price' equally"]);
 });
 
 test('the person already named the column in another rule of the line: the word is that column, nothing is asked again', () => {
