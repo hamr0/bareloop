@@ -2276,6 +2276,8 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 **Backlog (PARKED until after the check-ledger release): Old-run stats scan, then delete old runs** — a one-time $0 script (no AI) reads every archived run record (spines in `~/PycharmProjects/bareloop-patients`, `~/.config/bareloop/panel-sessions`, and the few under the bareloop repo) and writes one stats file with several views: by job, by provider/model, verdict, cost, wall time, failure kinds, tries to green. hamr reads it and says if it is enough; then `bareloop-patients` and old panel runs are deleted and hamr's own `!` line trims `~/.config/bareloop/runs.jsonl` with a backup first. Saved winning plans (`bareloop-patients/bridges`, `bundles`) are kept or moved into `~/.config/bareloop`, never deleted. The pinned `~/PycharmProjects/bareloop-close` stays. Agreed by hamr 2026-11-13; code goes to a sonnet builder.
 
+**Backlog (PARKED, discussed 2026-11-17, not to build now): A sheet as a list of same-shape jobs** — one signed job shape, many rows: the job names fields (e.g. from, to, price) and each sheet row fills them; ONE ROW = ONE SEPARATE RUN of the same signed workflow (hamr 2026-11-17), each with its own verdict, Resume and Rerun, plus a combined row-by-row view. The sheet's columns are values only, never new rules (a row wanting "nonstop only" is a different job). At $0 before spend: the sheet must carry every field the job uses, else nothing runs; a row with a missing or unreadable field is refused by row number while the others run. The card shows the total ceiling (rows × cap) before signing; the monthly limit applies. Builds on Reuse workflow (signed shape), place rules (code swaps a value in before spend, stops at $0 if missing) and folder triggers (N items = N runs back to back). Limit: a row that needs a fresh web search per row is search-as-input, still PARKED after POCs v3-v5 failed. Related: F347 (mixed page + sheet job, a line not tied to an input). Build only after the sheet (CSV) jobs ship, with a spec and a POC first.
+
 ### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (v1.134 — 2026-11-14)
 
 - [x] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
@@ -2315,3 +2317,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - Backlog (not built, unproven): sheet as output (a new worksheet beside the person's own).
 - fwd takes code-does-math and the am7 words from bareloop's release later (not urgent).
 - [x] Launcher fast menu dropped (hamr 2026-11-17, F340).
+
+### Sheet as a list of jobs, parked (v1.140 — 2026-11-17)
+
+- Backlog (PARKED, not built): a sheet as a list of same-shape jobs, one row = one separate run of the same signed workflow (hamr 2026-11-17). Spec, limits and F347 pointer are in the backlog line "A sheet as a list of same-shape jobs" above.
