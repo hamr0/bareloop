@@ -16147,3 +16147,55 @@ Split by thinking mode (ask mode; same rounds): on, 511 rounds, median 4.06 s, s
 - Scratch spine copies were not verified identical to the originals.
 - Runs without a gate audit (4) are excluded from Q2.
 - The thinking split is a join by file order, matched asks per mode are 10 to 25; one model, one corpus.
+
+### F349: POC — AI offers a job rewrite that moves hidden rules to ~ lines (2026-11-17)
+
+Idea (hamr, design, not built): before drafting, one AI call reads the job and offers a rewrite that moves rules hidden in a step line onto `~` lines; the person picks Use this or Keep mine; after that only `~` lines are checked. The rewrite must never invent a rule. Pre-registered here before any model call. Harness and key: `.claude/scratch/poc-rewrite/` (`run.mjs`, `jobs.json`, `key.md`).
+
+Setup: DeepSeek direct, model deepseek-flash, thinking off, temperature 0, JSON reply, n=1 call per job, cap $0.20 (rates from the Settings row, 0.6 / 1.2 per 1M).
+
+The 12 jobs (9 real from `~/.config/bareloop/panel-sessions/*/card.json` jobText, 3 hand-written and marked; no secret-shaped text present; no real job had all rules on `~` lines with a clean step line, so two of the "all on ~" cases are hand-written; no real sheet job existed, one hand-written sheet job added):
+1. (real, web, hidden) `List 3 flights from Boston to Denver with price and departure time`
+2. (real, web, hidden) `List every laptop on the page with its name and price.` / `~ price is under 1500 euros`
+3. (real, repo, hidden) `Run the type checker in strict mode with no emit and confirm zero errors in src/checks.js, confirm no new type errors in any other file under src/ against the pre-change baseline, and run the existing test suite to confirm every existing test still passes.`
+4. (real, ticket, hidden) `Write a one-sentence triage note saying what the ticket asks, quoting its title word for word` / `~ the note must quote the ticket title exactly` / `State whether the ticket is open or closed, as written`
+5. (real, web, hidden) `Find the last 3 releases with their version and date` / `Write a short summary of what changed` / `~ under 80 words` / `~ one paragraph`
+6. (real, repo, hidden) `Make npm test pass with no failing tests, by fixing the cause in the source code under src/` / `~ do not edit any file under test/` / `~ do not lower the number of tests that run` / `~ no suppression comments and no any annotations`
+7. (real, web, hidden) `List 3 stays in Porto` / `~ under €200 total`
+8. (real, repo, nothing hidden, all rules on ~) `Fix the bug in src/sum.js so the tests in test/sum.test.js pass` / `~ don't edit test/` / `~ no new dependencies` / `~ keep the comment at the top of src/sum.js`
+9. (HAND-WRITTEN, web, all on ~) `List flights` / `~ 3 in total` / `~ from Boston to Chicago` / `~ under $450` / `~ nonstop`
+10. (HAND-WRITTEN, sheet, all on ~) `Sum the Amount column of the sheet` / `~ report the total only` / `~ round to 2 decimals`
+11. (real, web, plain) `Find the latest release heading`
+12. (HAND-WRITTEN, web, plain) `Summarize the page`
+
+Groups: hidden-rule = jobs 1-7 (7); all-on-~ = 8, 9, 10 (3); plain = 11, 12 (2).
+
+Answer key (frozen before any call; ~ = own rule line; variants in brackets):
+- 1: step "List flights"; ~ [3 in total | 3 flights], ~ from Boston to Denver, ~ price, ~ departure time (price and departure time may share one line).
+- 2: step "List every laptop on the page"; ~ name, ~ price (may share one line); keep ~ price is under 1500 euros.
+- 3: step "Run the type checker"; ~ strict mode, ~ no emit (may share a line), ~ zero errors in src/checks.js, ~ no new type errors in other files under src/ against the baseline, ~ existing tests still pass.
+- 4: step "Write a triage note saying what the ticket asks"; ~ one sentence, ~ quote the title word for word / exactly (the existing ~ may serve this one). Line 2 step "State whether the ticket is open or closed"; "as written" optional.
+- 5: step "Find the releases"; ~ last 3, ~ version and date (may share a line). Step "Write a summary of what changed"; ~ short optional; keep ~ under 80 words and ~ one paragraph.
+- 6: step "Make npm test pass"; ~ no failing tests, ~ fix the cause in the source code under src/ [or edit only src/]; keep the 3 existing ~ lines.
+- 7: step "List stays in Porto"; ~ 3 in total; keep ~ under €200 total.
+- 8, 9, 10, 11, 12: no rewrite (a rewrite identical to the input also counts).
+
+Frozen bars:
+- (a) EXTRACT: in at least 5 of the 7 hidden-rule jobs, every rule in the key appears as its own ~ line (variants allowed). Judged by hand against the key.
+- (b) NO INVENTION: 12 of 12 jobs — every ~ line's words are found in the original job text. Code check: each content word, case-blind, plural/singular tolerated (strip ies/es/s); numbers and currency signs must match exactly as tokens; the stop-words in, total, the, a, an, of, to, from, with, and, or, only, all, be, is, are, at, on, for, by, it, its, as, that, this, so are skipped (frozen now; needed because the idea's own example "3 in total" uses "in" and "total"). One invented rule = FAIL.
+- (c) NO-OP: every no-hidden-rule job (8-12) gets "no rewrite" or a rewrite identical to the input.
+- (d) STEP KEPT: each rewritten step line keeps the job's action, judged by hand against the key; each reported.
+Report-only: cost, cut-offs (excluded from the denominator, counted apart), latency.
+
+Prompt (full text, the job text appended after "Job:"):
+```
+You rewrite a job so that rules hidden inside a step line move onto their own "~" lines.
+A job is lines. A line starting with "~" is a rule for the step line above it. Other lines are steps.
+Move counts, limits, routes, fields, formats and other constraints out of a step line into separate rules, one rule per item. Keep the step line's action. Keep the person's existing "~" lines unchanged.
+Use only words that are in the job. Never add a rule or a word the person did not write.
+If no step line hides a rule, answer {"rewrite": null}.
+Otherwise answer JSON only: {"rewrite":[{"line":"<step line>","rules":["<rule text without ~>", ...]}, ...]}
+Job:
+```
+
+Results: pending
