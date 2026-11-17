@@ -16047,4 +16047,10 @@ Frozen bars (before any number exists):
 - (3) The other rules the old draft tied (price via "From", departure time via "Departure time:") are still tied.
 - A failed bar is reported FAIL; no re-tune, no second try.
 
-results: pending
+Results (2026-11-17; script `.claude/scratch/poc-a2/run.mjs`, untracked scratch; new draft session `smwkhzs9n5hgf` under `.claude/scratch/poc-a2/home/.config/bareloop/panel-sessions/`; real `createSession` path, the saved flights page served through `fetchUrl`; probe 2 of 2 HTTP 200 first; the one look question handling was not needed, none was asked; 2 revise calls ran inside the draft, as in the old one):
+- (1) PASS. The session reached the plan menu and then `prepared` (spec hash 0a8d65a67c81ea39d1abee9bfa79a2d0aa3e4a11dc4231e6fe877b0b2550469b); signing was prepared, not signed, no run started.
+- (2) PASS. The F201 look (draft-log `page-map`) returned no fact for rule 3 and listed it under `cannot`: `{"from":"line 1 rule 3","why":"Friendliness is tone/style, not something the page states per result."}`. The plan card says: `line 1: "be friendly" - No rule can check this, so you judge it at Accept.` It is Not checked (`notCheckedBy` you); no check row is tied to "Select flight".
+- (3) PASS. Rule 1 is still tied: `fact · price limit - money in US dollars or $, under 450 US dollars, after "From", quoted from "flights"` (L1.~1). Rule 2 is still tied: `fact · departure time - time, between 05:00 and 21:00, after "Departure time:", quoted from "flights"` (L1.~2). The agent also kept `exactly 3 results` (L1.count.3-3).
+- Old-prompt control (same case, draft-log line 13): the old look tied rule 3 to "Select flight" and all three rules were built rows.
+- Cost: $0.0121 total drafting (page-map $0.0082, ledger-suggest $0.0004, note-ask $0.0001, confirm $0.0004, author $0.0019, revise-1 $0.0005, revise-2 $0.0005), spend complete; under the $0.30 cap. Probe calls: 2 tiny calls, not metered. `~/.config/bareloop/runs.jsonl` 164 lines before and 164 after.
+- Reading: n=1, one model, one page; the old prompt tied the rule, the F201 prompt did not, on the same page. An anecdote, not a base rate. One small difference: the new look's rule 2 words are `Departure time` (the old: `Departure time:`); the signed check still reads after `Departure time:`.
