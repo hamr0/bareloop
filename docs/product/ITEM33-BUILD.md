@@ -4865,7 +4865,15 @@ Round 2 (n=50 per job, deepseek-flash direct, $0.601, 0 casualties): shape 50/50
 
 ## Addendum 2026-11-17 (b): only ~ lines are checked
 
-Status: rulings given by hamr in chat 2026-11-17; spec written, NOT yet approved for build — waits for hamr's go. One branch off bareloop main (or on the open S4 branch, hamr's call). Order: R1, R2, R3, R4.
+Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first") — starts with R0 POC; branch chore/fix-ledger. Order: R0, R1, R2, R3, R4.
+
+### Where we are (for a fresh session)
+- Branch `chore/fix-ledger` (check `git branch --show-current`).
+- Pieces 0, S1, S2, S3, S4 are built and gated. Last full gate: 6031 pass / 0 fail on b3b24cfc (== 6e303060 + a4f76cdd, byte-identical tree).
+- S5 (surfaces and the $0 re-check) and POC C are NOT started. This addendum (b) is next, then S5.
+- Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
+- fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
+- Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
 
 ### Goal
 - Only `~` lines are captured and checked. A line without `~` says what to do and is never checked. The person is told so in the job box.
@@ -4881,11 +4889,19 @@ Status: rulings given by hamr in chat 2026-11-17; spec written, NOT yet approved
 - Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
 
 ### What the person sees
-- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (builder may tighten, hamr approves the final words)
-- Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)
+- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)
+- Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)
 - Suggested row: unchanged look. Add now also shows the new `~` line in the job box under its step; Drop of that row removes the line again.
 
 ### Pieces
+
+R0. POC ($0, no AI, before any code change)
+- Pre-registered in FINDINGS as F351 and committed BEFORE running; the result is appended after. Run in throwaway worktrees and scratch only, never the real tree.
+- (i) Dry-run the R1 revert of 6e303060 then 3463d6bb in a throwaway git worktree. Report conflicts; list every file whose result differs from `3463d6bb^` and why (later S4 commits on the same lines); run the full suite there (`node scripts/hermetic.mjs`, one suite at a time) and quote exit code and last line.
+- (ii) The R3 report: every code path that today (after the dry-run revert) builds a check from step prose (look facts, sheet checks, `[agent]` rows, `$` defaults), with file:line, read from source, not guessed.
+- (iii) R4 feasibility: name the one owner of the job lines; show by reading code where Add/Drop would write/remove a `~` line and which views read it (card, job box, signed lines, Job tab); list any second copy of the job text that would drift.
+- Bars (frozen): revert dry-run suite exit 0 OR every failure explained by a named later commit; R3 report complete (every builder of checks visited); R4 has exactly one owner OR the drift points are listed.
+- If any bar fails, the result goes to hamr before R1 starts.
 
 R1. Revert 3463d6bb and 6e303060
 - Files: those the two commits touched: `src/checkblock.js`, `src/sheetfind.js`, `src/sheetlook.js`, `src/authorflow.js`, `src/blockasks.js`, `src/questionbox.js`, `src/sheetoffer.js`, `src/sheetrows.js`, `tests/sheet-ask.test.js`, `tests/sheet-find.test.js`, `tests/sheet-prose-ask.test.js`, `tests/sheet-draft.test.js`, `tests/sheet-look-run.test.js`, `tests/sheet-rowedit.test.js`, `tests/sheet-rows.test.js`, `tests/sheet-tie-box.test.js`, CHANGELOG.md, `bareloop.context.md`.
