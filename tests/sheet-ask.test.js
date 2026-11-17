@@ -89,10 +89,13 @@ test('two columns fit equally (hamr 2026-11-17): a `~` rule ASKS which column, o
   });
 });
 
-test('a tie about a word of the line\'s own prose (no `~` rule) cannot ask: it stays Not checked with the tie sentence', () => {
+test('a tie about a word of the line\'s own prose (no `~` rule) ASKS the closed column picker, its answer swapping the word in the line (hamr 2026-11-17)', () => {
   const r = applySheetWords(SHEET(40, 40, 40), [W('Price', 'line 1')], JOB, 'aging');
-  assert.deepEqual(r.asks, []);
-  assert.deepEqual(notChecked(r.dropped, JOB), ["line 1: \"Price\" — two columns fit 'Price' equally"]);
+  assert.equal(r.asks.length, 1);
+  assert.equal(r.asks[0].rule, null);
+  assert.match(r.asks[0].question, /Choose one\. \(your answer replaces that word on line 1\)\.$/);
+  assert.deepEqual(r.dropped, []);
+  assert.ok(Object.values(r.asks[0].readings).every((t) => /^Add up the .* of every invoice$/.test(t) && !t.includes('price')));
 });
 
 test('the person already named the column in another rule of the line: the word is that column, nothing is asked again', () => {
@@ -103,12 +106,12 @@ test('the person already named the column in another rule of the line: the word 
   assert.deepEqual(r.facts.map((f) => [f.line, f.forRule, f.column]), [[1, 1, 'Amount']]);
 });
 
-test('a word with no rule (the job line itself) is asked about with the line as its text, and says the answer becomes the agent\'s check', () => {
+test('a word with no rule (the job line itself) is asked about with the line as its text, and says the answer replaces that word', () => {
   const r = applySheetWords(SHEET(), [W('Price', 'line 1')], JOB, 'aging');
   assert.equal(r.asks.length, 1);
   assert.equal(r.asks[0].rule, null);
   assert.equal(r.asks[0].ruleText, 'Add up the price of every invoice');
-  assert.match(r.asks[0].question, /\(your answer becomes the agent's check on line 1\)\.$/);
+  assert.match(r.asks[0].question, /\(your answer replaces that word on line 1\)\.$/);
 });
 
 test('lookAtSheet: one call; an unreadable answer is retried once, then it stops with the plain words', async () => {
@@ -228,12 +231,12 @@ test('F196 fault 2: with no header in the rule, a word in a rule and in the pros
   assert.equal(r.asks[0].reading, `${r.asks[0].column} is under 30`, 'the rule\'s own words, the word replaced by the column');
 });
 
-test('F196 fault 3: the prose word alone (no ~ rule) says the answer becomes the agent\'s check', () => {
+test('F196 fault 3: the prose word alone (no ~ rule) says the answer replaces that word', () => {
   const job = [AG_JOB[0], { ...AG_JOB[1], rules: undefined }];
   const r = applySheetWords(AGING, [AG_WORDS[3]], job, 'aging');
   assert.equal(r.asks.length, 1);
   assert.equal(r.asks[0].rule, null);
-  assert.match(r.asks[0].question, /\(your answer becomes the agent's check on line 2\)\.$/);
+  assert.match(r.asks[0].question, /\(your answer replaces that word on line 2\)\.$/);
   assert.ok(!r.asks[0].question.includes('added as a new'));
 });
 
@@ -253,8 +256,11 @@ test('F196 panel walk: the look returned ONLY the prose ask for "days past due";
   assert.deepEqual(applySheetWords(AGING, [AG_WORDS[3]], AG_JOB, 'aging').asks, []);
 });
 
-test('F196 panel walk control: a prose word no tied rule says is still asked (rule 3 names Due date but not "balance")', () => {
-  assert.equal(applySheetWords(AGING, [W('balance', 'line 2')], AG_JOB, 'aging').asks.length, 1);
+test('a prose word the line does not say as a whole word cannot be swapped: it is Not checked with its reason, never dropped silently (hamr 2026-11-17)', () => {
+  const r = applySheetWords(AGING, [W('balance', 'line 2')], AG_JOB, 'aging');
+  assert.deepEqual(r.asks, []);
+  assert.equal(r.dropped.length, 1);
+  assert.equal(r.dropped[0].reason, 'no-column');
 });
 
 test('the saved expenses.csv has an amount AND a tax on every row: the tie ASKS which column, Amount or Tax, and rewrites the rule for either', () => {

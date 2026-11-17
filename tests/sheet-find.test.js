@@ -37,9 +37,9 @@ test('no column with numbers: no ask, the rows counted', () => {
   assert.deepEqual(findColumn(sheet(40, 0, 10, { amount: '' }), 'Price'), { kind: 'none', rows: 40 });
 });
 
-test('the count shown is the true count: numbers in 39 of 40 rows says 39 of 40; a word with no rule says the answer becomes the check', () => {
+test('the count shown is the true count: numbers in 39 of 40 rows says 39 of 40; a word with no rule says the answer replaces that word', () => {
   const r = findColumn(sheet(40, 39, 0), 'Price');
-  assert.equal(columnQuestion('Price', /** @type {any} */ (r), 3), "no column 'Price'; 'Amount' has numbers in 39 of 40 rows. Use it? (your answer becomes the agent's check on line 3).");
+  assert.equal(columnQuestion('Price', /** @type {any} */ (r), 3), "no column 'Price'; 'Amount' has numbers in 39 of 40 rows. Use it? (your answer replaces that word on line 3).");
 });
 
 test('the word that IS a header (any case, spaces around) is kept as that header: nothing to ask', () => {
