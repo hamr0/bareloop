@@ -16026,3 +16026,25 @@ Results (2026-11-17; script `.claude/scratch/poc-d/run.mjs`, untracked scratch; 
 - Planted: 28 of 28 red and 2 of 2 green still hold under the old checks (via `runPlanted`).
 - Surprise, for the build: under the rows-only check, planted files that carry a wrong worker total or count but the right rows (`wrong-count-19`, `total-off-by-a-cent`, `value-is-string`, `missing-box-total`) grade GREEN. That follows the spec (worker totals are not graded; the report shows code's number) but means the old planted "red" for those is no longer red; the wrong figure is simply never delivered. Planted wrong-rows files grade red (3 of 3; the `rows-as-strings` file is a shape red before the row check).
 - Reading: 100 saved files, one model, one 40-row sheet; the row path removes the arithmetic failure by construction, and the remaining misses are row picks (13 of 50).
+
+### F344: POC A2 — F201 look prompt, one paid draft (2026-11-17)
+Question. With piece 0 built (the look prompt is fwd's F201 text, commits 69f163ae and ad7829b4; the check block's `named` guard is gone), does the look still tie `~ be friendly` to the page words "Select flight"? Spec: `docs/product/ITEM33-BUILD.md`, addendum 2026-11-17, "POC A2 (piece 0, paid)".
+
+Case: live run mwi76vh8, draft session `smwi75mbqjjbs` (read only). Job, quoted:
+```
+List 3 flights from Boston to Chicago
+~ under $450
+~ departure time between 05:00 and 21:00
+~ be friendly
+```
+Input: `flights: https://www.google.com/travel/flights?q=Flights+from+BOS+to+ORD+on+2026-12-04+one+way&hl=en&curr=USD`, served from the saved page (`tests/fixtures/phrase-link/flights.txt`, byte-identical to the session's `source-seed/tree/input/flights.txt`), so the page is the same as the old draft's. Provider DeepSeek direct, model deepseek-flash, cap $0.30, drafting only (no worker run), n=1 = anecdote either way. The run uses the real drafting path (`createSession`, `src/panel/authorsession.js`), scratch HOME.
+
+Old-prompt control (draft-log line 13, label `page-map`, old look): the look tied all three rules to page words: rule 1 price `words ["From"]` (money, lt 450), rule 2 departure time `words ["Departure time:"]` (time, between 05:00 and 21:00), rule 3 friendly `words ["Select flight"]` (phrase). The signed list (resolved-spec.json) carried L1.~1, L1.~2, L1.~3 all `state built`, facts price / departure time / friendly. So `be friendly` was a built rule tied to "Select flight".
+
+Frozen bars (before any number exists):
+- (1) The draft reaches a signable plan.
+- (2) `be friendly` ends Not checked or an ordinary `!` row, NOT linked to a rule row via a tied look fact.
+- (3) The other rules the old draft tied (price via "From", departure time via "Departure time:") are still tied.
+- A failed bar is reported FAIL; no re-tune, no second try.
+
+results: pending
