@@ -16321,3 +16321,21 @@ Reading: the Rome example fixed the list-fields miss (jobs 2 and 5 now 3/3) but 
 The AI job rewrite is PARKED, not built. Four rounds, total about $0.019, and no stable pass: round 2 passed once, round 3 did not hold (extraction 4, 5, 4 of 7), round 4 fixed the list-fields miss with one example but then over-moved (a job with nothing hidden got rewritten, the no-op bar failed 3 of 3). Each prompt fix broke another bar. The misses were the safe kind: the words stayed in the step and nothing was invented.
 
 Replaced by a simpler rule: ONLY `~` lines are captured and checked. A line without `~` says what to do and is never checked; the job box says so plainly. No AI rewrite, no guessing. The AI may still SUGGEST a good missing rule the person did not write (from the person's own words and what the input shows, code-checked, the existing `!` rule). It shows under Suggested ("not in your job, not checked unless you add it"), and Add writes a real `~` line into the job text, so the job text always matches what is checked. Spec: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b). No round 5.
+
+### F350: S4 prose-word patches, seen live, withdrawn (2026-11-17)
+
+Setup: scratch panel 127.0.0.1:4711, scratch HOME `.claude/scratch/live-s1/home`, DeepSeek flash, `expenses.csv`. Draft sessions only (no run ids), about $0.007 each.
+
+Walk 1 (before ruling A, commit 3463d6bb). Job: "1 List the prices of the expenses, with no expense listed twice. / 2 List the large expenses and how many there are. ~ Price over 500".
+- Line 2 worked: tie ask Price to Amount, `[you]` rows where Amount > 500, `[agent]` count, `[default]` saved copy. Drop moved the `[agent]` count to Suggested with Add.
+- Line 1 failed: no `~` rule, so it was not a sheet line. It still asked "prices: Amount or Tax?" (that box had no Drop it button) and swapped the word ("List the Amount of the expenses"), then built no sheet check. "No expense listed twice" was unchecked and hidden under "what the text says".
+- Odd Not checked row: line 2 "expenses" — there is no column 'expenses' `[agent]`.
+
+Fix tried: ruling A (6e303060: every line of a sheet-only job is a sheet line, plus Drop it on the prose box). Walk 2:
+- Line 1 got checks, but (i) the same check twice on line 2 (`[you]` rows where Amount > 500 AND `[agent]` rows where Amount > 500).
+- (ii) A pointless question "I found 2 columns matching 'large expenses': Amount, Tax" (a phrase treated as a column word).
+- (iii) A weak AI pick "no duplicate Amount" for "no expense listed twice" (two expenses can cost the same).
+
+hamr: "now we are patching". Redesign: only `~` lines are checked (F349 decision; PRD v1.141; `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b)). The two patches (3463d6bb, 6e303060) come back out (piece R1).
+
+Note on the commit split: b3b24cfc was split by hamr's own `!` line into 6e303060 (code) and a4f76cdd (bareloop-b1's F348); the tree is byte-identical.
