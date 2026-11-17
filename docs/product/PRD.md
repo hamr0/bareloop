@@ -2307,3 +2307,11 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 - [ ] hamr ruled a job may declare up to 2 MCP servers instead of 1. `mcp` in a job spec is today a single `{server, tools}` object (validator `src/job.js` ~line 282; also `src/authorreadout.js:679`, `src/cardschedule.js`); it would become a list of at most 2 entries, each with its own signed tools list. Schema change: BUILD PARKED until hamr gives the go.
 - Ruling: MCPs are NOT pooled into one catalogue (steps are small, the signed per-step tool list is a guardrail, pooling adds a tool-search bottleneck). Code-mode/REPL style is not adopted (`run` stays locked).
+
+### F201 + sheet jobs, fast menu dropped (v1.139 — 2026-11-17)
+
+- [ ] F201 look prompt copied from fwd v0.35.0; the `named` substring guard is withdrawn (hamr 2026-11-16: no code word lists) — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17.
+- [ ] Sheet (CSV) jobs copied from fwd v0.35.0 minus hitl: report output only (value / rows / days / bands); file-written claims (a tie with fwd's tool, F341); claim names never equal a box type; a row-numbered view of the sheet; code does the math (sums and counts from the rows the worker names); corrected am7 words. POC B done (F338, F339); POC D pending — same addendum.
+- Backlog (not built, unproven): sheet as output (a new worksheet beside the person's own).
+- fwd takes code-does-math and the am7 words from bareloop's release later (not urgent).
+- [x] Launcher fast menu dropped (hamr 2026-11-17, F340).
