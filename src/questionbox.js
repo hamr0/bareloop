@@ -20,12 +20,13 @@ export const CHOICE_SAYS = Object.freeze({
  * Which buttons a look question offers. Agree only when it carries a proposal (a reading ask with its reading, a check-pick ask with its check); Drop it only where "drop it" leaves
  * one of the person's own `~` rules Not checked (a reading or check-pick ask about a rule number). A rule with nothing to agree to is not asked at all (src/checkblock.js).
  * A column TIE (S1, hamr 2026-11-17) carries `columns`: the picker lists every one (no cutoff); it has no reading to Agree to and takes no own words (a closed question).
- * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown, columns?: unknown}} q @returns {{agree: boolean, drop: boolean, columns?: string[]}}
+ * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown, columns?: unknown, prose?: unknown}} q @returns {{agree: boolean, drop: boolean, columns?: string[]}}
  */
 export function offersOf(q) {
   const look = q.source === 'look';
   const agree = look && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== null && typeof q.check === 'object'));
-  const drop = look && Number.isInteger(q.rule) && (q.ask === 'check' || q.ask === 'reading');
+  // a word of a line's own prose (S4 item 5) has no rule number, but Drop it leaves that word Not checked, so it is offered too (live walk 2026-11-17: the prose tie showed no Drop it)
+  const drop = look && (Number.isInteger(q.rule) || q.prose === true) && (q.ask === 'check' || q.ask === 'reading');
   const columns = look && q.ask === 'reading' && Array.isArray(q.columns) && q.columns.length > 0 ? q.columns.map(String) : undefined;
   return { agree, drop, ...(columns ? { columns } : {}) };
 }

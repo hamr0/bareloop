@@ -93,3 +93,9 @@ test('a prose ask counts toward the 3-ask cap: four prose words stop the draft w
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'look-asks-too-many');
 });
+
+test('two prose words on ONE line: both answers land (the second swap is made on the line as the first left it), neither is lost', async () => {
+  const { seen, asked } = await run({ file: oneFitSheet(), text: 'List the prices and costs over 500', words: [W('prices'), W('costs')] });
+  assert.equal(asked.questions.length, 2);
+  assert.equal(seen.jobLines[0].text, 'List the Amount and Amount over 500');
+});

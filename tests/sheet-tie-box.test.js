@@ -123,3 +123,41 @@ test('the panel: the tie box carries the picker (Amount, Tax) and Drop it; an un
   assert.deepEqual(legs[0].jobLines.map((/** @type {any} */ l) => l.n), [1, 2], 'no line added');
   assert.deepEqual(legs[0].jobLines[1].rules, ['Tax over 500']);
 });
+
+// live walk 2026-11-17 (scratch panel, DeepSeek flash): the PROSE-word tie box showed the picker and Send but no Drop it; a `~` rule's tie had it. A prose ask carries `prose: true` (no rule number) and offers Drop it too.
+test('offers: a prose-word ask (no rule number, prose: true) offers Drop it - the tie and the single fit alike - and nothing else changes for an ask with neither', () => {
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', prose: true, columns: ['Amount', 'Tax'] }), { agree: false, drop: true, columns: ['Amount', 'Tax'] });
+  assert.deepEqual(offersOf({ source: 'look', ask: 'reading', prose: true, reading: 'List the Amount over 500' }), { agree: true, drop: true });
+  assert.equal(offersOf({ source: 'look', ask: 'reading', columns: ['Amount', 'Tax'] }).drop, false, 'a question with no rule and no prose flag still offers no Drop it');
+});
+
+test('the panel: a prose-word tie (line 1 "prices", no ~ rule) offers the picker AND Drop it; Drop it leaves the line as written and the word shown Not checked', async () => {
+  const file = expensesTie();
+  const text = (await import('node:fs')).readFileSync(file, 'utf8');
+  // the session's lines carry their number in their text (as the look is handed them)
+  const jl = [{ n: 1, text: '1. List the prices of the expenses', rule: '', rules: [] }, { n: 2, text: '2. List the large expenses', rule: 'Amount over 500', rules: ['Amount over 500'] }];
+  const ask = applySheetWords(text, [{ from: 'line 1', word: 'prices', kind: 'number' }], jl, 'Expenses').asks;
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Expenses' }], look: { facts: [], prose: [], notFound: [], dropped: [], sheetAsks: ask } } };
+  const PLAN = { goal: 'List expenses.', checks: [{ text: 'expenses are listed', fromLine: [1] }], notChecked: [], questions: [] };
+  /** @type {any[]} */ const legs = [];
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'prose-tie', jobText: '1. List the prices of the expenses\n2. List the large expenses\n~ Amount over 500', inputs: `Expenses: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('tie-box-sess-'),
+    generate: async () => { throw new Error('no model call'); }, lookFn: async () => survey,
+    confirmGenerate: async (_c, tools) => { await tools[0].execute(PLAN); return { text: JSON.stringify(PLAN), error: null, cost: 0.0005 }; },
+    authorFn: async (o) => { legs.push(o); return { ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [{ code: 'x', path: 'p', detail: 'stop here' }] }; },
+  });
+  const until = async (/** @type {() => any} */ fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
+  const box = session.state.pendingAsk.box;
+  assert.deepEqual(box.columns, ['Amount', 'Tax']);
+  assert.deepEqual(box.choices.map((/** @type {any} */ c) => c.label), ['Drop it']);
+  assert.match(box.text, /\(your answer replaces that word on line 1\)\.$/);
+  assert.equal(session.send('', 'drop').ok, true, 'the door accepts Drop it on a prose ask');
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await until(() => legs.length === 1));
+  assert.equal(legs[0].jobLines[0].text, '1. List the prices of the expenses');
+  assert.equal(legs[0].block.rows.find((/** @type {any} */ r) => r.key === 'L1.fact.prices').state, 'not-checked');
+});

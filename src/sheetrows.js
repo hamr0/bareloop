@@ -50,13 +50,16 @@ export const sheetDefaultKey = (line) => `L${line}.$sheet`;
 export function sheetCheckBody(c) { const { id: _i, claim: _c, covers: _v, row: _r, ...rest } = c; return rest; }
 
 /**
- * The job lines that read a sheet: a line with a `~` rule, when the job has a CSV input whose text is known. ONE owner for the check block's early rule (a rule of such a line is decided by the sheet checks alone) and the
+ * The job lines that read a sheet: a line with a `~` rule when the job has a CSV input whose text is known, and EVERY line when every input is a CSV. ONE owner for the check block's early rule (a rule of such a line is decided by the sheet checks alone) and the
  * row-edit turn's `sheetLines` (src/authorflow.js).
  * @param {{inputs: any[]|null|undefined, texts: Record<string, string>|null|undefined, jobLines: any[]|null|undefined}} o @returns {number[]}
  */
 export function sheetLineNumbers({ inputs, texts, jobLines }) {
-  const has = (Array.isArray(inputs) ? inputs : []).some((i) => isSheetInput(i) && typeof texts?.[i.label] === 'string');
-  return has ? (Array.isArray(jobLines) ? jobLines : []).filter((l) => lineRules(l).length > 0).map((l) => l.n) : [];
+  const ins = Array.isArray(inputs) ? inputs : [];
+  const has = ins.some((i) => isSheetInput(i) && typeof texts?.[i.label] === 'string');
+  // hamr 2026-11-17 (ruling A): a job whose every input is a sheet reads the sheet on EVERY line; a job with a page or URL input beside a CSV keeps the rule "a line with a `~` rule" (F347, parked)
+  const every = ins.length > 0 && ins.every((i) => isSheetInput(i));
+  return has ? (Array.isArray(jobLines) ? jobLines : []).filter((l) => every || lineRules(l).length > 0).map((l) => l.n) : [];
 }
 
 /**

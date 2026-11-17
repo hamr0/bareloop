@@ -92,6 +92,7 @@ import { REASON, CheckBlock } from './checkblock.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { sheetTable, parseCsv } from './csv.js';
 import { isSheetInput } from './inputlook.js';
+import { sheetLineNumbers } from './sheetrows.js';
 import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords } from './sheetoffer.js';
 import { buildSheetChecks } from './sheetbuild.js';
 import { recordSheetShas } from './sheetrun.js';
@@ -2672,13 +2673,15 @@ export async function authorClose({
   /** @type {Record<string, {header: string[], rows: any[]}>} */
   const sheetTables = {};
   if (rowEdits && inputTexts !== null) for (const i of inputs ?? []) if (isSheetInput(i) && typeof inputTexts[i.label] === 'string') sheetTables[i.label] = sheetTable(parseCsv(inputTexts[i.label]));
-  const sheetLines = Object.keys(sheetTables).length > 0 ? (jobLines ?? []).filter((l) => lineRules(l).length > 0) : [];
+  const sheetNums = sheetLineNumbers({ inputs, texts: inputTexts, jobLines });
+  const sheetLines = Object.keys(sheetTables).length > 0 ? (jobLines ?? []).filter((l) => sheetNums.includes(l.n)) : [];
+  const sheetOnly = (inputs ?? []).length > 0 && (inputs ?? []).every((/** @type {any} */ i) => isSheetInput(i));
   const sheetProp = sheetLines.length > 0 ? sheetSuggestProp(sheetTables, sheetLines.map((l) => l.n)) : null;
   // S4: the rules of a sheet line belong to the sheet checks alone (the one list settles it: a rule has never two rows)
   if (block !== null && sheetLines.length > 0) block.setSheetLines(sheetLines.map((l) => l.n));
   /** the agreed-column rules of the sheet lines, as the AI is told them again (their own words: src/sheetoffer.js `columnChoiceParts`) */
   const agreedColumns = sheetLines.flatMap((l) => lineRules(l).flatMap((r) => { const p = columnChoiceParts(r); return p === null ? [] : [{ line: l.n, ...p }]; }));
-  const sheetBlock = sheetProp === null ? '' : `\n\nTHE SHEET CHECKS\n${sheetOfferRules(Object.keys(sheetTables), sheetLines.map((l) => l.n)).join('\n')}${agreedColumns.length ? `\n${agreedColumns.map((c) => agreedColumnWords(c)).join('\n')}` : ''}`;
+  const sheetBlock = sheetProp === null ? '' : `\n\nTHE SHEET CHECKS\n${sheetOfferRules(Object.keys(sheetTables), sheetLines.map((l) => l.n), sheetOnly).join('\n')}${agreedColumns.length ? `\n${agreedColumns.map((c) => agreedColumnWords(c)).join('\n')}` : ''}`;
   const prompt = rowEdits
     ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '') + sheetBlock
     : authorPrompt({

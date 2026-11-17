@@ -206,3 +206,14 @@ test('the op names table names every op bareguard has in its cells and table rul
   const missing = vocabularyOps().filter((op) => !Object.hasOwn(SHEET_OP_NAMES, op));
   assert.deepEqual(missing, []);
 });
+
+test('which lines are sheet lines (hamr 2026-11-17, ruling A): a job whose every input is a CSV reads the sheet on EVERY line; a page or URL input beside the CSV keeps "a line with a ~ rule" (F347, parked); no CSV, none', async () => {
+  const { sheetLineNumbers } = await import('../src/sheetrows.js');
+  const jobLines = [{ n: 1, text: 'List the prices', rules: [] }, { n: 2, text: 'List the large ones', rules: ['Amount over 500'] }];
+  const csv = { n: 1, label: 'Sheet', value: '/a/b/expenses.csv' };
+  const page = { n: 2, label: 'Page', value: 'https://example.test/flights' };
+  assert.deepEqual(sheetLineNumbers({ inputs: [csv], texts: { Sheet: 'a,b\n1,2\n' }, jobLines }), [1, 2]);
+  assert.deepEqual(sheetLineNumbers({ inputs: [csv, page], texts: { Sheet: 'a,b\n1,2\n', Page: 'x' }, jobLines }), [2], 'mixed: only the line with a ~ rule');
+  assert.deepEqual(sheetLineNumbers({ inputs: [page], texts: { Page: 'x' }, jobLines }), []);
+  assert.deepEqual(sheetLineNumbers({ inputs: [csv], texts: {}, jobLines }), [], 'no text known, no sheet lines');
+});

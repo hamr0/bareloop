@@ -265,7 +265,9 @@ export async function runSheetLook({
  */
 export async function runLook(o) {
   const sheets = Array.isArray(o.sheets) ? /** @type {string[]} */ (o.sheets).filter((l) => typeof o.texts?.[l] === 'string') : [];
-  if (sheets.length === 0 || !o.jobLines.some((/** @type {any} */ l) => lineRules(l).length > 0)) return runPageMap(o);
+  // a job whose every input is a sheet looks at it even with no `~` rule anywhere (every line is a sheet line); otherwise a `~` rule is what sends a CSV to the sheet look
+  const allSheets = o.inputs.length > 0 && o.inputs.every((/** @type {any} */ i) => sheets.includes(i.label));
+  if (sheets.length === 0 || !(allSheets || o.jobLines.some((/** @type {any} */ l) => lineRules(l).length > 0))) return runPageMap(o);
   const pick = (/** @type {Record<string, string>} */ texts, /** @type {boolean} */ sheet) => Object.fromEntries(Object.entries(texts).filter(([l]) => sheets.includes(l) === sheet));
   const pageTexts = pick(o.texts, false);
   const pageInputs = o.inputs.filter((/** @type {any} */ i) => !sheets.includes(i.label));

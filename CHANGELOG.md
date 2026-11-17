@@ -16,6 +16,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - S4 item 5 (hamr 2026-11-17): a job word in a line's own prose (no `~` rule) that is no column is asked like a `~` rule's word (one fit: Agree / Drop it / own words; a tie: the closed picker; counted in the 3-ask cap) and the answer swaps that word in the line's text in place, adding no line and no `~` rule; the old silent filter in `runSheetLook` is gone, so a prose word is asked or shown Not checked, never dropped; the tail reads "(your answer replaces that word on line N)."
 
+- S4, ruling A (hamr 2026-11-17, from a live scratch-panel walk): in a job whose every input is a CSV, EVERY job line is a sheet line (the sheet offer and row edit, an `[agent]` check such as no duplicates, no `$cited` default, and the prose-word ask leads somewhere); a page or URL input beside a CSV keeps "a line with a `~` rule" (F347, parked). A table check still needs a cells check beside it on the line. The prose-word ask (tie or single fit) now offers Drop it, as a `~` rule's ask does, and two prose words on one line are both swapped.
+
 ### Fixed
 
 - The locked "The job" box on the card follows the draft: after an answer rewrites a `~` rule (column tie, an agreed column, any answer kind) the box shows the updated rule while the session is live, as the chat and plan card do (hamr 2026-11-17; page-only, the server card was already right). Test-proven, not yet seen live.

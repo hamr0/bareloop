@@ -70,11 +70,15 @@ test('runLook: a job with a CSV and a page runs the page map on the page and the
   assert.deepEqual(r.facts.inputs.map((/** @type {any} */ i) => i.label), ['Page', 'Expenses']);
 });
 
-test('runLook: with no sheet, or no ~ rule on any line, it is runPageMap and nothing else', async () => {
+test('runLook: with no sheet, or (a page input beside the CSV and) no ~ rule on any line, it is runPageMap and nothing else; a CSV-only job with no rule takes the sheet look', async () => {
   const seen = /** @type {any[]} */ ([]);
   const map = reply({ text: JSON.stringify({ facts: [] }) });
   await runLook({ texts: { Expenses: CSV }, inputs: INPUTS, jobLines: JOB, provider: prov([map], seen), sleep: async () => {} });
-  await runLook({ texts: { Expenses: CSV }, inputs: INPUTS, jobLines: [{ n: 1, text: 'x', rule: '', rules: [] }], provider: prov([map], seen), sheets: ['Expenses'], sleep: async () => {} });
-  assert.equal(seen.length, 2);
+  const MIXED = [...INPUTS, { n: 2, label: 'Page' }];
+  await runLook({ texts: { Expenses: CSV, Page: 'Flight A\nPrice $410\n' }, inputs: MIXED, jobLines: [{ n: 1, text: 'x', rule: '', rules: [] }], provider: prov([map], seen), sheets: ['Expenses'], sleep: async () => {} });
+  assert.ok(seen.length >= 2);
   assert.ok(seen.every((m) => !JSON.stringify(m).includes(SHEET_MARK)));
+  const only = /** @type {any[]} */ ([]);
+  await runLook({ texts: { Expenses: CSV }, inputs: INPUTS, jobLines: [{ n: 1, text: 'x', rule: '', rules: [] }], provider: prov([map], only), sheets: ['Expenses'], sleep: async () => {} });
+  assert.ok(only.some((m) => JSON.stringify(m).includes(SHEET_MARK)), 'CSV only: the sheet look');
 });

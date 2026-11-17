@@ -55,10 +55,10 @@ test('a CSV job: the turn shows the sheet block and the sheet, offers sheetCheck
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   const text = sent[0].map((/** @type {any} */ m) => m.content).join('\n');
   assert.match(text, /^THE JOB/);
-  assert.match(text, /THE SHEET CHECKS\n- The job's sheet lines are 2 /);
+  assert.match(text, /THE SHEET CHECKS\n- Every job line reads the sheet[^\n]*\n- The job's sheet lines are 1, 2 /);
   assert.ok(text.includes('INPUT "Aging"') && text.includes('INV-100'), 'the sheet itself is shown');
   const params = tools[0].find((/** @type {any} */ t) => t.name === 'submit_edits').parameters;
-  assert.deepEqual(params.properties.sheetChecks.items.properties.line.enum, [2], 'a line with no ~ rule is no sheet line');
+  assert.deepEqual(params.properties.sheetChecks.items.properties.line.enum, [1, 2], 'a CSV-only job: every line is a sheet line, a line with no ~ rule too');
   assert.deepEqual(params.properties.sheetChecks.items.properties.table.enum, ['Aging']);
   assert.deepEqual(params.required, ['edits']);
 });
@@ -95,10 +95,17 @@ test('an agreed-column rule on a line is told to the AI again, from the rule\'s 
   assert.ok(sent[0].map((/** @type {any} */ m) => m.content).join('\n').includes("- The person agreed that on line 2 the word 'price' means the column 'Amount'."));
 });
 
-test('a CSV with no ~ rule on any line has no sheet turn: no block, no property', async () => {
-  const { sent, tools, r } = await sheetTurn([{ edits: [] }], [{ n: 1, text: 'Read the aging sheet', rule: '', rules: [] }]);
+test('a CSV-only job with no ~ rule on any line still has the sheet turn: every line is a sheet line, the AI is told so, and an [agent] noDuplicates suggestion builds on the line with no rule', async () => {
+  const lines = [{ n: 1, text: 'List the invoices, none listed twice', rule: '', rules: [] }];
+  const NODUP1 = { line: 1, rule: 'table', table: 'Aging', op: 'noDuplicates', column: 'Invoice #', covers: [] };
+  const COUNT1 = { line: 1, rule: 'cells', table: 'Aging', claim: 'n', op: 'count', column: 'Invoice #', covers: [] };
+  const { sent, tools, r } = await sheetTurn([{ edits: [], sheetChecks: [COUNT1, NODUP1] }], lines);
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(sent[0].map((/** @type {any} */ m) => m.content).join('\n').includes('THE SHEET CHECKS'), false);
-  assert.equal(Object.hasOwn(tools[0].find((/** @type {any} */ t) => t.name === 'submit_edits').parameters.properties, 'sheetChecks'), false);
-  assert.equal(Object.hasOwn(r, 'sheetBuilt'), false);
+  const text = sent[0].map((/** @type {any} */ m) => m.content).join('\n');
+  assert.match(text, /THE SHEET CHECKS\n- Every job line reads the sheet/);
+  assert.deepEqual(tools[0].find((/** @type {any} */ t) => t.name === 'submit_edits').parameters.properties.sheetChecks.items.properties.line.enum, [1]);
+  assert.deepEqual(r.sheetBuilt.checks.map((/** @type {any} */ c) => [c.id, c.op, c.row]), [['l1a1', 'count', 'agent'], ['l1a2', 'noDuplicates', 'agent']]);
+  const part = r.declaration.stages.flatMap((/** @type {any} */ s) => s.params?.parts ?? []).find((/** @type {any} */ p) => p.class === 'sheet');
+  assert.ok(part, 'the line carries a sheet part');
+  assert.equal(r.declaration.stages.some((/** @type {any} */ s) => (s.params?.parts ?? []).some((/** @type {any} */ p) => p.check === 'cited')), false, 'no $cited on it');
 });
