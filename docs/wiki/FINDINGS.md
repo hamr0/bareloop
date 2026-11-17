@@ -16080,3 +16080,70 @@ Reading: n=135 runs but thin and single-genre; no line is safe to cut. A persona
 - Already caught: code keeps only real sheet columns (columnAt) and only words found on the page, so most wrong mixes are refused.
 - Gap: a page line whose words happen to name a real sheet column could get a sheet check.
 - Status: NOT seen live (every sheet job so far has a sheet only). hamr 2026-11-17: log it, fix only if a real mixed job shows it. Design talk with hamr open (line-to-input tie: AI maps, code checks, ask when unsure).
+
+## F348 — Would fewer, bigger turns (a REPL-style loop) help bareloop? Measured only: the late-round cost rise on deepseek-flash is mostly thinking-on output (off: 1.6x round 12 over round 1), and with thinking off about 10-13% of worker time is one-read-per-round chains; F145 is not a like-for-like comparison
+
+**2026-11-17, $0 archive read. Measured only; nothing changed, nothing built.**
+**Origin.** hamr asked whether a REPL-style loop (fewer, bigger turns) would help bareloop. Two questions: Q1, does a late round cost more than an early one (F145 said no)? Q2, how much worker time is single read-only rounds that could have been one turn?
+
+**Data.** 72 pointer runs in `runs.jsonl`, all deepseek-flash (71 with worker rounds: 2,126 rounds, 383 asks). The Anthropic control is only 6 runs reachable (5 + 1, 432 rounds); F145's 233 runs are not reachable through `runs.jsonl`. Scripts and outputs: `.claude/scratch/turns-measure/` (`measure.mjs`, `measure-thinking.mjs`, `results.json`, `results-thinking.json`, `rounds.json`; untracked).
+
+### THE CONFOUND (read this first)
+The Anthropic control and F145's archive ran with **thinking ON at every phase** (hamr's statement; those spines predate the rule, so no per-call record exists to check it). The deepseek-flash runs ran under **today's split rule** (planner on, scout off, step attempt 1 off, attempt 2+ on, fix on; F232, "Thinking is ONE rule"). Thinking makes rounds longer and output-heavier. **Neither the Anthropic control nor F145 is a like-for-like comparison with the deepseek-flash numbers below.**
+
+**Step 1 split.** The `worker-round` records carry NO thinking field. The spine does carry per-CALL records written since commit d23042ba (2026-10-17): `thinking-decision` (mode sent) before a call and `thinking-status` (bare-agent's verdict) after it. I gave each round the mode of the latest decision before it (no ask mixes modes; 0 mixed; decision phase matched the round phase every time). Coverage: 50 of 71 runs, 1,266 of 2,126 rounds; the other 21 runs (860 rounds) predate the rule and have no record, shown as "unknown" (deepseek-flash thinks by default, not recorded per call). All 254 status records read "applied"; 20 on-rounds have no status record.
+
+| mode | runs | rounds | avg output tokens/round | computed $ (all phases) |
+|---|---|---|---|---|
+| on | 50 | 580 | 1,859 | 2.69 |
+| off | 50 | 686 | 255 | 1.47 |
+| unknown (pre-rule) | 21 | 860 | 2,233 | 4.56 |
+
+Matched asks reaching round 12 (computed $/round, ask mode = mode of its first round; small n):
+
+| mode | asks | round 1 | round 12 | 12 over 1 |
+|---|---|---|---|---|
+| on | 11 | 0.00158 | 0.00722 | 4.6x |
+| off | 10 | 0.00145 | 0.00235 | 1.6x |
+| unknown | 25 | 0.00089 | 0.00791 | 8.9x |
+
+What it changes: the growth is mostly a thinking-on effect. Output at round 12 is 2,818 tokens (on) against 194 (off), so it tracks output, as F145 said. Under thinking off the curve is close to F145's shape (1.6x, not flat but near). What it does not change: all three cuts are one model, small n (10 to 25 asks), and still not the Anthropic setup. The full-table ratio below stands as the mixed-rule reading.
+
+### Q1 — token mix and cost per position (deepseek-flash, pointer, 71 runs)
+Token mix: cacheRead **83.89%**, cacheWrite **0%**, freshInput 9.27%, output 6.85%. (Sonnet control, 5 runs: cacheRead 91.94%, cacheWrite 7.18%, output 0.88%.)
+- bare-agent maps only `prompt_tokens_details.cached_tokens` (provider-openai.js:249), so cacheWrite 0 is structural on the OpenAI shape, not a finding.
+- The cache-read price is bare-agent's default 0.1x, not DeepSeek's real discount.
+- Booked column excludes the F206 booking-error runs mul5fofw and mulbz0ny (153 rounds at the default rate, **$6.53 of the $12.26 booked**). Computed uses config rates for all rounds.
+
+| round # | n | avg cacheRead | avg output | booked $ | computed $ |
+|---|---|---|---|---|---|
+| 1 | 383 | 1,925 | 1,243 | 0.0019 | 0.0023 |
+| 2 | 280 | 3,105 | 517 | 0.0021 | 0.0031 |
+| 4 | 210 | 10,506 | 1,150 | 0.0022 | 0.0030 |
+| 8 | 95 | 26,898 | 2,863 | 0.0046 | 0.0064 |
+| 12 | 46 | 44,274 | 2,604 | 0.0046 | 0.0065 |
+
+Matched asks reaching 12 (46 asks, same asks at every position): computed 0.00118 (round 1) to 0.00654 (round 12) = **~5.5x**; booked 0.00093 to 0.00464 (~5.0x). Sonnet control, 11 matched asks: computed 0.0152 to 0.0252 (~1.7x).
+
+**Read.** F145's "flat or falling" does NOT hold on deepseek-flash (round 12 is ~5.5x round 1 on matched asks, computed), but the amounts are tiny: **$8.72 computed for all 72 runs**. No cost argument for batching turns shows up in dollars at this scale.
+
+### Q2 — how much time is collapsible
+Step and fix worker rounds, pointer, 70 runs, 209 asks, 1,655 rounds, 2,367 calls. Calls per round: 0: 208, 1: 701, 2: 648, 3: 58, 4+: 40. Single read-only rounds: 446. Chains of consecutive single read-only rounds: 93 (lengths 2: 52, 3: 27, 4: 6, 5: 2, 6: 1, 7: 4, 11: 1), 264 rounds in chains.
+
+Collapsible rounds (a chain of n loses n-1): upper 171, visible-dependency-free 168, pessimistic 124. Median round 2.55 s, worker wall 13,551 s. **Time share: 3.2% upper, 3.2% visible, 2.3% pessimistic.**
+
+Split by thinking mode (ask mode; same rounds): on, 511 rounds, median 4.06 s, shares 4.1 / 4.1 / 3.1%; **off, 443 rounds, median 1.61 s, shares 13.5 / 12.9 / 9.8% (70 asks, 31 chains; about 113 s of 837 s)**; unknown, 701 rounds, 3.3 s, 2.2 / 2.2 / 1.5%. Reading: the 3.2% is a blend; where thinking is off, rounds are short and the collapsible share is the same order as Sonnet's. Sonnet (5 thinking-on runs, 16 asks, 350 rounds): 14.8 / 13.2 / 10.3%.
+
+### Side notes
+- Fireworks cache numbers are unreliable: 43 of 464 rounds have zero cacheRead.
+- The booked total ($12.26) is inflated by the F206 runs; use computed for comparisons.
+
+**Outcome.** Measured, no change, no build.
+
+### Limits
+- Ask boundary is my definition (a new phase, iteration, or run/step/replan/scout marker starts an ask), not a recorded field.
+- Position tables mix phases (scout, plan, step, fix).
+- Round seconds are the gap since the previous spine record, so they include tool time.
+- Scratch spine copies were not verified identical to the originals.
+- Runs without a gate audit (4) are excluded from Q2.
+- The thinking split is a join by file order, matched asks per mode are 10 to 25; one model, one corpus.
