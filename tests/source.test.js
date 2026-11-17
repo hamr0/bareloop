@@ -1247,7 +1247,7 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
     'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
     'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination \\}\\);`),
+  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination(, \\.\\.\\.\\(amend \\? \\{ amend \\} : \\{\\}\\))? \\}\\);`),
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
