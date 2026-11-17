@@ -16198,4 +16198,24 @@ Otherwise answer JSON only: {"rewrite":[{"line":"<step line>","rules":["<rule te
 Job:
 ```
 
-Results: pending
+Results (run once, n=1 per job, no re-tune; provider probe 2x HTTP 200 first; runs.jsonl 167 lines before and after):
+
+Per job (output as `step` / `~ rule`; keys above):
+- 1: `List flights from Boston to Denver` / `~ 3` / `~ price` / `~ departure time`. Route left in the step, count as bare "3". (a) miss.
+- 2: no rewrite. Key wanted name and price as rules. (a) miss.
+- 3: step `Run the type checker in strict mode with no emit` / `~ in strict mode` / `~ with no emit`; step `confirm zero errors in src/checks.js` / `~ zero errors in src/checks.js`; step `confirm no new type errors ... baseline` / `~ no new type errors in any other file under src/` / `~ against the pre-change baseline`; step `run the existing test suite ...` / `~ every existing test still passes`. Every key rule is a ~ line (rules also stay in the step text, and the one step became four). (a) hit.
+- 4: `Write a one-sentence triage note ... word for word` / `~ one-sentence` / `~ quoting its title word for word`. Key rules hit, but the person's own `~ the note must quote the ticket title exactly` and the whole second step `State whether the ticket is open or closed` were dropped. (a) hit; (d) step lost.
+- 5: `Find the last 3 releases with their version and date` / `~ last 3 releases` / `~ with their version and date`. Key rules hit, but the second step and the person's `~ under 80 words` / `~ one paragraph` were dropped. (a) miss (keep rule); (d) step lost.
+- 6: `Make npm test pass ...` / `~ no failing tests` / `~ fixing the cause in the source code under src/`. The person's 3 own `~` lines were dropped. (a) miss (keep rule).
+- 7: `List 3 stays in Porto` / `~ under €200 total`. The count stayed in the step. (a) miss.
+- 8: (nothing hidden) rewrote to `Fix the bug in src/sum.js so the tests in test/sum.test.js pass` / `~ in src/sum.js` / `~ so the tests in test/sum.test.js pass`, dropping the person's 3 `~` lines. (c) miss.
+- 9, 10, 11, 12: no rewrite. (c) hit.
+
+Bars:
+- (a) EXTRACT: FAIL, 2 of 7 (jobs 3 and 4).
+- (b) NO INVENTION: PASS, 12 of 12 (0 invented words by the code check). The check is weak on its own: "~ 3" and fragments pass; it catches new words, not dropped rules.
+- (c) NO-OP: FAIL, 4 of 5 (job 8 got a junk rewrite).
+- (d) STEP KEPT: FAIL at job level: first steps kept everywhere, but whole steps were dropped in jobs 4 and 5 (a rewrite that loses a step changes the job).
+- Report-only: cost $0.00203 total (12 calls, about $0.00017 each); cut-offs 0 of 12; latency 0.65-1.3 s per call.
+
+Odd: the model dropped the person's existing `~` lines in 5 of the 6 jobs that had them (2 kept). The prompt said to keep them; the model did not. It also left rules inside the step (jobs 1, 7) and duplicated them (job 3), and it split rules at the word level ("~ 3", "~ with no emit") rather than as a rule. Verdict: the idea as one plain call FAILS its bars (a) (c) (d); (b) alone is not a safe signal. No second round.
