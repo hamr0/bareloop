@@ -16261,4 +16261,24 @@ Why: round 2 passed all four bars (n=1) but job 3's step came out `Run the type 
 
 Round 3 setup: prompt unchanged (hamr's round-2 text), fixed tidy code (`run3.mjs`), n=3 calls per job (36 calls), same 12 jobs, same frozen key and bars (a)-(d), deepseek-flash direct, thinking off, temperature 0, total cap $1.00 across all rounds. Stability rules, frozen now: report each bar per repeat (3 scores); "held" = all four bars pass in at least 2 of the 3 repeats AND (b) passes in 3 of 3 (any invented or non-substring move in any repeat = FAIL). Also reported: per job, how often each key rule was moved (0-3), and any garbled step.
 
-Round 3 results: pending
+Round 3 results (36 calls, all HTTP 200, 0 cut-offs, 0 parse errors; provider probe 2x200; runs.jsonl 167 before and after; raw in `.claude/scratch/poc-rewrite/results3.json`):
+
+Per repeat, frozen bars:
+- (a) EXTRACT: repeat 1 FAIL 4 of 7 (jobs 1, 3, 6, 7); repeat 2 PASS 5 of 7 (jobs 1, 3, 4, 6, 7); repeat 3 FAIL 4 of 7. Job 4 was handled in 1 of 3 repeats; jobs 2 and 5 never.
+- (b) NO INVENTION: PASS, PASS, PASS (12 of 12 each; every pointed phrase an exact substring; 0 refusals of any kind in 36 calls).
+- (c) NO-OP: PASS, PASS, PASS (5 of 5 byte-identical each).
+- (d) STEP KEPT: PASS, PASS, PASS (no step or person `~` line lost; job 3 now reads `Run the type checker and run the existing test suite.` with its 5 `~` lines in all 3 repeats; no garbled step anywhere).
+
+Held verdict: NOT HELD (FAIL). (b) passed 3 of 3, but all four bars passed together in only 1 of 3 repeats (repeat 2), needing 2. The cause is (a) only. Round 2's (a) pass at 5 of 7 was the lucky side of a coin flip on job 4.
+
+Move counts per job (3 repeats; each key rule moved 0-3 times):
+- Job 1: 3, route, price and departure time: 3/3 each.
+- Job 2 (miss): name and price: 0/3. The model answered "no move" every time.
+- Job 3: strict mode, no emit, zero errors, no new errors, tests pass: 3/3 each.
+- Job 4 (unstable): one sentence and quote the title: 1/3 each (repeat 2 only; the other two repeats returned no move).
+- Job 5 (miss): "last 3" 3/3 and "short" 3/3, but "version and date": 0/3.
+- Job 6: no failing tests, fix in src: 3/3 each.
+- Job 7: "3": 3/3 (and the extra "in Porto": 3/3, which takes Porto out of the step).
+- Jobs 8-12: no move 3/3.
+
+Cost: $0.00679 for round 3; running total over rounds 1-3 about $0.011 of the $1.00 cap. The model is deterministic enough at temperature 0 that 6 of 12 jobs gave identical output all 3 times; the only wobble was job 4.
