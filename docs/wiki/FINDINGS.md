@@ -16002,3 +16002,20 @@ Question. fwd delivers a worker's answer through a forced tool; bareloop's worke
 - Memo keeps the last red try after a replan (3206c182). Test-proven only, not seen live.
 - Fence row carries `fencePlace` (309bd333). A bare `test` stays `test` because stored-spec views have no tree root; hamr: leave it.
 - The CLI "SIGNING PREPARED" readout is reachable only through `scripts/run-author.mjs` (not shipped), so no test was built for it.
+
+### F343: POC D — code does the math, $0 replay (2026-11-17)
+Question. If the worker only names rows and code computes the sum and count from the frozen table (spec: `docs/product/ITEM33-BUILD.md`, addendum 2026-11-17, S3 (iii) and POC D), does the arithmetic problem seen in F339 (expenses green 5/50, c_total wrong 45) go away, and is the delivered figure code's own?
+
+Input: the 100 saved round-2 worker files (`.claude/scratch/poc-b/results/round2/files/expenses-*.json`, `aging-*.json`, 50 per job). No provider call; $0.
+
+Method: only the rows each worker named are read (`claims.over.rows` for expenses). Code computes the sum of the check's column (Amount) and the count over those named rows from the frozen table (`tests/fixtures/sheets/expenses.csv`). The row-based check grades the named rows against the rows the condition selects (Amount > 500), red naming the wrong or missing row numbers. The report line is `Total of rows 3, 5, 9: 1,234.50 (computed by code from the rows named)` and carries code's number. The worker's own total and count are ignored. Aging has no sum or count check (its checks are daysSince, band, noDuplicates), so the row path is applied only where such a check exists; what applies and what does not is reported plainly.
+
+Frozen bars (written before any number exists):
+- (a) Code's sum and count equal the truth for 100% of files whose named rows equal the true rows (expect 37 of 50 for expenses).
+- (b) A file with wrong or omitted rows grades red naming rows: 13 of 13 for the c_over-red files.
+- (c) The delivered report carries the code's number, never the worker's, byte-checked on all 100 files.
+- (d) The expenses green rate under the new check is reported next to 5/50, never compared as a win (the check changed).
+- Planted 28 of 28 red and 2 of 2 green still hold.
+- A failed bar is reported FAIL; no re-tune.
+
+Results: pending.
