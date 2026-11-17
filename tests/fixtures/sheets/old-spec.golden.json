@@ -1,0 +1,505 @@
+{
+  "facts-green": {
+    "verdict": "green",
+    "gapLines": [],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "19266f8eb3b4d572a2b6df15d5a40bed99d836c51cb3c17cacb58401d9e88da1",
+      "outputSha": "b4edf688a9109205ec33d6a97c2e917da5b617821fe0ff96e7414e64a5f0b0b6",
+      "why": null,
+      "gaps": 0
+    },
+    "rawGaps": [],
+    "extraGaps": [],
+    "evidence": [
+      {
+        "check": "p1-facts",
+        "claim": 0,
+        "text": "From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2326] - generic \"Departure time: 12:12 PM.",
+        "spans": [
+          {
+            "decide": 0,
+            "role": "anchor",
+            "start": 0,
+            "end": 4
+          },
+          {
+            "decide": 0,
+            "role": "value",
+            "start": 5,
+            "end": 8
+          },
+          {
+            "decide": 0,
+            "role": "unit",
+            "start": 9,
+            "end": 19
+          },
+          {
+            "decide": 1,
+            "role": "anchor",
+            "start": 330,
+            "end": 345
+          },
+          {
+            "decide": 1,
+            "role": "value",
+            "start": 346,
+            "end": 354
+          },
+          {
+            "decide": 2,
+            "role": "phrase",
+            "start": 21,
+            "end": 28
+          },
+          {
+            "decide": 3,
+            "role": "phrase",
+            "start": 58,
+            "end": 92
+          },
+          {
+            "decide": 4,
+            "role": "phrase",
+            "start": 143,
+            "end": 179
+          }
+        ]
+      },
+      {
+        "check": "p1-facts",
+        "claim": 1,
+        "text": "From 144 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 1:29 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 3:32 PM on Friday, November 20. Total duration 3 hr 3 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=2415] - generic \"Departure time: 1:29 PM.",
+        "spans": [
+          {
+            "decide": 0,
+            "role": "anchor",
+            "start": 0,
+            "end": 4
+          },
+          {
+            "decide": 0,
+            "role": "value",
+            "start": 5,
+            "end": 8
+          },
+          {
+            "decide": 0,
+            "role": "unit",
+            "start": 9,
+            "end": 19
+          },
+          {
+            "decide": 1,
+            "role": "anchor",
+            "start": 327,
+            "end": 342
+          },
+          {
+            "decide": 1,
+            "role": "value",
+            "start": 343,
+            "end": 350
+          },
+          {
+            "decide": 2,
+            "role": "phrase",
+            "start": 21,
+            "end": 28
+          },
+          {
+            "decide": 3,
+            "role": "phrase",
+            "start": 56,
+            "end": 90
+          },
+          {
+            "decide": 4,
+            "role": "phrase",
+            "start": 140,
+            "end": 176
+          }
+        ]
+      },
+      {
+        "check": "p1-facts",
+        "claim": 2,
+        "text": "From 144 US dollars. Nonstop flight with JetBlue. Leaves Boston Logan International Airport at 2:40 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 4:40 PM on Friday, November 20. Total duration 3 hr. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2504] - generic \"Departure time: 2:40 PM.",
+        "spans": [
+          {
+            "decide": 0,
+            "role": "anchor",
+            "start": 0,
+            "end": 4
+          },
+          {
+            "decide": 0,
+            "role": "value",
+            "start": 5,
+            "end": 8
+          },
+          {
+            "decide": 0,
+            "role": "unit",
+            "start": 9,
+            "end": 19
+          },
+          {
+            "decide": 1,
+            "role": "anchor",
+            "start": 321,
+            "end": 336
+          },
+          {
+            "decide": 1,
+            "role": "value",
+            "start": 337,
+            "end": 344
+          },
+          {
+            "decide": 2,
+            "role": "phrase",
+            "start": 21,
+            "end": 28
+          },
+          {
+            "decide": 3,
+            "role": "phrase",
+            "start": 57,
+            "end": 91
+          },
+          {
+            "decide": 4,
+            "role": "phrase",
+            "start": 141,
+            "end": 177
+          }
+        ]
+      }
+    ]
+  },
+  "facts-missing-file": {
+    "verdict": "red",
+    "gapLines": [
+      "line 1: output/steps/1.json does not exist"
+    ],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "19266f8eb3b4d572a2b6df15d5a40bed99d836c51cb3c17cacb58401d9e88da1",
+      "outputSha": null,
+      "why": "missing",
+      "gaps": 1,
+      "redCount": 1
+    },
+    "rawGaps": [
+      {
+        "key": "1:happened",
+        "checkpoint": "1",
+        "check": "happened",
+        "id": "happened",
+        "kind": "wrong-type",
+        "measured": "type:null"
+      }
+    ],
+    "extraGaps": []
+  },
+  "facts-notjson": {
+    "verdict": "red",
+    "gapLines": [
+      "line 1: output/steps/1.json is not valid JSON (was it cut off?)"
+    ],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "19266f8eb3b4d572a2b6df15d5a40bed99d836c51cb3c17cacb58401d9e88da1",
+      "outputSha": "d01cdf112ae178b54109143ba297004034c2b363f44a31213bdf27ac6ec66603",
+      "why": "not-json",
+      "gaps": 1,
+      "redCount": 1
+    },
+    "rawGaps": [
+      {
+        "key": "1:happened",
+        "checkpoint": "1",
+        "check": "happened",
+        "id": "happened",
+        "kind": "wrong-type",
+        "measured": "type:null"
+      }
+    ],
+    "extraGaps": []
+  },
+  "facts-one-result": {
+    "verdict": "red",
+    "gapLines": [
+      "line 1: 1 result(s) are listed, at least 3 are required"
+    ],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "19266f8eb3b4d572a2b6df15d5a40bed99d836c51cb3c17cacb58401d9e88da1",
+      "outputSha": "74a4b310d383342736143f5e4a94c6594bdc468c676c555d685090974c168dd9",
+      "why": null,
+      "gaps": 1,
+      "redCount": 1
+    },
+    "rawGaps": [
+      {
+        "key": "1:p1-count-min",
+        "checkpoint": "1",
+        "check": "min",
+        "id": "p1-count-min",
+        "field": "claims:flights",
+        "kind": "under",
+        "measured": 1,
+        "limit": 3,
+        "direction": "at-least"
+      }
+    ],
+    "extraGaps": [],
+    "evidence": [
+      {
+        "check": "p1-facts",
+        "claim": 0,
+        "text": "From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2326] - generic \"Departure time: 12:12 PM.",
+        "spans": [
+          {
+            "decide": 0,
+            "role": "anchor",
+            "start": 0,
+            "end": 4
+          },
+          {
+            "decide": 0,
+            "role": "value",
+            "start": 5,
+            "end": 8
+          },
+          {
+            "decide": 0,
+            "role": "unit",
+            "start": 9,
+            "end": 19
+          },
+          {
+            "decide": 1,
+            "role": "anchor",
+            "start": 330,
+            "end": 345
+          },
+          {
+            "decide": 1,
+            "role": "value",
+            "start": 346,
+            "end": 354
+          },
+          {
+            "decide": 2,
+            "role": "phrase",
+            "start": 21,
+            "end": 28
+          },
+          {
+            "decide": 3,
+            "role": "phrase",
+            "start": 58,
+            "end": 92
+          },
+          {
+            "decide": 4,
+            "role": "phrase",
+            "start": 143,
+            "end": 179
+          }
+        ]
+      }
+    ]
+  },
+  "prose-green": {
+    "verdict": "green",
+    "gapLines": [],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "10cd8f9c6964c5a25ab1b7253d0f7d7fa269fac8560976ad43175b2f7fcf4a92",
+      "outputSha": "774ef3d1223381ff395aff70d2c8e577ae58c365f140b9a87d7f24cb04c1e3bf",
+      "why": null,
+      "gaps": 0
+    },
+    "rawGaps": [],
+    "extraGaps": []
+  },
+  "prose-red": {
+    "verdict": "red",
+    "gapLines": [
+      "line 1: \"text\" has 9 words, at most 5 are allowed"
+    ],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "10cd8f9c6964c5a25ab1b7253d0f7d7fa269fac8560976ad43175b2f7fcf4a92",
+      "outputSha": "65e1be4e00ebd97a788086df6e2000725b33e3b900174cdb91d3f944e1a271dd",
+      "why": null,
+      "gaps": 1,
+      "redCount": 1
+    },
+    "rawGaps": [
+      {
+        "key": "1:p1-maxWords",
+        "checkpoint": "1",
+        "check": "maxWords",
+        "id": "p1-maxWords",
+        "field": "text",
+        "kind": "over",
+        "measured": 9,
+        "limit": 5,
+        "direction": "at-most"
+      }
+    ],
+    "extraGaps": []
+  },
+  "prose-notobject": {
+    "verdict": "red",
+    "gapLines": [
+      "line 1: output/steps/1.json is not a JSON object"
+    ],
+    "fault": null,
+    "detail": {
+      "step": 1,
+      "rubricSha": "10cd8f9c6964c5a25ab1b7253d0f7d7fa269fac8560976ad43175b2f7fcf4a92",
+      "outputSha": "cd65ea2c2ad99e94a85b1b6df72efef9cb2ed0ae933a60c32ce16317f7d7d6aa",
+      "why": "not-object",
+      "gaps": 1,
+      "redCount": 1
+    },
+    "rawGaps": [
+      {
+        "key": "1:happened",
+        "checkpoint": "1",
+        "check": "happened",
+        "id": "happened",
+        "kind": "wrong-type",
+        "measured": "type:null"
+      }
+    ],
+    "extraGaps": []
+  },
+  "spec": {
+    "schema": 1,
+    "goal": "job line 1",
+    "inputs": [
+      {
+        "name": "flights",
+        "sha256": "f322fb85921a7812667434e762d6335c2d3b36c1a4c57b6b9d326aaa5b20169c"
+      }
+    ],
+    "checkpoints": {
+      "1": {
+        "gating": false,
+        "checks": [
+          {
+            "id": "p1-facts",
+            "rule": "cited",
+            "claims": "cites:flights",
+            "source": "flights",
+            "decides": [
+              {
+                "valueKind": "money",
+                "unit": "US dollars",
+                "currency": "$",
+                "anchor": "From",
+                "op": "lt",
+                "value": 450
+              },
+              {
+                "valueKind": "time",
+                "anchor": "Departure time:",
+                "op": "between",
+                "lo": "06:00",
+                "hi": "21:00"
+              },
+              {
+                "phrases": [
+                  "Nonstop"
+                ]
+              },
+              {
+                "phrases": [
+                  "Boston Logan International Airport"
+                ]
+              },
+              {
+                "phrases": [
+                  "Chicago O'Hare International Airport"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "p1-count-min",
+            "rule": "min",
+            "field": "claims:flights",
+            "value": 3
+          },
+          {
+            "id": "p1-count-max",
+            "rule": "max",
+            "field": "claims:flights",
+            "value": 3
+          }
+        ]
+      }
+    }
+  },
+  "flat": {
+    "claims:flights": 3,
+    "cites:flights": [
+      {
+        "claim": "price: 144; departure time: 12:12 PM; nonstop: Nonstop; origin: Boston Logan International Airport; destination: Chicago O'Hare International Airport",
+        "quote": "From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2326]\n            - generic \"Departure time: 12:12 PM.",
+        "values": {
+          "d0": "144",
+          "d1": "12:12 PM"
+        }
+      },
+      {
+        "claim": "price: 144; departure time: 1:29 PM; nonstop: Nonstop; origin: Boston Logan International Airport; destination: Chicago O'Hare International Airport",
+        "quote": "From 144 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 1:29 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 3:32 PM on Friday, November 20. Total duration 3 hr 3 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=2415]\n            - generic \"Departure time: 1:29 PM.",
+        "values": {
+          "d0": "144",
+          "d1": "1:29 PM"
+        }
+      },
+      {
+        "claim": "price: 144; departure time: 2:40 PM; nonstop: Nonstop; origin: Boston Logan International Airport; destination: Chicago O'Hare International Airport",
+        "quote": "From 144 US dollars. Nonstop flight with JetBlue. Leaves Boston Logan International Airport at 2:40 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 4:40 PM on Friday, November 20. Total duration 3 hr. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2504]\n            - generic \"Departure time: 2:40 PM.",
+        "values": {
+          "d0": "144",
+          "d1": "2:40 PM"
+        }
+      }
+    ],
+    "text": ""
+  },
+  "flat2": {
+    "claims:a": 1,
+    "text": "x",
+    "cites:a": [
+      {
+        "claim": "c",
+        "quote": "q"
+      }
+    ]
+  },
+  "briefs": [
+    {
+      "line": 1,
+      "text": "Job line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"flights\": exactly 3 results.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - price — an amount in US dollars or $, right after \"From\", must be under 450 US dollars\n    - departure time — a time, right after \"Departure time:\", must be between 06:00 and 21:00\n    - nonstop — no value to write; the quote you copy must say \"Nonstop\"\n    - origin — no value to write; the quote you copy must say \"Boston Logan International Airport\"\n    - destination — no value to write; the quote you copy must say \"Chicago O'Hare International Airport\""
+    }
+  ],
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - flights: input/flights.txt\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"cites\". It holds a \"text\" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so\nthe same file carries both \"results\" and \"text\"). A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. find the flights\n\nJob line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"flights\": exactly 3 results.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - price — an amount in US dollars or $, right after \"From\", must be under 450 US dollars\n    - departure time — a time, right after \"Departure time:\", must be between 06:00 and 21:00\n    - nonstop — no value to write; the quote you copy must say \"Nonstop\"\n    - origin — no value to write; the quote you copy must say \"Boston Logan International Airport\"\n    - destination — no value to write; the quote you copy must say \"Chicago O'Hare International Airport\"\n\nThe plan the person confirmed: x",
+  "contract": "For each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"cites\". It holds a \"text\" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so\nthe same file carries both \"results\" and \"text\"). A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written."
+}
