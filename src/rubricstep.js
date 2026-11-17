@@ -8,6 +8,7 @@ import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { stageQuestionsByName, guardQuestionText, fenceQuestionText, fencePlace } from './stagewords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
+import { sheetRowsOf } from './sheetrows.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -1145,8 +1146,12 @@ export function checksOfClose(closeDecl, jobLines = null) {
   // the job-level `$` write fence row (hamr 2026-11-15): once, after the guards; its words need the fence the close signs
   const fence = fenceOfClose(closeDecl);
   const fenceRows = fence ? list.filter((/** @type {any} */ x) => x.kind === 'fence').map((/** @type {any} */ x) => ({ line: 0, text: fenceRowText(fence), by: /** @type {'default'} */ ('default'), key: String(x.key) })) : [];
+  // S4: a sheet line's part is one plan row per check (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/sheetrows.js `sheetRowsOf`); the `[default]` row needs its signed row, as the floor does
+  const sheetItems = (/** @type {number} */ line) => sheetRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
+    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+      if (isRec(p) && p.class === 'sheet') return sheetItems(st.params.step);
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';

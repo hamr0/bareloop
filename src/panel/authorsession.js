@@ -63,7 +63,7 @@ import { LEDGER_SYSTEM } from '../checklist.js';
 import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { choiceEntries } from '../checkblock.js';
-import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
+import { readRecordFile, readRowChoices, readSheetDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { runNoteAsk } from '../noteask.js';
@@ -534,6 +534,8 @@ export function createSession(card, deps = {}) {
   const carriedPicks = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRecordFile(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
   // hamr 2026-11-13 (N-2): the Drop/Add choices of that same earlier draft ride in the same record file
   const carriedChoices = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRowChoices(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
+  // S4: the sheet checks that draft's person dropped ride in the same record file; a Revise keeps a Drop of the very same check (code still judges it: a check this draft did not build is not dropped)
+  const carriedSheetDropped = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readSheetDropped(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
   /** the confirm card's Drop/Add door for the plan now waiting (set by `ask`, cleared when it is answered): a row edit through the live check block, $0, no model call @type {((op: 'drop'|'add', key: string) => any)|null} */
   let planEdit = null;
 
@@ -1295,7 +1297,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
+      carriedSheetDropped, ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
@@ -1346,7 +1348,7 @@ export function createSession(card, deps = {}) {
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy, protections: authored.confirmed?.protections ?? [], signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef, authored.hasBuiltCheck ?? null);
-    if (state.phase === 'prepared') finalCtx = { spec, seedRef: authored.seedRef, tree: prep.tree, repo: !RUBRIC_FILES };
+    if (state.phase === 'prepared') finalCtx = { spec, seedRef: authored.seedRef, tree: prep.tree, repo: !RUBRIC_FILES, block: RUBRIC_FILES ? (authored.block ?? null) : null };
     if (state.finalPlan && state.phase === 'prepared') {
       // The confirm turn's plan bubble (and a try-3 "answers are in" one) is the DRAFTER's wording of the checks, written before
       // any close existed. Once the close is signed-ready its card is the only plan the person sees: the earlier ones are
@@ -1371,8 +1373,11 @@ export function createSession(card, deps = {}) {
     });
     return { text, heads: readoutHeadIndexes(text) };
   };
-  const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : {}) }, jobLines);
-  /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean}|null} the spec the final card shows and the seed it was gated against */
+  /** S4: the sheet rows the person has dropped, waiting under Suggested (Add); only a sheet job's final card has any */
+  const sheetSuggested = () => (finalCtx?.block ? finalCtx.block.suggestedView().filter((/** @type {any} */ x) => /^L\d+\.sheet\./.test(x.key)) : []);
+  const sheetEditable = () => finalCtx?.block != null && finalCtx.block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' && r.by === 'agent');
+  const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : sheetEditable() ? { editable: true, suggested: sheetSuggested() } : {}) }, jobLines);
+  /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean, block?: import('../checkblock.js').CheckBlock|null}|null} the spec the final card shows and the seed it was gated against */
   let finalCtx = null;
   let dropping = false;
 
@@ -1383,7 +1388,65 @@ export function createSession(card, deps = {}) {
     refuse(`internal error: ${/** @type {Error} */ (e)?.message ?? String(e)}`, 'error');
   });
 
-  return {
+  /**
+   * The plain words a final-card Drop or Add that the signing gates refused is told in (one owner for a repo stage Drop and a sheet row's): a validator red in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it.
+   * @param {any} jv the job validator's answer @param {any} signing the signing gates' answer, or null when the validator already refused @param {string} verb "Dropping that check" / "Adding that check back"
+   */
+  const gatesRefusal = (jv, signing, verb) => {
+    /** @type {any} */
+    const uncovered = signing === null ? jv.reds.find((/** @type {any} */ r) => r.code === 'job-line-uncovered' && Number.isInteger(r.line)) : undefined;
+    const why = uncovered
+      ? `${verb} would leave line ${uncovered.line} with no check, so it stays. Use Revise to change the job instead.`
+      : signing === null
+        ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
+        : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+    return { ok: /** @type {const} */ (false), refused: /** @type {const} */ ('gates'), error: uncovered ? why : `${verb} is refused: ${why}` };
+  };
+
+  /**
+   * Drop or Add on a sheet job's FINAL card (S4): the live check block of the draft does the row edit (`rowChoice`, the one owner), the line's stage, the signed list, `refused` and `picks` are read back from it, and the $0 signing gates run again on a COPY of
+   * the spec; the hash is the gates' new one. A refusal changes nothing (the row edit is undone). No model seam is called. The person's Drop is kept for a Revise in the picks record (`sheetDropped`).
+   * @param {unknown} op @param {unknown} key @returns {Promise<{ok: true}|{ok: false, error: string, refused: string}>}
+   */
+  const sheetFinalEdit = async (op, key) => {
+    const block = finalCtx?.block;
+    if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet') || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
+    if (op !== 'drop' && op !== 'add') return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
+    dropping = true;
+    try {
+      const k = String(key ?? '');
+      const edit = block.rowChoice(k, op);
+      if (!edit.ok) return { ok: false, refused: 'bad-row', error: edit.why };
+      const spec = structuredClone(finalCtx.spec);
+      const view = block.closeView();
+      spec.closeDecl.stages = [...spec.closeDecl.stages.filter((/** @type {any} */ st) => !/^line-\d+$/.test(String(st?.name))), ...view.stages];
+      spec.closeDecl.list = view.list;
+      const refused = block.refusedView(jobLines, view.stages);
+      if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
+      if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
+      const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
+      if (signing === null || !signing.ok) {
+        block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
+        return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
+      }
+      writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
+      writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
+      state.specHash = signing.specHash;
+      finalCtx = { ...finalCtx, spec };
+      const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines, ledger: readDraftLedger(outDir) });
+      state.finalPlan = { ...state.finalPlan, checkItems: rec.checkItems, notChecked: rec.notChecked, notCheckedBy: rec.notCheckedBy };
+      const at = state.messages.findLastIndex((/** @type {any} */ m) => m.kind === 'plan');
+      const msg = { ...finalPlanMessage(), text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.' };
+      if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
+      appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op, key: redactSecrets(k), at: new Date().toISOString() });
+      // a Revise keeps a Drop of the very same check: the block's record of the dropped sheet checks (typed fields, not ids)
+      try { writeRecordPart(join(outDir, RECORD_FILE), { sheetDropped: block.sheetDroppedRecord() }); } catch { /* a convenience: a disk fault only means the next draft starts without it */ }
+      return { ok: true };
+    } finally { dropping = false; }
+  };
+
+  const api = {
     id,
     state,
     /** @param {string} text @param {unknown} [choice] the button used in the question box (`agree`, `drop`, `rule`); absent = the words reading (the CLI's way, old pages) */
@@ -1472,17 +1535,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
         const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
-        if (signing === null || !signing.ok) {
-          // the plain-words owners (src/authorreadout.js): a validator red is told in its own plain sentence (`tryRefusedText`, the words the draft's own refusals use), a signing red as the signing stop tells it
-          /** @type {any} */
-          const uncovered = signing === null ? jv.reds.find((/** @type {any} */ r) => r.code === 'job-line-uncovered' && Number.isInteger(r.line)) : undefined;
-          const why = uncovered
-            ? `Dropping that check would leave line ${uncovered.line} with no check, so it stays. Use Revise to change the job instead.`
-            : signing === null
-              ? tryRefusedText({ reds: jv.reds.map((/** @type {any} */ r) => ({ ...r, detail: String(r.detail ?? '') })) })
-              : signingStopText({ reds: signing.reds ?? [], refusal: signing.refusal, noCheck: false, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
-          return { ok: false, refused: 'gates', error: uncovered ? why : `Dropping that check is refused: ${why}` };
-        }
+        if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
         state.specHash = signing.specHash;
@@ -1502,6 +1555,13 @@ export function createSession(card, deps = {}) {
         return { ok: true };
       } finally { dropping = false; }
     },
+    /**
+     * Drop or Add on the FINAL card (prepared): a repo job's `! [agent]` stage row is Dropped through `dropStage`; a sheet job's `[agent]` row is Dropped or Added through the live check block (`sheetFinalEdit`). $0 either way, no model call.
+     * @param {unknown} op @param {unknown} key @returns {Promise<{ok: true}|{ok: false, error: string, refused?: string}>}
+     */
+    finalEdit: (op, key) => (finalCtx?.repo
+      ? (op === 'drop' ? api.dropStage(key) : Promise.resolve({ ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' }))
+      : sheetFinalEdit(op, key)),
     /** click 1 — the confirm pick. Never signs on its own. */
     signPrepare: () => {
       if (!state.pendingAsk || state.pendingAsk.kind !== 'menu') return { ok: false, error: 'no plan is waiting for a decision right now' };
@@ -1509,4 +1569,5 @@ export function createSession(card, deps = {}) {
       return { ok: true };
     },
   };
+  return api;
 }

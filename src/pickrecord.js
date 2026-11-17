@@ -116,9 +116,22 @@ export function readRowChoices(file) {
   } catch { return null; }
 }
 
-/** write a part of the record without losing the other: `patch` is `{picks}` or `{rowChoices}` @param {string} file @param {Record<string, any>} patch */
+/** write a part of the record without losing the other: `patch` is `{picks}`, `{rowChoices}` or `{sheetDropped}` @param {string} file @param {Record<string, any>} patch */
 export function writeRecordPart(file, patch) {
   let cur = {};
   try { const j = JSON.parse(readFileSync(file, 'utf8')); if (j && typeof j === 'object' && !Array.isArray(j)) cur = j; } catch { /* no record yet */ }
   writeFileSync(file, `${JSON.stringify({ ...cur, ...patch })}\n`, { mode: 0o600 });
+}
+
+/**
+ * S4: the sheet checks a person dropped from a plan (hamr 2026-11-17: a Revise keeps a Drop of the very same check), carried like the page-row choices but tied to the check's own typed fields, since code names every check and an id says
+ * nothing across drafts (the sheet block's `sheetDroppedRecord`: `{lineWords, occurrence, check, text}`). A missing or unreadable record is no record.
+ * Adapted from fwdloop src/pickrecord.js@v0.35.0 `readSheetDropped` (fwd tied a Drop to the check's id).
+ * @param {string} file @returns {{lineWords: string, occurrence: number, check: Record<string, any>, text: string}[]|null}
+ */
+export function readSheetDropped(file) {
+  try {
+    const j = JSON.parse(readFileSync(file, 'utf8'));
+    return Array.isArray(j?.sheetDropped) ? j.sheetDropped.filter((/** @type {any} */ d) => d && typeof d.lineWords === 'string' && Number.isInteger(d.occurrence) && d.check && typeof d.check === 'object' && !Array.isArray(d.check)) : null;
+  } catch { return null; }
 }

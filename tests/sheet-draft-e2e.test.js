@@ -108,6 +108,12 @@ test('S3 grades the drafted close through the real engine: the right claims file
     /** @type {string[]} */ const err = [];
     const rc = await main(['--spec', specPath, '--approve', jobSpecHash(spec)], { provider, env: {}, out: (s) => out.push(String(s)), err: (s) => err.push(String(s)), runlistHome: home });
     const text = `${err.join('\n')}\n${out.join('\n')}`;
-    if (named.length === OVER.length) { assert.equal(rc, 0, text); assert.match(text, /outcome\s+green/); } else { assert.notEqual(rc, 0, text); assert.match(text, /\b2\b/); }
+    if (named.length === OVER.length) { assert.equal(rc, 0, text); assert.match(text, /outcome\s+green/); } else {
+      assert.doesNotMatch(text, /outcome\s+green/, text);
+      // the red names the row the claim got wrong (row 2 is no expense over 500), in the spine's close record
+      const spine = /spine\s+(\S+\.jsonl)/.exec(text)?.[1];
+      assert.ok(spine, text);
+      assert.match(readFileSync(spine, 'utf8'), /claim names rows that do not qualify: 2/);
+    }
   }
 });

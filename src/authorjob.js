@@ -118,6 +118,7 @@ import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.
 import { tooManyAsksText } from './pagemap.js';
 import { runLook } from './sheetlook.js';
 import { isSheetInput } from './inputlook.js';
+import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
@@ -442,12 +443,12 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, reds: Red[],
- *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[]}>}
+ *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[], block?: import('./checkblock.js').CheckBlock}>}
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
@@ -496,6 +497,8 @@ export async function authorCloseForJob({
   carriedPicks = null, onPicks = () => {},
   // hamr 2026-11-13 (N-2): the Drop/Add choices of the draft this one follows (the picks record file's `rowChoices`); a Revise keeps them, code still judges every one
   carriedChoices = null, onChoices = () => {},
+  // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`): a Revise keeps a Drop of the very same check
+  carriedSheetDropped = null,
   // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
   // every existing caller runs byte-identical: `ask` absent means no confirm
   // turn runs at all, exactly as before this piece existed.
@@ -716,6 +719,8 @@ export async function authorCloseForJob({
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
     block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
+    // S4: the rules of a line that reads a sheet are the sheet checks' alone: no pick question, no page path (src/sheetrows.js `sheetLineNumbers`, the row-edit turn's own rule)
+    block.setSheetLines(sheetLineNumbers({ inputs, texts: ledgerTexts, jobLines }));
     block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
@@ -915,7 +920,7 @@ export async function authorCloseForJob({
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
-    ...(block ? { block, editGenerate } : {}),
+    ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -936,7 +941,7 @@ export async function authorCloseForJob({
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
-      ...(block ? { block, editGenerate } : {}),
+      ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
     });
@@ -1019,7 +1024,7 @@ export async function authorCloseForJob({
     if (lineRefusals.length || ruleRefusals.length) closeDecl.refused = [...lineRefusals, ...ruleRefusals]; else delete closeDecl.refused;
   }
 
-  return {
+  const result = {
     ok: true,
     refusal: null,
     verdictType: picked,
@@ -1037,6 +1042,9 @@ export async function authorCloseForJob({
     interview,
     confirmed,
   };
+  // S4: a rubric job's live check block rides the result without being part of it (not enumerable: nothing serialises it), so the panel's final-card Drop and Add on a sheet row edit the one list the draft was made from
+  if (block) Object.defineProperty(result, 'block', { value: block, enumerable: false });
+  return result;
 }
 
 /** The fields `assembleSpec` writes, and therefore the fields a DRAFT must not

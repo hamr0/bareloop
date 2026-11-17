@@ -76,7 +76,7 @@ import { renderInputs } from './jobblock.js';
 import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
-import { join, relative, isAbsolute } from 'node:path';
+import { join, relative, isAbsolute, dirname } from 'node:path';
 import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
@@ -94,6 +94,8 @@ import { sheetTable, parseCsv } from './csv.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords } from './sheetoffer.js';
 import { buildSheetChecks } from './sheetbuild.js';
+import { recordSheetShas } from './sheetrun.js';
+import { sheetRolesOf } from './sheetclaims.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
@@ -2419,7 +2421,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null,
+ *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null, carriedSheetDropped?: any[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2468,6 +2470,8 @@ export async function authorClose({
   block = null,
   // the row-edit turn's own model boundary (ROW_EDIT_SYSTEM); a test that replaces `generate` need not bring one
   editGenerate = null,
+  // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`); a Revise keeps a Drop of the very same check
+  carriedSheetDropped = null,
 }) {
   // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
   // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
@@ -2656,10 +2660,8 @@ export async function authorClose({
   /** the declaration of a rubric job, assembled by code from the rows: the mandatory guards, then the block's stages (hamr 2026-11-12, ruling 6), the rule rows no check carries as `refused`, the picks code recorded */
   const assemble = () => {
     const c = /** @type {CheckBlock} */ (block).reconcile();
-    /** @type {{line: number, rule?: number, reason: string}[]} */
-    const refused = /** @type {CheckBlock} */ (block).rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
     // a job line no check could be built for (no stage) is refused as a line, in code's plain words, so the draft gate sees it covered and the end check (hasBuiltCheck) can say "no check" in its own words
-    for (const l of jobLines ?? []) if (!c.stages.some((/** @type {any} */ st) => Array.isArray(st.fromLine) && st.fromLine.includes(l.n))) refused.push({ line: l.n, reason: REASON.noRule });
+    const refused = /** @type {CheckBlock} */ (block).refusedView(jobLines, c.stages);
     const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
     const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
@@ -2672,6 +2674,8 @@ export async function authorClose({
   if (rowEdits && inputTexts !== null) for (const i of inputs ?? []) if (isSheetInput(i) && typeof inputTexts[i.label] === 'string') sheetTables[i.label] = sheetTable(parseCsv(inputTexts[i.label]));
   const sheetLines = Object.keys(sheetTables).length > 0 ? (jobLines ?? []).filter((l) => lineRules(l).length > 0) : [];
   const sheetProp = sheetLines.length > 0 ? sheetSuggestProp(sheetTables, sheetLines.map((l) => l.n)) : null;
+  // S4: the rules of a sheet line belong to the sheet checks alone (the one list settles it: a rule has never two rows)
+  if (block !== null && sheetLines.length > 0) block.setSheetLines(sheetLines.map((l) => l.n));
   /** the agreed-column rules of the sheet lines, as the AI is told them again (their own words: src/sheetoffer.js `columnChoiceParts`) */
   const agreedColumns = sheetLines.flatMap((l) => lineRules(l).flatMap((r) => { const p = columnChoiceParts(r); return p === null ? [] : [{ line: l.n, ...p }]; }));
   const sheetBlock = sheetProp === null ? '' : `\n\nTHE SHEET CHECKS\n${sheetOfferRules(Object.keys(sheetTables), sheetLines.map((l) => l.n)).join('\n')}${agreedColumns.length ? `\n${agreedColumns.map((c) => agreedColumnWords(c)).join('\n')}` : ''}`;
@@ -2898,6 +2902,11 @@ export async function authorClose({
       if (rowEdits) {
         const rec = /** @type {CheckBlock} */ (block).applyDelta({ label, edits: editsOf(ask.declaration) });
         refusedEdits = rec.edits.filter((/** @type {any} */ e) => e.accepted !== true);
+        // S4 (call site of the sheet part): the checks code builds from this try's suggestions (the latest list that came) become rows of the one list; the assembled declaration then carries the sheet part
+        if (sheetProp !== null) {
+          /** @type {CheckBlock} */ (block).setSheet(await buildSheetChecks({ lines: sheetLines, tables: sheetTables, suggestions: sheetSuggested }));
+          if (Array.isArray(carriedSheetDropped)) /** @type {CheckBlock} */ (block).carrySheetDropped(carriedSheetDropped);
+        }
         pre = assemble();
         iter.edits = rec.edits.map((/** @type {any} */ e) => ({ op: e?.op, accepted: e.accepted === true, ...(e.accepted === true ? {} : { refusedBecause: e.refusedBecause }) }));
         onPhase('draft-ledger-try', { label, kept: rec.edits.length - refusedEdits.length, refused: refusedEdits.map((/** @type {any} */ e) => ({ op: String(e?.op), reason: String(e.refusedBecause) })) });
@@ -2952,6 +2961,11 @@ export async function authorClose({
         // minutes saying nothing — the per-stage line below is the whole point,
         // and the block boundary is what makes it readable.
         const stageCount = injected.declaration?.stages?.length ?? null;
+        // S4: a sheet stage is graded at the seed against the fingerprint its run records at its start; a draft records the same one from the same frozen copy (src/sheetrun.js `recordSheetShas`). A sheet that is no table stops the draft at $0, in the run start's words
+        if (sheetRolesOf(injected.declaration).length > 0) {
+          const rec = await recordSheetShas({ into: dirname(workdir), closeDecl: injected.declaration });
+          if (!rec.ok) { fatal = [{ code: 'sheet-unreadable', path: 'inputs', detail: rec.error }]; stop = 'sheet-unreadable'; iter.validation = { ok: false, reds: fatal.map(scrubRed), scoped: v.scoped }; break; }
+        }
         onPhase('seed-read', { call: label, stages: stageCount });
         // `onStage` sits AFTER the `closeCtx` spread beside `workdir`/`seedRef`:
         // it is the runner's own reporting channel, not a knob a caller's close

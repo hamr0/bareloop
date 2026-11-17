@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCsv, sheetTable } from '../src/csv.js';
-import { buildSheetLine, buildSheetChecks, toSuggestion, NO_VALUE_WHY } from '../src/sheetbuild.js';
+import { buildSheetLine, buildSheetChecks, toSuggestion, NO_VALUE_WHY, NO_CHECK_FITS_WHY } from '../src/sheetbuild.js';
 import { columnRuleWords } from '../src/sheetlook.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -98,12 +98,14 @@ test('am3: a rule row never holds two checks, no rule is on two rule rows, built
   for (const a of r.ruleRows) assert.equal('row' in a.check, false);
 });
 
-test('am7: a table check is never a rule row: an [agent] row that covers no rule, and the rule it named is Not checked with the no-pick sentence', async () => {
+test('am7: a table check is never a rule row: an [agent] row that covers no rule, and the rule it named is Not checked with the cannot-check-this-rule sentence (S4); a rule nobody named reads no-pick', async () => {
   const r = await build([ROWCOUNT]);
   assert.deepEqual(r.ruleRows, []);
   assert.deepEqual(r.agentRows.map((x) => [x.check.rule, x.check.row, x.check.covers]), [['table', 'agent', []]]);
   assert.deepEqual(r.rows.map((x) => [x.rule, x.state]), [[1, 'not-checked'], [2, 'not-checked']]);
-  assert.equal(r.rows[0].reason, NO_VALUE_WHY);
+  assert.equal(r.rows[0].reason, NO_CHECK_FITS_WHY, 'S4: a check was picked, but it cannot check this rule');
+  assert.equal(r.rows[1].reason, NO_VALUE_WHY, 'no check named it');
+  assert.equal(NO_CHECK_FITS_WHY, 'A check was picked, but it cannot check this rule, so you judge it at Accept.');
   assert.equal(NO_VALUE_WHY, 'No check was picked for it, so you judge it at Accept.', 'hamr\'s ruling: judged at Accept, not at an Ask');
   const both = await build([ROWCOUNT, OVER]);
   assert.deepEqual(both.ruleRows.map((x) => [x.check.rule, x.check.covers]), [['cells', [2]]]);

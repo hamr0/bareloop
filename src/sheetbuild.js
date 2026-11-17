@@ -25,6 +25,9 @@ export const SUGGESTION_DROPPED = Object.freeze(['id', 'claim', 'text', 'covers'
 /** why a `~` rule no check holds is Not checked, when no suggestion named it (hamr 2026-11-17: judged at Accept, not at an Ask) */
 export const NO_VALUE_WHY = 'No check was picked for it, so you judge it at Accept.';
 
+/** why a `~` rule that only a `table` check named is Not checked: a check was picked, but a table check judges the sheet itself and never a rule (hamr 2026-11-17: judged at Accept, not "no sheet check covers it") */
+export const NO_CHECK_FITS_WHY = 'A check was picked, but it cannot check this rule, so you judge it at Accept.';
+
 /**
  * @param {any} ai a suggestion as the AI sent it @returns {{covers: number[], fields: Record<string, any>}}
  */
@@ -96,12 +99,15 @@ export async function buildSheetLine({ line, tables, suggestions }) {
   const held = new Map();
   /** @type {Map<number, string>} */
   const coveredByAgent = new Map();
+  /** the rules a built `table` check named: it holds none of them (it judges the sheet, never a rule), so each reads the "cannot check this rule" sentence unless another check holds it */
+  const namedByTable = new Set();
   /** @type {Placed[]} */
   const ruleRows = [];
   /** @type {Placed[]} */
   const agentRows = [];
   for (const b of order) {
     const asRule = b.fields.rule !== 'table' && b.nums.length > 0 && b.nums.every((n) => !held.has(n) && !coveredByAgent.has(n));
+    if (b.fields.rule === 'table') for (const n of b.nums) namedByTable.add(n);
     const id = asRule ? `l${line.n}r${b.nums.join('_')}` : `l${line.n}a${agentRows.length + 1}`;
     // an [agent] row shows only a rule no rule row holds and no earlier [agent] row shows (never shown nowhere, never two rows); `row: 'agent'` is the tag's own typed field
     const shown = asRule ? b.nums : b.fields.rule === 'table' ? [] : b.nums.filter((n) => !held.has(n) && !coveredByAgent.has(n));
@@ -114,7 +120,7 @@ export async function buildSheetLine({ line, tables, suggestions }) {
     if (isColumnChoiceRule(text)) return { rule: n, text, state: 'column', reason: null, id: null };
     if (held.has(n)) return { rule: n, text, state: 'built', reason: null, id: /** @type {string} */ (held.get(n)) };
     if (coveredByAgent.has(n)) return { rule: n, text, state: 'agent-row', reason: null, id: /** @type {string} */ (coveredByAgent.get(n)) };
-    return { rule: n, text, state: 'not-checked', reason: refusedFor.get(n) ?? NO_VALUE_WHY, id: null };
+    return { rule: n, text, state: 'not-checked', reason: refusedFor.get(n) ?? (namedByTable.has(n) ? NO_CHECK_FITS_WHY : NO_VALUE_WHY), id: null };
   });
   return { rows, ruleRows, agentRows, checks: [...ruleRows, ...agentRows].map((p) => p.check), refused };
 }

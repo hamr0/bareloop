@@ -13,7 +13,7 @@ import { plainStepGap } from './rubricstep.js';
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** the check kinds a row may be, for the rows a step file is judged by */
-const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note', 'floor'];
+const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note', 'floor', 'sheet'];
 
 /**
  * @typedef {{key: string, result: 'passed'|'failed'|'unread', why?: string}} RowResult
@@ -36,6 +36,14 @@ export function rowResultsOf(list, params, graded) {
     const id = String(g.id ?? g.check);
     const plain = () => plainStepGap(n, why0, g, params).split('\n').join(' ');
     if (id === 'text-present' || id === 'happened') { for (const r of rows.filter((x) => x.kind === 'floor')) hit(r, plain()); if (!rows.some((x) => x.kind === 'floor')) unclaimed.push(plain()); continue; }
+    // S4: a gap of a sheet check names the check by its own id (bareguard's `id`); it lands on the row that holds that check: the `[you]` rule row for a rule row's check, the `[agent]` row for an agent check, and the rules an agent row shows
+    const sheetCheck = (params.parts ?? []).flatMap((/** @type {any} */ p) => (isRec(p) && p.class === 'sheet' && Array.isArray(p.checks) ? p.checks : [])).find((/** @type {any} */ c) => isRec(c) && c.id === id);
+    if (sheetCheck) {
+      const covers = Array.isArray(sheetCheck.covers) ? sheetCheck.covers : [];
+      const owners = rows.filter((r) => (r.kind === 'sheet' && r.key === `L${n}.sheet.${id}`) || (r.kind === 'rule' && covers.includes(r.rule)));
+      if (owners.length === 0) unclaimed.push(plain()); else for (const r of owners) hit(r, plain());
+      continue;
+    }
     const m = /^p(\d+)-(.+)$/.exec(id);
     const pi = m ? Number(m[1]) - 1 : -1;
     const part = params.parts[pi];

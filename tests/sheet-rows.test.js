@@ -37,9 +37,9 @@ async function sheetBlock(/** @type {any[]} */ suggestions, lines = LINES) {
   b.setSheet(built);
   return { b, built };
 }
-const closeOf = (/** @type {CheckBlock} */ b) => { const v = b.closeView(); return { genre: 'rubric-files', lang: 'rubric-files', stages: v.stages, list: v.list, picks: v.picks }; };
+const closeOf = (/** @type {CheckBlock} */ b) => { const v = b.closeView(); return { genre: 'rubric-files', lang: 'rubric-files', stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }, ...v.stages], list: v.list, picks: v.picks }; };
 const cardOf = (/** @type {CheckBlock} */ b) => cardOfClose({ closeDecl: closeOf(b), jobLines: LINES });
-const sheetPart = (/** @type {CheckBlock} */ b) => closeOf(b).stages.flatMap((/** @type {any} */ s) => s.params.parts).find((/** @type {any} */ p) => p.class === 'sheet');
+const sheetPart = (/** @type {CheckBlock} */ b) => closeOf(b).stages.flatMap((/** @type {any} */ s) => s.params?.parts ?? []).find((/** @type {any} */ p) => p.class === 'sheet');
 
 test('every (line, rule) shows once: a built rule on its [you] row, a rule only a table check named Not checked once, and no rule has two rows', async () => {
   const { b } = await sheetBlock([ROWCOUNT, OVER, NODUP, COUNT]);
@@ -71,7 +71,7 @@ test('tags: the AI\'s other checks are their own [agent] rows (a table check nev
 test('no `$cited` default and no numbers tie on a sheet line (a cited part next to a sheet part is a stage-shape red); the line\'s sheet part is the one part that carries the checks', async () => {
   const { b } = await sheetBlock([OVER]);
   assert.equal(b.rows.some((r) => r.line === 2 && (r.kind === 'cited' || r.kind === 'numbers')), false);
-  const stage = closeOf(b).stages.find((/** @type {any} */ s) => s.params.step === 2);
+  const stage = closeOf(b).stages.find((/** @type {any} */ s) => s.params?.step === 2);
   assert.deepEqual(stage.params.parts.map((/** @type {any} */ p) => p.class), ['sheet']);
   // line 1 has no `~` rule: it is no sheet line and keeps its `$cited` default exactly as today
   assert.equal(b.rows.some((r) => r.line === 1 && r.kind === 'cited'), true);

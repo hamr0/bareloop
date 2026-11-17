@@ -67,7 +67,9 @@ test('the reply\'s sheetChecks go to buildSheetChecks: four suggestions build fo
   const { r } = await sheetTurn([{ edits: [], sheetChecks: [ROWCOUNT, OVER, NODUP, COUNT] }]);
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.deepEqual(r.sheetBuilt.checks.map((/** @type {any} */ c) => c.id), ['l2r2', 'l2a1', 'l2a2', 'l2a3']);
-  assert.equal(JSON.stringify(r.declaration).includes('l2r2'), false, 'the declaration is assembled from the rows alone; S3 puts these in the stage');
+  // S4: the declaration is assembled from the rows; the checks code built ride it as the line's sheet part (never as the AI wrote them)
+  const part = r.declaration.stages.flatMap((/** @type {any} */ s) => s.params?.parts ?? []).find((/** @type {any} */ p) => p.class === 'sheet');
+  assert.deepEqual(part.checks.map((/** @type {any} */ c) => c.id), ['l2r2', 'l2a1', 'l2a2', 'l2a3']);
   assert.equal(Object.hasOwn(r.declaration, 'sheetChecks'), false);
 });
 

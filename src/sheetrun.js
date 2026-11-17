@@ -28,16 +28,48 @@ const SHA_RE = /^[0-9a-f]{64}$/;
 export async function freezeSheets({ into, closeDecl }) {
   const roles = sheetRolesOf(closeDecl);
   if (roles.length === 0) return { ok: true, seed: null, roles };
-  const refuse = (/** @type {string} */ words) => ({ ok: /** @type {const} */ (false), error: `${words} The run did not start. Nothing spent.` });
+  const got = await sheetsOfInputs({ into, roles, tail: ' The run did not start. Nothing spent.' });
+  if (!got.ok) return got;
+  const { manifest, tree, made } = got;
+  for (const v of made.values()) await writeFile(join(tree, v.view), v.viewText);
+  const commit = await commitFrozenFiles(tree, 'bareloop: run start - the numbered view of each sheet');
+  if (!commit.ok) return { ok: false, error: `${commit.error}. The run did not start. Nothing spent.` };
+  const inputs = manifest.inputs.map((/** @type {any} */ r) => (made.has(r?.label) ? { ...r, tableSha: made.get(r.label)?.tableSha, view: made.get(r.label)?.view } : r));
+  await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify({ ...manifest, inputs, seed: commit.seed }, null, 2)}\n`);
+  return { ok: true, seed: commit.seed, roles };
+}
+
+/**
+ * DRAFTING (S4): the draft's seed read grades the sheet stage at the seed, and that stage reads the `tableSha` its run recorded at its start. A draft has no run start, so the draft records the same fingerprint, from the
+ * same frozen copy, beside the input in `source.json` - the one thing a draft needs; the numbered view and the seed commit are the run's own (`freezeSheets`) and the seed read never needs them (the step file is not there yet).
+ * Never throws; a sheet that cannot be read as a table is refused in the words of the run start.
+ * @param {{into: string, closeDecl: any}} o @returns {Promise<{ok: true, roles: string[]}|{ok: false, error: string}>}
+ */
+export async function recordSheetShas({ into, closeDecl }) {
+  const roles = sheetRolesOf(closeDecl);
+  if (roles.length === 0) return { ok: true, roles };
+  const got = await sheetsOfInputs({ into, roles, tail: '' });
+  if (!got.ok) return got;
+  const inputs = got.manifest.inputs.map((/** @type {any} */ r) => (got.made.has(r?.label) ? { ...r, tableSha: got.made.get(r.label)?.tableSha } : r));
+  await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify({ ...got.manifest, inputs }, null, 2)}\n`);
+  return { ok: true, roles };
+}
+
+/**
+ * The frozen copy of each sheet role, read as bareguard's table: its `tableSha` (the fingerprint of the table, from the CSV only) and the text of its numbered view. The ONE reader of "which sheets, and are they tables" for the run start and the draft.
+ * `tail` ends every refusal: at the run start " The run did not start. Nothing spent.", at the draft nothing.
+ * @param {{into: string, roles: string[], tail: string}} o
+ * @returns {Promise<{ok: true, manifest: any, tree: string, made: Map<string, {tableSha: string, view: string, viewText: string}>}|{ok: false, error: string}>}
+ */
+async function sheetsOfInputs({ into, roles, tail }) {
+  const refuse = (/** @type {string} */ words) => ({ ok: /** @type {const} */ (false), error: `${words}${tail}` });
   const read = await readSourceManifest(into);
   if (read.stop !== null) return { ok: false, error: read.stop };
   if (!read.present || !read.manifest) return refuse('This job reads a sheet, but the run has no record of its inputs.');
   const manifest = read.manifest;
   const tree = join(resolve(into), 'tree');
-  /** @type {Map<string, {tableSha: string, view: string}>} */
+  /** @type {Map<string, {tableSha: string, view: string, viewText: string}>} */
   const made = new Map();
-  /** @type {{rel: string, text: string}[]} */
-  const views = [];
   for (const role of roles) {
     const row = Array.isArray(manifest.inputs) ? manifest.inputs.find((/** @type {any} */ r) => r && r.label === role) : undefined;
     if (!row || typeof row.rel !== 'string' || typeof row.sha256 !== 'string') return refuse(`The job reads the sheet "${role}", but it has no input with that label.`);
@@ -53,15 +85,9 @@ export async function freezeSheets({ into, closeDecl }) {
     const body = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
     const headerLine = body.split('\n').findIndex((l) => l.replace(/\r$/, '') !== '') + 1;
     const view = sheetViewRel(row.rel);
-    made.set(role, { tableSha: sha, view });
-    views.push({ rel: view, text: sheetNumberedView(text, [headerLine, ...table.rows.map((r) => r.rowNumber)]) });
+    made.set(role, { tableSha: sha, view, viewText: sheetNumberedView(text, [headerLine, ...table.rows.map((r) => r.rowNumber)]) });
   }
-  for (const v of views) await writeFile(join(tree, v.rel), v.text);
-  const commit = await commitFrozenFiles(tree, 'bareloop: run start - the numbered view of each sheet');
-  if (!commit.ok) return refuse(`${commit.error}.`);
-  const inputs = manifest.inputs.map((/** @type {any} */ r) => (made.has(r?.label) ? { ...r, ...made.get(r.label) } : r));
-  await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify({ ...manifest, inputs, seed: commit.seed }, null, 2)}\n`);
-  return { ok: true, seed: commit.seed, roles };
+  return { ok: true, manifest, tree, made };
 }
 
 /**

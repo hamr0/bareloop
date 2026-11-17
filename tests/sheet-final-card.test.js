@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createSession } from '../src/panel/authorsession.js';
 import { createAuthorRoutes } from '../src/panel/authorroutes.js';
 import { ROW_EDIT_TOOL } from '../src/rowedit.js';
+import { LEDGER_TOOL } from '../src/checklist.js';
 import { readSheetDropped, RECORD_FILE } from '../src/pickrecord.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -23,7 +24,7 @@ const W500 = [{ column: 'Amount', cmp: 'gt', value: 500 }];
 const SUGGESTIONS = [
   { line: 1, rule: 'cells', table: 'Expenses', claim: 'over', op: 'rows', where: W500, covers: [1] },
   { line: 1, rule: 'cells', table: 'Expenses', claim: 'total', op: 'sumIf', column: 'Amount', where: W500, covers: [] },
-  { line: 1, rule: 'table', table: 'Expenses', op: 'noDuplicates', column: 'Date', covers: [] },
+  { line: 1, rule: 'table', table: 'Expenses', op: 'noEmpty', column: 'Description', covers: [] },
 ];
 const okSigning = (/** @type {string} */ hash) => ({ ok: true, specHash: hash, seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} });
 
@@ -45,7 +46,7 @@ async function finalCard(/** @type {{sessionsRoot?: string, home?: string, carry
     ...(o.carryFrom ? { carryFrom: o.carryFrom, carryKind: 'revise' } : {}),
     generate: async () => { calls.generate += 1; throw new Error('no model call'); },
     lookFn: async () => { calls.look += 1; return survey; },
-    ledgerGenerate: async () => { calls.ledger += 1; throw new Error('no ledger call'); },
+    ledgerGenerate: async (/** @type {any} */ _m, /** @type {any[]} */ tools) => { calls.ledger += 1; await tools.find((t) => t.name === LEDGER_TOOL).execute({ extra: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.002, unpricedRounds: 0 } }; },
     confirmGenerate: async (/** @type {any} */ _c, /** @type {any[]} */ tools) => { calls.confirm += 1; await tools[0].execute(PLAN); return { text: JSON.stringify(PLAN), error: null, cost: 0.0005 }; },
     editGenerate: async (/** @type {any} */ _m, /** @type {any[]} */ tools) => {
       calls.edit += 1;
@@ -78,7 +79,7 @@ test('the FINAL card of a sheet job: the `~` rule once as [you], the AI\'s other
   const s = spec();
   const part = s.closeDecl.stages.find((/** @type {any} */ x) => x.kind === 'rubric-step').params.parts.find((/** @type {any} */ x) => x.class === 'sheet');
   assert.ok(part, 'the signed close carries a sheet part');
-  assert.deepEqual(part.checks.map((/** @type {any} */ c) => c.op).sort(), ['noDuplicates', 'rows', 'sumIf']);
+  assert.deepEqual(part.checks.map((/** @type {any} */ c) => c.op).sort(), ['noEmpty', 'rows', 'sumIf']);
   assert.ok(s.closeDecl.list.every((/** @type {any} */ r) => r.kind !== 'cited' || r.state !== 'built' || r.line !== 1), 'no built $cited row on a sheet line');
   assert.equal(JSON.stringify(s.closeDecl).includes('"check":"cited"'), false, 'no cited part on a sheet line');
   session.abandon();
@@ -88,16 +89,16 @@ test('Drop on a final [agent] row and Add are $0 (every model seam counted), the
   const { session, calls, plan, spec, signs } = await finalCard();
   const before = readFileSync(session.state.resolvedSpecPath, 'utf8');
   const seams = { ...calls };
-  const key = plan().lines[0].checks.find((/** @type {any} */ c) => c.by === 'agent' && /duplicate/.test(c.name)).key;
+  const key = plan().lines[0].checks.find((/** @type {any} */ c) => c.by === 'agent' && /no empty/.test(c.name)).key;
   const r = await session.finalEdit('drop', key);
   assert.deepEqual([r.ok, r.error], [true, undefined], JSON.stringify(r));
   assert.equal(signs(), 2, 'the signing gates ran again');
   assert.equal(session.state.specHash, 'hash2');
-  assert.equal(spec().closeDecl.stages.find((/** @type {any} */ x) => x.kind === 'rubric-step').params.parts.find((/** @type {any} */ x) => x.class === 'sheet').checks.some((/** @type {any} */ c) => c.op === 'noDuplicates'), false);
+  assert.equal(spec().closeDecl.stages.find((/** @type {any} */ x) => x.kind === 'rubric-step').params.parts.find((/** @type {any} */ x) => x.class === 'sheet').checks.some((/** @type {any} */ c) => c.op === 'noEmpty'), false);
   assert.equal(spec().closeDecl.list.find((/** @type {any} */ x) => x.key === key).state, 'dropped');
   assert.ok(!plan().lines[0].checks.some((/** @type {any} */ c) => c.key === key), 'off the card');
   assert.deepEqual(plan().suggested.map((/** @type {any} */ x) => x.key), [key], 'waiting under Suggested for Add');
-  assert.deepEqual(readSheetDropped(join(dirname(session.state.resolvedSpecPath), RECORD_FILE))?.map((d) => d.check.op), ['noDuplicates'], 'the record a Revise reads');
+  assert.deepEqual(readSheetDropped(join(dirname(session.state.resolvedSpecPath), RECORD_FILE))?.map((d) => d.check.op), ['noEmpty'], 'the record a Revise reads');
   const back = await session.finalEdit('add', key);
   assert.equal(back.ok, true, JSON.stringify(back));
   assert.equal(readFileSync(session.state.resolvedSpecPath, 'utf8'), before, 'Drop + Add: the signed spec file is byte-identical');
@@ -155,15 +156,15 @@ test('over the real route: row-edit on the prepared sheet card answers 200 for a
 
 test('a Revise keeps a Drop of the very same check: the next draft (same suggestions) starts with it dropped and waiting under Suggested', async () => {
   const first = await finalCard();
-  const key = first.plan().lines[0].checks.find((/** @type {any} */ c) => c.by === 'agent' && /duplicate/.test(c.name)).key;
+  const key = first.plan().lines[0].checks.find((/** @type {any} */ c) => c.by === 'agent' && /no empty/.test(c.name)).key;
   assert.equal((await first.session.finalEdit('drop', key)).ok, true);
   first.session.abandon();
   const next = await finalCard({ sessionsRoot: first.sessionsRoot, home: first.home, carryFrom: first.session.id });
   const p = next.plan();
-  assert.ok(!p.lines[0].checks.some((/** @type {any} */ c) => /duplicate/.test(c.name)), 'the dropped check stays dropped');
+  assert.ok(!p.lines[0].checks.some((/** @type {any} */ c) => /no empty/.test(c.name)), 'the dropped check stays dropped');
   assert.equal(p.suggested.length, 1);
-  assert.match(p.suggested[0].text, /duplicate/);
+  assert.match(p.suggested[0].text, /no empty/);
   assert.equal(p.suggested[0].dropped, true);
-  assert.equal(next.spec().closeDecl.stages.find((/** @type {any} */ x) => x.kind === 'rubric-step').params.parts.find((/** @type {any} */ x) => x.class === 'sheet').checks.some((/** @type {any} */ c) => c.op === 'noDuplicates'), false);
+  assert.equal(next.spec().closeDecl.stages.find((/** @type {any} */ x) => x.kind === 'rubric-step').params.parts.find((/** @type {any} */ x) => x.class === 'sheet').checks.some((/** @type {any} */ c) => c.op === 'noEmpty'), false);
   next.session.abandon();
 });
