@@ -2,7 +2,7 @@
 // map; a `~` rule whose word is no column asks once, at $0 in these tests (fake provider), and Agree rewrites that rule's own words in place - no line is added. A job with no CSV is byte-identical to before.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, copyFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, copyFileSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,10 +109,66 @@ test('a `~` rule that already names a real header asks nothing', async () => {
   assert.equal(asked, null, 'nothing was asked');
 });
 
-test('the saved expenses.csv (an amount and a tax on every row) is a tie: Price is Not checked, nothing is asked', async () => {
-  const { r, asked } = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))] });
+const tieAsk = async (/** @type {(q: any) => {choice: string, text?: string}} */ choose, rules = ['Price over 500']) => draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules, answers: [sheetReply(...rules.map((_, i) => W('Price', `line 2 rule ${i + 1}`)))], choose });
+
+test('the REAL expenses.csv (an amount and a tax on every row): `~ Price over 500` asks ONE tie question with the columns [Amount, Tax]; nothing is Not checked', async () => {
+  const { r, asked, sent } = await tieAsk(() => ({ choice: 'drop' }));
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
-  assert.equal(asked, null);
+  assert.equal(sent.length, 1);
+  assert.equal(asked.questions.length, 1);
+  const q = asked.questions[0];
+  assert.deepEqual([q.line, q.rule, q.source, q.ask], [2, 1, 'look', 'reading']);
+  assert.equal(q.question, "I found 2 columns matching 'Price': Amount, Tax. Choose one. (your answer replaces that ~ rule on line 2).");
+  assert.deepEqual(q.columns, ['Amount', 'Tax']);
+  assert.equal(q.reading, undefined, 'a tie has no single reading to Agree to');
+});
+
+test('tie: picking Amount gives [\'Amount over 500\'], picking Tax gives [\'Tax over 500\'], the lines are unchanged', async () => {
+  for (const col of ['Amount', 'Tax']) {
+    const { seen } = await tieAsk(() => ({ choice: 'column', text: col }));
+    assert.deepEqual(seen.jobLines.map((/** @type {any} */ l) => l.n), [1, 2], 'no line added');
+    assert.deepEqual(seen.jobLines[1].rules, [`${col} over 500`]);
+    assert.equal(seen.jobLines[1].text, 'list every expense over 500');
+  }
+});
+
+test('tie: Drop it leaves the rule as written (Not checked); own words replace the rule one for one', async () => {
+  assert.deepEqual((await tieAsk(() => ({ choice: 'drop' }))).seen.jobLines[1].rules, ['Price over 500']);
+  assert.deepEqual((await tieAsk(() => ({ choice: 'rule', text: 'Amount plus Tax over 500' }))).seen.jobLines[1].rules, ['Amount plus Tax over 500']);
+});
+
+test('tie: a column that is not one of the tied columns is refused by the block and the question stays open', async () => {
+  const { CheckBlock } = await import('../src/checkblock.js');
+  const { applySheetWords } = await import('../src/sheetlook.js');
+  const { questionsOfBlock, applyChoices } = await import('../src/blockasks.js');
+  const text = readFileSync(join(HERE, 'fixtures', 'sheets', 'expenses.csv'), 'utf8');
+  const jl = [{ n: 2, text: 'list every expense over 500', rule: 'Price over 500', rules: ['Price over 500'] }];
+  const block = new CheckBlock({ texts: { Expenses: text }, labels: ['Expenses'], asks: true, split: true });
+  block.fromJob(jl);
+  block.addSheetAsks(applySheetWords(text, [W('Price')], jl, 'Expenses').asks);
+  block.reconcile();
+  const [q] = questionsOfBlock(block);
+  const refused = applyChoices(block, [{ key: q.key, choice: 'column', text: 'Date' }]);
+  assert.equal(refused.length, 1);
+  assert.match(refused[0].why, /not one of the columns/);
+  assert.equal(block.open.length, 1, 'still asked');
+  assert.deepEqual(applyChoices(block, [{ key: q.key, choice: 'agree' }]).map((x) => x.key), [q.key], 'there is no single reading to Agree to');
+});
+
+test('tie: it counts toward the 3-ask cap like any ask - four tie questions stop with the list at $0', async () => {
+  const rules = ['Price over 500', 'Cost over 500', 'Fee over 500', 'Total over 500'];
+  const { r, sent } = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules, answers: [sheetReply(W('Price', 'line 2 rule 1'), W('Cost', 'line 2 rule 2'), W('Fee', 'line 2 rule 3'), W('Total', 'line 2 rule 4'))] });
+  assert.equal(sent.length, 1);
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'look-asks-too-many');
+});
+
+test('tie of five columns: own words still reach any column (the box lists all five in its picker, see tests/sheet-tie-box.test.js)', async () => {
+  const f = join(tmp(), 'five.csv');
+  writeFileSync(f, `${['A,B,C,D,E', ...Array.from({ length: 5 }, (_, i) => `${i + 1},${i + 2},${i + 3},${i + 4},${i + 5}`)].join('\n')}\n`);
+  const { asked, seen } = await draftOver({ file: f, label: 'Five', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'rule', text: 'E over 500' }) });
+  assert.deepEqual(asked.questions[0].columns, ['A', 'B', 'C', 'D', 'E']);
+  assert.deepEqual(seen.jobLines[1].rules, ['E over 500']);
 });
 
 test('a word that is no column and no fit is Not checked with its reason, nothing asked', async () => {

@@ -70,16 +70,29 @@ test('the same word twice for one rule is one ask', () => {
   assert.equal(applySheetWords(SHEET(), [W('Price'), W('Price')], JOB, 'aging').asks.length, 1);
 });
 
-test('two columns fit equally, or none fits, or the word is not a number: no ask, and a Not-checked line that says why', () => {
-  const tie = applySheetWords(SHEET(40, 40, 40), [W('Price')], JOB, 'aging');
-  assert.deepEqual(tie.asks, []);
-  assert.deepEqual(notChecked(tie.dropped, JOB), ["line 1: \"under 5000\" — two columns fit 'Price' equally"]);
+test('none fits, or the word is not a number: no ask, and a Not-checked line that says why', () => {
   const none = applySheetWords('Date,Note\n2026-09-01,a\n2026-09-02,b\n', [W('Price')], JOB, 'aging');
   assert.deepEqual(none.asks, []);
   assert.deepEqual(notChecked(none.dropped, JOB), ["line 1: \"under 5000\" — no column fits 'Price'"]);
   const other = applySheetWords(SHEET(), [W('Customer', 'line 1 rule 1', 'other')], JOB, 'aging');
   assert.deepEqual(other.asks, []);
   assert.deepEqual(notChecked(other.dropped, JOB), ["line 1: \"under 5000\" — there is no column 'Customer'"]);
+});
+
+test('two columns fit equally (hamr 2026-11-17): a `~` rule ASKS which column, one choice per tied column, each choice the rule with that column in place; nothing is Not checked', () => {
+  const r = applySheetWords(SHEET(40, 40, 40), [W('Price')], JOB, 'aging');
+  assert.deepEqual(r.dropped, []);
+  assert.equal(r.asks.length, 1);
+  assert.deepEqual(r.asks[0], {
+    line: 1, rule: 1, source: 'look', ask: 'reading', ruleText: 'under 5000', question: "I found 2 columns matching 'Price': Amount, Tax. Choose one. (your answer replaces that ~ rule on line 1).",
+    word: 'Price', columns: ['Amount', 'Tax'], readings: { Amount: "use the column 'Amount' for 'Price'", Tax: "use the column 'Tax' for 'Price'" },
+  });
+});
+
+test('a tie about a word of the line\'s own prose (no `~` rule) cannot ask: it stays Not checked with the tie sentence', () => {
+  const r = applySheetWords(SHEET(40, 40, 40), [W('Price', 'line 1')], JOB, 'aging');
+  assert.deepEqual(r.asks, []);
+  assert.deepEqual(notChecked(r.dropped, JOB), ["line 1: \"Add up the price of every invoice\" — two columns fit 'Price' equally"]);
 });
 
 test('the person already named the column in another rule of the line: the word is that column, nothing is asked again', () => {
@@ -244,9 +257,12 @@ test('F196 panel walk control: a prose word no tied rule says is still asked (ru
   assert.equal(applySheetWords(AGING, [W('balance', 'line 2')], AG_JOB, 'aging').asks.length, 1);
 });
 
-test('the saved expenses.csv has an amount AND a tax on every row: two columns fit equally, so "Price" is Not checked and nothing is asked', () => {
+test('the saved expenses.csv has an amount AND a tax on every row: the tie ASKS which column, Amount or Tax, and rewrites the rule for either', () => {
   const job = [{ n: 2, text: 'list every expense over 500', rules: ['Price over 500'] }];
   const r = applySheetWords(fixture('expenses.csv'), [W('Price', 'line 2 rule 1')], job, 'expenses');
-  assert.deepEqual(r.asks, []);
-  assert.deepEqual(notChecked(r.dropped, job), ["line 2: \"Price over 500\" — two columns fit 'Price' equally"]);
+  assert.deepEqual(r.dropped, []);
+  assert.equal(r.asks.length, 1);
+  assert.equal(r.asks[0].question, "I found 2 columns matching 'Price': Amount, Tax. Choose one. (your answer replaces that ~ rule on line 2).");
+  assert.deepEqual(r.asks[0].columns, ['Amount', 'Tax']);
+  assert.deepEqual(r.asks[0].readings, { Amount: 'Amount over 500', Tax: 'Tax over 500' });
 });
