@@ -2321,3 +2321,11 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 ### Sheet as a list of jobs, parked (v1.140 — 2026-11-17)
 
 - Backlog (PARKED, not built): a sheet as a list of same-shape jobs, one row = one separate run of the same signed workflow (hamr 2026-11-17). Spec, limits and F347 pointer are in the backlog line "A sheet as a list of same-shape jobs" above.
+
+### Only ~ lines are checked (v1.141 — 2026-11-17)
+
+- [ ] Rule (hamr 2026-11-17): only `~` lines are captured and checked. A line without `~` says what to do and is never checked; the job box says so plainly. A step with no `~` reads "Not checked" on the card, judged at Accept.
+- [ ] Suggested + Add: the AI may suggest a good missing rule (from the person's words and what the input shows, code-checked, the `!` rule). Add writes a real `~` line into the job text; Drop of an added suggestion removes it again. The job text always matches what is checked.
+- [ ] `[agent]` extra checks only under a `~` rule, never from step prose. `[default]` code checks (file exists, saved sheet copy, write fence) stay.
+- [ ] The S4 prose-word patches (3463d6bb, 6e303060) come back out; the `~` rule column ask (S1) stays.
+- Parked: the AI job rewrite (F349, 4 rounds, no stable pass). Spec: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b); build not approved.
