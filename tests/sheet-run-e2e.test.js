@@ -23,18 +23,19 @@ const data = readFileSync(EXPENSES, 'utf8').split('\n').filter((l) => l !== '').
 const OVER = data.filter((d) => d.amount > 500).map((d) => d.row);
 const OVER_SUM = Math.round(data.filter((d) => d.amount > 500).reduce((s, d) => s + d.amount, 0) * 100) / 100;
 
-async function run(/** @type {import('node:test').TestContext} */ t, /** @type {number[]} */ named) {
+async function run(/** @type {import('node:test').TestContext} */ t, /** @type {number[]} */ named, math = true) {
   const dir = mkdtempSync(join(tmpdir(), 'sheet-e2e-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const dest = join(dir, 'out');
   const into = join(dir, 'source-seed');
   const prep = await proveRubricInputs({ inputs: [{ n: 1, label: 'expenses', value: EXPENSES }], into, destination: dest });
   if (!prep.ok) throw new Error(JSON.stringify(prep));
-  const checks = [
+  const all = [
     { id: 'l1r1', rule: 'cells', table: 'expenses', claim: 'l1r1', op: 'rows', where: WHERE, covers: [1] },
     { id: 'l1a1', rule: 'cells', table: 'expenses', claim: 'l1a1', op: 'sumIf', column: 'Amount', where: WHERE, covers: [], row: 'agent' },
     { id: 'l1a2', rule: 'cells', table: 'expenses', claim: 'l1a2', op: 'countIf', where: WHERE, covers: [], row: 'agent' },
   ];
+  const checks = math ? all : all.slice(0, 1);
   const base = SPEC0.closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step');
   const stage = { ...base, params: { step: 1, parts: [buildSheetPart({ text: 'rows over 500, their count and total', checks })] } };
   const closeDecl = { ...SPEC0.closeDecl, stages: SPEC0.closeDecl.stages.map((/** @type {any} */ s) => (s.kind === 'rubric-step' ? stage : s)) };
@@ -105,4 +106,14 @@ test('REQUEST CONSTRUCTION at the provider boundary: the worker\'s real requests
     assert.equal(wire.includes(secret), false, `the provider request carries "${secret}"`);
   }
   assert.equal(/\b500\b/.test(wire), false, 'the bound 500 is not in the request');
+});
+
+test('REQUEST CAPTURE: with no sumIf/countIf check the provider request does NOT carry the "do not write totals" line (the line is conditional)', async (t) => {
+  const r = await run(t, OVER, false);
+  assert.match(r.out, /outcome\s+green/);
+  const wire = JSON.stringify({ systems: r.provider.systems, messages: r.provider.messagesLog.map((m) => m.filter((x) => x.role !== 'assistant')) });
+  assert.ok(wire.includes('numbered by its sheet row'), 'the sheet brief itself is there');
+  assert.equal(wire.includes('Do not write a total or a count'), false);
+  const delivered = readdirSync(join(r.dest, 'steps'));
+  assert.equal(JSON.parse(readFileSync(join(r.dest, 'steps', delivered[0]), 'utf8')).text, 'Total 99999.99 over 7 rows', 'no sum/count check: the delivered text is the worker\'s, unchanged');
 });

@@ -1090,10 +1090,11 @@ async function listOutputFiles(dir, rel = '') {
  * refuse `destination-contained`, which a containment check against `tree`
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
- * @param {{tree: string, into?: string, destination: string}} o
+ * `amend` (S3), when given, is `(rel under output/, bytes) => bytes`: the DELIVERED copy is written from what it returns (the file in the tree is never touched), and the delivery record is of those bytes.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer}} o
  * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination }) {
+export async function copyOut({ tree, into, destination, amend }) {
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
   const destAbs = resolve(destination);
@@ -1104,7 +1105,8 @@ export async function copyOut({ tree, into, destination }) {
   const delivered = [];
   for (const rel of candidates) {
     const srcPath = join(outputDir, rel);
-    const buf = await readFile(srcPath);
+    const read = await readFile(srcPath);
+    const buf = amend === undefined ? read : amend(rel.split(sep).join('/'), read);
     if (buf.length === 0) continue; // an empty file is not a delivered result — skipped, never refused
     const declaredFile = join(destAbs, rel);
     await mkdir(dirname(declaredFile), { recursive: true });
@@ -1115,7 +1117,8 @@ export async function copyOut({ tree, into, destination }) {
       // `pickDelivery` choosing a free name and this line — a mutation that
       // drops it survives every test in this file for exactly that reason,
       // and is a known, accepted survivor, not a gap.
-      await copyFile(srcPath, pick.path, fsConstants.COPYFILE_EXCL);
+      if (buf === read) await copyFile(srcPath, pick.path, fsConstants.COPYFILE_EXCL);
+      else await writeFile(pick.path, buf, { flag: 'wx' });
     } catch (e) {
       if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${pick.path} already exists — bareloop never overwrites a person's file`);
       return refuse('destination-write-failed', `copying to ${pick.path} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);

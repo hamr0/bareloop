@@ -3,7 +3,7 @@
 //     `source.json`, and its row-numbered view (`input/<sheet>.rows.txt`, hamr's (ii)) written beside it and committed into the seed. The view is derived and never graded; the sha comes from the CSV only;
 //   - the read (`readStageSheets`, stage close): the frozen copy, as bareguard's table, held to the recorded sha (the file bytes against the door's sha256 too). bareguard compares the table to the recorded sha when it checks
 //     and stops if it differs (src/rubricstep.js `gradeStep` names the input);
-//   - the report (`writeSheetTotals`, just before delivery): for each sumIf/countIf the plain line of code's own total/count of the rows the worker named (hamr's (iii)), written beside the step file.
+//   - the report (`sheetReportLines` + `deliveredAmender`, at delivery): for each sumIf/countIf the plain line of code's own total/count of the rows the worker named (hamr's (iii)), appended to the end of the DELIVERED copy's `text` only.
 // Adapted: fwd read `run.json` and its inputs manifest (`readRunInputs`), and `closeSheet` called `checkStep` itself; bareloop's frozen tree + `source.json` is the record, and the judge is `gradeStep` (the stage close in
 // src/kinds.js `runRubricStep`), which builds the rubric from the signed `sheet` part. fwd's `tableChecksFailingOnInput` is `tableCheckFails` in src/sheetbuild.js (S2).
 // Throws away: bareguard's `full` expected values are never kept here; a red keeps the gaps, which name rows and counts, never a cell's text.
@@ -18,9 +18,6 @@ import { sha256Of, stepFileRel } from './rubricstep.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const SHA_RE = /^[0-9a-f]{64}$/;
-
-/** where the report's code-computed total of job line N is written, tree-relative (delivered with the rest of `output/` by `copyOut`) @param {number} n @returns {string} */
-export const totalFileRel = (n) => stepFileRel(n).replace(/\.json$/, '.total.txt');
 
 /**
  * RUN START: freeze every sheet a rubric-step stage reads (see the file head). A job with no `sheet` part changes nothing (`seed: null`, the record and the tree untouched). Never throws; every refusal ends
@@ -93,16 +90,16 @@ export async function readStageSheets({ workdir, recorded, params }) {
 }
 
 /**
- * JUST BEFORE DELIVERY (a green only): for each rubric-step stage whose sheet part holds a sumIf or countIf, write `output/steps/<n>.total.txt` with code's own line(s) computed from the frozen table and the rows the
- * worker named (`sheetTotalLines`). The worker's own number is never read. A stage with no such check, or no step file, writes nothing.
- * @param {{workdir: string, closeDecl: any}} o @returns {Promise<{ok: true, written: string[]}|{ok: false, error: string}>}
+ * The report lines of a green run, by delivered file: for each rubric-step stage whose sheet part holds a sumIf or countIf, code's own line(s) computed from the frozen table and the rows the worker named
+ * (`sheetTotalLines`), keyed by the step file's path under `output/` (`steps/<n>.json`). The worker's own number is never read. A stage with no such check, or no step file, has no entry. Reads only; writes nothing.
+ * @param {{workdir: string, closeDecl: any}} o @returns {Promise<{ok: true, byRel: Record<string, string[]>}|{ok: false, error: string}>}
  */
-export async function writeSheetTotals({ workdir, closeDecl }) {
-  /** @type {string[]} */
-  const written = [];
+export async function sheetReportLines({ workdir, closeDecl }) {
+  /** @type {Record<string, string[]>} */
+  const byRel = {};
   const stages = (Array.isArray(closeDecl?.stages) ? closeDecl.stages : []).filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)
     && sheetChecksOf(st.params).some((c) => ROW_MATH_OPS.includes(c.op)));
-  if (stages.length === 0) return { ok: true, written };
+  if (stages.length === 0) return { ok: true, byRel };
   /** @type {any} */
   let manifest;
   try { manifest = JSON.parse(await readFile(join(dirname(workdir), 'source.json'), 'utf8')); } catch (e) { return { ok: false, error: `the source record could not be read: ${/** @type {Error} */ (e).message}` }; }
@@ -115,9 +112,25 @@ export async function writeSheetTotals({ workdir, closeDecl }) {
     const sheets = await readStageSheets({ workdir, recorded, params: st.params });
     if (!sheets.ok) return { ok: false, error: sheets.why };
     const lines = sheetTotalLines(sheetChecksOf(st.params), isRec(obj) ? obj.claims : null, sheets.tables);
-    if (lines.length === 0) continue;
-    await writeFile(join(workdir, totalFileRel(step)), `${lines.join('\n')}\n`);
-    written.push(totalFileRel(step));
+    if (lines.length > 0) byRel[stepFileRel(step).replace(/^output\//, '')] = lines;
   }
-  return { ok: true, written };
+  return { ok: true, byRel };
+}
+
+/**
+ * The DELIVERED copy of a step file with code's lines at the END of its `text`: one blank line, then the lines. The file stays valid JSON, every other key as written. A file that is not a JSON object
+ * with a string `text` is returned unchanged (it cannot have been graded green).
+ * @param {Buffer} buf the step file as the worker wrote it @param {string[]} lines @returns {Buffer}
+ */
+export function amendReport(buf, lines) {
+  /** @type {any} */
+  let obj;
+  try { obj = JSON.parse(buf.toString('utf8')); } catch { return buf; }
+  if (!isRec(obj) || typeof obj.text !== 'string') return buf;
+  return Buffer.from(`${JSON.stringify({ ...obj, text: `${obj.text}\n\n${lines.join('\n')}` }, null, 2)}\n`, 'utf8');
+}
+
+/** `copyOut`'s `amend` hook for the delivered copy only (never the graded tree file): `(rel under output/, bytes) => bytes` @param {Record<string, string[]>} byRel @returns {(rel: string, buf: Buffer) => Buffer} */
+export function deliveredAmender(byRel) {
+  return (rel, buf) => (Object.hasOwn(byRel, rel) ? amendReport(buf, byRel[rel]) : buf);
 }

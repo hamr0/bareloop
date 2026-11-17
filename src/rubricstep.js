@@ -120,7 +120,7 @@ export function lineBriefs(closeDecl) {
           `  ${brief.answer}`,
           `  fields: ${JSON.stringify(brief.fields)}`,
           '  To name a row, use the row number the numbered view of the sheet shows for it (the second input file for the sheet): the header is row 1 and the first data row is row 2.',
-          ...(brief.math ? ['  Where a box names rows, list every row the line asks for and do not add up or count them yourself: code does that from the rows you name.'] : []),
+          ...(brief.math ? ['  Do not write a total or a count for the rows you name: code adds them up from the rows you name.'] : []),
         ].join('\n'),
       });
       continue;

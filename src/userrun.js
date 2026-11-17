@@ -41,7 +41,7 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
-import { freezeSheets, writeSheetTotals } from './sheetrun.js';
+import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -2311,12 +2311,15 @@ async function execute(ctx) {
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
     // may produce more than one file — `copyOut` delivers every non-empty file
     // under `output/`, each under its own dated name, and returns the list.
-    // S3 (iii): the report carries code's own total and count from the rows the worker named, written beside the step file just before delivery (a green only: the same place `copyOut` runs)
+    // S3 (iii): the delivered report carries code's own total and count at the END of the step file's text: a green only (this is the place `copyOut` runs), the DELIVERED copy only, the graded tree file untouched
+    /** @type {((rel: string, buf: Buffer) => Buffer)|undefined} */
+    let amend;
     try {
-      const totals = await writeSheetTotals({ workdir: wd, closeDecl: spec.closeDecl });
-      if (!totals.ok) out(`\nSHEET TOTALS  not written - ${totals.error}`);
-    } catch (e) { out(`\nSHEET TOTALS  not written - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
-    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination });
+      const rep = await sheetReportLines({ workdir: wd, closeDecl: spec.closeDecl });
+      if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
+      else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
+    } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
+    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}) });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
       // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same
