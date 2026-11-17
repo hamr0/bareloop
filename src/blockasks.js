@@ -4,7 +4,7 @@
 import { readingQuestion } from './pagemap.js';
 import { plainWords } from './checkpick.js';
 
-/** @typedef {{key: string, rowKey: string, line: number, rule: number, source: 'look', ask: 'reading'|'check', ruleText: string, question: string, counted: boolean, prose?: boolean, reading?: string, columns?: string[], check?: Record<string, any>}} BlockAsk */
+/** @typedef {{key: string, rowKey: string, line: number, rule: number, source: 'look', ask: 'reading'|'check', ruleText: string, question: string, counted: boolean, reading?: string, columns?: string[], check?: Record<string, any>}} BlockAsk */
 
 /**
  * The questions the block has open, in the order the person meets them: the look's readings, then the pick path's check proposals in rule order (a proposal is not counted toward the 3-ask cap).
@@ -15,7 +15,7 @@ export function questionsOfBlock(block) {
   return block.open.map((/** @type {any} */ q) => {
     const row = block.rows.find((r) => r.key === q.rowKey);
     const rule = Number(row?.rule);
-    const base = { key: q.key, rowKey: q.rowKey, line: q.line, rule, source: /** @type {'look'} */ ('look'), ruleText: String(q.ruleText), ...(q.prose === true ? { prose: true } : {}) };
+    const base = { key: q.key, rowKey: q.rowKey, line: q.line, rule, source: /** @type {'look'} */ ('look'), ruleText: String(q.ruleText) };
     // a tie (S1) has no single reading: `columns` are its choices, in sheet order
     if (q.ask === 'reading') return { ...base, ask: /** @type {'reading'} */ ('reading'), counted: true, ...(q.proposal == null ? {} : { reading: String(q.proposal) }), ...(Array.isArray(q.columns) ? { columns: q.columns } : {}), question: typeof q.question === 'string' ? q.question : readingQuestion(q.line, String(q.ruleText), String(q.proposal)) };
     const words = plainWords(q.proposal);

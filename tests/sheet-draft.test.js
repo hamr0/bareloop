@@ -191,11 +191,11 @@ test('a word that is no column and no fit is Not checked with its reason, nothin
   assert.equal(asked, null);
 });
 
-test('a job whose ONLY input is a CSV takes the sheet look even with no `~` rule on any line (hamr 2026-11-17: every line of a sheet-only job is a sheet line)', async () => {
+test('a CSV input with no `~` rule on any line takes the page-word map as before (no sheet call)', async () => {
   const file = walkSheet();
-  const { sent } = await draftOver({ file, label: 'Expenses', rules: [], answers: [reply({ text: JSON.stringify({ facts: [] }) })] });
-  assert.equal(sent.length, 1);
-  assert.ok(JSON.stringify(sent[0]).includes(SHEET_MARK), 'the sheet call');
+  const { sent } = await draftOver({ file, label: 'Expenses', rules: [], answers: [reply({ text: JSON.stringify({ facts: [], cannot: [] }) })] });
+  assert.ok(sent.length >= 1);
+  assert.ok(sent.every((m) => !JSON.stringify(m).includes(SHEET_MARK)), 'no sheet call');
 });
 
 test('a job with NO csv input behaves byte-identically to the page map alone: same calls, same drafter hand-off, same result', async () => {

@@ -20,7 +20,6 @@ import { SIGNED_ROW_FIELDS } from './declaredclose.js';
 import { factSentence, countSentence } from './facts.js';
 import { isDeepStrictEqual } from 'node:util';
 import { buildSheetPart } from './sheetclaims.js';
-import { ruleWithColumn } from './sheetfind.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { sheetCheckName, sheetPlainText, coversWords, sheetCheckBody, sheetRowKey, sheetDefaultKey } from './sheetrows.js';
 
@@ -150,8 +149,6 @@ export class CheckBlock {
     this.sheetLines = new Set();
     /** S4: what code built from the AI's `sheetChecks` (src/sheetbuild.js `buildSheetChecks`), null until the row-edit turn has answered @type {Awaited<ReturnType<typeof import('./sheetbuild.js').buildSheetChecks>>|null} */
     this.sheetBuilt = null;
-    /** S4 (hamr 2026-11-17): the sheet look's questions about a word of a line's OWN PROSE (no `~` rule): the answer swaps that word in the line's text, in place. Never a row of `rows` @type {{key: string, line: number, word: string, ruleText: string, question: string, proposal: string|null, column?: string, columns?: string[], readings?: Record<string, string>, done?: boolean}[]} */
-    this.proseAsks = [];
   }
 
   /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names @param {string[]|null} [fence] the signed write fence, when the job has one */
@@ -266,29 +263,10 @@ export class CheckBlock {
    */
   addSheetAsks(asks) {
     for (const a of asks) {
-      if (a.rule === null) { this.addProseAsk(a); continue; }
-      const r = this.ruleRows(a.line).find((x) => x.rule === a.rule);
+      const r = a.rule === null ? undefined : this.ruleRows(a.line).find((x) => x.rule === a.rule);
       if (r) r.sheetAsk = { ruleText: r.text, question: a.question, proposal: a.reading ?? null, ...(Array.isArray(a.columns) ? { columns: [...a.columns], readings: { ...a.readings } } : {}) };
     }
   }
-
-  /**
-   * A word of the line's own prose that is no column (hamr 2026-11-17): asked like a `~` rule's word, the answer SWAPS the word in the line's text (no line, no `~` rule is added). With nobody to ask it is Not checked in plain words, never dropped silently.
-   * @param {{line: number, word?: string, ruleText?: string, question: string, reading?: string, column?: string, columns?: string[], readings?: Record<string, string>}} a
-   */
-  addProseAsk(a) {
-    const word = String(a.word ?? '');
-    if (!this.asks) { this.addProseNotChecked(a.line, word, `the word "${word}" is no column of the sheet, so you judge it at Accept.`); return; }
-    this.proseAsks.push({ key: `L${a.line}.~word.${norm(word)}`, line: a.line, word, ruleText: String(a.ruleText ?? ''), question: a.question, proposal: a.reading ?? null, ...(typeof a.column === 'string' ? { column: a.column } : {}), ...(Array.isArray(a.columns) ? { columns: [...a.columns], readings: { ...a.readings } } : {}) });
-  }
-
-  /** a prose word left Not checked: a `!` row of its own with its reason, shown like any look drop @param {number} line @param {string} word @param {string} why */
-  addProseNotChecked(line, word, why) {
-    this.addRow({ key: `L${line}.fact.${norm(word)}`, line, kind: 'fact', by: 'agent', from: 'look', name: word, shape: 'phrase', words: [], lookWhy: why });
-  }
-
-  /** the line's own words now (a prose answer swapped a word) @param {number} n @param {string} text */
-  setLineText(n, text) { const l = this.lines.find((x) => x.n === n); if (l) l.text = text; }
 
   // 3. can code check it on the saved page? Never the AI. `row.can` = {ok, how, ...} or {ok:false, why} or {ok:false, ask, ...}
   match() {
@@ -832,10 +810,6 @@ export class CheckBlock {
       if (!r.can?.ask) continue;
       this.open.push({ key: `${r.key}:${r.can.ask}`, rowKey: r.key, line: r.line, ruleText: r.text, ask: r.can.ask, proposal: r.can.proposal ?? null, ...(typeof r.can.question === 'string' ? { question: r.can.question } : {}), ...(Array.isArray(r.can.columns) ? { columns: r.can.columns, readings: r.can.readings } : {}), offers: { agree: r.can.proposal != null, drop: true } });
     }
-    for (const p of this.proseAsks) {
-      if (p.done) continue;
-      this.open.push({ key: `${p.key}:reading`, rowKey: p.key, line: p.line, ruleText: p.ruleText, ask: 'reading', prose: true, proposal: p.proposal, question: p.question, ...(p.columns ? { columns: p.columns, readings: p.readings } : {}), offers: { agree: p.proposal != null, drop: true } });
-    }
     return this.open;
   }
   hasOpenQuestions() { return this.open.length > 0; }
@@ -846,8 +820,6 @@ export class CheckBlock {
   /** @param {string} qKey @param {string} choice @param {string} [text] the person's correction (a reading question only) @returns {{ok: true} | {ok: false, why: string}} */
   applyAnswer(qKey, choice, text) {
     const q = this.open.find((x) => x.key === qKey);
-    const pa = q ? this.proseAsks.find((x) => x.key === q.rowKey) : undefined;
-    if (q && pa) return this.answerProse(q, pa, choice, text);
     const r = q ? this.rows.find((x) => x.key === q.rowKey) : undefined;
     if (!q || !r) return { ok: false, why: 'out of date' };
     if (choice === 'agree') {
@@ -881,27 +853,6 @@ export class CheckBlock {
     return { ok: false, why: 'not one of the choices' };
   }
 
-  /** the person's answer about a prose word: Agree / the picked column / own words swap the word in the line's text; Drop it leaves it Not checked with the person's own reason (never silent) @param {any} q @param {any} pa @param {string} choice @param {string} [text] @returns {{ok: true} | {ok: false, why: string}} */
-  answerProse(q, pa, choice, text) {
-    /** @type {string|null} */ let column = null;
-    if (choice === 'agree') { if (!q.offers.agree || typeof pa.column !== 'string') return { ok: false, why: 'that choice is not offered for this question' }; column = pa.column; }
-    else if (choice === 'column') {
-      if (!Array.isArray(pa.columns)) return { ok: false, why: 'that choice is not offered for this question' };
-      if (!pa.columns.includes(String(text ?? ''))) return { ok: false, why: 'that is not one of the columns offered' };
-      column = String(text);
-    } else if (choice === 'rule' && !Array.isArray(pa.columns)) {
-      column = String(text ?? '').replace(/\s+/g, ' ').trim();
-      if (!column) return { ok: false, why: 'an answer is needed' };
-    } else if (choice === 'drop') { this.addProseNotChecked(pa.line, pa.word, REASON.left); pa.done = true; return { ok: true }; }
-    else return { ok: false, why: 'not one of the choices' };
-    // the swap is made on the line's words as they stand NOW (an earlier answer on the same line may have changed them); a word no longer in the line is Not checked in plain words, never lost
-    const said = ruleWithColumn(this.lines.find((l) => l.n === pa.line)?.text ?? '', pa.word, String(column));
-    pa.done = true;
-    if (said === null) { this.addProseNotChecked(pa.line, pa.word, `the word "${pa.word}" is no longer in line ${pa.line}, so you judge it at Accept.`); return { ok: true }; }
-    this.setLineText(pa.line, said);
-    return { ok: true };
-  }
-
   /**
    * The job lines as the list now holds them: every line's `~` rules are the rule rows' own words, in rule order (a replaced rule keeps its place and number). ONE owner of the job text after an answer.
    * @template {{n: number, text: string}} L @param {L[]} jobLines @returns {(L & {rule: string, rules: string[]})[]}
@@ -909,7 +860,7 @@ export class CheckBlock {
   jobLinesView(jobLines) {
     return jobLines.map((l) => {
       const rules = this.ruleRows(l.n).sort((a, b) => a.rule - b.rule).map((r) => String(r.text));
-      return { ...l, text: this.lines.find((x) => x.n === l.n)?.text ?? l.text, rule: rules.join('; '), rules };
+      return { ...l, rule: rules.join('; '), rules };
     });
   }
 

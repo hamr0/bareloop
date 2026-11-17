@@ -18,7 +18,7 @@ import { MAP_UNREADABLE, runPageMap, defaultLoop } from './pagemap.js';
 import { tieOf } from './pagerules.js';
 import { lineRules, wordsSaidOn } from './rubricstep.js';
 import { countPhrase, wordForms } from './factwords.js';
-import { findColumn, columnQuestion, columnTieQuestion, ruleWithColumn } from './sheetfind.js';
+import { findColumn, columnQuestion, columnTieQuestion } from './sheetfind.js';
 
 /** the system words of the sheet call (the page call's own: it never grades and never invents) */
 export const SHEET_SYSTEM = 'You map a person\'s job to the columns of ONE spreadsheet. You never grade and never invent words: a word you return is the job\'s own word, copied as the job writes it.';
@@ -34,7 +34,19 @@ export const SHEET_MARK = 'THE SHEET:';
  */
 export const columnRuleWords = (word, column) => `use the column '${column}' for '${word}'`;
 
-export { ruleWithColumn };
+/**
+ * A `~` rule with its own word for the column replaced by the column, in place ("Price over 500" -> "Amount over 500"): the first whole-word, case-blind match of the word or its plural/singular.
+ * Null when the rule does not say the word (the model's word is then not in the rule, and nothing is rewritten).
+ * @param {string} ruleText @param {string} word @param {string} column @returns {string|null}
+ */
+export function ruleWithColumn(ruleText, word, column) {
+  for (const form of [word.trim(), ...wordForms(word)]) {
+    if (form === '') continue;
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])${form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+    if (re.test(ruleText)) return ruleText.replace(re, (_m, pre) => `${pre}${column}`);
+  }
+  return null;
+}
 
 /**
  * What the AI is told for ONE sheet: the job, and the sheet's header and first rows. It names the job's word for each rule; it does not pick a column to offer.
@@ -113,15 +125,15 @@ export function applySheetWords(text, words, jobLines, label) {
       continue;
     }
     if (w.kind !== 'number') { dropped.push({ ...rec, reason: 'no-column' }); continue; }
-    // a tie ASKS which column (hamr 2026-11-17), for a `~` rule's word and for a word of the line's own prose alike; a prose word the line does not say as a whole word cannot be swapped and is Not checked in plain words
-    if ((found.kind === 'tie' || found.kind === 'ask') && at.rule === undefined && ruleWithColumn(ruleText, w.word, found.kind === 'tie' ? found.columns[0] : found.column) === null) { dropped.push({ ...rec, reason: 'no-column' }); continue; }
+    // a tie on a `~` rule's word ASKS which column (hamr 2026-11-17); the line's own prose has no rule to replace, so only that stays Not checked
+    if (found.kind === 'tie' && at.rule === undefined) { dropped.push({ ...rec, reason: 'column-tie', other: found.columns.map((c) => `"${c}"`).join(', ') }); continue; }
     if (found.kind === 'none') { dropped.push({ ...rec, reason: 'no-fit', other: String(found.rows) }); continue; }
     if (found.kind === 'tie') {
       // a tie is never decided by code from ANOTHER rule of the line (hamr 2026-11-17: if code cannot decide, it asks); only THIS rule's own words naming a header settle it (the tiedRules skip below)
-      if (at.rule !== undefined) ruleWords.add(`${at.line}\u0000${w.word.toLowerCase()}`);
+      ruleWords.add(`${at.line}\u0000${w.word.toLowerCase()}`);
       if (tiedRules.has(`${at.line}\u0000${at.rule}`)) continue;
       asks.push({
-        line: at.line, rule: at.rule ?? null, source: 'look', ask: 'reading', ruleText, question: columnTieQuestion(w.word, found.columns, at.line, at.rule !== undefined), word: w.word, columns: found.columns,
+        line: at.line, rule: at.rule ?? null, source: 'look', ask: 'reading', ruleText, question: columnTieQuestion(w.word, found.columns, at.line), word: w.word, columns: found.columns,
         readings: Object.fromEntries(found.columns.map((c) => [c, ruleWithColumn(ruleText, w.word, c) ?? columnRuleWords(w.word, c)])),
       });
       continue;
@@ -133,7 +145,7 @@ export function applySheetWords(text, words, jobLines, label) {
     // F196: the line's prose word that a tied `~` rule of the line also says is settled by that rule (one word, one question, whichever the look tied the ask to)
     if (at.rule === undefined && rules.some((r, i) => tiedRules.has(`${at.line}\u0000${i + 1}`) && wordForms(w.word).some((f) => countPhrase(r, f) > 0))) continue;
     asks.push({
-      line: at.line, rule: at.rule ?? null, source: 'look', ask: 'reading', ruleText, question: columnQuestion(w.word, found, at.line, at.rule !== undefined), reading: ruleWithColumn(ruleText, w.word, found.column) ?? columnRuleWords(w.word, found.column), word: w.word, column: found.column,
+      line: at.line, rule: at.rule ?? null, source: 'look', ask: 'reading', ruleText, question: columnQuestion(w.word, found, at.line, at.rule !== undefined), reading: (at.rule === undefined ? null : ruleWithColumn(ruleText, w.word, found.column)) ?? columnRuleWords(w.word, found.column), word: w.word, column: found.column,
     });
   }
   return { facts, asks: asks.filter((a) => a.rule !== null || !ruleWords.has(`${a.line}\u0000${a.word.toLowerCase()}`)), dropped };
@@ -248,8 +260,8 @@ export async function runSheetLook({
     if (met.stop !== null) return absent(met.stop.reason, met.stop.cause, met.stop.budgetStop);
     if (!got.ok) return absent(got.reason, SURVEY_CAUSES.UNPARSEABLE);
     dropped.push(...got.dropped);
-    // every ask goes on, a word of the line's own prose included (hamr 2026-11-17): none is filtered, so no word is dropped without an ask or a visible Not checked line
-    sheetAsks.push(...got.asks);
+    // a word of the line's own prose (no `~` rule) has no rule to replace: nothing is asked about it here (S1 asks about a `~` rule only)
+    sheetAsks.push(...got.asks.filter((a) => a.rule !== null));
     maps.push({ source: label, asks: got.asks.length });
   }
   return {
@@ -265,9 +277,7 @@ export async function runSheetLook({
  */
 export async function runLook(o) {
   const sheets = Array.isArray(o.sheets) ? /** @type {string[]} */ (o.sheets).filter((l) => typeof o.texts?.[l] === 'string') : [];
-  // a job whose every input is a sheet looks at it even with no `~` rule anywhere (every line is a sheet line); otherwise a `~` rule is what sends a CSV to the sheet look
-  const allSheets = o.inputs.length > 0 && o.inputs.every((/** @type {any} */ i) => sheets.includes(i.label));
-  if (sheets.length === 0 || !(allSheets || o.jobLines.some((/** @type {any} */ l) => lineRules(l).length > 0))) return runPageMap(o);
+  if (sheets.length === 0 || !o.jobLines.some((/** @type {any} */ l) => lineRules(l).length > 0)) return runPageMap(o);
   const pick = (/** @type {Record<string, string>} */ texts, /** @type {boolean} */ sheet) => Object.fromEntries(Object.entries(texts).filter(([l]) => sheets.includes(l) === sheet));
   const pageTexts = pick(o.texts, false);
   const pageInputs = o.inputs.filter((/** @type {any} */ i) => !sheets.includes(i.label));

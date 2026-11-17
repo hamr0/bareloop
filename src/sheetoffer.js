@@ -77,12 +77,11 @@ export function sheetOpsBrief() {
 
 /**
  * The rules the build enforces on a suggestion, as lines for the drafter (every one of them is a refusal at $0 in src/sheetbuild.js).
- * @param {string[]} roles the CSV inputs' labels @param {number[]} [lineNums] the job's sheet lines @param {boolean} [every] every input is a CSV, so every job line is a sheet line (a line with no guardrail too)
+ * @param {string[]} roles the CSV inputs' labels @param {number[]} [lineNums] the job's sheet lines
  * @returns {string[]}
  */
-export function sheetOfferRules(roles, lineNums = /** @type {number[]} */ ([]), every = false) {
+export function sheetOfferRules(roles, lineNums = /** @type {number[]} */ ([])) {
   return [
-    ...(every ? ['- Every job line reads the sheet, a line with no guardrail too: suggest a check for what such a line says in its own words (for example a line that says no row is listed twice).'] : []),
     ...(lineNums.length ? [`- The job's sheet lines are ${lineNums.join(', ')} (the lines shown with their ~ rules): "line" in a sheetChecks suggestion is one of those numbers, exactly as shown.`] : []),
     `- A job line with a guardrail about values in a CSV input (${roles.join(', ')}) gets its checks from "sheetChecks" in your reply: 1 to ${MAX_SHEET_CHECKS} suggestions, each a bareguard check object from the ops below with "line" = the job line's number and "table" = the CSV input's label. Suggest the checks the line's guardrail needs and nothing else; code builds each one on bareguard or refuses it with its reason, and the person sees every one.`,
     '- A column name in a suggestion is picked from the sheet\'s header, spelled exactly; the tool only lets you pick a header name.',
