@@ -2324,8 +2324,33 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 ### Only ~ lines are checked (v1.141 — 2026-11-17)
 
-- [ ] Rule (hamr 2026-11-17): only `~` lines are captured and checked. A line without `~` says what to do and is never checked; the job box says so plainly. A step with no `~` reads "Not checked" on the card, judged at Accept.
-- [ ] Suggested + Add: the AI may suggest a good missing rule (from the person's words and what the input shows, code-checked, the `!` rule). Add writes a real `~` line into the job text; Drop of an added suggestion removes it again. The job text always matches what is checked.
-- [ ] `[agent]` extra checks only under a `~` rule, never from step prose. `[default]` code checks (file exists, saved sheet copy, write fence) stay.
-- [ ] The S4 prose-word patches (3463d6bb, 6e303060) come back out; the `~` rule column ask (S1) stays.
-- Parked: the AI job rewrite (F349, 4 rounds, no stable pass). Spec: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b); build not approved.
+Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replaces the S4 prose-word patches (F350) and the parked AI job rewrite (F349).
+
+**The rule.** Only lines starting with `~` are captured and checked. A line without `~` says what to do and is never checked. No AI rewrite, no guessing the person's intent from step prose.
+
+**What the person sees**
+- [ ] Job box hint, one line under the box, always shown: "Only lines starting with ~ are checked. Other lines say what to do."
+- [ ] Card, for a step with no `~` rule, one Not checked line: "Line 2: no ~ rule here. What the text says, you judge it at Accept."
+- [ ] Suggested box: look unchanged ("not in your job, not checked unless you add it"). Add writes a real `~` line into the job text directly under its step, so the job box shows it; Drop removes that line again; Revise keeps it (from then on it is the person's own text). A refused Add changes nothing and says why in plain words.
+
+**What is checked**
+- [ ] `[you]` rows: only from `~` rules.
+- [ ] `[agent]` rows: only when they belong to a `~` rule (for example a count under `~ Amount over 500`), never from step prose.
+- [ ] `[default]` code checks stay (file exists, saved sheet copy, write fence).
+- [ ] Step prose with no `~`: one Not checked line, judged at Accept.
+- [ ] One owner: the job lines. Card, job box, signed lines and Job tab all read that one text.
+
+**What is NOT done**
+- AI job rewrite: parked (F349, 4 rounds, no stable pass).
+- Mixed page + sheet job (F347): not built.
+- Prose-word asks (a word of a line's own prose asked like a rule word, and "every line of a sheet-only job is a sheet line"): withdrawn, F350. The two commits (3463d6bb, 6e303060) come back out.
+- The S1 `~` rule column ask (with the tie picker and its Drop it) STAYS.
+
+**Build order** (each piece names its call site and a fail-first test; full gate per piece)
+- [ ] R0 POC, $0, no AI: dry-run the R1 revert in a throwaway worktree, list every code path that builds a check from step prose, show who owns the job lines. Pre-registered bars; result to hamr before R1 if any bar fails.
+- [ ] R1 Revert 3463d6bb and 6e303060 (S1 stays).
+- [ ] R2 Job box hint, and remove prompt wording that says step prose is checked.
+- [ ] R3 Checks come only from `~` lines; report any prose-built check path first.
+- [ ] R4 Add on a Suggested row writes a `~` line; Drop removes it.
+
+Files, tests and the live proof: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b).
