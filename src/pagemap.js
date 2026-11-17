@@ -92,7 +92,7 @@ export function parseMapAnswer(text) {
 }
 
 /** the default loop seam - one spelling of how this repo drives a model */
-const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }) =>
+export const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }) =>
   new Loop({ provider, system, onLlmResult, ...(rates ? { rates } : {}) });
 
 /** the plain-word stop when the answer was not readable twice (no Resume: a draft is not a run) */

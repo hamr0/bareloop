@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- S1, a CSV as an input: `src/csv.js` (RFC 4180 reader; BOM, quoted cells and real row numbers), `src/sheetfind.js` (the column finder: numbers in at least 90% of the rows, a tie offers nothing, a plural matches) and `src/sheetlook.js` (one AI call per CSV with a `~` rule, in place of the page map; code keeps only a real header). A `~` word that is no column asks once ("no column 'Price'; 'Amount' has numbers in 12 of 12 rows. Use it?") and an agreed column rewrites that `~` rule's own words in place. Copied from fwdloop v0.35.0 with its F196 fixes; a job with no CSV is unchanged. Test-proven with a fake provider; no live run yet.
+
 ### Fixed
 
 - The carry note keeps the last red try's failure unless the next ask is a retry of that try (its prompt carries the retry gap); after a strike-limit replan the new step's first ask used to lose that failure. (Corrects the 0.4x wording "left out only when that try failed".)

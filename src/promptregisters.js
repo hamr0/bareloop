@@ -54,6 +54,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/pagemap.js', name: 'MAP_SYSTEM' }),
   Object.freeze({ file: 'src/pagemap.js', name: 'mapPrompt() (inline template, not a const)' }),
 
+  // src/sheetlook.js - the sheet-word call (S1): the AI names the job's own word for the column a rule means
+  Object.freeze({ file: 'src/sheetlook.js', name: 'SHEET_SYSTEM' }),
+  Object.freeze({ file: 'src/sheetlook.js', name: 'sheetPrompt() (inline template, not a const)' }),
+
   // src/readshim.js — the capped/deduplicating read shim's worker-facing strategy
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_STRATEGY' }),
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_DIFF_STRATEGY' }),

@@ -115,7 +115,9 @@ import {
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
-import { runPageMap, tooManyAsksText } from './pagemap.js';
+import { tooManyAsksText } from './pagemap.js';
+import { runLook } from './sheetlook.js';
+import { isSheetInput } from './inputlook.js';
 import { CheckBlock, REASON } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
@@ -472,8 +474,9 @@ export async function authorCloseForJob({
   onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
-  // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
-  lookFn = runPageMap,
+  // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`). S1: the default is `runLook` (src/sheetlook.js), which hands every input
+  // that is not a CSV with a `~` rule to `runPageMap` unchanged, and reads such a CSV with the sheet look instead (one call per CSV).
+  lookFn = runLook,
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -631,9 +634,12 @@ export async function authorCloseForJob({
       survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn) {
       onPhase('look', {});
+      const sheetLabels = (Array.isArray(inputs) ? inputs : []).filter((i) => isSheetInput(i)).map((i) => i.label);
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);
       survey = await lookFn({
         texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, prove: proverOf(frozen.texts), ...(rates ? { rates } : {}),
+        // the look is told which inputs are sheets; absent when none is, so a job with no CSV hands its look the very arguments it always had
+        ...(sheetLabels.length ? { sheets: sheetLabels } : {}),
         ...(Object.keys(lookCallOptions).length ? { callOptions: lookCallOptions } : {}),
       });
       onPhase('look-done', { state: survey?.state ?? null, facts: survey?.facts?.look?.facts?.length ?? 0 });
@@ -712,6 +718,8 @@ export async function authorCloseForJob({
     block.fromJob(jobLines);
     block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
+    // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
+    block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);

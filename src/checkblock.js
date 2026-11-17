@@ -194,6 +194,18 @@ export class CheckBlock {
     }
   }
 
+  /**
+   * S1 (the sheet look, src/sheetlook.js): a `~` rule whose word is no column of its CSV carries ONE column question. Agree writes `reading` (the rule's own words with the column in place of the word) as the rule's words,
+   * through the same one-rule-in, one-rule-out answer as any reading (`applyAnswer`); no line is added. Code builds the question; nothing here reads a model field.
+   * @param {{line: number, rule: number|null, question: string, reading: string}[]} asks
+   */
+  addSheetAsks(asks) {
+    for (const a of asks) {
+      const r = a.rule === null ? undefined : this.ruleRows(a.line).find((x) => x.rule === a.rule);
+      if (r) r.sheetAsk = { ruleText: r.text, question: a.question, proposal: a.reading };
+    }
+  }
+
   // 3. can code check it on the saved page? Never the AI. `row.can` = {ok, how, ...} or {ok:false, why} or {ok:false, ask, ...}
   match() {
     // live draft 3 (hamr 2026-11-13: "anything not in your original job that code can check goes to Suggested"): a `!` fact whose page words are longer than what the job says ("Boston Logan International
@@ -255,6 +267,8 @@ export class CheckBlock {
 
   matchRule(/** @type {Row} */ r) {
     if (this.repo !== null) { this.matchRepoRule(r); return; }
+    // S1: the sheet look's column question, while the rule still says the words it was asked about (an answered, dropped or retyped rule is not asked again)
+    if (r.sheetAsk && this.asks && !r.agreed && !r.left && !r.corrected && r.text === r.sheetAsk.ruleText) { r.can = { ok: false, ask: 'reading', proposal: r.sheetAsk.proposal, question: r.sheetAsk.question, why: REASON.waitingReading }; return; }
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
     // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
     const negated = NEGATING_RE.test(r.text);
@@ -681,7 +695,7 @@ export class CheckBlock {
     this.open = [];
     for (const r of this.rows) {
       if (!r.can?.ask) continue;
-      this.open.push({ key: `${r.key}:${r.can.ask}`, rowKey: r.key, line: r.line, ruleText: r.text, ask: r.can.ask, proposal: r.can.proposal ?? null, offers: { agree: r.can.proposal != null, drop: true } });
+      this.open.push({ key: `${r.key}:${r.can.ask}`, rowKey: r.key, line: r.line, ruleText: r.text, ask: r.can.ask, proposal: r.can.proposal ?? null, ...(typeof r.can.question === 'string' ? { question: r.can.question } : {}), offers: { agree: r.can.proposal != null, drop: true } });
     }
     return this.open;
   }

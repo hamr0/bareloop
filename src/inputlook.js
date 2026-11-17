@@ -157,6 +157,12 @@ export function lookPrompt({ jobLines, labels, lists }) {
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /**
+ * Is this input a spreadsheet the sheet look reads (src/sheetlook.js)? A value (a file path or a URL) that ends `.csv`, any case. The one decider; the look door tells the look which inputs are sheets by it.
+ * @param {{value?: unknown}} input @returns {boolean}
+ */
+export const isSheetInput = (input) => typeof input?.value === 'string' && input.value.toLowerCase().endsWith('.csv');
+
+/**
  * A fact the page-word map kept (src/pagerules.js `KeptFact`), as the look report carries it: a phrase fact holds its alternative
  * phrases; any other holds its labels (the first is the primary), and a money fact its units and currencies.
  * @param {import('./pagerules.js').KeptFact} k @param {string} source @returns {LookFact}

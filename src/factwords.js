@@ -45,6 +45,26 @@ export function countPhrase(source, words) {
   return n;
 }
 
+/**
+ * The forms a word may be written in (hamr's ruling 2026-10-21, "a simple plural matches"): the word, its plural and its singular, case aside. A simple plural is
+ * `s`, `es` after s/x/z/ch/sh, or `ies` for a consonant + `y`; nothing wider ("amounted" is not "amount"). The ONE place a word is allowed a plural: the
+ * sheet look's own-word check and the column finder take their forms from here. A number, a phrase a guardrail names or a money value is never widened by it.
+ * Copied from fwdloop src/pagebits.js@v0.35.0 (wordForms).
+ * @param {string} word @returns {string[]}
+ */
+export function wordForms(word) {
+  const w = loose(word);
+  if (w === '') return [];
+  const forms = new Set([w]);
+  if (/[^aeiou]y$/.test(w)) forms.add(`${w.slice(0, -1)}ies`);
+  else if (/(s|x|z|ch|sh)$/.test(w)) forms.add(`${w}es`);
+  else forms.add(`${w}s`);
+  if (w.endsWith('ies') && w.length > 4) forms.add(`${w.slice(0, -3)}y`);
+  if (/(s|x|z|ch|sh)es$/.test(w)) forms.add(w.slice(0, -2));
+  if (w.endsWith('s') && !w.endsWith('ss') && w.length > 2) forms.add(w.slice(0, -1));
+  return [...forms];
+}
+
 /** @param {string} shape @returns {'money'|'number'|'date'|'time'|'text'} the label list a fact's anchor is picked from */
 const listOf = (shape) => /** @type {any} */ (['money', 'number', 'date', 'time'].includes(shape) ? shape : 'text');
 

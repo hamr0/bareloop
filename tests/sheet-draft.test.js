@@ -20,13 +20,19 @@ after(() => { for (const d of made) rmSync(d, { recursive: true, force: true });
 const tmp = (p = 'sheet-draft-') => { const d = mkdtempSync(join(tmpdir(), p)); made.push(d); return d; };
 const sheetCopy = (/** @type {string} */ name) => { const f = join(tmp(), name); copyFileSync(join(HERE, 'fixtures', 'sheets', name), f); return f; };
 
+/** the expenses sheet of the live walk (fwdloop flows/m10-walk-csv): an amount on every row, a tax on three, so one column fits. (The saved tests/fixtures/sheets/expenses.csv has a tax on every row: a tie, asked nothing.) */
+const walkSheet = () => {
+  const f = join(tmp(), 'expenses.csv');
+  writeFileSync(f, `${['Date,Description,Amount,Tax', ...Array.from({ length: 12 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')},Item ${i + 1},${600 + i}.50,${i < 3 ? `${i + 1}.25` : ''}`)].join('\n')}\n`);
+  return f;
+};
 const W = (/** @type {string} */ word, from = 'line 2 rule 1', kind = 'number') => ({ from, word, kind });
 const sheetReply = (/** @type {any[]} */ ...facts) => reply({ text: JSON.stringify({ facts }), costUsd: 0.002 });
 const jobOf = (/** @type {string[]} */ rules) => [
   { n: 1, text: 'Read the expenses sheet', rule: '', rules: [] },
   { n: 2, text: 'list every expense over 500', rule: rules.join('; '), rules },
 ];
-const EXPENSES_ASK = "no column 'Price'; 'Amount' has numbers in 40 of 40 rows. Use it? (your answer replaces that ~ rule on line 2).";
+const EXPENSES_ASK = "no column 'Price'; 'Amount' has numbers in 12 of 12 rows. Use it? (your answer replaces that ~ rule on line 2).";
 
 /**
  * One drafting run of authorCloseForJob over `file`, a fake provider that answers from `answers`, the real default look, a fake draft (authorFn) and a fake asker.
@@ -64,7 +70,7 @@ test('isSheetInput: a file or URL input whose value ends .csv (any case) is a sh
 
 // DONE WHEN (spec S1): a draft with expenses.csv and `~ Price over 500` asks one column question at $0 and, after Agree, the rule reads `Amount over 500` with no added line.
 test('a CSV with `~ Price over 500`: one sheet call, one column question, and Agree rewrites the rule in place - no line added', async () => {
-  const file = sheetCopy('expenses.csv');
+  const file = walkSheet();
   const { r, sent, asked, seen } = await draftOver({ file, label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))] });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.equal(sent.length, 1, 'one AI call for the one CSV');
@@ -81,7 +87,7 @@ test('a CSV with `~ Price over 500`: one sheet call, one column question, and Ag
 });
 
 test('the sheet call is booked like the page call: onCall hears it once, labelled and priced, and the drafting book keeps its raw answer', async () => {
-  const { calls } = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))] });
+  const { calls } = await draftOver({ file: walkSheet(), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))] });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].label, 'sheet-map');
   assert.equal(calls[0].costUsd, 0.002);
@@ -89,18 +95,24 @@ test('the sheet call is booked like the page call: onCall hears it once, labelle
 });
 
 test('Drop it leaves the rule as written (Not checked); own words replace the rule one for one', async () => {
-  const dropped = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'drop' }) });
+  const dropped = await draftOver({ file: walkSheet(), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'drop' }) });
   assert.deepEqual(dropped.seen.jobLines[1].rules, ['Price over 500']);
-  const own = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'rule', text: 'Tax over 500' }) });
+  const own = await draftOver({ file: walkSheet(), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))], choose: () => ({ choice: 'rule', text: 'Tax over 500' }) });
   assert.deepEqual(own.seen.jobLines[1].rules, ['Tax over 500']);
   assert.deepEqual(own.seen.jobLines.map((/** @type {any} */ l) => l.n), [1, 2]);
 });
 
 test('a `~` rule that already names a real header asks nothing', async () => {
-  const { r, sent, asked } = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Amount over 500'], answers: [sheetReply(W('Amount'))] });
+  const { r, sent, asked } = await draftOver({ file: walkSheet(), label: 'Expenses', rules: ['Amount over 500'], answers: [sheetReply(W('Amount'))] });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.equal(sent.length, 1);
   assert.equal(asked, null, 'nothing was asked');
+});
+
+test('the saved expenses.csv (an amount and a tax on every row) is a tie: Price is Not checked, nothing is asked', async () => {
+  const { r, asked } = await draftOver({ file: sheetCopy('expenses.csv'), label: 'Expenses', rules: ['Price over 500'], answers: [sheetReply(W('Price'))] });
+  assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
+  assert.equal(asked, null);
 });
 
 test('a word that is no column and no fit is Not checked with its reason, nothing asked', async () => {
@@ -112,7 +124,7 @@ test('a word that is no column and no fit is Not checked with its reason, nothin
 });
 
 test('a CSV input with no `~` rule on any line takes the page-word map as before (no sheet call)', async () => {
-  const file = sheetCopy('expenses.csv');
+  const file = walkSheet();
   const { sent } = await draftOver({ file, label: 'Expenses', rules: [], answers: [reply({ text: JSON.stringify({ facts: [], cannot: [] }) })] });
   assert.ok(sent.length >= 1);
   assert.ok(sent.every((m) => !JSON.stringify(m).includes(SHEET_MARK)), 'no sheet call');
@@ -125,9 +137,12 @@ test('a job with NO csv input behaves byte-identically to the page map alone: sa
   const viaDefault = await draftOver({ file: page, label: 'Page', rules: ['under $450'], answers: [mapReply()], choose: () => ({ choice: 'agree' }) });
   const viaPageMap = await draftOver({ file: page, label: 'Page', rules: ['under $450'], answers: [mapReply()], choose: () => ({ choice: 'agree' }), look: runPageMap });
   assert.ok(viaDefault.sent.length >= 1);
+  // the two runs seed their own scratch tree: only that path (and the seed commit's id) may differ
+  const same = (/** @type {any} */ x) => JSON.parse(JSON.stringify(x).replace(/[^"]*sheet-draft-[A-Za-z0-9]+/g, 'TMP').replace(/"seedRef":"[0-9a-f]+"/g, '"seedRef":"SEED"'));
   assert.deepEqual(viaDefault.sent, viaPageMap.sent, 'the provider saw the same requests');
   assert.ok(viaDefault.sent.every((m) => !JSON.stringify(m).includes(SHEET_MARK)));
-  assert.deepEqual(JSON.parse(JSON.stringify(viaDefault.seen)), JSON.parse(JSON.stringify(viaPageMap.seen)), 'the drafter was handed the same thing');
-  assert.deepEqual(JSON.parse(JSON.stringify(viaDefault.asked)), JSON.parse(JSON.stringify(viaPageMap.asked)));
-  assert.deepEqual(JSON.parse(JSON.stringify(viaDefault.r)), JSON.parse(JSON.stringify(viaPageMap.r)));
+  assert.deepEqual(same(viaDefault.seen), same(viaPageMap.seen), 'the drafter was handed the same thing');
+  assert.deepEqual(same(viaDefault.asked), same(viaPageMap.asked));
+  assert.deepEqual(same(viaDefault.r), same(viaPageMap.r));
+  assert.deepEqual(viaDefault.calls, viaPageMap.calls, 'the same calls were booked');
 });

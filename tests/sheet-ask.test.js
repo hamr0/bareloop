@@ -12,6 +12,9 @@ import { lineRules } from '../src/rubricstep.js';
 const notChecked = (/** @type {any[]} */ dropped, /** @type {any[]} */ jobLines) => dropRows(dropped).filter((r) => r.full).map((r) => dropLine(r, jobLines, lineRules));
 const fixture = (/** @type {string} */ n) => readFileSync(new URL(`./fixtures/sheets/${n}`, import.meta.url), 'utf8');
 
+/** the sheet of the live walk of 2026-10-21 (fwdloop flows/m10-walk-csv): `Date,Description,Amount,Tax`, an amount on every row and a tax on only three of them, so ONE column fits */
+const WALK = `${['Date,Description,Amount,Tax', ...Array.from({ length: 12 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')},Item ${i + 1},${600 + i}.50,${i < 3 ? `${i + 1}.25` : ''}`)].join('\n')}\n`;
+
 const rowsOf = (/** @type {number} */ n, /** @type {number} */ amountRows, /** @type {number} */ taxRows) => Array.from({ length: n }, (_, i) => `2026-09-${String((i % 28) + 1).padStart(2, '0')},Office item ${i + 1},${i < amountRows ? `${101 + i}.50` : ''},${i < taxRows ? `${i + 1}.25` : ''}`);
 const SHEET = (n = 40, a = 40, t = 10) => `${['Date,Description,Amount,Tax', ...rowsOf(n, a, t)].join('\n')}\n`;
 const JOB = [{ n: 1, text: 'Add up the price of every invoice', rule: 'under 5000; matches the ledger', rules: ['under 5000', 'matches the ledger'] }];
@@ -56,10 +59,10 @@ test('a word that is not a column asks once, naming the column and the true coun
 
 test('the rule\'s own word is rewritten in place: "Price over 500" reads "Amount over 500" (a plural or another case of the word too)', () => {
   const job = (/** @type {string} */ rule) => [{ n: 2, text: 'list every expense over 500', rule, rules: [rule] }];
-  const a = applySheetWords(fixture('expenses.csv'), [W('Price', 'line 2 rule 1')], job('Price over 500'), 'expenses');
+  const a = applySheetWords(WALK, [W('Price', 'line 2 rule 1')], job('Price over 500'), 'expenses');
   assert.equal(a.asks.length, 1);
   assert.equal(a.asks[0].reading, 'Amount over 500');
-  const b = applySheetWords(fixture('expenses.csv'), [W('price', 'line 2 rule 1')], job('the Prices are over 500'), 'expenses');
+  const b = applySheetWords(WALK, [W('price', 'line 2 rule 1')], job('the Prices are over 500'), 'expenses');
   assert.equal(b.asks[0].reading, 'the Amount are over 500', 'the form the rule really says is the one replaced');
 });
 
@@ -146,7 +149,7 @@ test('F180: a rule that does NOT name the column still asks (rule 2 alone, rule 
 });
 
 // the live walk of 2026-10-21 (fwdloop flows/m10-walk-csv): the rule `Price over 500`, the header `Date,Description,Amount,Tax`
-const EXP = fixture('expenses.csv');
+const EXP = WALK;
 const EXP_JOB = [{ n: 1, text: 'Read the expenses sheet' }, { n: 2, text: 'list every expense over 500', rules: ['Price over 500'] }];
 
 test('own word: the look named "Amount" for the rule "Price over 500" - not a word of the job, so it is NOT kept; Not checked says why', () => {
@@ -159,7 +162,7 @@ test('own word: the look named "Amount" for the rule "Price over 500" - not a wo
 test('own word: the person\'s own word "Price" (named by the look) asks once', () => {
   const r = applySheetWords(EXP, [W('Price', 'line 2 rule 1')], EXP_JOB, 'expenses');
   assert.equal(r.asks.length, 1);
-  assert.match(r.asks[0].question, /^no column 'Price'; 'Amount' has numbers in 40 of 40 rows\. Use it\?/);
+  assert.match(r.asks[0].question, /^no column 'Price'; 'Amount' has numbers in 12 of 12 rows\. Use it\?/);
 });
 
 test('own word: a header the person did say is kept, case aside, with no ask', () => {
@@ -239,4 +242,11 @@ test('F196 panel walk: the look returned ONLY the prose ask for "days past due";
 
 test('F196 panel walk control: a prose word no tied rule says is still asked (rule 3 names Due date but not "balance")', () => {
   assert.equal(applySheetWords(AGING, [W('balance', 'line 2')], AG_JOB, 'aging').asks.length, 1);
+});
+
+test('the saved expenses.csv has an amount AND a tax on every row: two columns fit equally, so "Price" is Not checked and nothing is asked', () => {
+  const job = [{ n: 2, text: 'list every expense over 500', rules: ['Price over 500'] }];
+  const r = applySheetWords(fixture('expenses.csv'), [W('Price', 'line 2 rule 1')], job, 'expenses');
+  assert.deepEqual(r.asks, []);
+  assert.deepEqual(notChecked(r.dropped, job), ["line 2: \"Price over 500\" — two columns fit 'Price' equally"]);
 });
