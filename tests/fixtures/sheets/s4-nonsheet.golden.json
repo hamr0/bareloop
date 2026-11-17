@@ -3748,7 +3748,7 @@
    },
    {
     "state": "not-checked",
-    "reason": "what the text says — you judge it at Accept",
+    "reason": "No ~ rule here. What the text says, you judge it at Accept.",
     "words": [],
     "key": "L1.$prose",
     "line": 1,
@@ -3803,8 +3803,8 @@
     "line": 1,
     "by": "default",
     "state": "not-checked",
-    "reason": "what the text says — you judge it at Accept",
-    "text": "$ what the text says — you judge it at Accept"
+    "reason": "No ~ rule here. What the text says, you judge it at Accept.",
+    "text": "$ No ~ rule here. What the text says, you judge it at Accept."
    }
   ],
   "view": {
@@ -3935,7 +3935,7 @@
      "by": "default",
      "kind": "prose",
      "state": "not-checked",
-     "reason": "what the text says — you judge it at Accept"
+     "reason": "No ~ rule here. What the text says, you judge it at Accept."
     },
     {
      "line": 0,
@@ -4005,11 +4005,11 @@
    ],
    "notChecked": [
     "line 1: \"release heading\" — code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.",
-    "line 1: what the text says — you judge it at Accept"
+    "Line 1: no ~ rule here. What the text says, you judge it at Accept."
    ],
    "notCheckedBy": {
     "line 1: \"release heading\" — code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.": "agent",
-    "line 1: what the text says — you judge it at Accept": "default"
+    "Line 1: no ~ rule here. What the text says, you judge it at Accept.": "default"
    }
   }
  }
