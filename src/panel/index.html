@@ -6345,6 +6345,14 @@
         qAnswer.value = ""; qError.textContent = "";
       }
     }
+    // hamr 2026-11-17: the locked "The job" box shows the rules as answered — the server's card (syncJobLines) holds the
+    // updated `~` lines, so while a session is live the box follows state.card.jobText. Never touches an open (unlocked) box.
+    function syncJobBoxFromSession(state){
+      var jt = state && state.card && state.card.jobText;
+      var box = document.getElementById("jf-job");
+      if(!sessionLive || typeof jt !== "string" || jt === box.value) return;
+      setVal("jf-job", jt); fitCardBoxes();
+    }
     function renderActions(state){
       lastState = state;
       syncDestinationFromSession(state);
@@ -6357,6 +6365,7 @@
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
       refreshStartEnabled();
+      syncJobBoxFromSession(state);
       // hamr 2026-10-05: while the session is live and the list changed, bring the newest progress line into view.
       // Never moves keyboard focus, and an unchanged poll tick never scrolls.
       if(progressChanged && sessionLive && progressRow.lastElementChild){
