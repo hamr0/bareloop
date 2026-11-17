@@ -266,3 +266,11 @@ test('the saved expenses.csv has an amount AND a tax on every row: the tie ASKS 
   assert.deepEqual(r.asks[0].columns, ['Amount', 'Tax']);
   assert.deepEqual(r.asks[0].readings, { Amount: 'Amount over 500', Tax: 'Tax over 500' });
 });
+
+test('the tie question carries the REAL count and the columns in sheet order (three columns)', () => {
+  const csv = 'Date,Amount,Tax,Total\n2026-09-01,10,1,11\n2026-09-02,20,2,22\n';
+  const job = [{ n: 2, text: 'x', rules: ['Price over 500'] }];
+  const r = applySheetWords(csv, [W('Price', 'line 2 rule 1')], job, 'expenses');
+  assert.equal(r.asks[0].question, "I found 3 columns matching 'Price': Amount, Tax, Total. Choose one. (your answer replaces that ~ rule on line 2).");
+  assert.deepEqual(r.asks[0].columns, ['Amount', 'Tax', 'Total']);
+});
