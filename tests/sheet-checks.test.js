@@ -103,7 +103,7 @@ test('the helpers are imported from bareguard and bareloop keeps no copy of thei
   const bld = src('sheetbuild.js');
   assert.match(bld, /import \{[^}]*\bclaimSchema\b[^}]*\bgroundedLiterals\b[^}]*\} from 'bareguard'|import \{[^}]*\bgroundedLiterals\b[^}]*\bclaimSchema\b[^}]*\} from 'bareguard'/);
   assert.match(bld, /\brunTableChecks\b/);
-  for (const gone of ['COLUMN_STRING_FIELDS', 'headerUnion']) assert.equal(sheetchecks.hasOwnProperty(gone) || Object.hasOwn(sheetoffer, gone), false, gone);
+  for (const gone of ['COLUMN_STRING_FIELDS', 'headerUnion']) assert.equal(Object.hasOwn(sheetchecks, gone) || Object.hasOwn(sheetoffer, gone), false, gone);
 });
 
 test('the drafter\'s check schema is bareguard\'s checkSchema (plus covers, minus the free-text field)', () => {

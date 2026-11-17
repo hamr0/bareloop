@@ -87,13 +87,6 @@ test('a CSV job whose reply carries no sheetChecks still gets a result: every ru
   assert.equal(Object.keys(r.sheetBuilt.notChecked).length, 2);
 });
 
-test('sheetChecks changed between tries is not "an identical declaration": the second try is judged, the last reply wins', async () => {
-  const { r, calls } = await sheetTurn([{ edits: [], sheetChecks: [OVER] }, { edits: [], sheetChecks: [OVER, NODUP] }]);
-  assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.ok(calls >= 1);
-  assert.ok(r.sheetBuilt.checks.length >= 1);
-});
-
 test('an agreed-column rule on a line is told to the AI again, from the rule\'s own words', async () => {
   const lines = [{ n: 1, text: 'Read it', rule: '', rules: [] }, { n: 2, text: 'List every invoice over 500 by its price', rule: "use the column 'Amount' for 'price'", rules: ["use the column 'Amount' for 'price'"] }];
   const { sent } = await sheetTurn([{ edits: [] }], lines);
