@@ -2302,3 +2302,8 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 - [ ] Repo jobs on the one list under hamr's law (a rule shows as kept only when code proves it, else Not checked) — spec signed 2026-11-15, `docs/product/ITEM33-BUILD.md` Addendum 2026-11-15 (d); built on feat/one-list-rubric, not live-proven.
 
+
+### Up to 2 MCP servers per job (v1.138 — 2026-11-17)
+
+- [ ] hamr ruled a job may declare up to 2 MCP servers instead of 1. `mcp` in a job spec is today a single `{server, tools}` object (validator `src/job.js` ~line 282; also `src/authorreadout.js:679`, `src/cardschedule.js`); it would become a list of at most 2 entries, each with its own signed tools list. Schema change: BUILD PARKED until hamr gives the go.
+- Ruling: MCPs are NOT pooled into one catalogue (steps are small, the signed per-step tool list is a guardrail, pooling adds a tool-search bottleneck). Code-mode/REPL style is not adopted (`run` stays locked).
