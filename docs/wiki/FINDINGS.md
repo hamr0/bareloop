@@ -15968,3 +15968,15 @@ Frozen bars (decided before any paid call; harness sha256 `f990832bfe956ba29fc03
 - Reading: a PASS on (a) and (d) at n = 50 is one model, two small sheets, no planner, anecdote-grade for content. Attribution: the two changes land together, so a gain cannot be split between them; the reading is "the pair", not either lever. A failed round is reported FAIL; a third round, if any, is pre-registered, never re-tuned.
 
 $0 results before any paid call (`node .claude/scratch/poc-b/run.mjs --dry` and `--wire`, no key in the environment): harness sha printed equals the frozen one above; planted 28 of 28 red; correct file green for both jobs; byte check PASS (found only "500" for expenses, "Due date" and "2026-10-11" for aging, each in the person's own job words; views derived exactly from the CSV lines, 41 and 9 lines; no claim name equals a box type); the scripted-provider wiring check (reads the numbered view, writes the correct file) graded green for both jobs and a write outside `output/` was denied. Real `runs.jsonl` 163 lines before and after.
+
+RESULT (2026-11-17, F339 round 2; verified from `.claude/scratch/poc-b/results/round2/tries.jsonl` and `round2.out`): 100 valid tries (50 per job), 0 casualties, $0.601 total, cap $1.00 not hit.
+- (a) SHAPE: PASS. expenses 50/50, aging 50/50 (bar 48).
+- (b) NO FALSE GREEN and (c) NO CHECK TEXT: PASS at $0 before any paid call (planted 28 of 28 red, correct file 2 of 2 green; byte check clean; no claim name equals a box type).
+- (d) CONTENT: aging PASS, green 44/50 (reds: c_bands 6, c_days 1). expenses FAIL, green 5/50 (red mentions: c_total wrong 45, c_over omits rows 13, c_count wrong 13; a try can carry several).
+- Recorded: $ per try median / p90: expenses $0.0080 / $0.0109 (range $0.0052-$0.0138), aging $0.0041 / $0.0043 (max $0.0120). Seconds per try median / p90: expenses 5.8 / 7.8, aging 4.5 / 5.4. Reference fwd $0.00720 and 6.3 s.
+- Reading: the row-numbered view fixed row-finding (expenses c_over right 37/50) and the non-box claim names fixed shape (aging 50/50). The remaining expenses miss is arithmetic, summing 18 amounts, not delivery of the sheet. The total check was added by us; fwd's tests have none. One model, two small sheets, no planner: anecdote-grade; round 2 is a FAIL on (d) for expenses, reported apart from (a), no re-tune.
+
+hamr's rulings 2026-11-17:
+1. Tool vs file is a tie on deepseek-flash (fwd: 1 bad call in its archive, $0.00720, 6.3 s; bareloop: 0 of 109 in its archive, 100 of 100 in round 2, $0.0041-0.0080, 4.5-5.8 s; not a same-job head-to-head). Each repo keeps its way.
+2. bareloop copies fwd's sheet code but keeps file-written claims plus three fixes: claim names never equal a box type, a row-numbered view of the sheet, and code does the math (the worker names rows; code computes sums and totals). The third is new: to be specced and POC'd at $0 first.
+3. fwd takes code-does-math and the am7 corrected words later from bareloop's release, not urgent.
