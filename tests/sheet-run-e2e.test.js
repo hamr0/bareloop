@@ -85,3 +85,20 @@ test('a worker that names the wrong rows does not go green: no delivery, no tota
   assert.equal(existsSync(join(r.dest, 'steps')), false, 'nothing delivered on a red');
   assert.equal(existsSync(join(r.tree, 'output', 'steps', '1.total.txt')), false, 'a total is written only after a green');
 });
+
+test('REQUEST CONSTRUCTION at the provider boundary: the worker\'s real requests (system + every message the provider received) carry each box\'s example, the claim name and the rows.txt input line, and NOTHING of any check (no op, condition, bound, column, or claim-check text)', async (t) => {
+  const r = await run(t, OVER);
+  assert.match(r.out, /outcome\s+green/);
+  const { rubricVocabulary } = await import('bareguard');
+  // what the provider RECEIVED: the system prompts and every non-assistant message (the worker's own scripted replies, echoed back in later turns, are what the worker said, not what it was told)
+  const wire = JSON.stringify({ systems: r.provider.systems, messages: r.provider.messagesLog.map((m) => m.filter((x) => x.role !== 'assistant')) });
+  assert.ok(r.provider.messagesLog.length >= 3, 'the provider was really called');
+  assert.ok(wire.includes(JSON.stringify(rubricVocabulary.rules.cells.ops.rows.example.output.answer).replaceAll('"', '\\"')), 'the rows box example reached the provider');
+  assert.ok(wire.includes('l1r1'), 'the claim name reached the provider');
+  assert.ok(wire.includes('input/expenses.rows.txt'), 'the numbered-view input line reached the provider');
+  assert.match(wire, /numbered by its sheet row/);
+  for (const secret of ['sumIf', 'countIf', 'daysSince', 'noDuplicates', '\\"where\\"', '\\"cmp\\"', '\\"op\\"', 'Amount', 'dateFormats', 'asOf', 'l1a1', 'l1a2']) {
+    assert.equal(wire.includes(secret), false, `the provider request carries "${secret}"`);
+  }
+  assert.equal(/\b500\b/.test(wire), false, 'the bound 500 is not in the request');
+});
