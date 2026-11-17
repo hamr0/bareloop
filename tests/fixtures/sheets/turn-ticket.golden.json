@@ -1,0 +1,74 @@
+{
+ "sent": [
+  [
+   {
+    "role": "user",
+    "content": "THE JOB (the person's own words)\n1. List the flights\n   ~ rule 1: only priority P1 tickets\n\nINPUT \"Flights\" (first 8000 characters):\nurl: https://www.google.com/travel/flights?q=Flights%20to%20LAX%20from%20SFO%20on%202026-11-12%20oneway&curr=USD&hl=en&gl=us\n16,549 chars → 8,583 chars (48% pruned)\n- _promote [ref=3]\n  - banner [ref=7]\n    - _promote [ref=12]\n      - button \"Main menu\" [expanded=false] [ref=20]\n      - link \"Google\" [ref=47]\n      - _promote [ref=25]\n        - button \"Skip to main content\" [ref=34]\n          - StaticText \"Skip to main content\" [ref=52]\n        - button \"Accessibility feedback\" [ref=35]\n          - StaticText \"Accessibility feedback\" [ref=57]\n      - button \"Change appearance\" [expanded=false] [ref=58]\n      - _promote [ref=30]\n        - button \"Google apps\" [expanded=false] [ref=84]\n        - link \"Sign in\" [ref=42]\n          - StaticText \"Sign in\" [ref=60]\n  - _promote [ref=31]\n    - StaticText \"Loading results\" [ref=127]\n    - search [ref=45]\n      - heading \"Flight search\" [level=1] [ref=62]\n      - _promote [ref=64]\n        - combobox \"Change ticket type. One way\" [expanded=false] [ref=282]\n        - button \"1 passenger, change number of passengers.\" [ref=283]\n          - StaticText \"1\" [ref=617]\n        - combobox \"Change seating class. Economy (include Basic)\" [expanded=false] [ref=284]\n      - _promote [ref=66]\n        - combobox \"Where from? San Francisco SFO\" [expanded=false] [ref=285]\n        - button \"Swap origin and destination.\" [ref=134]\n        - combobox \"Where to? Los Angeles LAX\" [expanded=false] [ref=289]\n      - textbox \"Departure\" [ref=294]\n        - StaticText \"Thu, Nov 12\" [ref=765]\n      - heading \"Filters\" [level=2] [ref=69]\n      - button \"All filters\" [ref=230]\n        - StaticText \"All filters\" [ref=303]\n      - _promote [ref=231]\n        - button \"Stops, Not selected\" [ref=306]\n          - StaticText \"Stops\" [ref=655]\n        - button \"Airlines, Not selected\" [ref=309]\n          - StaticText \"Airlines\" [ref=661]\n        - button \"Bags, Not selected\" [ref=312]\n          - StaticText \"Bags\" [ref=667]\n        - button \"Price, Not selected\" [ref=315]\n          - StaticText \"Price\" [ref=673]\n        - button \"Times, Not selected\" [ref=318]\n          - StaticText \"Times\" [ref=679]\n        - button \"Emissions, Not selected\" [ref=321]\n          - StaticText \"Emissions\" [ref=685]\n        - button \"Connecting airports, Not selected\" [ref=324]\n          - StaticText \"Connecting airports\" [ref=691]\n        - button \"Duration, Not selected\" [ref=327]\n          - StaticText \"Duration\" [ref=697]\n    - main [ref=46]\n      - heading \"Search results\" [level=2] [ref=71]\n      - tablist [ref=74]\n        - tab \"Best Learn more about ranking\" [selected] [ref=105]\n          - _promote [ref=161]\n            - StaticText \"Best\" [ref=232]\n            - button \"Learn more about ranking\" [ref=233]\n        - tab \"Cheapest from Fetching results Learn more about ranking\" [ref=106]\n          - _promote [ref=162]\n            - StaticText \"Cheapest\" [ref=264]\n            - _promote [ref=265]\n              - StaticText \"from \" [ref=333]\n              - StaticText \"Fetching results\" [ref=774]\n            - button \"Learn more about ranking\" [ref=267]\n      - tabpanel \"Best Learn more about ranking\" [ref=75]\n        - heading \"Top flights\" [level=3] [ref=108]\n        - button \"Learn more about ranking\" [ref=112]\n        - StaticText \"Optional charges and \" [ref=119]\n        - button \"bag fees\" [ref=120]\n          - StaticText \"bag fees\" [ref=171]\n        - StaticText \" may apply. \" [ref=121]\n        - button \"Passenger assistance\" [ref=122]\n          - StaticText \"Passenger assistance\" [ref=174]\n        - StaticText \" info.\" [ref=123]\n        - button \"Sorted by top flights, Change sort order.\" [ref=278]\n          - StaticText \"Sorted by top flights\" [ref=341]\n        - _promote [ref=126]\n          - listitem [level=1] [ref=178]\n            - _promote [ref=279]\n              - link \"From 43 US dollars. Nonstop flight with Frontier. Leaves San Francisco International Airport at 9:09 AM on Thursday, November 12 and arrives at Los Angeles International Airport at 10:41 AM on Thursday, November 12. Total duration 1 hr 32 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=343]\n              - generic \"Departure time: 9:09 AM.\" [ref=391]\n                - StaticText \"9:09 AM\" [ref=701]\n              - StaticText \"SFO\" [ref=702]\n              - generic \"Arrival time: 10:41 AM.\" [ref=395]\n                - StaticText \"10:41 AM\" [ref=703]\n              - StaticText \"LAX\" [ref=704]\n              - button \"0 carry-on bags included. 0 checked bags included. Learn more about baggage allowance\" [ref=402]\n                - StaticText \"0\" [ref=707]\n                - StaticText \"0\" [ref=710]\n              - generic \"43 US dollars\" [ref=712]\n                - StaticText \"$43\" [ref=781]\n              - _promote [ref=422]\n                - StaticText \"Nonstop\" [ref=713]\n                - StaticText \"·\" [ref=784]\n                - StaticText \"1 hr 32 min\" [ref=715]\n                - StaticText \"·\" [ref=788]\n                - StaticText \"Frontier\" [ref=717]\n              - button \"Carbon emissions estimate: 59 kilograms. -37% emissions. Learn more about this emissions estimate\" [ref=718]\n              - StaticText \"Avoids\" [ref=429]\n              - StaticText \" as much CO2e as \" [ref=430]\n              - StaticText \"2,070 trees absorb in a day\" [ref=431]\n              - button \"Avoids as much CO2e as 2070 trees absorb in a day. Learn more about this calculation.\" [ref=432]\n              - button \"Flight details. Leaves San Francisco International Airport at 9:09 AM on Thursday, November 12 and arrives at Los Angeles International Airport at 10:41 AM on Thursday, November 12.\" [expanded=false] [ref=792]\n          - listitem [level=1] [ref=179]\n            - _promote [ref=280]\n              - link \"From 59 US dollars. Nonstop flight with American. Operated by SkyWest Airlines as American Eagle. Leaves San Francisco International Airport at 10:33 AM on Thursday, November 12 and arrives at Los Angeles International Airport at 12:10 PM on Thursday, November 12. Total duration 1 hr 37 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=435]\n              - generic \"Departure time: 10:33 AM.\" [ref=483]\n                - StaticText \"10:33 AM\" [ref=724]\n              - StaticText \"SFO\" [ref=725]\n              - generic \"Arrival time: 12:10 PM.\" [ref=487]\n                - StaticText \"12:10 PM\" [ref=726]\n              - StaticText \"LAX\" [ref=727]\n              - button \"1 carry-on bag included. 0 checked bags included. Learn more about baggage allowance\" [ref=494]\n                - StaticText \"1\" [ref=730]\n                - StaticText \"0\" [ref=733]\n              - generic \"59 US dollars\" [ref=735]\n                - StaticText \"$59\" [ref=799]\n              - _promote [ref=514]\n                - StaticText \"Nonstop\" [ref=736]\n                - StaticText \"·\" [ref=802]\n                - StaticText \"1 hr 37 min\" [ref=738]\n                - StaticText \"·\" [ref=806]\n                - StaticText \"American\" [ref=740]\n                - StaticText \"·\" [ref=810]\n              - button \"Carbon emissions estimate: 106 kilograms. +14% emissions. Learn more about this emissions estimate\" [ref=743]\n              - button \"Flight details. Leaves San Francisco International Airport at 10:33 AM on Thursday, November 12 and arrives at Los Angeles International Airport at 12:10 PM on Thursday, November 12.\" [expanded=false] [ref=816]\n          - listitem [level=1] [ref=180]\n            - _promote [ref=281]\n              - link \"From 59 US dollars. Nonstop flight with Delta. Leaves San Francisco International Airport at 2:47 PM on Thursday, November 12 and arrives at Los Angeles International Airport at 4:10 PM on Thursday, November 12. Total duration 1 hr 23 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=521]\n              - generic \"Departure time: 2:47 PM.\" [ref=569]\n                - StaticText \"2:47 PM\" [ref=745]\n              - \n\nTHIS JOB READS A TICKET. The ticket is picked per run (typed on the run card, later the newest new ticket) and is never known when the job is drafted, so NEVER ask the person which ticket it is, or what its priority or labels are. A job line that names a priority or a label (for example \"only priority P1 tickets\") is decided by code at run start from the ticket's own labels, through the job's ticketFilter: it is not a question for the person and not something you can check, so do not turn it into a question. A step that reads the ticket input still lists \"read\" in its tools: the ticket is already frozen at run start, but reading it is a grant, so a step without \"read\" cannot see it.\n\nTHE TICKET FILTER — this job reads one ticket per run. Code, not you, decides at run start whether a ticket runs or is skipped, from the ticket's labels and state; a closed ticket always skips.\nWhen a job line (or its ~ rule) names a priority or a label (for example \"only priority P1 tickets\", \"only tickets with priority P1 count\", \"only issues labelled bug\"), you MUST add a top-level \"ticketFilter\" beside \"stages\": {\"priority\": [\"P1\"], \"labels\": [\"bug\"]}. \"priority\" is a list of values from P0 to P3, \"labels\" is a list of label names; each key is optional, and at least one is required. Never invent a label: use only the names the job lines give. Leave \"ticketFilter\" out entirely when no job line names a priority or a label.\nThe filter decides whether a run starts, not whether the work is good, so it is not a check. The job line that names the priority or label has no stage: list it under \"refused\" with the reason \"decided by the ticket filter before the run starts\" AND add the ticketFilter: the refused entry alone does not filter anything, only the ticketFilter does. A person reads and signs the filter; you never set the job's server or tools."
+   }
+  ]
+ ],
+ "tools": [
+  [
+   {
+    "name": "submit_edits",
+    "description": "Deliver your row edits (or an empty list). Call this exactly once.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "edits": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "op": {
+          "enum": [
+           "add",
+           "reading",
+           "pick",
+           "not-checkable"
+          ]
+         }
+        },
+        "required": [
+         "op"
+        ]
+       },
+       "description": "row edits; each is judged on its own"
+      },
+      "ticketFilter": {
+       "type": "object",
+       "properties": {
+        "priority": {
+         "type": "array",
+         "items": {
+          "type": "string",
+          "enum": [
+           "P0",
+           "P1",
+           "P2",
+           "P3"
+          ]
+         },
+         "description": "priorities a ticket must have; only when a job line names them"
+        },
+        "labels": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         },
+         "description": "label names, one of which a ticket must carry; only when a job line names them"
+        }
+       },
+       "additionalProperties": false,
+       "description": "REQUIRED when a job line names a priority or a label (leave it out only when none does). The person signs it; code decides at run start. Listing the line under \"refused\" does not filter anything: only this key does"
+      }
+     },
+     "required": [
+      "edits"
+     ],
+     "additionalProperties": false
+    }
+   }
+  ]
+ ]
+}
