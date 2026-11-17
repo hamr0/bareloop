@@ -1,0 +1,27 @@
+{
+  "_note": "POC B jobs. Checks are fwd v0.35.0's own (test/m10b-sheet-run.test.js EXP_CHECKS/AGING_CHECKS; F196 W2 aging prose and guardrails). The aging job reads aging.csv (8 invoices, Due dates spread over four bands as of 2026-10-11) because ar-aging.csv gives every invoice 90+ (a lazy all-90+ answer would be green; ar-aging.csv is kept as a copy). Only the expenses `total` sumIf check is added here (fwd F78 live expenses job claimed rows, count and sum). Claim names are the check claims. The sheet file is the frozen input.",
+  "expenses": {
+    "sheet": "expenses.csv",
+    "label": "expenses",
+    "lines": [
+      { "n": 1, "text": "List every expense over 500, with how many there are and their total", "rules": [] }
+    ],
+    "checks": [
+      { "id": "c_over", "rule": "cells", "table": "expenses", "claim": "over", "op": "rows", "where": [{ "column": "Amount", "cmp": "gt", "value": 500 }] },
+      { "id": "c_count", "rule": "cells", "table": "expenses", "claim": "count", "op": "countIf", "where": [{ "column": "Amount", "cmp": "gt", "value": 500 }] },
+      { "id": "c_total", "rule": "cells", "table": "expenses", "claim": "total", "op": "sumIf", "column": "Amount", "where": [{ "column": "Amount", "cmp": "gt", "value": 500 }] }
+    ]
+  },
+  "aging": {
+    "sheet": "aging.csv",
+    "label": "aging",
+    "lines": [
+      { "n": 1, "text": "For each invoice, work out the days past due as of 2026-10-11 and put it in its bucket: Current, 1-30, 31-60, 61-90, 90+", "rules": ["every invoice appears exactly once", "days past due = days since 'Due date' as of 2026-10-11"] }
+    ],
+    "checks": [
+      { "id": "c_days", "rule": "cells", "table": "aging", "claim": "days", "op": "daysSince", "column": "Due date", "asOf": "2026-10-11", "dateFormats": [{ "column": "Due date", "format": "YYYY-MM-DD" }] },
+      { "id": "c_bands", "rule": "cells", "table": "aging", "claim": "bands", "op": "band", "column": "Due date", "asOf": "2026-10-11", "dateFormats": [{ "column": "Due date", "format": "YYYY-MM-DD" }], "bands": [{ "name": "Current", "lte": 0 }, { "name": "1-30", "gte": 1, "lte": 30 }, { "name": "31-60", "gte": 31, "lte": 60 }, { "name": "61-90", "gte": 61, "lte": 90 }, { "name": "90+", "gt": 90 }] },
+      { "id": "c_dup", "rule": "table", "table": "aging", "op": "noDuplicates", "column": "Invoice #" }
+    ]
+  }
+}
