@@ -16219,3 +16219,19 @@ Bars:
 - Report-only: cost $0.00203 total (12 calls, about $0.00017 each); cut-offs 0 of 12; latency 0.65-1.3 s per call.
 
 Odd: the model dropped the person's existing `~` lines in 5 of the 6 jobs that had them (2 kept). The prompt said to keep them; the model did not. It also left rules inside the step (jobs 1, 7) and duplicated them (job 3), and it split rules at the word level ("~ 3", "~ with no emit") rather than as a rule. Verdict: the idea as one plain call FAILS its bars (a) (c) (d); (b) alone is not a safe signal. No second round.
+
+#### Round 2 (prereg)
+
+hamr ruled a round 2 of F349. Same 12 jobs, SAME frozen answer key and bars (a)-(d) as round 1; nothing loosened. Cap $0.20, n=1 call per job, deepseek-flash direct, thinking off, temperature 0. Script `.claude/scratch/poc-rewrite/run2.mjs`. Two changes only:
+
+1. The AI only points; code does the bookkeeping. The model returns, per step, the exact words that are guardrails. Code cuts each pointed phrase out of the step line (first case-blind occurrence in the line as it stands), tidies leftovers (double spaces, space before comma/period, doubled commas, "and and", a preposition left before "and", a dangling "and" / "with" / "from" / "to" / "in" / "of" / "by" / "under" / comma at either end), and adds the phrase as written as its own `~` line directly under that step, in the model's order, before the person's own `~` lines. Every other line and every `~` line the person wrote is kept untouched by code. Refused and counted: a phrase that is not an exact (case-blind) substring of its step line, and a move that would leave the step line without a word. A refused move changes nothing. The job's step lines are shown to the model numbered ("1 ...", "2 ..."; `~` lines are not numbered), since the job text itself has no numbers. So (b) is now: every move is an exact substring, refusals reported.
+2. The prompt (hamr's words, verbatim, job text filled at the end):
+```
+This is a job a person wants done. Each numbered line is a step, and the lines starting with ~ under a step are its guardrails: the rules the result must meet, and they are what gets checked. Sometimes a person writes a guardrail inside the step itself. For example, in 'List 3 flights from SFO to LAX under $500 nonstop', the words '3', 'from SFO to LAX', 'under $500' and 'nonstop' are guardrails hidden in the step. Read the job below. Is there any step that has a guardrail within it that could be moved to its own ~ line to make the job clearer? Copy the words exactly as the person wrote them; never add, reword or invent a rule, and leave the person's own ~ lines alone. If no step hides a guardrail, say so.
+Answer only JSON: {"moves":[{"line":<step number>,"words":["<exact words>", ...]}]}, or {"moves":[]} when nothing is hidden.
+THE JOB:
+<job text>
+```
+Scoring: (a) hand-judged against the key on the final job text code produced; (b) all moves exact substrings, 12 of 12 jobs, refusals reported; (c) no-hidden-rule jobs 8-12 end byte-identical to the input; (d) each step keeps its action, hand-judged. Report-only: refusals, cost, cut-offs, latency, final job text per job. A FAIL is reported FAIL; no round 3.
+
+Round 2 results: pending
