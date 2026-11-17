@@ -62,7 +62,7 @@ async function run(/** @type {import('node:test').TestContext} */ t, /** @type {
   return { rc, err: err.join('\n'), out: out.join('\n'), into, dest, tree: prep.prep.tree, provider };
 }
 
-test('run start records the tableSha and writes the numbered view; the close grades the named rows; a green delivers the step file AND code\'s own total (never the worker\'s number)', async (t) => {
+test('run start records the tableSha and writes the numbered view; the close grades the named rows; a green delivers ONE report whose text ends with code\'s own total and count', async (t) => {
   const r = await run(t, OVER);
   assert.equal(r.rc, 0, `${r.err}\n${r.out}`);
   assert.match(r.out, /outcome\s+green/);
@@ -71,19 +71,22 @@ test('run start records the tableSha and writes the numbered view; the close gra
   assert.equal(m.inputs[0].view, 'input/expenses.rows.txt');
   assert.equal(existsSync(join(r.tree, 'input', 'expenses.rows.txt')), true);
   const delivered = readdirSync(join(r.dest, 'steps')).sort();
-  assert.equal(delivered.length, 2, delivered.join(', '));
-  const total = readFileSync(join(r.dest, 'steps', /** @type {string} */ (delivered.find((f) => f.includes('.total')))), 'utf8');
+  assert.equal(delivered.length, 1, `one report, no sibling file: ${delivered.join(', ')}`);
+  assert.equal(delivered.some((f) => f.includes('.total')), false);
+  const obj = JSON.parse(readFileSync(join(r.dest, 'steps', delivered[0]), 'utf8'));
   const fmt = (/** @type {number} */ n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  assert.ok(total.includes(`Total of rows ${OVER.join(', ')}: ${fmt(OVER_SUM)} (computed by code from the rows named)`), total);
-  assert.equal(total.includes('99999.99'), false, 'the worker\'s total is not in the report');
+  assert.ok(obj.text.startsWith('Total 99999.99 over 7 rows\n\n'), 'the worker\'s text is kept as written');
+  assert.ok(obj.text.includes(`Total of rows ${OVER.join(', ')}: ${fmt(OVER_SUM)} (computed by code from the rows named)`), obj.text);
+  assert.ok(obj.text.endsWith(`Count of rows ${OVER.join(', ')}: ${OVER.length} (computed by code from the rows named)`), 'code\'s lines are at the END of the text');
+  assert.equal(JSON.parse(readFileSync(join(r.tree, 'output', 'steps', '1.json'), 'utf8')).text, 'Total 99999.99 over 7 rows', 'the graded tree file is unchanged by delivery');
+  assert.equal(existsSync(join(r.tree, 'output', 'steps', '1.total.txt')), false);
 });
 
-test('a worker that names the wrong rows does not go green: no delivery, no total file', async (t) => {
+test('a worker that names the wrong rows does not go green: no delivery', async (t) => {
   const r = await run(t, OVER.slice(1));
   assert.match(r.out, /outcome\s+\S+/);
   assert.doesNotMatch(r.out, /outcome\s+green/, 'the run is not green');
   assert.equal(existsSync(join(r.dest, 'steps')), false, 'nothing delivered on a red');
-  assert.equal(existsSync(join(r.tree, 'output', 'steps', '1.total.txt')), false, 'a total is written only after a green');
 });
 
 test('REQUEST CONSTRUCTION at the provider boundary: the worker\'s real requests (system + every message the provider received) carry each box\'s example, the claim name and the rows.txt input line, and NOTHING of any check (no op, condition, bound, column, or claim-check text)', async (t) => {
@@ -97,6 +100,7 @@ test('REQUEST CONSTRUCTION at the provider boundary: the worker\'s real requests
   assert.ok(wire.includes('l1r1'), 'the claim name reached the provider');
   assert.ok(wire.includes('input/expenses.rows.txt'), 'the numbered-view input line reached the provider');
   assert.match(wire, /numbered by its sheet row/);
+  assert.ok(wire.includes('Do not write a total or a count for the rows you name'), 'this step has a sumIf/countIf, so the worker is told code adds them up');
   for (const secret of ['sumIf', 'countIf', 'daysSince', 'noDuplicates', '\\"where\\"', '\\"cmp\\"', '\\"op\\"', 'Amount', 'dateFormats', 'asOf', 'l1a1', 'l1a2']) {
     assert.equal(wire.includes(secret), false, `the provider request carries "${secret}"`);
   }

@@ -4,7 +4,7 @@
 // Imports of the S3 modules are dynamic so each test is its own red before the modules exist.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -376,8 +376,8 @@ test('a job with no sum or count check is not told that code adds up; one with s
   const withMath = await part(EXP_CHECKS());
   const t1 = lineBriefs({ stages: [stageOf(noMath)] })[0].text;
   const t2 = lineBriefs({ stages: [stageOf(withMath)] })[0].text;
-  assert.equal(/code adds|code does/.test(t1), false);
-  assert.match(t2, /code does that/);
+  assert.equal(/code adds/.test(t1), false);
+  assert.match(t2, /code adds them up/);
 });
 
 test('the sum and count of one condition share the rows box: buildSheetPart makes their claim the rows check\'s claim, keeps every id, and the part keeps the checks as signed data', async () => {
@@ -392,28 +392,75 @@ test('the sum and count of one condition share the rows box: buildSheetPart make
 });
 
 // ---- (iii) code does the math ----
-test('(iii) the delivered report carries code\'s total and count from the rows named, never the worker\'s number', async () => {
+const fmt2 = (/** @type {number} */ n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const linesOfStep = async (/** @type {any} */ w) => {
+  const r = await (await sheetrun()).sheetReportLines({ workdir: w.tree, closeDecl: w.closeDecl });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  return /** @type {Record<string, string[]>} */ (r.byRel);
+};
+
+test('(iii) the report lines are code\'s total and count from the rows named, never the worker\'s number; one report, no sibling file', async () => {
   const w = await world();
   writeStep(w, 1, { text: 'The total is 12345.67 over 99 rows', claims: { l1r1: { rows: OVER }, l1a1: { value: 12345.67 }, l1a2: { value: 99 } } });
-  const wrote = await (await sheetrun()).writeSheetTotals({ workdir: w.tree, closeDecl: w.closeDecl });
-  assert.equal(wrote.ok, true, JSON.stringify(wrote));
-  const file = join(w.tree, 'output', 'steps', '1.total.txt');
-  const text = readFileSync(file, 'utf8');
-  const fmt = (/** @type {number} */ n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  assert.ok(text.includes(`Total of rows ${OVER.join(', ')}: ${fmt(OVER_SUM)} (computed by code from the rows named)`), text);
-  assert.ok(text.includes(`Count of rows ${OVER.join(', ')}: ${OVER.length} (computed by code from the rows named)`), text);
-  assert.equal(text.includes('12345.67'), false, 'the worker\'s total never reaches the report');
-  assert.equal(/\b99\b/.test(text), false, 'the worker\'s count never reaches the report');
+  const by = await linesOfStep(w);
+  assert.deepEqual(Object.keys(by), ['steps/1.json']);
+  assert.deepEqual(by['steps/1.json'], [
+    `Total of rows ${OVER.join(', ')}: ${fmt2(OVER_SUM)} (computed by code from the rows named)`,
+    `Count of rows ${OVER.join(', ')}: ${OVER.length} (computed by code from the rows named)`,
+  ]);
+  assert.equal(existsSync(join(w.tree, 'output', 'steps', '1.total.txt')), false, 'no sibling total file');
 });
 
-test('(iii) code\'s figures equal the truth for the rows named, computed from the frozen table (not from a worker box): a row the worker names that is not a row of the sheet adds nothing', async () => {
+test('(iii) amendReport: the delivered file is valid JSON, the worker\'s text is kept, and the text ENDS with one blank line then code\'s lines; every other key is as written', async () => {
+  const { amendReport } = await sheetrun();
+  const bytes = Buffer.from(JSON.stringify({ text: 'The big ones.', claims: { l1r1: { rows: [2] } } }));
+  const out = JSON.parse(amendReport(bytes, ['Total of rows 2: 1.00 (computed by code from the rows named)', 'Count of rows 2: 1 (computed by code from the rows named)']).toString('utf8'));
+  assert.equal(out.text, 'The big ones.\n\nTotal of rows 2: 1.00 (computed by code from the rows named)\nCount of rows 2: 1 (computed by code from the rows named)');
+  assert.deepEqual(out.claims, { l1r1: { rows: [2] } });
+  const odd = Buffer.from('not json');
+  assert.equal(amendReport(odd, ['x']).toString(), 'not json', 'a file that is not a JSON object with text is delivered unchanged');
+});
+
+test('(iii) delivery: copyOut with the amender delivers ONE steps file whose text ends with code\'s lines, never the worker\'s number; the graded tree file is byte-unchanged and no .total file exists', async () => {
+  const { sheetReportLines, deliveredAmender } = await sheetrun();
+  const { copyOut } = await import('../src/source.js');
+  const w = await world();
+  const bytes = JSON.stringify({ text: 'The total is 12345.67 over 99 rows', claims: { l1r1: { rows: OVER }, l1a1: { value: 12345.67 } } });
+  writeStep(w, 1, bytes);
+  const rep = await sheetReportLines({ workdir: w.tree, closeDecl: w.closeDecl });
+  assert.equal(rep.ok, true);
+  const dest = join(tmp(), 'out');
+  const co = await copyOut({ tree: w.tree, into: w.into, destination: dest, amend: deliveredAmender(/** @type {any} */ (rep).byRel) });
+  assert.equal(co.stop, null);
+  const files = readdirSync(join(dest, 'steps'));
+  assert.equal(files.length, 1, files.join(', '));
+  const delivered = readFileSync(join(dest, 'steps', files[0]), 'utf8');
+  const obj = JSON.parse(delivered);
+  assert.ok(obj.text.startsWith('The total is 12345.67 over 99 rows\n\n'), 'the worker\'s own text is kept as written');
+  assert.ok(obj.text.endsWith(`Count of rows ${OVER.join(', ')}: ${OVER.length} (computed by code from the rows named)`), obj.text);
+  assert.ok(obj.text.includes(`Total of rows ${OVER.join(', ')}: ${fmt2(OVER_SUM)} (computed by code`));
+  assert.equal(readFileSync(join(w.tree, stepFileRel(1)), 'utf8'), bytes, 'the graded tree file is untouched by delivery');
+  assert.equal(existsSync(join(w.tree, 'output', 'steps', '1.total.txt')), false);
+  assert.equal(/** @type {any} */ (co).files[0].sha256, (await import('node:crypto')).createHash('sha256').update(delivered).digest('hex'), 'the recorded delivery is of the delivered bytes');
+});
+
+test('(iii) copyOut with no amender delivers the file byte for byte (every other job)', async () => {
+  const { copyOut } = await import('../src/source.js');
+  const w = await world();
+  const bytes = JSON.stringify(honest());
+  writeStep(w, 1, bytes);
+  const dest = join(tmp(), 'out');
+  const co = await copyOut({ tree: w.tree, into: w.into, destination: dest });
+  assert.equal(co.stop, null);
+  assert.equal(readFileSync(join(dest, 'steps', readdirSync(join(dest, 'steps'))[0]), 'utf8'), bytes);
+});
+
+test('(iii) code\'s figures equal the truth for the rows named, from the frozen table: a row the worker names that is no row of the sheet adds nothing', async () => {
   const w = await world();
   writeStep(w, 1, { text: 'x', claims: { l1r1: { rows: [...OVER, 9999, OVER[0]] } } });
-  const wrote = await (await sheetrun()).writeSheetTotals({ workdir: w.tree, closeDecl: w.closeDecl });
-  assert.equal(wrote.ok, true);
-  const text = readFileSync(join(w.tree, 'output', 'steps', '1.total.txt'), 'utf8');
-  assert.ok(text.includes(`: ${OVER_SUM.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (computed`), text);
-  assert.equal(text.includes('9999'), false);
+  const lines = (await linesOfStep(w))['steps/1.json'].join('\n');
+  assert.ok(lines.includes(`: ${fmt2(OVER_SUM)} (computed`), lines);
+  assert.equal(lines.includes('9999'), false);
 });
 
 test('(iii) a named row whose summed cell holds no number is "not computed", naming the row number and the column, never a guessed figure; a blank cell is skipped', async () => {
@@ -422,22 +469,34 @@ test('(iii) a named row whose summed cell holds no number is "not computed", nam
   writeFileSync(f, 'Date,Description,Amount,Tax\n2026-09-01,a,600,1\n2026-09-02,b,n/a,2\n2026-09-03,c,,3\n2026-09-04,d,700,4\n');
   const w = await world(EXP_CHECKS(), f);
   writeStep(w, 1, { text: 'x', claims: { l1r1: { rows: [2, 3] } } });
-  let wrote = await (await sheetrun()).writeSheetTotals({ workdir: w.tree, closeDecl: w.closeDecl });
-  assert.equal(wrote.ok, true);
-  let text = readFileSync(join(w.tree, 'output', 'steps', '1.total.txt'), 'utf8');
-  assert.match(text, /Total of rows 2, 3: not computed \(row 3 has no number in the column "Amount"\)/);
+  assert.match((await linesOfStep(w))['steps/1.json'][0], /Total of rows 2, 3: not computed \(row 3 has no number in the column "Amount"\)/);
   writeStep(w, 1, { text: 'x', claims: { l1r1: { rows: [2, 4, 5] } } });
-  wrote = await (await sheetrun()).writeSheetTotals({ workdir: w.tree, closeDecl: w.closeDecl });
-  text = readFileSync(join(w.tree, 'output', 'steps', '1.total.txt'), 'utf8');
-  assert.match(text, /Total of rows 2, 4, 5: 1,300 \(computed by code/);
+  assert.match((await linesOfStep(w))['steps/1.json'][0], /Total of rows 2, 4, 5: 1,300 \(computed by code/);
 });
 
-test('(iii) a step with no sum or count check writes no total file; copyOut would deliver only what exists', async () => {
+test('(iii) a step with no sum or count check has no report lines', async () => {
   const w = await world([EXP_CHECKS()[0]]);
   writeStep(w, 1, honest());
-  const wrote = await (await sheetrun()).writeSheetTotals({ workdir: w.tree, closeDecl: w.closeDecl });
-  assert.equal(wrote.ok, true);
-  assert.equal(existsSync(join(w.tree, 'output', 'steps', '1.total.txt')), false);
+  assert.deepEqual(await linesOfStep(w), {});
+});
+
+// the brief line about totals is conditional: only a step with a sumIf or countIf check is told not to write them
+const TOTALS_LINE = '  Do not write a total or a count for the rows you name: code adds them up from the rows you name.';
+test('worker brief: the "do not write totals" line is present ONLY when the step has a sumIf or countIf; without it the SHEET brief is byte-identical to the pre-ruling text', async () => {
+  const noMath = lineBriefs({ stages: [stageOf(await part([EXP_CHECKS()[0]]))] })[0].text;
+  const sumOnly = lineBriefs({ stages: [stageOf(await part([EXP_CHECKS()[0], EXP_CHECKS()[1]]))] })[0].text;
+  const countOnly = lineBriefs({ stages: [stageOf(await part([EXP_CHECKS()[0], EXP_CHECKS()[2]]))] })[0].text;
+  assert.equal(noMath.includes('code adds'), false);
+  assert.ok(sumOnly.split('\n').includes(TOTALS_LINE));
+  assert.ok(countOnly.split('\n').includes(TOTALS_LINE));
+  const fields = JSON.stringify((await sheetclaims()).sheetBrief([EXP_CHECKS()[0]]).fields);
+  assert.equal(noMath, [
+    'Job line 1 is a SHEET line. Write output/steps/1.json as {"text": "...", "claims": {...}} - "text" is your answer to the line in your own words, "claims" holds one box for each name listed under "fields" below; no "cites".',
+    '  Answer with one field for each name in "fields", in the shape shown for it. Give the values themselves, worked out from the input - never a cell reference and never a formula. The values shown only illustrate the shape; use the real ones from the input and the job line.',
+    `  fields: ${fields}`,
+    '  To name a row, use the row number the numbered view of the sheet shows for it (the second input file for the sheet): the header is row 1 and the first data row is row 2.',
+  ].join('\n'));
+  assert.equal(sumOnly, `${noMath}\n${TOTALS_LINE}`);
 });
 
 // ---- old specs are untouched; a sheet part is a new hash ----
