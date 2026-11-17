@@ -16018,4 +16018,11 @@ Frozen bars (written before any number exists):
 - Planted 28 of 28 red and 2 of 2 green still hold.
 - A failed bar is reported FAIL; no re-tune.
 
-Results: pending.
+Results (2026-11-17; script `.claude/scratch/poc-d/run.mjs`, untracked scratch; $0, no provider call):
+- (a) PASS. Of 50 expenses files, 37 name exactly the 18 true rows; for all 37 code's sum (13,065.10) and count (18) equal the truth (37 of 37).
+- (b) PASS. 13 of 50 files name wrong or omitted rows (the same 13 as F339's c_over reds); 13 of 13 grade red, and each gap names row numbers (example: `c_over: claim omits rows: 7; c_over: claim names rows that do not qualify: 2`). The row check agreed with an independent set comparison on all 50.
+- (c) PASS for the 50 expenses files: the report line is code's own text built from the named rows in 50 of 50; in 44 of 50 the worker's own total differed from code's, and in 0 of those did the worker's figure appear in the report. NOT measurable on aging: it has no sum or count check (daysSince, band, noDuplicates), so the row path does not apply, no report line is delivered, and the bar's "all 100" is 50 files, not 100.
+- (d) Reported, not a win (the check changed): expenses green under the new rows check 37 of 50, next to 5 of 50 under the old total/count check.
+- Planted: 28 of 28 red and 2 of 2 green still hold under the old checks (via `runPlanted`).
+- Surprise, for the build: under the rows-only check, planted files that carry a wrong worker total or count but the right rows (`wrong-count-19`, `total-off-by-a-cent`, `value-is-string`, `missing-box-total`) grade GREEN. That follows the spec (worker totals are not graded; the report shows code's number) but means the old planted "red" for those is no longer red; the wrong figure is simply never delivered. Planted wrong-rows files grade red (3 of 3; the `rows-as-strings` file is a shape red before the row check).
+- Reading: 100 saved files, one model, one 40-row sheet; the row path removes the arithmetic failure by construction, and the remaining misses are row picks (13 of 50).
