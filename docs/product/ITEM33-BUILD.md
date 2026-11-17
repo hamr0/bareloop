@@ -4594,3 +4594,269 @@ Item 2 left a reading question (Agree only) with no way out. hamr's ruling: a RE
 
 - (e) item 3 as built (968eb3d4, 19c9625b, f07472b5): a repo `~` rule is kept by the write fence only when the AI points at it and code proves it, in the rubric's order. One small call before the asks (`src/fencepointcall.js`, `runFencePoint`) answers row edits `{op: 'fence', line, rule, path}`; each goes through `CheckBlock.applyDelta` (`editFence`) and `provesFence` decides (path on the listing, the rule's own words name it as a whole token, no path it names lies where the run may change). Every other `~` rule is Not checked at once with `REASON.noRule`: a repo rule is never asked (option A of (f)). The call's reply and each edit's accept or refusal are in the draft log (`kind: fence-point`). This is the pointing shape (e) first called the reverted side path (fa94a85b), now on the one block's row edits instead of its own module. `closeDecl.fenceKept` stays readable for old signed specs only.
 - The draft readout of (e) is built (`buildReadout`, `src/authorreadout.js`, from fwdloop v0.34.0): panel Chat above the signed-ready card and the CLI under SIGNING PREPARED; display only. The CLI print is test-proven only.
+
+
+## Addendum 2026-11-17: F201 + sheet (CSV) jobs copied from fwdloop v0.35.0
+
+Status: spec signed in chat by hamr 2026-11-17 (rulings below). Nothing built yet. POC B is DONE (F338, F339); POC D (code does the math) is pending, at $0, before S3. Numbers marked (est) are estimates, not measured. Order on one branch: piece 0, S1..S5.
+
+
+### Goal
+- Bring fwd's F201 page-look prompt (piece 0), then fwd's whole sheet (CSV) job (S1..S5) into bareloop, as the report-style rubric job on plain files.
+- The person gets numbers checked by code against a frozen copy of their sheet; the sheet is never edited.
+
+### Rulings (fixed, hamr 2026-11-17)
+- Copy from fwd tag v0.35.0. ONE new branch off bareloop main. Order: piece 0 (F201), then S1..S5. fwd's F196 fixes (S6) are folded into the piece they belong to.
+- Sheet output is a REPORT: value / rows / days / bands answers, checked by code against the frozen sheet. No sheet as output. Bareloop never edits the person's sheet.
+- Worker answer: a `claims` field (typed boxes, bareguard `claimSchema`) in the per-line step file `output/steps/<n>.json`, beside `text` (and `cites`).
+- This adds a new `sheet` part class to the signed rubric-step params. New hash. Old jobs untouched; only new drafts get it.
+- Words: use CORRECT words, not fwd's am7 wording (see S4).
+- Standing rulings, stated not asked:
+  - rubric jobs on plain files only (not repo jobs)
+  - reds name row numbers and counts, never cell text
+  - the agreed column lives as a row on the one check list (no separate signed field)
+  - no size cap beyond the 16 MB source door
+  - SKIP all Ask / hitl / send / askSheetCard / closeUnbuiltSheetSteps / applyDocWords / addressCells / emit-artifact tool
+  - "judge it at the Ask" becomes "judge it at Accept"
+  - bareguard helpers are imported, never copied
+  - no dependency bumps (bareguard stays ^0.36.0, already exports every helper needed)
+- Process: POC first where risky; each piece names its CALL SITE; a fail-first test per piece; each piece one or more commits; the orchestrator (not the builder) runs the full gate after each piece; builders are sonnet, run tests only via `npm test`.
+
+### Piece 0: F201 prompt, withdraw `named` guard
+
+What the person sees: nothing new. Fewer wrong ties of a `~` rule to page words that do not carry its meaning (live run mwi76vh8: "be friendly" tied to "Select flight").
+
+Files (changed):
+- `src/pagemap.js` `mapPrompt` (line 41)
+- `src/checkblock.js` (the `named` guard, ~lines 188-193)
+- `src/promptregisters.js` (the register entry at lines 53-55 names `mapPrompt()`; update only if its text description needs it)
+
+Call site: `mapPrompt` is called by `runPageMap` (`src/pagemap.js:143`), which is the look door `authorjob.js:476`. Nothing new to wire.
+
+Copied from fwd: the text of `mapPrompt` at fwd commit e6473e30 (`src/pagemap.js` diff: goal paragraph, the "do ONE of two things" block, `why` per fact in the JSON form, and a `cannot` list for a rule the page cannot show).
+
+Kept from bareloop (not in fwd's text):
+- the date / number / lang / decimal extras
+- the `reading` line
+- "A label must appear ONCE on its page line and sit right before the value" (line 54)
+
+Changes:
+- The JSON form gains `why` (per fact) and `cannot` (list of line, rule, reason).
+- The parser (`parseMapAnswer`) accepts and IGNORES both. No code reads `cannot`. This is the same as fwd.
+- WITHDRAW the `named` substring guard in `checkblock.js` (hamr 2026-11-16: "no code word lists / carve-outs for intent"). Delete it; a tied fact then uses the existing tie path as it did before 2026-11-15.
+
+Tests (fail-first):
+- prompt contains the new lines and still contains the ONCE line and the extras (red on today's prompt)
+- parser accepts `why`/`cannot` and returns the same facts as without them
+- a test that the `named` carve-out is gone: a phrase fact whose words are not in the rule's text now links to the rule row (the old behaviour; this test is red on main only because of the guard)
+- neighbour tests: grep tests for old prompt wording and for "do not contain" guard wording; update them (builders skip neighbours)
+
+Done when:
+- the suite is green on the exit code AND the last line
+- the $0 replay passes (below)
+- one paid run on the mwi76vh8 job shape (POC A below) was read by hand
+
+Known and stated: fwd's open bug 2 (the look's `forRule` tie is trusted, not proven by code) is REDUCED by the prompt but NOT closed. The `named` guard was one patch for it; removing it means a wrong tie can reach the card. Nothing more is built for it here. A person still sees the tied rule on the card and decides at Accept.
+
+### S1: CSV reader, column finder, sheet look
+
+What the person sees: gives a `.csv` as a file input. A job word that is no column of the sheet gets one question: "no column 'X'; 'Amount' has numbers in 17 of 17 rows. Use it?" (Agree / Drop it / own words). An agreed column rewrites the `~` rule's own words in place ("Price over 500" becomes "Amount over 500"); it adds no line. A rule that already names a real header asks nothing.
+
+The door: `src/source.js` already accepts `.csv` (no extension filter; only NUL byte, `.env`, symlink, secret shape and 16 MB refuse; URL `text/*` covers `text/csv`). No door change. `bareloop.context.md` gets one line saying CSV is accepted as text and what is checked.
+
+Files (new): `src/csv.js`, `src/sheetfind.js`, `src/sheetlook.js`.
+Files (changed): `src/authorjob.js` (look door at ~474-476), `src/inputlook.js` (tell the look which inputs are sheets), the question/answer path that applies an agreed column (`src/noteask.js` / `src/questionbox.js` / `src/panel/authorroutes.js`, exact file named by the builder after reading; the answer replaces the rule via the same one-in-one-out path as other asks).
+
+Call site: `authorjob.js` look door. For a CSV input with a `~` rule on a line, it calls `lookAtSheet` (one AI call per CSV) instead of `runPageMap`. The look's call, book, retry and spend go through the same plumbing `runPageMap` uses (copy its pattern; the sheet look is a sibling of `runPageMap`).
+
+Copied from fwd v0.35.0:
+- `csv.js` all of it (115 lines) except `colLetter`/`colIndex`/`parseCellRef` (retired cell cites) (`csv.js:8-37` dropped)
+- `sheetfind.js` (52): `findColumn:31`, `columnQuestion:50`, `columnTail:52`
+- `sheetlook.js` (168): `sheetPrompt:31`, `parseSheetAnswer:56`, `applySheetWords:78`, `lookAtSheet:157`; NOT `applyDocWords:134`
+- F196 fixes folded here (commits 680bd45c, 365709e1, 99e37a3f, ee79f051): a `~` rule that contains a real header is tied by code and asks nothing; one word one question (the rule's wins); the prose-word tail says the answer becomes the agent's check; a plural matches ("amounts" is "Amount").
+
+Adapted:
+- `sheetlook.js` imports fwd's `pagebits.js` helpers (`lineRules`, `countPhrase`, `wordsSaidOn`, `wordForms`) and `tieOf` from `pagerules.js`. Bareloop has `lineRules`/`wordsSaidOn` in `rubricstep.js` and its own `pagerules.js`; the builder maps each import to the bareloop equivalent and reports any that is missing (do not invent).
+- "your answer replaces that ~ rule on line N" is already bareloop's one-in-one-out wording; reuse it.
+
+Tests (fail-first), fixtures copied to `tests/fixtures/sheets/` from fwd: `aging.csv`, `aging-dup.csv`, `expenses.csv`, `ar-aging.csv` (git show v0.35.0 paths: `test/fixtures/m10b-sheets/*.csv`, `fixtures/ar-aging.csv`):
+- reader: quoted cell `"1,200.50"` is one cell; a blank line does not shift row numbers; BOM dropped (port fwd `m10b-csv-reader` 87 lines)
+- finder: one fitting column offers; a tie offers nothing; FIT_RATIO 0.9 (port `m10-sheetfind` 66)
+- look: word kept only if it is a real header; no-column word asks once; rule naming a header asks nothing (port `m10-sheetask` 141, `m10-sheet-own-word` 45, `m17-f196-aging-ask` 66, `m10-draft-sheet` 188 minus doc parts), each against a fake provider
+- each shown red by breaking the source alone
+
+Done when: a draft with expenses.csv and `~ Price over 500` asks one column question at $0 in tests and, after Agree, the rule reads `Amount over 500` with no added line.
+
+### S2: check builder (code builds every sheet check on bareguard)
+
+What the person sees: nothing yet; the next pieces show it. Behind it: the AI only sends typed suggestions (`sheetChecks`) on the row-edit reply; code builds or refuses each one.
+
+Files (new): `src/sheetchecks.js`, `src/sheetoffer.js`, `src/sheetbuild.js`.
+Files (changed): `src/rowedit.js` (115 lines): add an optional `sheetChecks` property, as it already takes the `ticket` flag (fwd `rowedit.js:108-139`); `src/authorjob.js` or the drafting path that calls the row-edit turn.
+
+Call site: the row-edit turn in drafting (same place the ticket filter rides today). With a CSV input and sheet lines present, the turn is shown the block's lines plus the sheet lines and the sheets' text, with `sheetSuggestProp(tables, lineNums)` as the schema (line is an enum of real sheet line numbers). The reply's `sheetChecks` go to `buildSheetChecks`.
+
+Copied from fwd v0.35.0:
+- `sheetchecks.js` (192): `SHEET_RULES`, `MAX_SHEET_CHECKS=20`, `sheetCheckColumns:29`, `sheetCheckSentence:68`, `bareguardChecks:97`
+- `sheetoffer.js` (142): `sheetChecksProp:39`, `sheetOpsBrief:64`, `sheetOfferRules:81`, `sheetSuggestProp:97`, `isColumnChoiceRule:104`, `columnChoiceParts:114`, `swapColumnWord:127`, `agreedColumnWords:142`
+- `sheetbuild.js` (148): `toSuggestion:30`, `buildSheetLine:43`, `buildSheetChecks:114`
+- Refusals run in this order, all on bareguard helpers (imported): vocabulary, line's sheets, schema (`checkSchema`), `columnAt`, `checkTables`, `groundedLiterals`, `claimSchema`, and `runTableChecks` for a table check.
+- ids: `l<line>r<n>` for a rule row, `l<line>a<k>` for an `[agent]` row; the claim name is the id.
+- am3 (a second check on a rule is its own `[agent]` row) and am5 (a table check already failing on its sheet is refused at build) and am7 (a table check is never a rule's row) are all inside `sheetbuild.js`; copy as they stand.
+- F196 A (line enum; the turn shows only real sheet lines) folded here.
+
+Adapted / dropped:
+- `sheetCheckReds`, `sheetCoversReds`, `sheetCheckWordReds`, `sheetNoClaimReds` (`sheetchecks.js:105-192`): in fwd these are validator reds in `declaration.js`. Bareloop has no per-step declaration validator, so copy them only as helpers the builder and the stage-shape validator call (the build already refuses the same things). Keep `sheetNoClaimReds` (a table-only step has nothing to answer) as a stage-shape red.
+- `declaration.js` `close.sheet` / `close.columns` / `checkColumnsKey`: SKIP. The checks live in the new `sheet` part of the stage (S3); the agreed column is a row on the list (ruling).
+
+Tests (fail-first): port `m10b-sheet-checks` (112), `m16-am4-sheet-bareguard` (92), `m17-p4-sheet-build` (278), `m17-am7-table-row` (76) against fake provider and the 4 fixtures. Include the forced cases from fwd F194: a number not in the person's words refused; a non-header column refused; a failing table check refused at build; a check naming an op outside the vocabulary refused; AI-set id/claim/text dropped; a second check on a held rule becomes its own `[agent]` row. Also a schema test: the reply's `sheetChecks` property is optional, absent for non-CSV jobs, and a non-sheet job's turn is byte-identical to today (byte-diff gate).
+
+Done when: on aging.csv a scripted reply of 4 suggestions builds 4 checks with code ids; each forced bad suggestion is refused with a reason naming the helper.
+
+### S3: the stage, claims in the step file, frozen sheet, the judge
+
+This is the risky piece (POC B first, see POCs).
+
+What the person sees: the run writes `output/steps/<n>.json` with `text` and `claims`. The run start refuses an unreadable sheet at $0. A changed sheet after start stops the check at $0 naming the input. A wrong claim is a red naming row numbers/counts.
+
+Files (changed): `src/rubricstep.js` (`PART_CLASSES:178`, `rubricStepShapeReds:230`, `stepFileContract:34`, `lineBriefs:79`, `buildStepSpec:293`, `gradeStep:485`, `parseStepFile:381`, `flattenStep:398`); `src/kinds.js` (the rubric-step stage run at ~1458-1501, where input shas are built: add the table for each sheet role); the run-start input freeze (find via `inputShas` in `kinds.js:1458-1467` and the manifest writer in `planrun.js`).
+Files (new): `src/sheetrun.js`, `src/sheetclaims.js`.
+
+Call site:
+- Run start (planrun / the freeze that records input sha256): for each CSV input named by a `sheet` part, compute `tableSha` over the FROZEN copy and record it with the input. An unreadable table (ragged row, repeated header) refuses at $0, naming the input.
+- Stage close (`kinds.js` rubric-step): `gradeStep` builds the rubric with the sheet checks and calls `checkStep(rubric, step, flattenedStep, { tables })`.
+- Worker brief (`lineBriefs`/`stepFileContract`): tells the worker the claim boxes' shape.
+
+Design choices (visible):
+- New `sheet` part class in the stage params (`PART_CLASSES`). It holds the built checks as data (bareguard cells/table check objects plus `covers`/`row`). Changing the signed params gives a new hash. Old jobs have no `sheet` part and are read as signed, untouched.
+- Step file shape: `{ "text": "...", "cites": {...}, "claims": { "<claim id>": <typed box> } }`. Box shape per claim is bareguard's `claimSchema` (`{value}`, `{rows}`, `{days}`, `{bands}`).
+- The worker is told only the worked example of each box (`rubricVocabulary...example`), NEVER the check (op, condition, bound, column). This is the same exception fwd took ("a step never sees its close") and it already exists for page facts.
+- A table check has no claim (it judges the sheet); a cells check has one. Two checks with the same claim name share a box.
+- The judge is `closeSheet` adapted: same call as fwd (`createRubric` + `checkStep` with `tables`), same stopped-sha message, same `renderGaps` for the red. No model grades.
+- Lock: the signature locks the job, not the file. Each run records the `tableSha` of its own frozen copy once; every check of that run uses that recorded value (fwd am1).
+- Reds: row numbers and counts only; never cell text; found-words for a green claim repeat only the step's own number, count of rows/days/bands; a string claim is never repeated.
+- Trend number for the fix-loop governor: reuse the stage's existing `redCount` (failing claims + other failing checks), as `gradeStep` already does. No new governor.
+- A step with a `sheet` part and no `claims` key is red "answer the claim boxes" (not a crash).
+
+Three additions (hamr 2026-11-17, from POC B rounds 1-2, F338/F339):
+- (i) Claim names never equal a box type (`rows`, `value`, `days`, `bands`). The validator reds at stage-shape time if a claim name equals a box type (e.g. `ageDays`, not `days`).
+- (ii) Row-numbered view. Run start writes `input/<sheet>.rows.txt` beside the frozen CSV: one line per CSV line, `row N: <line exactly as in the CSV>`, header = row 1, no check text, no claim names. The file contract lists it as the second input and says to read it for row numbers. The sheet's tableSha still comes from the frozen CSV only; the view is derived, never graded.
+- (iii) Code does the math. For a sum/total/count check the worker does NOT write the number. It names the rows in a `rows` box (the rows it says qualify). Ops: sumIf and countIf (both; the same box serves a sum and a count of one condition). At stage close, code reads the named rows from the frozen table and computes sum (of the check's column) and count, and appends to the delivered report a plain line, `Total of rows 3, 5, 9: 1,234.50 (computed by code from the rows named)`; the report shows the code's number, never the worker's. The check then reads: the `rows` check carries the truth (named rows equal the rows the condition selects; wrong or missing rows are the red, named by row number). A sum computed by code from rows that pass the rows check cannot be wrong arithmetic; if the rows check is red the run is red whatever the sum. Worker-written totals in the text are not graded and not delivered as a figure. Old fwd-style `value` boxes for sum/count stay legal for jobs with no sum/count check. Spec'd and POC'd at $0 BEFORE build (POC D).
+
+Copied from fwd v0.35.0: `sheetrun.js` (135): `sheetRolesOf:19`, `tableShaOfFrozen:33`, `readRunSheets:46`, `closeSheet:73`, `tableChecksFailingOnInput:115`; `sheetclaims.js` (58): `sheetClaims:16`, `sheetAnswerProps:36`, `sheetBrief:53`.
+Adapted: `readRunSheets` reads bareloop's frozen input files and recorded manifest, not fwd's `run.json`/`readRunInputs`. `sheet-record.js` (fwd's `line-checks.json` writer) is replaced by bareloop's own per-stage record (`rowresults.js`); no new file. `sheetAnswerProps` becomes the file-contract text and a validator for the written JSON, not a forced tool schema (no emit-artifact tool in bareloop).
+
+Tests (fail-first): port `m10b-sheet-run` (346): lock holds / one changed cell stops at $0 naming the input / a claim of 18 rows instead of 17 is red naming the row / an unreadable table refuses at start / table-only step red / a request-construction test proving the worker brief carries no op, condition, bound or column. Plus: an old signed spec (no `sheet` part) grades byte-identically before and after (byte-diff gate); a spec with `sheet` part signs to a different hash.
+
+Done when: on expenses.csv a hand-written step file with the right claims grades green and with 18 rows grades red naming a row, with a real `checkStep` (no stub of the library seam).
+
+### S4: the one list: rows, tags, Drop/Add, Not checked
+
+What the person sees: on the plan card each `~` rule of a sheet line is ONE row: `[you]` rule row (`l2r1`), plus `[agent]` rows for the AI's other checks, with Drop (and Add back), at $0 and with no AI call. A `[default]` row says the column exists / the sheet is the frozen one. A table check ("the sheet has 8 rows", "no duplicate Invoice #") is its own `[agent]` row, on by default, with Drop; it never sits on a `~` rule's row. A Revise keeps a Drop of the very same check.
+
+Words (CORRECT, not fwd's):
+- rule whose check was refused: its refusal reason, unchanged
+- a table check was picked but cannot check this rule: "A check was picked, but it cannot check this rule, so you judge it at Accept."
+- no check picked: bareloop's existing `NO_VALUE_WHY` in `checkblock.js:56`: "No check was picked for it, so you judge it at Accept."
+- fwd's am7 sentence says "judge it at the Ask" and "no sheet check covers it"; neither is used.
+
+Files (changed): `src/checkblock.js` (new row source for sheet checks; sheet rows join `rows`, carry tag `by`, Drop/Add through the existing `rowChoice`); `src/pickrecord.js` (a `sheetDropped` list in the picks record, copied from fwd `pickrecord.js:122-131`, so a Revise keeps a Drop); `src/rowedit.js` (already done in S2); the Drop/Add route in `src/panel/authorroutes.js`.
+Files (new): `src/sheetrows.js` only if CheckBlock would otherwise grow past reason (est ~120 lines); otherwise fold into `checkblock.js`. Builder decides after reading and reports.
+
+Call site: `CheckBlock` construction at drafting and the existing Drop/Add route; `buildSheetChecks` output is fed in as rows.
+
+Copied from fwd: `sheetrows.js:23-118` (`sheetRowsOf`, `withSheetCard`, `droppedSheetOf`, `keyOfSameCheck:68`, `sheetChoice:82`, `withSheetRows:118`); `sheetblock.js` `sheetByCheck:64`, `uncoveredRules:132`, `sheetCheckName:36` + `SHEET_OP_NAMES:21` (words), `sheetLineBlocks:82` only as far as the card needs it.
+Adapted: the fwd `kind:'sheet'` list rows map onto CheckBlock's existing row vocabulary (`kind`, `by`, `from`, `state`); a new `kind: 'sheet'` is added to `checklist.js` typedef (line 45) and `SIGNED_ROW_FIELDS` is unchanged (no new signed field; ruling). SKIP `closeUnbuiltSheetSteps`: a sheet line with no built check is Not checked with the reason; and the run needs at least one check anyway (existing bareloop rule).
+F196 fixes folded here: one Not checked line per `~` rule (a look column-drop of a word inside a `~` rule makes no line of its own); `[agent]` row shows only a rule no rule row holds; plan card shows the list only (no old "Guardrails / Not checked: none" block).
+
+Tests (fail-first): port `m16-am4-sheet-rows` (225), `m16-am4-sheet-route` (111), `m17-p5-sheet-line` (74), `m16-tags-origin` sheet parts (127), `m17-p4-f196` (105): every `(line, rule)` shows once; Drop and Add cost $0 and call no AI (assert zero provider calls); Revise keeps the Drop; the two am7 sentences, each exact; a rule has never two rows.
+
+Done when: on the aging fixture each `~` rule is one row or one Not checked line, a Drop + Add round-trips to the same list, and no AI is called by either.
+
+### S5: surfaces and the $0 re-check
+
+What the person sees: Job tab and plan card show the sheet rows with tags; Result tab shows each check with check/cross and what was found ("17 rows checked", "rows 2, 3 repeat"), and Not checked again; Audit shows the checks of the latest close only (existing rule).
+
+Files (changed): `src/panel/jobplan.js` (renderer; one renderer drives the plan card and Job tab), `src/rowresults.js` (per-row result words), `src/stagewords.js` (plain question text for a sheet check, owned by code), the Result/Audit routes in `src/panel/runroutes.js`, the card HTML in `src/panel/index.html`.
+Files (new): `scripts/sheet-recheck.mjs` adapted from fwd `scripts/m10b-recheck.mjs` (89): re-runs a run's signed checks on its saved frozen sheet and says ok.
+
+Call site: panel routes already call the plan renderer and `rowresults`; sheet rows ride them. The script is run by hand.
+
+Copied: fwd `sheetCheckSentence`/`sheetFoundWords` words (`sheetblock.js:46`) as they are; plan-card layout follows bareloop's own classes, not fwd's CSS (a lab mock is content only).
+SKIP: `askSheetCard:178`, `claimLines:154`, Ask views in `panel/data.js:2892-2913`.
+
+Tests (fail-first): browser-free renderer tests for each surface; the Result block shows ✓/✗ with found-words and never cell text (assert on the aging fixture with a planted cell string that must not appear). UI: orchestrator takes OWN screenshots of the card, Job tab and Result tab in context beside neighbours (hamr's rule); phone width cannot be checked by barebrowse; name that gap, hamr checks it in DevTools.
+
+Done when: a run's Result tab shows the checks with found-words; `sheet-recheck.mjs` says ok on the live-walk runs.
+
+### POCs
+All pre-registered: bars written to FINDINGS and committed (sha-frozen) BEFORE any data. A failed round is reported FAIL, then a second round is registered, never re-tuned. Probe the provider with 2 consecutive 200s before firing. Scratch HOME; keys by env prefix only (`$(pass show amr/deepseek_api | head -1)`); builders count `~/.config/bareloop/runs.jsonl` lines before/after.
+
+#### POC A (piece 0, $0 replay)
+- What: replay F201's new prompt over saved looks if the saved calls exist, else skip and say so. fwd had F200/F201 data; the bareloop archive of the mwi76vh8 page is the case.
+- Bar (frozen first): on the saved mwi76vh8 page + job, no `~` rule of the "be friendly" kind is tied to page words whose meaning it does not carry; the old prompt (control) does tie. If the archive cannot replay at $0, say so and rely on the paid run.
+- Cap: $0.
+
+#### POC A2 (piece 0, paid)
+- What: one real run on the mwi76vh8 job shape. Provider DeepSeek direct, model deepseek-flash.
+- Bar: the draft reaches a signable plan; "be friendly" ends Not checked or an ordinary `!` row, not a tied rule; other tied rules (price, place) are still tied. n=1 is an anecdote; stated.
+- Cap: $0.30.
+
+#### POC B: DONE (F338 round 1, F339 round 2; hamr's rulings 2026-11-17 in F339)
+Round 2 (n=50 per job, deepseek-flash direct, $0.601, 0 casualties): shape 50/50 both jobs; content aging green 44/50, expenses 5/50 (c_total wrong 45, c_over 13, c_count 13). Naming fixed shape, the row view fixed row-finding; the expenses miss is arithmetic. Feeds S3 (i)-(iii). Original plan kept below for the record.
+
+#### POC B (S3, the risky assumption: does a real worker write `claims` correctly?)
+- What: on a throwaway copy, a real worker (DeepSeek direct, deepseek-flash) is told the file contract for 2 sheet jobs (expenses: rows over 500, count and sum; aging: days and bands) and writes `output/steps/<n>.json` with `claims`. A hand-built stage and the real S3 judge grade it. 5 runs per job.
+- Bars (frozen before any run):
+  - (a) at least 4 of 5 per job write a file the parser accepts with every claim box present and typed.
+  - (b) every written-valid file that is WRONG is red (no false green): check with deliberately perturbed files (10/10 red).
+  - (c) the request carries no op, condition, bound or column (byte-diff of the worker's brief against the contract text).
+  - Report-only: cost, tries to green, cut-off count (truncated replies excluded from the denominator and counted apart).
+  - If (a) fails, STOP and report. Options then: a separate claims file, or a tool; hamr decides. No re-tune.
+- Cap: $1.00 total, kill by worker PID if reached.
+
+#### POC D (S3 (iii), $0, before build: code does the math)
+- What: replay the 50 saved round-2 expenses files (`.claude/scratch/poc-b/results/round2/files/expenses-*.json`) and 50 aging files through the sumIf/countIf path: take only the rows each worker named, compute sum and count in code from the frozen table, grade the new row-based check.
+- Bar (frozen in FINDINGS before the run): (a) code's sum and count equal the truth for 100% of files whose named rows equal the true rows (expect 37 of 50 for expenses); (b) a file with wrong or omitted rows grades red naming rows, 13 of 13 for c_over-red files; (c) the delivered report carries the code's number, never the worker's, byte-checked on all 100 files; (d) expenses green rate under the new check is reported next to 5/50, never compared as a win (the check changed). Planted 28 of 28 red, 2 of 2 green still hold.
+- Cap: $0.
+
+#### POC C (S2 + S4, the AI's use of `sheetChecks`)
+- What: 5 drafts per job (expenses, aging) on DeepSeek flash direct; count how often the row-edit reply carries `sheetChecks` and how many code builds.
+- Bar: `sheetChecks` present in at least 4 of 5 drafts per job; every `~` rule shows once; no declaration/stage carries an AI-written check. (fwd saw this only 2 of 2 live; this is the base-rate establisher.)
+- Cap: $0.40.
+
+### Build order and gates
+- Branch off main (name given by hamr at launch). One piece at a time.
+- Per piece: builder (sonnet) writes fail-first tests, builds, commits per deliverable, runs only `npm test`. The orchestrator then runs the full gate, one suite at a time with load under 15, and quotes the exit code and the last line.
+- CHANGELOG [Unreleased]: one line per piece (0: prompt + `named` withdrawn; S1..S5 as above). The orchestrator checks coverage after each builder.
+- `bareloop.context.md`: one CSV door line (S1) and the claims box contract (S3).
+- Prompt-commit-check: pieces touching `pagemap`/`authorflow` carry Failure/Addresses/Corrects labels; run it before any push.
+- Push the branch early once piece 0 is green (CI is the only different-machine gate).
+- After S5 green: ask hamr for `/branch-review`, then `/release`. Not before.
+
+### Live proof (end of S5)
+- Two jobs, expenses (`expenses.csv`: rows over 500, their count and sum) and aging (`ar-aging.csv` / aging.csv: days past due as of the job date, each invoice in its bucket, every invoice once).
+- Provider deepseek (DeepSeek direct), model deepseek-flash. Cap $0.30 per job drafting + run, $0.60 total. Real panel on a port other than 4700, scratch HOME.
+- Check before spending, at $0: close fails on seed, no refused tracked files, key readable, job direction/values match the saved sheet.
+- Done when: both draft, sign, run green (or a clean red caught); each card shows each `~` rule once; `sheet-recheck.mjs` says ok; a one-cell edit of the frozen copy stops at $0; a claim of 18 instead of 17 is red naming the row. A Revise after the column answer is walked once (fwd never did).
+- hamr clicks through the panel himself before any done claim.
+
+### Out of scope
+- sheet as output / writing a worksheet; editing the person's sheet; .xlsx; bareguard diff ops; repo jobs; .docx headings (`applyDocWords`); Ask/hitl/send; the Ask card; schedules/triggers specific to sheets (the sheet per run is just the run's input); a sheet size cap; dependency bumps; "Keep going"; closing fwd's open bug 2 fully.
+- PRD backlog line to add (NOT edited here; add after hamr's word, to `docs/product/PRD.md` next to the other Backlog lines near line 2263): "**Backlog (PARKED, later idea, unproven): sheet as output (new worksheet).** A sheet job today is a report; writing a new worksheet beside the person's own, never editing it, is not built and has no POC."
+
+### After it lands
+- Tell fwd (one message) that bareloop uses the correct am7 words, so they take our fix.
+- fwd's later sheet fixes are re-copied from fwd's own release tag, not this one.
+
+### Known open risks / unknowns (honest)
+- Sizes are estimates (est): about 1,100-1,300 lines of copied src, 400-600 lines of adapted src, about 2,000 test lines. Not measured.
+- `sheetChecks` AI use is n=2 live in fwd (both walks, one draft each); POC C is the first base rate.
+- Revise after a column answer was never walked live in fwd.
+- fwd's sheet code was proven with a forced-tool answer (`emit_artifact`). Bareloop's worker writes a file instead. fwd gives NO evidence for file-written claims; POC B is the first. This is the largest unknown.
+- Piece 0: fwd's bug 2 (the `forRule` tie is trusted) is reduced, not closed; withdrawing `named` removes one existing patch for it.
+- F194 build finding, open in fwd: "first suggestion on a rule wins" can keep the weaker check (a table check before a cells check on the same rule, or two checks where the kept one is weaker). am3 and am7 handle table rows; a weaker cells check kept on a rule can still hide a red that fwd's old two-check set caught. Reported, not fixed here.
+- The shared fwd files carried many small changes (drafter 106 sheet hits, declaration 51). Bareloop has no declaration validator, so some fwd reds have no bareloop home; the builder lists each one it dropped.
+- A moved sheet between draft and run is allowed (the signature locks the job, not the file); a column the new sheet lacks stops at $0 naming it. Not walked live.
+- Phone width of the new cards cannot be checked by barebrowse.
+- Signed-hash change is limited to new drafts, but any bridge/reuse minted on old specs is unaffected; reuse of a sheet job uses the whole signed plan (existing rule).
