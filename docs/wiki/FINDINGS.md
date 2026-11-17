@@ -16074,3 +16074,9 @@ Question. Which lines of the worker prompt (PERSONA_TOOLS, retrieval/edit/compon
 - CANNOT MEASURE: P1; P2 (the gate sees the resolved path); "never put file contents in your reply"; R3; the broader R1/R2 whole-file-read failure; select/compress/isolate (15 steps granted, ctx_stash 0); READ_SHIM_STRATEGY; READ_SHIM_DIFF_STRATEGY (never rendered in this archive, no data rather than a zero).
 - Instrument blind spots: no system prompt in the spine, no read offsets or bytes delivered, no recall query, no reply text, and no OFF arm ever. Repo genre is almost all one strict-typing family.
 Reading: n=135 runs but thin and single-genre; no line is safe to cut. A persona ON/OFF test needs those records first; parked.
+
+### F347: mixed page + sheet job — a job line is not tied to one input (2026-11-17, not seen live)
+- What: S2's sheet check builder (commit 4ce24ab0, src/authorflow.js authorClose ~2663-2675) treats any job line with a `~` rule as a sheet line whenever a CSV input exists. Nothing links a job line to a particular input. In a job with a URL page AND a CSV, the AI could propose a sheet check on a page line.
+- Already caught: code keeps only real sheet columns (columnAt) and only words found on the page, so most wrong mixes are refused.
+- Gap: a page line whose words happen to name a real sheet column could get a sheet check.
+- Status: NOT seen live (every sheet job so far has a sheet only). hamr 2026-11-17: log it, fix only if a real mixed job shows it. Design talk with hamr open (line-to-input tie: AI maps, code checks, ask when unsure).
