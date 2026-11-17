@@ -16282,3 +16282,18 @@ Move counts per job (3 repeats; each key rule moved 0-3 times):
 - Jobs 8-12: no move 3/3.
 
 Cost: $0.00679 for round 3; running total over rounds 1-3 about $0.011 of the $1.00 cap. The model is deterministic enough at temperature 0 that 6 of 12 jobs gave identical output all 3 times; the only wobble was job 4.
+
+#### Round 4 (prereg)
+
+Why: round 3 was NOT HELD because (a) wobbled; the model never pointed at list-fields wording ("with its name and price" in job 2, "with their version and date" in job 5, 0 of 3 each) and job 4 moved in 1 of 3 repeats. ONE change: one more example in the prompt showing a list-fields guardrail being moved, with no test-set job as the example. Everything else as round 3: fixed tidy code, n=3 per job (36 calls), same 12 jobs, same frozen key and bars (a)-(d), same held rule (all four bars pass in at least 2 of 3 repeats AND (b) 3 of 3), deepseek-flash direct, thinking off, temperature 0, total cap $1.00 across all rounds. Script `run4.mjs`.
+
+Prompt text, hamr's round-2 text with the one sentence added after the first example (job text filled at the end as before):
+```
+This is a job a person wants done. Each numbered line is a step, and the lines starting with ~ under a step are its guardrails: the rules the result must meet, and they are what gets checked. Sometimes a person writes a guardrail inside the step itself. For example, in 'List 3 flights from SFO to LAX under $500 nonstop', the words '3', 'from SFO to LAX', 'under $500' and 'nonstop' are guardrails hidden in the step. Likewise, in 'Find 5 hotels in Rome with name and price', the words '5', 'in Rome' and 'with name and price' are guardrails hidden in the step. Read the job below. Is there any step that has a guardrail within it that could be moved to its own ~ line to make the job clearer? Copy the words exactly as the person wrote them; never add, reword or invent a rule, and leave the person's own ~ lines alone. If no step hides a guardrail, say so.
+Answer only JSON: {"moves":[{"line":<step number>,"words":["<exact words>", ...]}]}, or {"moves":[]} when nothing is hidden.
+THE JOB:
+<job text>
+```
+Also reported: per-job move counts for jobs 2, 4, 5 and any new extra moves.
+
+Round 4 results: pending
