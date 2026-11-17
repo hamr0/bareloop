@@ -4598,7 +4598,7 @@ Item 2 left a reading question (Agree only) with no way out. hamr's ruling: a RE
 
 ## Addendum 2026-11-17: F201 + sheet (CSV) jobs copied from fwdloop v0.35.0
 
-Status: spec signed in chat by hamr 2026-11-17 (rulings below). Nothing built yet. POC B is DONE (F338, F339); POC D (code does the math) is pending, at $0, before S3. Numbers marked (est) are estimates, not measured. Order on one branch: piece 0, S1..S5.
+Status: rulings given by hamr in chat 2026-11-17 (below); the build itself is NOT yet approved — it waits for hamr's go. POC B is DONE (F338, F339); POC D (code does the math) is pending, at $0, before S3. Numbers marked (est) are estimates, not measured. Order on one branch: piece 0, S1..S5.
 
 
 ### Goal
