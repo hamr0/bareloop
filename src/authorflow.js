@@ -90,6 +90,10 @@ import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
+import { sheetTable, parseCsv } from './csv.js';
+import { isSheetInput } from './inputlook.js';
+import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords } from './sheetoffer.js';
+import { buildSheetChecks } from './sheetbuild.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
@@ -2661,8 +2665,18 @@ export async function authorClose({
     const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
     return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
+  // S2: with a CSV input the row-edit turn also offers the optional `sheetChecks` (typed suggestions; code builds or refuses each: src/sheetbuild.js). The tables are the drafting copy's table of each CSV input, by its label;
+  // a sheet line is a job line with a `~` rule. No CSV (or no `~` rule on any line, or a sheet with no header) = no sheet turn: prompt, schema and result are byte-identical to every other job.
+  /** @type {Record<string, {header: string[], rows: any[]}>} */
+  const sheetTables = {};
+  if (rowEdits && inputTexts !== null) for (const i of inputs ?? []) if (isSheetInput(i) && typeof inputTexts[i.label] === 'string') sheetTables[i.label] = sheetTable(parseCsv(inputTexts[i.label]));
+  const sheetLines = Object.keys(sheetTables).length > 0 ? (jobLines ?? []).filter((l) => lineRules(l).length > 0) : [];
+  const sheetProp = sheetLines.length > 0 ? sheetSuggestProp(sheetTables, sheetLines.map((l) => l.n)) : null;
+  /** the agreed-column rules of the sheet lines, as the AI is told them again (their own words: src/sheetoffer.js `columnChoiceParts`) */
+  const agreedColumns = sheetLines.flatMap((l) => lineRules(l).flatMap((r) => { const p = columnChoiceParts(r); return p === null ? [] : [{ line: l.n, ...p }]; }));
+  const sheetBlock = sheetProp === null ? '' : `\n\nTHE SHEET CHECKS\n${sheetOfferRules(Object.keys(sheetTables), sheetLines.map((l) => l.n)).join('\n')}${agreedColumns.length ? `\n${agreedColumns.map((c) => agreedColumnWords(c)).join('\n')}` : ''}`;
   const prompt = rowEdits
-    ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '')
+    ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '') + sheetBlock
     : authorPrompt({
       answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
       lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
@@ -2682,6 +2696,10 @@ export async function authorClose({
   let messages = [{ role: 'user', content: prompt }];
   /** the drafter's PROPOSED ticket filter of the accepted iteration (a Tickets job only); the person signs it, the spec carries it, the close never does @type {any} */
   let acceptedTicketFilter;
+  /** S2: the sheet checks the AI last suggested (the reply's `sheetChecks`: the latest list that came, carried across tries) and those of the accepted try @type {any[]} */
+  let sheetSuggested = [];
+  /** @type {any[]|null} */
+  let acceptedSheet = null;
   /** @type {any[]} */
   const iterations = [];
   /** @type {any} */
@@ -2766,7 +2784,7 @@ export async function authorClose({
       // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
       const ask = rowEdits
-        ? { ...(await askStructured({ messages, generate: draftGenerate, mode: structuredMode, retries: retryCap, label, book, channel: rowEditChannel(ticket) })), declaration: null }
+        ? { ...(await askStructured({ messages, generate: draftGenerate, mode: structuredMode, retries: retryCap, label, book, channel: rowEditChannel(ticket, sheetProp) })), declaration: null }
         : await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen, ticket });
       if (rowEdits) ask.declaration = ask.artifact;
       messages = ask.convo;
@@ -2776,6 +2794,12 @@ export async function authorClose({
       if (ticket && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'ticketFilter')) {
         const { ticketFilter: tf, ...restDecl } = ask.declaration;
         proposedFilter = tf;
+        ask.declaration = restDecl;
+      }
+      // S2: `sheetChecks` is never part of the declaration: taken out before validation, built or refused by src/sheetbuild.js, and kept beside it (like `ticketFilter`)
+      if (sheetProp !== null && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'sheetChecks')) {
+        const { sheetChecks: sc, ...restDecl } = ask.declaration;
+        if (Array.isArray(sc)) sheetSuggested = sc;
         ask.declaration = restDecl;
       }
       /** @type {{reason: string, raw: any}[]} */
@@ -2859,13 +2883,13 @@ export async function authorClose({
       // early stop: an unchanged declaration has the previous iteration's
       // measurements by definition — re-executing it buys nothing and costs a
       // full close
-      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null }) === canonical(previous)) {
+      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) }) === canonical(previous)) {
         iter.validation = '(identical declaration — see the previous iteration)';
         iter.seedRead = '(identical declaration — see the previous iteration)';
         stop = 'unchanged';
         break;
       }
-      previous = { d: ask.declaration, f: proposedFilter ?? null };
+      previous = { d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) };
 
       // a rubric job: ONE reply of row edits, each judged alone by the block; the declaration is assembled from the rows (a refused edit costs the others nothing)
       let pre = ask.declaration;
@@ -2940,6 +2964,7 @@ export async function authorClose({
         iter.seedRead = rows;
         accepted = injected.declaration;
         acceptedTicketFilter = proposedFilter;
+        acceptedSheet = sheetSuggested;
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
@@ -3040,6 +3065,15 @@ export async function authorClose({
     onPhase('draft-ledger', { rows: ledgerRecord(/** @type {any} */ (block).rows) });
   }
 
+  // S2: every sheet line's checks, built by code from the accepted try's suggestions (src/sheetbuild.js); the refusals ride the iteration that carried the reply. `null` for a job with no sheet turn: the result is then unchanged.
+  /** @type {Awaited<ReturnType<typeof buildSheetChecks>>|null} */
+  let sheetBuilt = null;
+  if (sheetProp !== null && accepted !== null) {
+    sheetBuilt = await buildSheetChecks({ lines: sheetLines, tables: sheetTables, suggestions: acceptedSheet ?? [] });
+    const at = iterations.find((it) => it.call === finalFrom) ?? iterations[iterations.length - 1];
+    if (at && sheetBuilt.refused.length > 0) at.sheetRefused = sheetBuilt.refused;
+  }
+
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {
     // `ok` means A SIGNABLE CLOSE EXISTS, and nothing more. A dead socket on a
@@ -3050,6 +3084,7 @@ export async function authorClose({
     ok: accepted !== null,
     declaration: accepted,
     ...(ticket && acceptedTicketFilter !== undefined ? { ticketFilter: acceptedTicketFilter } : {}),
+    ...(sheetBuilt !== null ? { sheetBuilt } : {}),
     seedRead: acceptedSeedRead,
     iterations,
     reds,

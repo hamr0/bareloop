@@ -1,7 +1,7 @@
 // THE DRAFTER'S ROW-EDIT TURN of a rubric job (the check block, docs/product/ITEM33-BUILD.md "CHECK BLOCK BUILD SPEC" section 4 and hamr's rulings of 2026-11-12).
 // The AI never writes a part, a check or a declaration: it sends EDITS to the list of checks code keeps in the CheckBlock (src/checkblock.js). Code reads the inputs, proves every
 // word, builds every check and decides what can be checked; every edit is judged on its own. The confirm turn owns the goal (ruling 5), so the reply has none. A Tickets job's reply
-// may also carry the optional `ticketFilter` (ruling 2, R5), checked by its own reader. No text here restates the list of checks (the block's invariant 5): the only list-shaped input is
+// may also carry the optional `ticketFilter` (ruling 2, R5), checked by its own reader; a job with a CSV input may carry the optional `sheetChecks` (S2), built or refused by src/sheetbuild.js. No text here restates the list of checks (the block's invariant 5): the only list-shaped input is
 // the look's report, an input the drafter already had, and the person's own job lines.
 import { lineRules } from './rubricstep.js';
 import { renderLookReport } from './inputlook.js';
@@ -74,8 +74,8 @@ export function rowEditUserText({ jobLines, look, texts }) {
   return out.join('\n');
 }
 
-/** @param {boolean} ticket @returns {Record<string, any>} the tool's schema: the edits list (each edit judged by code, so an item is any object), and for a Tickets job the optional ticketFilter */
-const rowEditSchema = (ticket) => ({
+/** @param {boolean} ticket @param {Record<string, any>|null} [sheetChecks] S2: with a CSV input, the optional `sheetChecks` suggestions (src/sheetoffer.js `sheetSuggestProp`) @returns {Record<string, any>} the tool's schema: the edits list (each edit judged by code, so an item is any object), and for a Tickets job the optional ticketFilter */
+const rowEditSchema = (ticket, sheetChecks = null) => ({
   type: 'object',
   properties: {
     edits: { type: 'array', items: { type: 'object', properties: { op: { enum: ['add', 'reading', 'pick', 'not-checkable'] } }, required: ['op'] }, description: 'row edits; each is judged on its own' },
@@ -90,20 +90,21 @@ const rowEditSchema = (ticket) => ({
         description: TICKET_FILTER_SCHEMA_WORDS,
       },
     } : {}),
+    ...(sheetChecks ? { sheetChecks } : {}),
   },
   required: ['edits'],
   additionalProperties: false,
 });
 
-/** @param {boolean} ticket the channel `askStructured` reads (src/authorflow.js) */
-export const rowEditChannel = (ticket = false) => ({
+/** @param {boolean} ticket the channel `askStructured` reads (src/authorflow.js) @param {Record<string, any>|null} [sheetChecks] */
+export const rowEditChannel = (ticket = false, sheetChecks = null) => ({
   name: ROW_EDIT_TOOL,
   instruction: `Your reply did not deliver exactly one ${ROW_EDIT_TOOL} call. Call ${ROW_EDIT_TOOL} exactly once, with the edits list as its arguments. Do not write the answer as text.`,
   textPath: 'edits',
   tool: (/** @type {{calls: any[]}} */ box) => ({
     name: ROW_EDIT_TOOL,
     description: 'Deliver your row edits (or an empty list). Call this exactly once.',
-    parameters: rowEditSchema(ticket),
+    parameters: rowEditSchema(ticket, sheetChecks),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return ROW_EDIT_ACK; },
   }),
 });
