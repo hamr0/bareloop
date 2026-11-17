@@ -2313,10 +2313,13 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 ### F201 + sheet jobs, fast menu dropped (v1.139 — 2026-11-17)
 
 - [ ] F201 look prompt copied from fwd v0.35.0; the `named` substring guard is withdrawn (hamr 2026-11-16: no code word lists) — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17.
-- [ ] Sheet (CSV) jobs copied from fwd v0.35.0 minus hitl: report output only (value / rows / days / bands); file-written claims (a tie with fwd's tool, F341); claim names never equal a box type; a row-numbered view of the sheet; code does the math (sums and counts from the rows the worker names); corrected am7 words. POC B done (F338, F339); POC D pending — same addendum.
+- [ ] Sheet (CSV) jobs copied from fwd v0.35.0 minus hitl: report output only (value / rows / days / bands); file-written claims (a tie with fwd's tool, F341); claim names never equal a box type; a row-numbered view of the sheet; code does the math (sums and counts from the rows the worker names); corrected am7 words. POC B done (F338, F339); POC D passed (F343) — same addendum.
 - Backlog (not built, unproven): sheet as output (a new worksheet beside the person's own).
 - fwd takes code-does-math and the am7 words from bareloop's release later (not urgent).
 - [x] Launcher fast menu dropped (hamr 2026-11-17, F340).
+- [ ] S5 surfaces (card, Job tab, Result) and the $0 sheet re-check script — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17, S5.
+- [ ] POC C (drafts per job, base rate for `sheetChecks`) — same addendum.
+- fwd F194 ("first suggestion on a rule wins" can keep a weaker check) is open; reported, not fixed here — same addendum, known risks.
 
 ### Sheet as a list of jobs, parked (v1.140 — 2026-11-17)
 
@@ -2347,6 +2350,7 @@ Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replac
 - The S1 `~` rule column ask (with the tie picker and its Drop it) STAYS.
 
 **Build order** (each piece names its call site and a fail-first test; full gate per piece)
+- Order: R0 → R1 → R2 → R3 → R4 → S5 → POC C → branch-review → release (hamr 2026-11-17: R0 before S5 because R1-R4 change what S5 screens show).
 - [ ] R0 POC, $0, no AI: dry-run the R1 revert in a throwaway worktree, list every code path that builds a check from step prose, show who owns the job lines. Pre-registered bars; result to hamr before R1 if any bar fails.
 - [ ] R1 Revert 3463d6bb and 6e303060 (S1 stays).
 - [ ] R2 Job box hint, and remove prompt wording that says step prose is checked.
