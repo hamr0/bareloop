@@ -15980,3 +15980,25 @@ hamr's rulings 2026-11-17:
 1. Tool vs file is a tie on deepseek-flash (fwd: 1 bad call in its archive, $0.00720, 6.3 s; bareloop: 0 of 109 in its archive, 100 of 100 in round 2, $0.0041-0.0080, 4.5-5.8 s; not a same-job head-to-head). Each repo keeps its way.
 2. bareloop copies fwd's sheet code but keeps file-written claims plus three fixes: claim names never equal a box type, a row-numbered view of the sheet, and code does the math (the worker names rows; code computes sums and totals). The third is new: to be specced and POC'd at $0 first.
 3. fwd takes code-does-math and the am7 corrected words later from bareloop's release, not urgent.
+
+### F340: launcher fast-menu POC missed its bar; hamr DROPPED the idea (2026-11-16/17)
+Question. Can the launcher menu show sooner by a worker thread plus lazy imports? (An earlier 2026-11-03 "menu first, load after" POC also failed: the prompt came no sooner; hamr parked it.) The scratch copy `.claude/scratch/menu-poc-b` is not on disk now; the numbers below are the session's own readings, not re-verifiable here.
+- Today's menu: wall about 0.52 s to the menu on a pipe (machine load about 1; median of 5); 0.95 s to `>` on a pty (load 2.4-4.8; range 0.93-1.53 s; median of 7). Bare `node` start is about 0.14 s. A stub that only counts files costs 0.43 s.
+- POC (worker thread plus lazy import): `>` at 0.23-0.25 s; the runs line at about 1.0 s; pick `4` to status 0.94 s down to 0.24 s; `q` exit 0.94 s down to 0.29 s.
+- Pre-set bar: 0.15 s. MISSED. The bar sat below node's own start (0.14 s plus any work), so it was the wrong bar; reported as a miss, not re-tuned.
+- Cost of shipping it: a worker thread, an ANSI rewrite of the menu (old Windows terminal risk), 3 new files.
+- hamr's ruling (2026-11-17): not worth it. DROPPED. Not parked; no re-proposal.
+
+### F341: tool answer (fwd) vs file answer (bareloop), $0 archive reads on both sides (2026-11-17)
+Question. fwd delivers a worker's answer through a forced tool; bareloop's worker writes a step file. Does either lose on shape? Both sides read their own archives; this is NOT a same-job head-to-head and fwd's 10-vs-10 paid POC was not run.
+- fwd (its own read of 141 audit files): deepseek-flash after am37: 114 rows, 17 reds, $0.00720, 6.3 s per row. Before am37: 207 rows, 52 reds, $0.00653, 11.2 s. Muse forced: 11 rows, 0 reds, $0.02139, 9.7 s. Muse before am37: 22 rows, 17 reds. Text-instead-of-tool: 21 rows, all Muse, 0 deepseek. checkArgs bad call: 1. Forcing is fwd M4d am37 (round 2 only, after a text ending; F141/F141b Muse 5/5 forced vs 0/5). The tool answer was a build choice at fwd ce4f366f (2026-09-24), never POC'd.
+- bareloop: 47 rubric-step runs on disk (2026-10-12 to 11-16, all deepseek-flash direct), 109 graded attempts, 0 shape reds (nearest: 3 "no value given" in u-mvcur592), 71 content reds. First attempt median $0.0064 / 8.5 s (p90 $0.0125 / 16.1 s); retry median $0.0224 / 68.8 s (about 3.5x, thinking on). Text-only ending: 0 of 124 rubric attempts, 1 across 80 spines (u-mwi3gz3p, a repo job; the nudge recovered it). The old 3 of 1,491 is not re-verifiable (data gone).
+- Mechanism difference: `shell_write` content is one string and `checkArgs` checks top-level args only, so the inner JSON is checked only at the close (`src/rubricstep.js` parseStepFile :381-387, plainStepGap :427-454).
+- Verdict (hamr): a tie on deepseek-flash; each repo keeps its way. Round 2 of POC B (F339) adds the live file-answer shape: 100 of 100.
+
+### F342: fix-ledger refactor results (2026-11-16/17)
+- 55 tests deleted whose bareloop-patients data was gone: skipped tests 57 to 2; pass count unchanged at 5826.
+- Temp-dir leaks: 38 test files fixed through `tests/tmp-track.mjs`; full-suite `/tmp` entries 881 before, 881 after (no growth).
+- Memo keeps the last red try after a replan (3206c182). Test-proven only, not seen live.
+- Fence row carries `fencePlace` (309bd333). A bare `test` stays `test` because stored-spec views have no tree root; hamr: leave it.
+- The CLI "SIGNING PREPARED" readout is reachable only through `scripts/run-author.mjs` (not shipped), so no test was built for it.
