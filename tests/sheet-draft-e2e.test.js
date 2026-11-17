@@ -117,3 +117,27 @@ test('S3 grades the drafted close through the real engine: the right claims file
     }
   }
 });
+
+test('a counting rule on a sheet line is asked nothing and no pick call is made (authorjob marks the sheet lines before the asks); it is Not checked with the no-pick sentence', async () => {
+  const file = join(tmp(), 'expenses.csv');
+  copyFileSync(join(HERE, 'fixtures', 'sheets', 'expenses.csv'), file);
+  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Expenses', value: file }], into: join(tmp(), 'seed') });
+  if (!proved.ok) throw new Error('unreachable');
+  const calls = { pick: 0, asked: 0 };
+  const provider = { async generate() { return reply({ text: JSON.stringify({ facts: [{ from: 'line 1 rule 1', word: 'Amount', kind: 'number' }] }), costUsd: 0.002 }); } };
+  const jobLines = [{ n: 1, text: 'List every expense over 500', rule: 'Amount over 500; at most 80 words', rules: ['Amount over 500', 'at most 80 words'] }];
+  const r = await authorCloseForJob({
+    answers: { 1: '1. List every expense over 500\n   ~ Amount over 500\n   ~ at most 80 words' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
+    jobLines: JSON.parse(JSON.stringify(jobLines)), inputs: [{ n: 1, label: 'Expenses', value: file }], writeScope: ['output/'], provider, ceilingUsd: 1,
+    pickGenerate: async () => { calls.pick += 1; throw new Error('no pick call on a sheet line'); },
+    answerQuestions: async (o) => { calls.asked += o.questions.length; return { jobLines: JSON.parse(JSON.stringify(jobLines)), answers: { 1: 'x' }, choices: [] }; },
+    generate: async () => { throw new Error('no drafting-model call'); },
+    editGenerate: async (_m, tools) => {
+      await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [], sheetChecks: [{ line: 1, rule: 'cells', table: 'Expenses', claim: 'over', op: 'rows', where: W500, covers: [1] }] });
+      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+    },
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.deepEqual([calls.pick, calls.asked], [0, 0]);
+  assert.deepEqual(r.closeDecl.refused, [{ line: 1, rule: 2, reason: 'No check was picked for it, so you judge it at Accept.' }]);
+});

@@ -726,7 +726,8 @@ export async function authorCloseForJob({
     // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
     block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
-    const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
+    // S4: a line that reads a sheet has no count-pick path: the sheet checks decide its rules, so none of its rules is offered a pick
+    const scoped = answerQuestions ? scopedRules(jobLines.filter((l) => !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), { inputs, look }) : [];
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
     // a rule whose words already are its check is settled by the block as written (no ask, no suggestion call)
     matched.askRules = matched.askRules.filter((r) => !obviousCheck(r.text));
