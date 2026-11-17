@@ -4662,6 +4662,8 @@ Known and stated: fwd's open bug 2 (the look's `forRule` tie is trusted, not pro
 
 What the person sees: gives a `.csv` as a file input. A job word that is no column of the sheet gets one question: "no column 'X'; 'Amount' has numbers in 17 of 17 rows. Use it?" (Agree / Drop it / own words). An agreed column rewrites the `~` rule's own words in place ("Price over 500" becomes "Amount over 500"); it adds no line. A rule that already names a real header asks nothing.
 
+2026-11-17 (hamr): a column tie asks which column (each tied column a choice); it never goes Not checked silently. Shape (hamr, same day): "I found 3 columns matching 'Price': Amount, Tax, Total. Choose one." with the page's native select listing ALL tied columns in sheet order (no cutoff), [Drop it] and [Send]; NO own-words box (a closed question: the door refuses a typed answer and a column not in the list, in plain words); the tail "(your answer replaces that ~ rule on line N)" stays; the CLI prints a numbered list. The tie counts toward the 3-ask cap. A tie on a word of a line's own prose (no `~` rule to replace) cannot ask and stays Not checked.
+
 The door: `src/source.js` already accepts `.csv` (no extension filter; only NUL byte, `.env`, symlink, secret shape and 16 MB refuse; URL `text/*` covers `text/csv`). No door change. `bareloop.context.md` gets one line saying CSV is accepted as text and what is checked.
 
 Files (new): `src/csv.js`, `src/sheetfind.js`, `src/sheetlook.js`.
@@ -4685,7 +4687,7 @@ Tests (fail-first), fixtures copied to `tests/fixtures/sheets/` from fwd: `aging
 - look: word kept only if it is a real header; no-column word asks once; rule naming a header asks nothing (port `m10-sheetask` 141, `m10-sheet-own-word` 45, `m17-f196-aging-ask` 66, `m10-draft-sheet` 188 minus doc parts), each against a fake provider
 - each shown red by breaking the source alone
 
-Done when: a draft with expenses.csv and `~ Price over 500` asks one column question at $0 in tests and, after Agree, the rule reads `Amount over 500` with no added line.
+Done when: a draft with the real expenses.csv (Amount and Tax both fit) and `~ Price over 500` asks one tie question at $0 in tests and, after picking Amount, the rule reads `Amount over 500` with no added line (picking Tax gives `Tax over 500`); a sheet where one column fits asks the Agree question and Agree gives the same rewrite.
 
 ### S2: check builder (code builds every sheet check on bareguard)
 
