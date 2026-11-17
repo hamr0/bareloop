@@ -4874,7 +4874,7 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 - Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
 - fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
 - Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
-- R0 run 2026-11-17: bar 1 FAIL as written (suite exit 1, one failure, a worktree `.git`-is-a-file artefact, not a later commit; reverts clean and byte-identical), bars 2 and 3 PASS; R3 is NOT verify-only (five prose paths exist); F351. Result goes to hamr before R1.
+- R0 DONE 2026-11-17 (F351): the revert applies clean and all 18 files are byte-identical to `3463d6bb^`. Bar 1 failed only on a worktree artefact: `tests/codeversion.test.js` reads `.git` as a directory, in a worktree it is a file; it passes in the real tree. Bars 2 and 3 PASS. hamr's later ruling (above) settles R3 as pinning tests only. R1 is next.
 
 ### Goal
 - Only `~` lines are captured and checked. A line without `~` says what to do and is never checked. The person is told so in the job box.
@@ -4885,7 +4885,9 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 - The AI may still SUGGEST a good missing rule the person did not write, from captured intent (the person's own words + what the input shows; code-checked words; the existing `!` rule). It shows under the existing Suggested box ("not in your job, not checked unless you add it").
 - Add writes a `~` line into the job text. Today Add only turns the card row on (`CheckBlock.rowChoice`, `src/checkblock.js` ~1141-1163, sets `choice 'add'`); it does not touch the job text.
 - `[default]` code checks (file exists, saved sheet copy, write fence, etc.) stay.
-- `[agent]` extra checks only when they belong to a `~` rule (e.g. "count rows over 500" for `~ Amount over 500`); never from step prose.
+- ~~`[agent]` extra checks only when they belong to a `~` rule (e.g. "count rows over 500" for `~ Amount over 500`); never from step prose.~~ **[WITHDRAWN 2026-11-17 (later): `!` agent rows built from a line's text stay exactly as they worked before the two patches; see the ruling below.]**
+- **Ruling 2026-11-17 (later)** — hamr: "yes, our focus is only get code check for ~ and ! stays as it worked before, same flow no changes, we are just removing the forceful attempt to rewrite the job"
+  Meaning: `~` gets a code check; `!` stays as it worked before, same flow, no changes; the only change is removing the forceful rewrite attempt (the two S4 patches). The six prose paths in F351 (ii) are the working `!` flow, not defects.
 - The S4 prose-word patches come out, in revertable commits: 3463d6bb (item 5: a word of a line's own prose is asked like a rule word and its answer swaps the word in the line) and 6e303060 (ruling A: every line of a sheet-only job is a sheet line; it ALSO added Drop it to the prose tie box, which goes away with item 5). The `~` rule column ask (S1, with the tie picker and its Drop it) STAYS.
 - Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
 
@@ -4918,19 +4920,18 @@ R2. Job box hint and prompt text that implies step prose is checked
 - Tests fail-first: a panel markup test that the hint text is on the page; a prompt test that the old wording is gone (grep the neighbour tests for the old wording first).
 - Done when: the hint shows in the real panel (builder's own screenshot), full gate green.
 
-R3. Checks come only from `~` lines
-- First, the builder REPORTS (a finding, not a guess): which code paths today build a check from step prose (look facts, sheet checks, `!` agent rows, `$` defaults). Expected: none after R1. Anything found is listed with file and line and goes back to hamr before any fix.
-- Then verify and pin by test: look facts, sheet checks and `[agent]` rows are built only for a `~` rule; `[default]` rows stay; a step with no `~` gives exactly one Not checked line as today.
-- Files: `src/checkblock.js`, `src/sheetfind.js`, `src/sheetlook.js` (read; change only what the report shows).
-- Call site: the existing draft flow (`CheckBlock` reconcile), nothing new wired.
-- Tests fail-first: a job with a step that hides a rule ("List laptops under 1500") and no `~` builds no check from that step; the same job with `~ under 1500` builds it; a `[default]` row is still there in both. Show each red against a mutated copy first (scratch copy, never `git checkout`).
-- Done when: report delivered, tests green, full gate exit 0.
+R3. Pinning tests only, NO code change (ruling 2026-11-17 later)
+- The `!` rows built from a line's text (the six paths in F351 (ii)) are the working flow and stay as they were before the two patches. The earlier "agent rows only under a `~` rule" ruling is withdrawn.
+- Add pinning tests that today's flow holds: a `~` rule gets a code check; `!` rows still appear as before; `[default]` rows stay; a step with no `~` still gives its Not checked line. Show each can fail against a mutated scratch copy (never `git checkout`).
+- Files: tests only. Call site: the existing draft flow (`CheckBlock` reconcile), nothing new wired.
+- Done when: tests green, full gate exit 0.
 
 R4. Add on a Suggested row writes a `~` line (one owner: the job lines)
 - Files: `src/checkblock.js` (`rowChoice`, `choicesRecord`), `src/panel/authorsession.js` (the Drop/Add door ~1407-1430 and the final-card Suggested view ~1377), `src/panel/index.html` (job box follows the session job text, ~6349).
 - Behaviour: Add on a `suggested` row inserts a `~` line directly under its step in the job text; the card, job box, signed lines and Job tab all read that one text. Drop of an added suggestion removes that `~` line again. Revise keeps it (a `~` line is the person's own text from then on). $0, no AI call. A refused Add (code cannot build a legal check) changes nothing and says why in plain words, as today.
 - Call site: the panel Add/Drop action (`authorsession.js` ~1418) calls `rowChoice`; the job text edit happens in that one door and the row becomes a `~` (you) row, so `choice 'add'` is no longer a separate state.
-- Tests fail-first: Add writes the line (job text before/after); the card shows the rule once, tagged `~`; Drop removes the line and the row returns to Suggested; Revise after Add keeps the line; a refused Add leaves the text untouched; signed lines equal the job box lines.
+- Drift points (F351 (iii)): the write must reach the signed spec. `sheetFinalEdit` (`authorsession.js` ~1440) clones `finalCtx.spec` and never rewrites `spec.jobLines` or `resolved-spec.json`; Add/Drop must set `spec.jobLines` there (and recompute the spec hash), call `syncJobLines`, and on the rubric/sheet path also `block.syncJob(jobLines)` so the block's rule rows follow.
+- Tests fail-first: Add writes the line (job text before/after); signed spec jobLines and resolved-spec carry the added `~` line (and lose it on Drop); the card shows the rule once, tagged `~`; Drop removes the line and the row returns to Suggested; Revise after Add keeps the line; a refused Add leaves the text untouched; signed lines equal the job box lines.
 - Done when: gate green; builder's own screenshot of the job box before/after Add.
 
 ### Out of scope

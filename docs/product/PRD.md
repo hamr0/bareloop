@@ -2338,7 +2338,7 @@ Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replac
 
 **What is checked**
 - [ ] `[you]` rows: only from `~` rules.
-- [ ] `[agent]` rows: only when they belong to a `~` rule (for example a count under `~ Amount over 500`), never from step prose.
+- [ ] `[agent]` (`!`) rows: stay exactly as they worked before the two S4 patches, same flow, no change (hamr 2026-11-17 later: the earlier "only under a `~` rule" line is withdrawn; the only change is removing the forced rewrite attempt).
 - [ ] `[default]` code checks stay (file exists, saved sheet copy, write fence).
 - [ ] Step prose with no `~`: one Not checked line, judged at Accept.
 - [ ] One owner: the job lines. Card, job box, signed lines and Job tab all read that one text.
@@ -2354,7 +2354,8 @@ Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replac
 - [ ] R0 POC, $0, no AI: dry-run the R1 revert in a throwaway worktree, list every code path that builds a check from step prose, show who owns the job lines. Pre-registered bars; result to hamr before R1 if any bar fails.
 - [ ] R1 Revert 3463d6bb and 6e303060 (S1 stays).
 - [ ] R2 Job box hint, and remove prompt wording that says step prose is checked.
-- [ ] R3 Checks come only from `~` lines; report any prose-built check path first.
-- [ ] R4 Add on a Suggested row writes a `~` line; Drop removes it.
+- [ ] R3 Pinning tests only, no code change: a `~` rule gets a code check, `!` rows and `$` defaults stay as before.
+- [ ] R4 Add on a Suggested row writes a `~` line; Drop removes it; the write reaches the signed spec jobLines and resolved-spec (F351 drift points).
+- [x] R0 done (F351): reverts clean; bar 1 failed only on a worktree artefact; R1 next.
 
 Files, tests and the live proof: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b).
