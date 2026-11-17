@@ -41,6 +41,7 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
+import { freezeSheets, writeSheetTotals } from './sheetrun.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -1652,6 +1653,15 @@ async function execute(ctx) {
       throw new ExitSignal(2);
     }
     if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
+    // S3 SHEET FREEZE: each csv input a `sheet` part reads gets its `tableSha` (bareguard's fingerprint of the table made from THIS run's frozen copy) recorded once beside the input in source.json,
+    // and its row-numbered view written beside it and committed into the seed. A sheet bareguard cannot read as a table refuses here, before any provider call, naming the input.
+    const sheetFreeze = await freezeSheets({ into: ctx.into, closeDecl: spec.closeDecl });
+    if (!sheetFreeze.ok) {
+      err(`${SELECTOR}: ${sheetFreeze.error}`);
+      settleRefused(sheetFreeze.error);
+      throw new ExitSignal(2);
+    }
+    if (typeof sheetFreeze.seed === 'string' && sheetFreeze.seed) SEED = sheetFreeze.seed;
     // PLACE RULES: every place-rule fact of the signed spec is read, by CODE, from this run's own copy of its input (the copy the refetch above just froze); the values are
     // bound as those facts' phrases on the run's in-memory copy inside `runJob`, after the approval check, and are never written to the signed spec. Any rule not found
     // stops the run here, before any provider call.
@@ -2301,6 +2311,11 @@ async function execute(ctx) {
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
     // may produce more than one file — `copyOut` delivers every non-empty file
     // under `output/`, each under its own dated name, and returns the list.
+    // S3 (iii): the report carries code's own total and count from the rows the worker named, written beside the step file just before delivery (a green only: the same place `copyOut` runs)
+    try {
+      const totals = await writeSheetTotals({ workdir: wd, closeDecl: spec.closeDecl });
+      if (!totals.ok) out(`\nSHEET TOTALS  not written - ${totals.error}`);
+    } catch (e) { out(`\nSHEET TOTALS  not written - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
     const co = await copyOut({ tree: wd, into, destination: frontDoor.destination });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
