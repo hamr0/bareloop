@@ -4874,6 +4874,7 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 - Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
 - fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
 - Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
+- R0 run 2026-11-17: bar 1 FAIL as written (suite exit 1, one failure, a worktree `.git`-is-a-file artefact, not a later commit; reverts clean and byte-identical), bars 2 and 3 PASS; R3 is NOT verify-only (five prose paths exist); F351. Result goes to hamr before R1.
 
 ### Goal
 - Only `~` lines are captured and checked. A line without `~` says what to do and is never checked. The person is told so in the job box.
