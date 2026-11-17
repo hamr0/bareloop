@@ -16254,3 +16254,11 @@ Bars (frozen, unchanged):
 - Report-only: cost $0.00228 total (about $0.00019 per call); latency 0.62-1.13 s.
 
 Reading: all four bars pass, (a) at the threshold (5 of 7, n=1). The round-1 failure class (dropped person lines, dropped steps, junk rewrite of a clean job) is gone because code keeps the lines. What remains is cosmetic and unproven at scale: the tidy leaves a garbled step when several phrases are cut from one long sentence (job 3), and the model both under-points (jobs 2, 5) and over-points (job 7, Porto). Two of 7 hidden-rule jobs were missed, so n=1 on 12 jobs is an anecdote at the bar. No round 3.
+
+#### Round 3 (prereg)
+
+Why: round 2 passed all four bars (n=1) but job 3's step came out `Run the type checker and confirm, confirm, and run the existing test suite to confirm.` Cause (code, not the model): the model pointed at five phrases in one sentence; each phrase was the object of a verb ("confirm"). Cutting the object left the verb orphaned three times (`... checker and confirm , confirm , and run ... to confirm .`) and the old tidy only trimmed leftovers at the ends of the line, never in the middle. Fix, code only: cuts leave a marker; a word sitting directly before 2 or more cut points in one step (its object was moved out) is dropped; a run of separators/markers ("and", commas) that holds a cut point collapses to one separator (and, else comma, else nothing at the ends); the old end-trim stays. Proved at $0 by re-applying the SAVED round-2 model answers (`results2.json`) through the fixed code, no calls: job 3 now reads `Run the type checker and run the existing test suite.` plus the same 5 `~` lines; the other 11 jobs came out byte-identical to round 2.
+
+Round 3 setup: prompt unchanged (hamr's round-2 text), fixed tidy code (`run3.mjs`), n=3 calls per job (36 calls), same 12 jobs, same frozen key and bars (a)-(d), deepseek-flash direct, thinking off, temperature 0, total cap $1.00 across all rounds. Stability rules, frozen now: report each bar per repeat (3 scores); "held" = all four bars pass in at least 2 of the 3 repeats AND (b) passes in 3 of 3 (any invented or non-substring move in any repeat = FAIL). Also reported: per job, how often each key rule was moved (0-3), and any garbled step.
+
+Round 3 results: pending
