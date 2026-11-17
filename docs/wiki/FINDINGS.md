@@ -16054,3 +16054,23 @@ Results (2026-11-17; script `.claude/scratch/poc-a2/run.mjs`, untracked scratch;
 - Old-prompt control (same case, draft-log line 13): the old look tied rule 3 to "Select flight" and all three rules were built rows.
 - Cost: $0.0121 total drafting (page-map $0.0082, ledger-suggest $0.0004, note-ask $0.0001, confirm $0.0004, author $0.0019, revise-1 $0.0005, revise-2 $0.0005), spend complete; under the $0.30 cap. Probe calls: 2 tiny calls, not metered. `~/.config/bareloop/runs.jsonl` 164 lines before and 164 after.
 - Reading: n=1, one model, one page; the old prompt tied the rule, the F201 prompt did not, on the same page. An anecdote, not a base rate. One small difference: the new look's rule 2 words are `Departure time` (the old: `Departure time:`); the signed check still reads after `Departure time:`.
+
+### F345: helper verb experiment, 0 uptake in 2 runs (2026-11-17)
+Question (hamr). Would a worker on a big repo benefit from spawning a helper? Context: Claude Code REPL/code mode, Cloudflare code mode, executor.sh, RLM.
+- Built on branch `experiment/helper-verb` (kept, unmerged, not developed further): a read-only `ask_helper` verb (read/grep/recall/get under the same fence, 2,000-char answer, 3 calls per ask, round cap 8 ruled by hamr, thinking off, spend on the same cap), off by default. Spec `.claude/scratch/spec-helper-verb.md`; prereg `docs/logs/HELPER-VERB-PREREG.md` on that branch (commit 2536e4fa, sha256 a7ea60405b1a317ec65fe4622503355e9caa46a86cbe090b4a3553cfe0a1a051), frozen before run 2's patient existed.
+- Full gate on 4dbce6f3: 5860 pass, 1 fail (a codeversion test assumes `.git` is a directory; worktree-only, unrelated).
+- Runs: DeepSeek flash direct, $1 cap, patients were bareloop copies. Run mwkhxqmu (missing `judge-round` in SPEND_RECORD_TYPES, 1 file deep): green, 2.1 min, spend at least $0.1627, 0 `ask_helper` calls, 59 tool calls. Run mwkic3r1 (legSpend find vs findLast, 5 files on the call path, held to the prereg hardness bar): green, 3.7 min, spend at least $0.2109, 0 `ask_helper` calls, 59 tool calls.
+- The spine shows helper-verb on with its strategy line sent in both runs. Both fixes were correct, each with extra unrequested lines.
+- Also: no MCP pooling or code mode adopted (PRD v1.138); up to 2 MCP servers per job is in the PRD, parked.
+- Patients and the worktree were deleted after the runs; the spines stay in `.claude/scratch/helper-run*/` (untracked).
+Reading: per the frozen prereg, "0 uptake in 2 runs, n=2, UNDERPOWERED, not proof the verb is useless". One model, two jobs, no OFF arm, so no lift claim either way.
+
+### F346: archive read of the worker's per-round instruction lines (2026-11-17)
+Question. Which lines of the worker prompt (PERSONA_TOOLS, retrieval/edit/component strategies, read-shim strategies) still match a failure seen in real runs? $0 read, no model calls; report `.claude/scratch/archive-read-persona.md`, scripts in `.claude/scratch/archive-read/`.
+- Corpus: 135 real spines with a gate audit. deepseek-flash direct 83 runs (273 writeable asks); Fireworks 47 runs (35 asks, 34 of the output runs one injection harness); claude-sonnet-5 5 runs (16 asks, one Python job family). No Muse, haiku or clipipe runs survive. The 704-run archive behind F282 is gone.
+- No before/after split exists: every line dates 2026-07-13 to 2026-08-19 and the oldest run is 2026-09-06, so a rate is a rate with the line present and a zero is not evidence the line is unneeded.
+- STILL FIRES: P3/P4 arbiter books (deepseek-flash scout 3 of 83 runs and step/fix 1 of 83; Fireworks scout 31 of 36 output runs, one harness; every probe denied, 0 allowed). P5-P7 read little (zero-write capped asks 21 of 137 deepseek-flash repo, 2 of 16 sonnet-5; 0 of 35 Fireworks). P8 text-only ending 1 of 273 asks (mwi3gz3p). EDIT_STRATEGY whole-file rewrites 9 against 580 edits on deepseek-flash repo.
+- NOT SEEN: the F10 groping signature (0 of 135 runs); the F18 magnitude of 9 or more reads of one file (0 of 324 asks, max 6).
+- CANNOT MEASURE: P1; P2 (the gate sees the resolved path); "never put file contents in your reply"; R3; the broader R1/R2 whole-file-read failure; select/compress/isolate (15 steps granted, ctx_stash 0); READ_SHIM_STRATEGY; READ_SHIM_DIFF_STRATEGY (never rendered in this archive, no data rather than a zero).
+- Instrument blind spots: no system prompt in the spine, no read offsets or bytes delivered, no recall query, no reply text, and no OFF arm ever. Repo genre is almost all one strict-typing family.
+Reading: n=135 runs but thin and single-genre; no line is safe to cut. A persona ON/OFF test needs those records first; parked.
