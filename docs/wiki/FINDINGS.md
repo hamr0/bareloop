@@ -16296,4 +16296,22 @@ THE JOB:
 ```
 Also reported: per-job move counts for jobs 2, 4, 5 and any new extra moves.
 
-Round 4 results: pending
+Round 4 results (36 calls, all HTTP 200, 0 cut-offs, 0 parse errors, 0 refusals; probe 2x200; runs.jsonl 167 before and after; raw in `results4.json`):
+
+Per repeat, frozen bars:
+- (a) EXTRACT: PASS 5 of 7 (jobs 1, 2, 5, 6, 7), PASS 5 of 7 (same), PASS 6 of 7 (adds job 4). Job 3 is now a miss in all 3: the model cut the sentence into "in src/checks.js", "under src/", "against the pre-change baseline" and left "zero errors" and "no new type errors" in the step, so the key's rules are not whole `~` lines.
+- (b) NO INVENTION: PASS, PASS, PASS (12 of 12 each; every phrase an exact substring).
+- (c) NO-OP: FAIL, FAIL, FAIL (4 of 5 each). Job 8 (nothing hidden) now got `Fix the bug` / `~ in src/sum.js` / `~ so the tests in test/sum.test.js pass` in all 3 repeats, the person's own `~` lines kept.
+- (d) STEP KEPT: PASS in all 3 by the strict reading (each step still carries its action; no step or person `~` line lost), with caveats: job 2's step became `List laptop on the page.` (the word "every" moved to a rule), job 3's step is a half-cut run-on (`Run the type checker and confirm zero errors, confirm no new type errors in any other file and run the existing test suite to confirm every existing test still passes.`), job 8's step became `Fix the bug`.
+
+Held verdict: NOT HELD (FAIL). (b) passed 3 of 3, but (c) failed in 3 of 3 repeats, so all four bars passed together in 0 of 3.
+
+Move counts (3 repeats):
+- Job 2: "with its name and price" 3/3 (was 0/3 in round 3, so the example worked for it); but the extra move "every" also 3/3.
+- Job 4: one sentence and quote the title 1/3 (repeat 3 only), the same as round 3.
+- Job 5: "last 3" 3/3 and "with their version and date" 3/3 (was 0/3); "short" moved 1/3.
+- Extra moves new this round: job 8's whole goal tail ("in src/sum.js", "so the tests in test/sum.test.js pass") 3/3, job 2's "every" 3/3, job 3's fragments 3/3. Job 7's "in Porto" 3/3 as before.
+
+Cost: $0.00772 for round 4; total over rounds 1-4 about $0.019 of the $1.00 cap.
+
+Reading: the Rome example fixed the list-fields miss (jobs 2 and 5 now 3/3) but taught the model to over-move: it now rewrites a job whose rules were already on `~` lines and cuts a clause into fragments. (a) is stable now; (c) broke. No round 5 without hamr's word.
