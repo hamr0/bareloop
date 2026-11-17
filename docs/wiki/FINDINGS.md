@@ -16234,4 +16234,23 @@ THE JOB:
 ```
 Scoring: (a) hand-judged against the key on the final job text code produced; (b) all moves exact substrings, 12 of 12 jobs, refusals reported; (c) no-hidden-rule jobs 8-12 end byte-identical to the input; (d) each step keeps its action, hand-judged. Report-only: refusals, cost, cut-offs, latency, final job text per job. A FAIL is reported FAIL; no round 3.
 
-Round 2 results: pending
+Round 2 results (n=1 per job, no re-tune; provider probe 2x HTTP 200; runs.jsonl 167 lines before and after; all 12 calls HTTP 200, 0 cut-offs, 0 parse errors):
+
+Final job text code produced (moves the model pointed at in brackets):
+- 1 [3 | from Boston to Denver | with price and departure time]: `List flights` / `~ 3` / `~ from Boston to Denver` / `~ with price and departure time`.
+- 2 [none]: unchanged (key wanted name and price as rules).
+- 3 [in strict mode | with no emit | zero errors in src/checks.js | no new type errors in any other file under src/ against the pre-change baseline | every existing test still passes]: `Run the type checker and confirm, confirm, and run the existing test suite to confirm.` / 5 `~` lines with those phrases. Every key rule is a `~` line, but the step reads garbled (the tidy left "confirm, confirm, and").
+- 4 [one-sentence | quoting its title word for word]: `Write a triage note saying what the ticket asks` / `~ one-sentence` / `~ quoting its title word for word` / the person's own `~` kept / `State whether the ticket is open or closed, as written` untouched.
+- 5 [last 3 | short]: `Find the releases with their version and date` / `~ last 3` / `Write a summary of what changed` / `~ short` / person's 2 `~` kept. "version and date" was not pointed at.
+- 6 [with no failing tests | by fixing the cause in the source code under src/]: `Make npm test pass` / those two as `~` / the person's 3 `~` kept.
+- 7 [3 | in Porto]: `List stays` / `~ 3` / `~ in Porto` / `~ under €200 total` kept. Porto, an extra move beyond the key, left the step.
+- 8 to 12 [none each]: byte-identical to the input.
+
+Bars (frozen, unchanged):
+- (a) EXTRACT: PASS, 5 of 7 (jobs 1, 3, 4, 6, 7). Misses: job 2 (no move), job 5 ("version and date" left in the step).
+- (b) NO INVENTION: PASS, 12 of 12 jobs; every pointed phrase was an exact substring. Refusals: 0 phrase refusals, 0 empty-step refusals.
+- (c) NO-OP: PASS, 5 of 5 byte-identical.
+- (d) STEP KEPT: PASS, every step kept its action and no step or person `~` line was lost (code kept them); caveat: job 3's step became ungrammatical and job 7's step lost "in Porto" to a rule.
+- Report-only: cost $0.00228 total (about $0.00019 per call); latency 0.62-1.13 s.
+
+Reading: all four bars pass, (a) at the threshold (5 of 7, n=1). The round-1 failure class (dropped person lines, dropped steps, junk rewrite of a clean job) is gone because code keeps the lines. What remains is cosmetic and unproven at scale: the tidy leaves a garbled step when several phrases are cut from one long sentence (job 3), and the model both under-points (jobs 2, 5) and over-points (job 7, Porto). Two of 7 hidden-rule jobs were missed, so n=1 on 12 jobs is an anecdote at the bar. No round 3.
