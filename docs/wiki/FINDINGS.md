@@ -16315,3 +16315,9 @@ Move counts (3 repeats):
 Cost: $0.00772 for round 4; total over rounds 1-4 about $0.019 of the $1.00 cap.
 
 Reading: the Rome example fixed the list-fields miss (jobs 2 and 5 now 3/3) but taught the model to over-move: it now rewrites a job whose rules were already on `~` lines and cuts a clause into fragments. (a) is stable now; (c) broke. No round 5 without hamr's word.
+
+#### Decision (hamr 2026-11-17)
+
+The AI job rewrite is PARKED, not built. Four rounds, total about $0.019, and no stable pass: round 2 passed once, round 3 did not hold (extraction 4, 5, 4 of 7), round 4 fixed the list-fields miss with one example but then over-moved (a job with nothing hidden got rewritten, the no-op bar failed 3 of 3). Each prompt fix broke another bar. The misses were the safe kind: the words stayed in the step and nothing was invented.
+
+Replaced by a simpler rule: ONLY `~` lines are captured and checked. A line without `~` says what to do and is never checked; the job box says so plainly. No AI rewrite, no guessing. The AI may still SUGGEST a good missing rule the person did not write (from the person's own words and what the input shows, code-checked, the existing `!` rule). It shows under Suggested ("not in your job, not checked unless you add it"), and Add writes a real `~` line into the job text, so the job text always matches what is checked. Spec: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b). No round 5.
