@@ -197,12 +197,13 @@ export class CheckBlock {
   /**
    * S1 (the sheet look, src/sheetlook.js): a `~` rule whose word is no column of its CSV carries ONE column question. Agree writes `reading` (the rule's own words with the column in place of the word) as the rule's words,
    * through the same one-rule-in, one-rule-out answer as any reading (`applyAnswer`); no line is added. Code builds the question; nothing here reads a model field.
-   * @param {{line: number, rule: number|null, question: string, reading: string}[]} asks
+   * A tie (`columns`, `readings`: the rule's words for each tied column) has no single reading: the person picks a column (`applyAnswer` `column`) and the rule is that column's reading.
+   * @param {{line: number, rule: number|null, question: string, reading?: string, columns?: string[], readings?: Record<string, string>}[]} asks
    */
   addSheetAsks(asks) {
     for (const a of asks) {
       const r = a.rule === null ? undefined : this.ruleRows(a.line).find((x) => x.rule === a.rule);
-      if (r) r.sheetAsk = { ruleText: r.text, question: a.question, proposal: a.reading };
+      if (r) r.sheetAsk = { ruleText: r.text, question: a.question, proposal: a.reading ?? null, ...(Array.isArray(a.columns) ? { columns: [...a.columns], readings: { ...a.readings } } : {}) };
     }
   }
 
@@ -268,7 +269,7 @@ export class CheckBlock {
   matchRule(/** @type {Row} */ r) {
     if (this.repo !== null) { this.matchRepoRule(r); return; }
     // S1: the sheet look's column question, while the rule still says the words it was asked about (an answered, dropped or retyped rule is not asked again)
-    if (r.sheetAsk && this.asks && !r.agreed && !r.left && !r.corrected && r.text === r.sheetAsk.ruleText) { r.can = { ok: false, ask: 'reading', proposal: r.sheetAsk.proposal, question: r.sheetAsk.question, why: REASON.waitingReading }; return; }
+    if (r.sheetAsk && this.asks && !r.agreed && !r.left && !r.corrected && r.text === r.sheetAsk.ruleText) { r.can = { ok: false, ask: 'reading', proposal: r.sheetAsk.proposal, question: r.sheetAsk.question, ...(r.sheetAsk.columns ? { columns: r.sheetAsk.columns, readings: r.sheetAsk.readings } : {}), why: REASON.waitingReading }; return; }
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
     // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
     const negated = NEGATING_RE.test(r.text);
@@ -695,7 +696,7 @@ export class CheckBlock {
     this.open = [];
     for (const r of this.rows) {
       if (!r.can?.ask) continue;
-      this.open.push({ key: `${r.key}:${r.can.ask}`, rowKey: r.key, line: r.line, ruleText: r.text, ask: r.can.ask, proposal: r.can.proposal ?? null, ...(typeof r.can.question === 'string' ? { question: r.can.question } : {}), offers: { agree: r.can.proposal != null, drop: true } });
+      this.open.push({ key: `${r.key}:${r.can.ask}`, rowKey: r.key, line: r.line, ruleText: r.text, ask: r.can.ask, proposal: r.can.proposal ?? null, ...(typeof r.can.question === 'string' ? { question: r.can.question } : {}), ...(Array.isArray(r.can.columns) ? { columns: r.can.columns, readings: r.can.readings } : {}), offers: { agree: r.can.proposal != null, drop: true } });
     }
     return this.open;
   }
@@ -721,9 +722,17 @@ export class CheckBlock {
       r.text = said;
       return { ok: true };
     }
+    // S1 tie: the person picked one of the tied columns (`text` = its name); the rule is the rule's own words with that column in place, one rule in, one rule out
+    if (choice === 'column') {
+      if (!Array.isArray(q.columns)) return { ok: false, why: 'that choice is not offered for this question' };
+      const col = String(text ?? '');
+      if (!q.columns.includes(col)) return { ok: false, why: 'that is not one of the columns offered' };
+      r.text = String(q.readings?.[col]); r.agreed = true;
+      return { ok: true };
+    }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
     // only a READING question takes the person's words (hamr 2026-11-15 ruling): they REPLACE the asked rule (one in, one out) and code proves them as it proves any rule; no second question
-    if (choice === 'rule' && q.ask === 'reading') {
+    if (choice === 'rule' && q.ask === 'reading' && !Array.isArray(q.columns)) {
       const said = String(text ?? '').replace(/\s+/g, ' ').trim();
       if (!said) return { ok: false, why: 'an answer is needed' };
       r.text = said; r.origin = 'typed'; r.cantAsked = !isCountable(said); r.corrected = true;

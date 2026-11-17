@@ -1243,8 +1243,10 @@ export function createSession(card, deps = {}) {
         const agrees = via === 'agree';
         const dropsIt = via === 'drop';
         const corrects = via === 'rule' && q.source === 'look' && q.ask === 'reading';
+        // a column TIE (S1): the picker's choice, `text` = the column's name; the block rewrites the rule with it
+        const picksColumn = via === 'column' && q.source === 'look' && q.ask === 'reading' && Array.isArray(/** @type {any} */ (q).columns);
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
-        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt || corrects)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : corrects ? 'rule' : 'agree', ...(corrects ? { text } : {}) });
+        if (q.source === 'look' && typeof (/** @type {any} */ (q)).key === 'string' && (agrees || dropsIt || corrects || picksColumn)) choices.push({ key: /** @type {any} */ (q).key, choice: dropsIt ? 'drop' : picksColumn ? 'column' : corrects ? 'rule' : 'agree', ...(corrects || picksColumn ? { text } : {}) });
         // R10 (fwd am16): a check-pick ask. `agree` REPLACES the asked rule with the proposal's plain words and picks the check; "drop it" leaves the rule Not checked
         const isPick = q.source === 'look' && q.ask === 'check' && Number.isInteger(q.rule);
         if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
@@ -1393,7 +1395,7 @@ export function createSession(card, deps = {}) {
       if (choice === undefined && state.pendingAsk.kind === 'answer' && state.pendingAsk.source === 'look') return { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.bad };
       if (choice !== undefined) {
         // hamr 2026-11-12 (fwd am29/am31): the question box posts a typed choice. A refusal leaves the question open: nothing said, nothing logged, nothing resolved.
-        const no = refuseChoice(state.pendingAsk, choice);
+        const no = refuseChoice(state.pendingAsk, choice, text);
         if (no !== null) return { ok: false, refused: 'bad-choice', error: no };
         const r = resolveChoice(choice, text);
         if ('error' in r) return { ok: false, refused: 'blank-answer', error: r.error };

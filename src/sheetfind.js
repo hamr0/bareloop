@@ -48,3 +48,9 @@ export function findColumn(csvText, word) {
 export const columnQuestion = (word, found, line, tied = false) => `no column '${word}'; '${found.column}' has numbers in ${found.numbers} of ${found.rows} rows. Use it?${columnTail(line, tied)}`;
 /** @param {number} line @param {boolean} [tied] the question is about one of the person's `~` rules (the answer replaces that rule: bareloop's one rule in, one rule out); a word of the line's own prose has no rule to replace (F196 fault 3) @returns {string} */
 export const columnTail = (line, tied = false) => (tied ? ` (your answer replaces that ~ rule on line ${line}).` : ` (your answer becomes the agent's check on line ${line}).`);
+
+/**
+ * The question for a tie (hamr 2026-11-17: a tie asks, it never goes Not checked): the real count, the columns in sheet order, then the tail of a `~` rule's question.
+ * @param {string} word @param {string[]} columns @param {number} line @returns {string}
+ */
+export const columnTieQuestion = (word, columns, line) => `I found ${columns.length} columns matching '${word}': ${columns.join(', ')}. Choose one.${columnTail(line, true)}`;

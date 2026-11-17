@@ -1056,6 +1056,7 @@
               <button class="btn small" type="button" id="chat-q-c1" hidden></button>
               <button class="btn small" type="button" id="chat-q-c2" hidden></button>
             </div>
+            <select id="chat-q-column" data-testid="chat-q-column" aria-label="Choose a column" hidden></select>
             <label class="q-or" id="chat-q-or" data-testid="chat-q-or" for="chat-q-answer">Type your answer:</label>
             <textarea id="chat-q-answer" data-testid="chat-q-answer" rows="2" autocomplete="off" spellcheck="false" aria-label="Your answer" placeholder="Your answer, on one line"></textarea>
             <div class="hint q-err" id="chat-q-error" data-testid="chat-q-error" role="alert"></div>
@@ -5479,6 +5480,7 @@
     var qLine = document.getElementById("chat-q-line");
     var qText = document.getElementById("chat-q-text");
     var qChoices = document.getElementById("chat-q-choices");
+    var qColumn = document.getElementById("chat-q-column");
     var qC1 = document.getElementById("chat-q-c1");
     var qC2 = document.getElementById("chat-q-c2");
     var qOr = document.getElementById("chat-q-or");
@@ -6329,7 +6331,16 @@
           if(c){ btn.textContent = c.label; btn.setAttribute("data-choice", c.choice); btn.setAttribute("data-testid", "chat-q-" + c.choice); }
         });
         qChoices.hidden = cs.length === 0;
-        qOr.hidden = b.orLabel === null; qAnswer.hidden = b.orLabel === null; qSend.hidden = b.orLabel === null;
+        // a column tie: ONE choose-one picker listing every tied column (a native select, the page's own select style); a tie has no box to type in, and Send posts the picked column as the `column` choice
+        var cols = b.columns || [];
+        qColumn.hidden = cols.length === 0;
+        qColumn.textContent = "";
+        if(cols.length){
+          var first = document.createElement("option"); first.value = ""; first.textContent = "Choose a column"; qColumn.appendChild(first);
+          cols.forEach(function(c){ var o = document.createElement("option"); o.value = c; o.textContent = c; qColumn.appendChild(o); });
+        }
+        qColumn.value = "";
+        qOr.hidden = b.orLabel === null; qAnswer.hidden = b.orLabel === null; qSend.hidden = b.orLabel === null && cols.length === 0;
         if(b.orLabel !== null) qOr.textContent = b.orLabel;
         qAnswer.value = ""; qError.textContent = "";
       }
@@ -6655,6 +6666,8 @@
       var id = sessionId;
       // a choice button posts its choice and nothing else; the box's Send posts the box's words with the choice the box carries (a new rule), never read as agree or drop it
       var body = choice === qSendChoice ? {text: qAnswer.value, choice: choice} : {choice: choice};
+      // a tie's picker (a closed question, no box to type in): Send posts the `column` choice with the column chosen
+      if(choice === qSendChoice && !qColumn.hidden){ body = {text: qColumn.value, choice: "column"}; }
       authorPost("/api/author/" + id + "/send", body).then(function(r){
         qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false;
         if(id !== sessionId) return;

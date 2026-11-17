@@ -18,7 +18,7 @@ import { MAP_UNREADABLE, runPageMap, defaultLoop } from './pagemap.js';
 import { tieOf } from './pagerules.js';
 import { lineRules, wordsSaidOn } from './rubricstep.js';
 import { countPhrase, wordForms } from './factwords.js';
-import { findColumn, columnQuestion } from './sheetfind.js';
+import { findColumn, columnQuestion, columnTieQuestion } from './sheetfind.js';
 
 /** the system words of the sheet call (the page call's own: it never grades and never invents) */
 export const SHEET_SYSTEM = 'You map a person\'s job to the columns of ONE spreadsheet. You never grade and never invent words: a word you return is the job\'s own word, copied as the job writes it.';
@@ -89,7 +89,7 @@ export function parseSheetAnswer(text) {
  * Keep the words that are real columns; for the rest, find the column to offer (or say why none is). Decided by code from the word, the rule and the sheet.
  * @param {string} text the sheet's text @param {{from: string, word: string, kind: 'number'|'other'}[]} words
  * @param {{n: number, text?: string, rule?: string, rules?: string[]}[]} jobLines @param {string} label the input's role
- * @returns {{facts: {line: number, forRule?: number, name: string, shape: 'column', column: string, words: string[], source: string}[], asks: {line: number, rule: number|null, source: 'look', ask: 'reading', ruleText: string, question: string, reading: string, word: string, column: string}[], dropped: import('./pagerules.js').Dropped[]}}
+ * @returns {{facts: {line: number, forRule?: number, name: string, shape: 'column', column: string, words: string[], source: string}[], asks: ({line: number, rule: number|null, source: 'look', ask: 'reading', ruleText: string, question: string, word: string} & ({reading: string, column: string}|{columns: string[], readings: Record<string, string>}))[], dropped: import('./pagerules.js').Dropped[]}}
  */
 export function applySheetWords(text, words, jobLines, label) {
   /** @type {any[]} */
@@ -125,8 +125,21 @@ export function applySheetWords(text, words, jobLines, label) {
       continue;
     }
     if (w.kind !== 'number') { dropped.push({ ...rec, reason: 'no-column' }); continue; }
-    if (found.kind === 'tie') { dropped.push({ ...rec, reason: 'column-tie', other: found.columns.map((c) => `"${c}"`).join(', ') }); continue; }
+    // a tie on a `~` rule's word ASKS which column (hamr 2026-11-17); the line's own prose has no rule to replace, so only that stays Not checked
+    if (found.kind === 'tie' && at.rule === undefined) { dropped.push({ ...rec, reason: 'column-tie', other: found.columns.map((c) => `"${c}"`).join(', ') }); continue; }
     if (found.kind === 'none') { dropped.push({ ...rec, reason: 'no-fit', other: String(found.rows) }); continue; }
+    if (found.kind === 'tie') {
+      // the person already named one of the tied columns in a rule of the line: the word is that column, asked no more
+      const named = found.columns.find((c) => rules.some((r) => countPhrase(r, c) > 0));
+      if (named !== undefined) { facts.push(fact(named)); continue; }
+      ruleWords.add(`${at.line}\u0000${w.word.toLowerCase()}`);
+      if (tiedRules.has(`${at.line}\u0000${at.rule}`)) continue;
+      asks.push({
+        line: at.line, rule: at.rule ?? null, source: 'look', ask: 'reading', ruleText, question: columnTieQuestion(w.word, found.columns, at.line), word: w.word, columns: found.columns,
+        readings: Object.fromEntries(found.columns.map((c) => [c, ruleWithColumn(ruleText, w.word, c) ?? columnRuleWords(w.word, c)])),
+      });
+      continue;
+    }
     // the person already named this column in a rule of the line (an answer they gave, or their own words): the word is that column, asked no more
     if (rules.some((r) => countPhrase(r, found.column) > 0)) { facts.push(fact(found.column)); continue; }
     if (at.rule !== undefined) ruleWords.add(`${at.line}\u0000${w.word.toLowerCase()}`);

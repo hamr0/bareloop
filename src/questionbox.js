@@ -12,19 +12,22 @@ export const CHOICE_SAYS = Object.freeze({
   notOffered: 'That choice is not offered for this question. Nothing was saved.',
   outOfDate: 'This page is out of date. Reload it and answer again. Nothing was saved.',
   noRule:'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Nothing was saved.',
+  pickColumn: 'This question has a list to choose from: pick one of the columns, or Drop it. Nothing was saved.',
   blank: 'An answer is needed here — there is no skip. Type it in the box and press Send.',
 });
 
 /**
  * Which buttons a look question offers. Agree only when it carries a proposal (a reading ask with its reading, a check-pick ask with its check); Drop it only where "drop it" leaves
  * one of the person's own `~` rules Not checked (a reading or check-pick ask about a rule number). A rule with nothing to agree to is not asked at all (src/checkblock.js).
- * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown}} q @returns {{agree: boolean, drop: boolean}}
+ * A column TIE (S1, hamr 2026-11-17) carries `columns`: the picker lists every one (no cutoff); it has no reading to Agree to and takes no own words (a closed question).
+ * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown, columns?: unknown}} q @returns {{agree: boolean, drop: boolean, columns?: string[]}}
  */
 export function offersOf(q) {
   const look = q.source === 'look';
   const agree = look && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== null && typeof q.check === 'object'));
   const drop = look && Number.isInteger(q.rule) && (q.ask === 'check' || q.ask === 'reading');
-  return { agree, drop };
+  const columns = look && q.ask === 'reading' && Array.isArray(q.columns) && q.columns.length > 0 ? q.columns.map(String) : undefined;
+  return { agree, drop, ...(columns ? { columns } : {}) };
 }
 
 /**
@@ -52,8 +55,8 @@ export function answerEffectWords(step) {
 /**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
  * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
- * @param {{kind: string, source?: string, ask?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
- * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null, sendChoice: string}|null}
+ * @param {{kind: string, source?: string, ask?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean, columns?: string[]}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
+ * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], columns?: string[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
   if (step.kind !== 'answer' || typeof step.question !== 'string') return null;
@@ -77,24 +80,34 @@ export function boxFor(step) {
     text: panelQuestionText({ question: step.question, source: step.source, ...(Number.isInteger(step.line) ? { line: step.line } : {}) }),
     choices,
     // a proposed-check question is buttons only (no box); a READING question also takes the person's correction (hamr 2026-11-15 ruling); the drafter's own question has no button, so it keeps the one line to type in
-    orLabel: buttonsOnly ? (step.ask === 'reading' ? 'Or type the right reading:' : null) : 'Type your answer:',
+    // a column TIE is a closed question (hamr 2026-11-17): the picker, Drop it and Send only, no box to type in
+    orLabel: buttonsOnly ? (step.ask === 'reading' && !step.offers?.columns ? 'Or type the right reading:' : null) : 'Type your answer:',
     sendChoice: 'rule',
+    // a column tie: ONE choose-one picker listing every tied column; the box's Send with a column picked (and no words typed) is the `column` choice (the page)
+    ...(step.offers?.columns ? { columns: [...step.offers.columns] } : {}),
   };
 }
 
 /** the choices each kind of question's answer may name: a check question has its buttons only (hamr 2026-11-15); the drafter's own question and the Destination question keep typed words */
-const CHOICES = { look: ['agree', 'drop', 'rule'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
+const CHOICES = { look: ['agree', 'drop', 'rule', 'column'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
 
 /**
  * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
- * @param {{kind: string, source?: string, ask?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean}}} step @param {unknown} choice @returns {string|null}
+ * `column` (a tie's pick) is allowed only with the name of one of the question's own columns in `text`.
+ * @param {{kind: string, source?: string, ask?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean, columns?: string[]}}} step @param {unknown} choice @param {unknown} [text] @returns {string|null}
  */
-export function refuseChoice(step, choice) {
+export function refuseChoice(step, choice, text) {
   if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
   const own = step.source === 'dest-point' ? CHOICES['dest-point'] : step.source === 'look' ? CHOICES.look : CHOICES.typed;
   if (typeof choice !== 'string' || !own.includes(choice)) return CHOICE_SAYS.bad;
   // the box's own words are for a READING question only; a proposed check has its buttons
   if (choice === 'rule' && step.source === 'look' && step.ask !== 'reading') return CHOICE_SAYS.notOffered;
+  // a column tie is closed: its answers are one of its own columns or Drop it, never own words
+  if (Array.isArray(step.offers?.columns)) {
+    if (choice === 'rule') return CHOICE_SAYS.pickColumn;
+    if (choice === 'column' && !(typeof text === 'string' && step.offers.columns.includes(text))) return CHOICE_SAYS.pickColumn;
+  }
+  if (choice === 'column' && !Array.isArray(step.offers?.columns)) return CHOICE_SAYS.notOffered;
   if (step.source === 'dest-point') return null;
   if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
   if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;

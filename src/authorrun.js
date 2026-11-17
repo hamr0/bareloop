@@ -165,7 +165,7 @@ class ExitSignal extends Error {
 /**
  * The lines the CLI prints for one question the plan raised: the ask, then (try-3 question, Addendum 2026-11-14 (c) piece 5) what the answer does, in the panel's own words ("This replaces: ..." or
  * "This adds a new rule to line N"). Pure.
- * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean, [k: string]: any}} step @returns {string[]}
+ * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean, offers?: {columns?: string[]}, [k: string]: any}} step @returns {string[]}
  */
 export function answerPromptLines(step) {
   const effect = answerEffectWords(step);
@@ -173,6 +173,8 @@ export function answerPromptLines(step) {
     `Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can be signed (pick "Start over" or "Fix" instead if you cannot answer it):`,
     `  ? ${step.question}`,
     ...(effect === null ? [] : [`  ${effect}`]),
+    // a column tie (S1): every tied column, numbered; the answer is its number or `drop it`, no own words
+    ...(Array.isArray(step.offers?.columns) ? [...step.offers.columns.map((c, i) => `  ${i + 1}. ${c}`), '  Type the number of the column, or drop it.'] : []),
   ];
 }
 

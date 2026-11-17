@@ -9,7 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- S1, a CSV as an input: `src/csv.js` (RFC 4180 reader; BOM, quoted cells and real row numbers), `src/sheetfind.js` (the column finder: numbers in at least 90% of the rows, a tie offers nothing, a plural matches) and `src/sheetlook.js` (one AI call per CSV with a `~` rule, in place of the page map; code keeps only a real header). A `~` word that is no column asks once ("no column 'Price'; 'Amount' has numbers in 12 of 12 rows. Use it?") and an agreed column rewrites that `~` rule's own words in place. Copied from fwdloop v0.35.0 with its F196 fixes; a job with no CSV is unchanged. Test-proven with a fake provider; no live run yet.
+- S1, a CSV as an input: `src/csv.js` (RFC 4180 reader; BOM, quoted cells and real row numbers), `src/sheetfind.js` (the column finder: numbers in at least 90% of the rows, a tie offers nothing, a plural matches) and `src/sheetlook.js` (one AI call per CSV with a `~` rule, in place of the page map; code keeps only a real header). A `~` word that is no column asks once ("no column 'Price'; 'Amount' has numbers in 12 of 12 rows. Use it?") and an agreed column rewrites that `~` rule's own words in place. A column TIE asks too (hamr 2026-11-17): "I found 2 columns matching 'Price': Amount, Tax. Choose one.", a choose-one picker listing every tied column, Drop it and Send, no own-words box (a closed question; `column` is a new answer choice, refused unless it names a tied column); the pick rewrites the rule in place. Only a tie on a word of a line's own prose (no `~` rule to replace) stays Not checked. Copied from fwdloop v0.35.0 with its F196 fixes; a job with no CSV is unchanged. Test-proven with a fake provider; no live run yet.
 
 ### Fixed
 
