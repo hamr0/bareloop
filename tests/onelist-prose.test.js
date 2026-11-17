@@ -10,7 +10,7 @@ import { planFromSpec } from '../src/panel/jobplan.js';
 import { validateCloseDecl } from '../src/declaredclose.js';
 
 const OLD = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/mv5bk400-resolved-spec.json', import.meta.url)), 'utf8'));
-const WORDS = 'what the text says — you judge it at Accept';
+const WORDS = 'No ~ rule here. What the text says, you judge it at Accept.';
 const JOB = [{ n: 1, text: 'Summarise the page', rules: ['at most 80 words'] }];
 function made() {
   const b = new CheckBlock({ texts: { a: 'x', b: 'y' }, labels: ['a', 'b'], asks: false });

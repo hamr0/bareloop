@@ -120,12 +120,12 @@ test('/result: Not checked is split by the signed plan\'s line, and in total is 
   const job = (await w.get('/api/runs/mve5y8fa/job')).body.plan;
   const l1 = res.lines.find((l) => l.n === 1); const l2 = res.lines.find((l) => l.n === 2);
   assert.deepEqual(l1.notChecked, ['"nonstop" — the page cannot say it']);
-  assert.deepEqual(l2.notChecked, ['"one paragraph" — a paragraph is not counted', 'line 2: what the text says — you judge it at Accept']);
-  assert.equal(res.notChecked.some((t) => t.startsWith('line 2: what the text says')), false, 'a line-tied item is not repeated at the bottom');
+  assert.deepEqual(l2.notChecked, ['"one paragraph" — a paragraph is not counted', 'Line 2: no ~ rule here. What the text says, you judge it at Accept.']);
+  assert.equal(res.notChecked.some((t) => t.startsWith('Line 2: no ~ rule here')), false, 'a line-tied item is not repeated at the bottom');
   const mine = [...res.lines.flatMap((l) => l.notChecked), ...res.notChecked].sort();
   const theirs = [...job.lines.flatMap((l) => l.refused), ...job.notChecked].sort();
   assert.deepEqual(mine, theirs, 'the same items as the Job tab in total');
-  assert.deepEqual(res.notChecked, planFromSpec(spec).notChecked.filter((t) => !t.startsWith('line 2: what the text says')));
+  assert.deepEqual(res.notChecked, planFromSpec(spec).notChecked.filter((t) => !t.startsWith('Line 2: no ~ rule here')));
   assert.ok(res.notChecked.length > 0, 'the real spec\'s own notes tie to no line and stay at the bottom');
 });
 

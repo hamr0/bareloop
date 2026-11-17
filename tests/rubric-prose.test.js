@@ -137,9 +137,9 @@ test('drafting reds: a prose step after a fact line with no tie; a tie to a line
 
 test('the card: "what the text says" is Not checked on every prose step, never on a fact step; the tie is a plan row', () => {
   const decl = { stages: blockOf([{ n: 1, text: 'find' }, { n: 2, text: 'summarise' }], [heading(1, 'fixed', '### Fixed'), heading(1, 'added', '### Added'), heading(1, 'changed', '### Changed')]).reconcile().stages };
-  assert.deepEqual(proseNotChecked(decl), ['line 2: what the text says — you judge it at Accept']);
+  assert.deepEqual(proseNotChecked(decl), ['Line 2: no ~ rule here. What the text says, you judge it at Accept.']);
   const rec = cardOfClose({ closeDecl: { ...decl, notes: ['superlative: the cheapest'] } });
-  assert.deepEqual(rec.notChecked, ['superlative: the cheapest', 'line 2: what the text says — you judge it at Accept']);
+  assert.deepEqual(rec.notChecked, ['superlative: the cheapest', 'Line 2: no ~ rule here. What the text says, you judge it at Accept.']);
   assert.ok(checksOfClose(decl).some((c) => c.line === 2 && c.text === 'every number in the text is in a quote checked on line 1'));
   assert.equal(checksOfClose(decl).filter((c) => c.line === 1).length >= 3, true);
 });
