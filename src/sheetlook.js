@@ -129,9 +129,7 @@ export function applySheetWords(text, words, jobLines, label) {
     if (found.kind === 'tie' && at.rule === undefined) { dropped.push({ ...rec, reason: 'column-tie', other: found.columns.map((c) => `"${c}"`).join(', ') }); continue; }
     if (found.kind === 'none') { dropped.push({ ...rec, reason: 'no-fit', other: String(found.rows) }); continue; }
     if (found.kind === 'tie') {
-      // the person already named one of the tied columns in a rule of the line: the word is that column, asked no more
-      const named = found.columns.find((c) => rules.some((r) => countPhrase(r, c) > 0));
-      if (named !== undefined) { facts.push(fact(named)); continue; }
+      // a tie is never decided by code from ANOTHER rule of the line (hamr 2026-11-17: if code cannot decide, it asks); only THIS rule's own words naming a header settle it (the tiedRules skip below)
       ruleWords.add(`${at.line}\u0000${w.word.toLowerCase()}`);
       if (tiedRules.has(`${at.line}\u0000${at.rule}`)) continue;
       asks.push({
