@@ -200,3 +200,9 @@ test('checksOfClose and the signed list agree: the card is read from the signed 
   assert.equal(sheetItems.length, 5, JSON.stringify(items.map((c) => [c.by, c.key])));
   assert.ok(items.some((c) => c.key === 'L2.$floor'), 'the floor is still there');
 });
+
+test('the op names table names every op bareguard has in its cells and table rules (a new bareguard op fails here, never reads as an unnamed card line)', async () => {
+  const { vocabularyOps, SHEET_OP_NAMES } = await import('../src/sheetrows.js');
+  const missing = vocabularyOps().filter((op) => !Object.hasOwn(SHEET_OP_NAMES, op));
+  assert.deepEqual(missing, []);
+});
