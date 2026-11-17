@@ -223,6 +223,30 @@ test('the signed Negative: one cell of the frozen sheet changed after the run st
   assert.notEqual(r.verdict, 'green');
 });
 
+test('layer 1 alone: a frozen sheet whose BYTES changed (a trailing newline, the table the same) is a stop naming the input: the file is held to the door\'s sha256, not only the table', async () => {
+  const w = await world();
+  writeStep(w, 1, honest());
+  const f = join(w.tree, 'input', 'expenses.csv');
+  writeFileSync(f, `${readFileSync(f, 'utf8')}\n`);
+  const r = await runStage(w.stage, ctxOf(w));
+  assert.equal(r.exitCode, EXIT_STOP);
+  assert.match(r.gapLines.join('\n'), /input "expenses" .*no longer matches the bytes frozen/);
+});
+
+test('layer 2 alone: gradeStep given a table that no longer gives the recorded tableSha is stopped, and the fault names the input (bareguard\'s own refusal compared by sha)', async () => {
+  const { parseCsv, sheetTable } = await import('../src/csv.js');
+  const { tableSha } = await import('bareguard');
+  const table = sheetTable(parseCsv(readFileSync(EXPENSES, 'utf8')));
+  const recorded = tableSha(table);
+  const moved = { header: table.header, rows: table.rows.map((r, i) => (i === 0 ? { ...r, cells: r.cells.map((c, k) => (k === 3 ? '99.99' : c)) } : r)) };
+  const p = await part(EXP_CHECKS());
+  const g = await gradeStep({ params: { step: 1, parts: [p] }, bytes: JSON.stringify(honest()), outputBytes: null, inputs: {}, tables: { expenses: moved } }, { expenses: recorded });
+  assert.equal(g.verdict, 'stopped');
+  assert.match(String(g.fault), /input "expenses" - the saved sheet no longer gives the table this run recorded at its start/);
+  const ok = await gradeStep({ params: { step: 1, parts: [p] }, bytes: JSON.stringify(honest()), outputBytes: null, inputs: {}, tables: { expenses: table } }, { expenses: recorded });
+  assert.equal(ok.verdict, 'green');
+});
+
 test('a run that recorded no table fingerprint for the sheet is a stop naming the input, never green', async () => {
   const dir = tmp();
   const into = join(dir, 'seed');

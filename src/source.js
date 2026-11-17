@@ -1464,6 +1464,22 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
 }
 
 /**
+ * Commit whatever the run start just wrote into the prepared tree as the tree's new seed (S3: the numbered view of a sheet, `src/sheetrun.js`), so a file bareloop made is never read as a worker write.
+ * The same plumbing `refreezeUrlInputs` uses: every git call pins the hooks path and the identity.
+ * @param {string} tree the prepared tree @param {string} message
+ * @returns {Promise<{ok: true, seed: string}|{ok: false, error: string}>}
+ */
+export async function commitFrozenFiles(tree, message) {
+  const add = await git(tree, [...NO_HOOKS, 'add', '-A', '-f']);
+  if (!add.ok) return { ok: false, error: `the files written at the run's start could not be staged: ${add.err}` };
+  const commit = await git(tree, [...GIT_IDENTITY, ...NO_HOOKS, 'commit', '-q', '--allow-empty', '-m', message]);
+  if (!commit.ok) return { ok: false, error: `the files written at the run's start could not be committed: ${commit.err}` };
+  const head = await git(tree, ['rev-parse', 'HEAD']);
+  if (!head.ok) return { ok: false, error: `git rev-parse HEAD failed in ${tree}: ${head.err}` };
+  return { ok: true, seed: head.out.trim() };
+}
+
+/**
  * PRD v1.106 Part 5 Q2: what `source.json` says about web inputs, read synchronously and never throwing: whether the copy has any web input
  * (`inputs[].url`) and when the run-start refetch last finished (`refrozenAt`, written last by {@link refreezeUrlInputs}). The panel decides
  * "fetching the page..." from this: it applies while a web input exists and no refetch has finished at or after `sinceIso`.
