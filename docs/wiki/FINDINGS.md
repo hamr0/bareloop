@@ -16339,3 +16339,18 @@ Fix tried: ruling A (6e303060: every line of a sheet-only job is a sheet line, p
 hamr: "now we are patching". Redesign: only `~` lines are checked (F349 decision; PRD v1.141; `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b)). The two patches (3463d6bb, 6e303060) come back out (piece R1).
 
 Note on the commit split: b3b24cfc was split by hamr's own `!` line into 6e303060 (code) and a4f76cdd (bareloop-b1's F348); the tree is byte-identical.
+
+### F351: R0 POC — revert dry run, prose-check paths, job-line owner (2026-11-17, prereg)
+
+Spec: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-17 (b), piece R0. $0, no AI or provider call. Throwaway worktree (`.claude/scratch/r0-wt`) and scratch only; the real tree changes only by this finding's result append.
+
+Tasks (verbatim from the addendum):
+- (i) Dry-run the R1 revert of 6e303060 then 3463d6bb in a throwaway git worktree. Report conflicts; list every file whose result differs from `3463d6bb^` and why (later S4 commits on the same lines); run the full suite there (`node scripts/hermetic.mjs`, one suite at a time) and quote exit code and last line.
+- (ii) The R3 report: every code path that today (after the dry-run revert) builds a check from step prose (look facts, sheet checks, `[agent]` rows, `$` defaults), with file:line, read from source, not guessed.
+- (iii) R4 feasibility: name the one owner of the job lines; show by reading code where Add/Drop would write/remove a `~` line and which views read it (card, job box, signed lines, Job tab); list any second copy of the job text that would drift.
+
+Bars (FROZEN): revert dry-run suite exit 0 OR every failure explained by a named later commit; R3 report complete (every builder of checks visited); R4 has exactly one owner OR the drift points are listed.
+
+If any bar fails, the result goes to hamr before R1 starts.
+
+Result: (to be appended; prereg commit sha recorded there)
