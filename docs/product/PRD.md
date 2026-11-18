@@ -2375,3 +2375,18 @@ Ruled by hamr 2026-11-18.
 - Second use: ticket actions (close/route/reply), not built yet; they need the "required only if" rule.
 - Page facts (flights, prices) are already covered by cited facts; no change there.
 - Status: use case agreed; bareguard asked; bareloop side to be specced next; no build yet; POC before any build.
+
+### Rulings 2026-11-18 (later): shape jobs (v1.143 — 2026-11-18)
+
+Ruled by hamr 2026-11-18.
+
+- Inputs can be any mix: several docs, a sheet, web pages; the answer distills them into one ("x from doc A, y from doc B"). Example job: a job description plus resumes, one readout item per resume: name, matching words, not-matching words, blurb.
+- No new checkbox or job kind for shape. The drafting AI proposes "this answer is a list of items with these fields"; code checks each field fits bareguard's kind menu and decides. When rules and a shape could both fit, the person is asked at the start (one of the 3 asks, Agree / own words).
+- The person writes one `~` rule per field under the job line (e.g. `~ each item has a status: in progress, closed or finished`); each becomes one field of the signed shape and one `[you]` row on the card.
+- The AI may propose extra fields as `!` rows, as today; a `!` field counts only if the person keeps it.
+- Truth for now: code checks shape; the person judges truth at Accept; the card says what is Not checked (e.g. whether each summary is true). Per-item cite is bareguard's part 2, designed separately.
+- Code sets the item count from the inputs when it can (one item per resume).
+- A list field (e.g. matching words) needs a `list` kind in bareguard (entry count min/max, per-entry bounds); asked of bareguard 2026-11-18.
+- d1 POC, 2026-11-18, local record (bareguard 8b1bb81): PASSED. 6/6 real saved answers green; 7/7 one-defect copies gave exactly the expected red.
+- Test data for the resume case: hamr's own resume plus one made-up resume, kept out of every repo and every commit.
+- Status: rulings given, build not approved; bareloop flow spec next; POC before any build.
