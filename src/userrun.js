@@ -42,6 +42,7 @@ import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prchecko
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
+import { deliveredTexter } from './resultmd.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -2319,7 +2320,7 @@ async function execute(ctx) {
       if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
       else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
     } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
-    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}) });
+    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), alsoText: deliveredTexter(spec.closeDecl) });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
       // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same

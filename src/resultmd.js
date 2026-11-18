@@ -121,3 +121,22 @@ export function stepClaimWords(closeDecl, n) {
   for (const id of Object.keys(out)) if (onlyMath[id]) out[id] = null;
   return out;
 }
+
+/**
+ * `copyOut`'s `alsoText` hook for a signed close: `(rel under output/, delivered bytes) => text|null`. Only a step file whose job line has a rubric-step stage is written (a rubric job's file); a file that is not a
+ * JSON object, or has nothing writable, is null. Reads the bytes it is given; touches no file.
+ * @param {any} closeDecl @returns {(rel: string, buf: Buffer) => string|null}
+ */
+export function deliveredTexter(closeDecl) {
+  const stages = Array.isArray(closeDecl?.stages) ? closeDecl.stages : [];
+  return (rel, buf) => {
+    const m = /^steps\/(\d+)\.json$/.exec(rel);
+    if (!m) return null;
+    const n = Number(m[1]);
+    if (!stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n)) return null;
+    /** @type {unknown} */
+    let obj;
+    try { obj = JSON.parse(buf.toString('utf8')); } catch { return null; }
+    return renderStepMd(obj, stepClaimWords(closeDecl, n));
+  };
+}

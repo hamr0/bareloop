@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderStepMd, stepClaimWords } from '../src/resultmd.js';
+import { renderStepMd, stepClaimWords, deliveredTexter } from '../src/resultmd.js';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'resultmd');
 const readJson = (f) => JSON.parse(readFileSync(join(FX, f), 'utf8'));
@@ -120,4 +120,15 @@ test('a claim only a sumIf / countIf check carries is NOT written: code computes
   const w = stepClaimWords(closeDecl, 1);
   assert.deepEqual(w, { a: 'rows where Amount > 500', c: null });
   assert.equal(renderStepMd({ text: 'T', claims: { a: { rows: [2, 3] }, c: { value: 99999.99 } } }, w), 'T\n\nRows where Amount > 500: 2, 3');
+});
+
+test('deliveredTexter (the copyOut hook): a rubric job\'s step file is rendered with its claim words; a file of a line the close has no rubric-step for, a non-step path and non-JSON bytes are null', () => {
+  const closeDecl = readJson('expenses.closeDecl.json');
+  const exp = readFileSync(join(FX, 'expenses.step.json'));
+  const hook = deliveredTexter(closeDecl);
+  assert.equal(hook('steps/1.json', exp), renderStepMd(JSON.parse(exp.toString()), stepClaimWords(closeDecl, 1)));
+  assert.equal(hook('steps/2.json', exp), null);
+  assert.equal(hook('result.md', exp), null);
+  assert.equal(hook('steps/1.json', Buffer.from('not json')), null);
+  assert.equal(deliveredTexter({ stages: [] })('steps/1.json', exp), null, 'a job with no rubric-step stage writes no text file');
 });

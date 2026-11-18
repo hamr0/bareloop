@@ -1091,10 +1091,12 @@ async function listOutputFiles(dir, rel = '') {
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
  * `amend` (S3), when given, is `(rel under output/, bytes) => bytes`: the DELIVERED copy is written from what it returns (the file in the tree is never touched), and the delivery record is of those bytes.
- * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer}} o
+ * `alsoText` (MD2), when given, is `(rel under output/, amended bytes) => string|null`, asked only for a step file (`steps/<n>.json`): a string is written beside the delivered JSON under the SAME dated name with `.md`
+ * (never overwriting: an existing file there refuses `destination-exists`) and recorded like any delivered file; null writes nothing. It writes only inside this green-only door.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, alsoText?: (rel: string, buf: Buffer) => string|null}} o
  * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination, amend }) {
+export async function copyOut({ tree, into, destination, amend, alsoText }) {
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
   const destAbs = resolve(destination);
@@ -1124,6 +1126,17 @@ export async function copyOut({ tree, into, destination, amend }) {
       return refuse('destination-write-failed', `copying to ${pick.path} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
     }
     delivered.push({ path: pick.path, bytes: buf.length, sha256: sha256Hex(buf) });
+    const relPosix = rel.split(sep).join('/');
+    const text = alsoText !== undefined && /^steps\/\d+\.json$/.test(relPosix) ? alsoText(relPosix, buf) : null;
+    if (text !== null && text.length > 0) {
+      const mdPath = pick.path.replace(/\.json$/, '.md');
+      const mdBuf = Buffer.from(text, 'utf8');
+      try { await writeFile(mdPath, mdBuf, { flag: 'wx' }); } catch (e) {
+        if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${mdPath} already exists — bareloop never overwrites a person's file`);
+        return refuse('destination-write-failed', `copying to ${mdPath} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+      }
+      delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf) });
+    }
   }
   if (delivered.length === 0) {
     return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);
