@@ -149,3 +149,22 @@ test('a block with no shape is exactly what it was (no shape row, no shape line)
   assert.equal(b.rows.some((r) => r.kind === 'shape'), false);
   assert.equal(b.isShapeLine(1), false);
 });
+
+test('the Drop record round-trips through the picks record file (a Revise reads it), beside the sheet\'s', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { writeRecordPart, readShapeDropped, readSheetDropped } = await import('../src/pickrecord.js');
+  const d = mkdtempSync(join(tmpdir(), 'shape-rec-'));
+  try {
+    const b = blockOf();
+    b.rowChoice('L1.shape.airline', 'drop');
+    const file = join(d, 'record.json');
+    assert.equal(readShapeDropped(file), null, 'no record, no entries');
+    writeRecordPart(file, { sheetDropped: [], shapeDropped: b.shapeDroppedRecord() });
+    assert.deepEqual(readShapeDropped(file), b.shapeDroppedRecord());
+    assert.deepEqual(readSheetDropped(file), []);
+    writeRecordPart(file, { shapeDropped: [{ lineWords: 1, occurrence: 'x', name: 3 }, { lineWords: 'a', occurrence: 0, name: 'airline' }] });
+    assert.deepEqual(readShapeDropped(file), [{ lineWords: 'a', occurrence: 0, name: 'airline' }], 'a malformed entry is not read');
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});

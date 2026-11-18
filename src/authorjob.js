@@ -443,7 +443,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, carriedShapeDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -499,6 +499,8 @@ export async function authorCloseForJob({
   carriedChoices = null, onChoices = () => {},
   // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`): a Revise keeps a Drop of the very same check
   carriedSheetDropped = null,
+  // shape jobs (clause 4): the shape fields the person dropped in the draft this one follows (the record's `shapeDropped`)
+  carriedShapeDropped = null,
   // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
   // every existing caller runs byte-identical: `ask` absent means no confirm
   // turn runs at all, exactly as before this piece existed.
@@ -921,7 +923,7 @@ export async function authorCloseForJob({
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
-    ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
+    ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -942,7 +944,7 @@ export async function authorCloseForJob({
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
-      ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
+      ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
     });

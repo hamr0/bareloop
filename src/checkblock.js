@@ -194,9 +194,9 @@ export class CheckBlock {
    * from the shape, `matchShapeRule`); each extra field is an `[agent]` row (job-derived: on, Drop; no word of the job: Suggested, Add); one `[default]` row per shape line says the answer is a list of items. When the AI said the rules and
    * the shape could both fit (`alsoFitsRules`), ONE counted reading-style ask is put on the line's first rule row (Agree keeps the shape; Drop it leaves that rule, and its field, Not checked). A Drop the person made on an `[agent]`
    * field is kept for the same field (same line, same name) when the shape is built again. Every row is reconciled.
-   * @param {ReturnType<typeof import('./shapebuild.js').buildShapes>} built
+   * @param {ReturnType<typeof import('./shapebuild.js').buildShapes>} built @param {{asks?: boolean}} [o] `asks: false` = the AI's `alsoFitsRules` puts no ask on the line (a caller with nobody to ask); default: this block's own `asks`
    */
-  setShape(built) {
+  setShape(built, { asks = this.asks } = {}) {
     const dropped = this.rows.filter((r) => r.kind === 'shape' && r.by === 'agent' && r.choice === 'drop').map((r) => ({ line: r.line, name: r.field?.name }));
     this.shapeBuilt = built;
     // the `$` defaults a facts line carries (quote, numbers tie, note) were made before the line was known to be a shape line: a shape line has none, so they go (buildDefaults makes them again if the line stops being one)
@@ -210,7 +210,7 @@ export class CheckBlock {
         if (dropped.some((d) => d.line === n && d.name === f.name)) row.choice = 'drop';
       }
       this.addRow({ key: shapeDefaultKey(n), line: n, kind: 'shape', by: 'default', from: 'default' });
-      if (b.alsoFitsRules) {
+      if (b.alsoFitsRules && asks) {
         const first = this.ruleRows(n).find((r) => b.rows.some((x) => x.rule === r.rule && x.text === r.text && x.state === 'built'));
         if (first) {
           const names = b.fields.filter((f) => f.by === 'you').map((f) => f.name).join(', ');

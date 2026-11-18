@@ -65,7 +65,7 @@ import { LEDGER_SYSTEM } from '../checklist.js';
 import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { choiceEntries } from '../checkblock.js';
-import { readRecordFile, readRowChoices, readSheetDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
+import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { runNoteAsk } from '../noteask.js';
@@ -538,6 +538,7 @@ export function createSession(card, deps = {}) {
   const carriedChoices = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRowChoices(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
   // S4: the sheet checks that draft's person dropped ride in the same record file; a Revise keeps a Drop of the very same check (code still judges it: a check this draft did not build is not dropped)
   const carriedSheetDropped = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readSheetDropped(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
+  const carriedShapeDropped = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readShapeDropped(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
   /** the confirm card's Drop/Add door for the plan now waiting (set by `ask`, cleared when it is answered): a row edit through the live check block, $0, no model call @type {((op: 'drop'|'add', key: string) => any)|null} */
   let planEdit = null;
 
@@ -1304,7 +1305,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      carriedSheetDropped, ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
+      carriedSheetDropped, carriedShapeDropped, ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, fenceGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
@@ -1411,13 +1412,14 @@ export function createSession(card, deps = {}) {
   };
 
   /**
-   * Drop or Add on a sheet job's FINAL card (S4): the live check block of the draft does the row edit (`rowChoice`, the one owner), the line's stage, the signed list, `refused` and `picks` are read back from it, and the $0 signing gates run again on a COPY of
+   * Drop or Add on a sheet or shape job's FINAL card (S4; shape jobs, clause 4: the same row edit on an `[agent]` field row, its Drop kept for a Revise in `shapeDropped`). Until clause 5 signs a shape part the gates below refuse a shape plan and the edit is undone:
+   *  the live check block of the draft does the row edit (`rowChoice`, the one owner), the line's stage, the signed list, `refused` and `picks` are read back from it, and the $0 signing gates run again on a COPY of
    * the spec; the hash is the gates' new one. A refusal changes nothing (the row edit is undone). No model seam is called. The person's Drop is kept for a Revise in the picks record (`sheetDropped`).
    * @param {unknown} op @param {unknown} key @returns {Promise<{ok: true}|{ok: false, error: string, refused: string}>}
    */
   const sheetFinalEdit = async (op, key) => {
     const block = finalCtx?.block;
-    if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet') || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
+    if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' || r.kind === 'shape') || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
     if (op !== 'drop' && op !== 'add') return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
     dropping = true;
     try {
@@ -1448,7 +1450,7 @@ export function createSession(card, deps = {}) {
       if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
       appendDraftLog(outDir, { kind: 'row-edit', no: Math.max(0, state.steps.length - 1), op, key: redactSecrets(k), at: new Date().toISOString() });
       // a Revise keeps a Drop of the very same check: the block's record of the dropped sheet checks (typed fields, not ids)
-      try { writeRecordPart(join(outDir, RECORD_FILE), { sheetDropped: block.sheetDroppedRecord() }); } catch { /* a convenience: a disk fault only means the next draft starts without it */ }
+      try { writeRecordPart(join(outDir, RECORD_FILE), { sheetDropped: block.sheetDroppedRecord(), shapeDropped: block.shapeDroppedRecord() }); } catch { /* a convenience: a disk fault only means the next draft starts without it */ }
       return { ok: true };
     } finally { dropping = false; }
   };

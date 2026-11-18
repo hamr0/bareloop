@@ -38,11 +38,6 @@ export const NAME_MAX_CHARS = 128;
 /** a field name holds none of these (they separate the path in a red item: bareguard's `nameForbiddenChars`) */
 export const NAME_FORBIDDEN = Object.freeze(['.', ':', '[', ']']);
 
-/** one line of the menu, as the drafter reads it: `  boolean: bounds equals` @returns {string[]} */
-export function shapeMenuLines() {
-  return Object.entries(SHAPE_KINDS).map(([k, b]) => `  ${k}: bounds ${b.length ? b.join(', ') : '(none)'}`);
-}
-
 /**
  * Does the bareguard this package runs carry `itemShape`? Until the release that does is pinned this is false, and the whole shape path stays off. Read from the vocabulary at call time, never assumed.
  * @returns {boolean}
