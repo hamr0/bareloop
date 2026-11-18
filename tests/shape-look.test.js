@@ -79,6 +79,20 @@ test('the look door: OFF (the pinned bareguard has no itemShape) is runLook\'s o
   assert.equal(Object.hasOwn(sheet.facts?.look ?? {}, 'shapes'), false, 'a job with a CSV is a sheet job: no shape look');
 });
 
+test('soft fail (hamr 2026-11-18): an unreadable, failed or capped shape look does not stop the draft: PRESENT, no shapes, the spend still booked, the reason on the look', async () => {
+  const args = { texts: { Flights: 'SFO to LAX 07:30 $199 nonstop' }, inputs: [{ n: 1, label: 'Flights' }], jobLines: JOB, sleep: async () => {}, shape: true };
+  const pm = () => reply({ text: JSON.stringify({ facts: [] }), costUsd: 0.003 });
+  const unreadable = await runLookWithShape({ ...args, provider: prov([pm(), reply({ text: 'no', costUsd: 0.002 }), reply({ text: 'no', costUsd: 0.002 })]) });
+  assert.equal(unreadable.state, 'PRESENT');
+  assert.equal(Object.hasOwn(unreadable.facts.look, 'shapes'), false);
+  assert.match(unreadable.facts.look.shapeSkipped, /not readable twice/);
+  assert.deepEqual(unreadable.calls.map((c) => c.label).slice(-2), [SHAPE_CALL_LABEL, SHAPE_CALL_LABEL], 'both attempts stay booked');
+  const capped = await runLookWithShape({ ...args, ceilingUsd: 0.003, provider: prov([pm()]) });
+  assert.equal(capped.state, 'PRESENT');
+  assert.match(capped.facts.look.shapeSkipped, /ceiling was already spent/);
+  assert.equal(capped.calls.length, 1, 'the page map\'s spend is kept, no shape call was made');
+});
+
 test('the row-edit turn proposes no shape (one path only), and the look\'s words are a registered prompt register', () => {
   assert.equal(Object.hasOwn(rowEditChannel(false).tool({ calls: [] }).parameters.properties, 'itemShape'), false);
   assert.equal(rowEditChannel.length <= 2, true);
@@ -113,4 +127,27 @@ test('authorCloseForJob: the shape is built BEFORE the asks; "rules or shape cou
   assert.equal(block.isShapeLine(1), true);
   assert.deepEqual(block.rows.filter((/** @type {any} */ x) => x.kind === 'rule').map((/** @type {any} */ x) => x.state), ['built', 'built']);
   assert.equal(Object.hasOwn(seen, 'carriedShapeDropped'), false, 'the draft is not told about shapes: the block already holds them');
+});
+
+test('authorCloseForJob: a look that skipped the shape says so as a phase (the draft log line), asks nothing and the rules take the usual path', async () => {
+  const file = join(tmp(), 'flights.txt');
+  copyFileSync(join(HERE, 'fixtures', 'page-partial.txt'), file);
+  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: file }], into: join(tmp(), 'seed') });
+  if (!proved.ok) throw new Error('inputs');
+  /** @type {any[]} */ const phases = [];
+  /** @type {any} */ let seen = null;
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }], look: { facts: [], prose: [], notFound: [], dropped: [], shapeSkipped: 'the call about the shape of the answer failed: boom' } } };
+  const r = await authorCloseForJob({
+    answers: { 1: '1. List the flights' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
+    jobLines: JSON.parse(JSON.stringify(JOB)), inputs: [{ n: 1, label: 'Flights', value: file }], writeScope: ['output/'], provider: { fake: true }, ceilingUsd: 1, onPhase: (/** @type {string} */ p, /** @type {any} */ d) => phases.push([p, d]),
+    lookFn: async () => survey, answerQuestions: async () => { throw new Error('nothing to ask'); }, generate: async () => { throw new Error('no model call'); },
+    authorFn: async (o) => { seen = o; return { ok: true, declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }] }, seedRead: [], iterations: [], reds: [], cost: { calls: [] }, raws: [], stop: 'accepted' }; },
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
+  assert.deepEqual(phases.find(([p]) => p === 'shape-skipped')?.[1], { reason: 'the call about the shape of the answer failed: boom' });
+  assert.equal(phases.some(([p]) => p === 'shape-built'), false);
+  assert.equal(seen.block.isShapeLine(1), false);
+  assert.equal(seen.block.rows.some((/** @type {any} */ x) => x.kind === 'shape'), false);
+  const { phaseLine } = await import('../src/authorreadout.js');
+  assert.equal(phaseLine('shape-skipped', { reason: 'boom' }), '· the shape look did not complete: boom; going on without a shape');
 });

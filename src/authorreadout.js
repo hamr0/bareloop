@@ -181,6 +181,7 @@ export function phaseLine(phase, data = {}) {
     case 'scout': return `· scout running (up to ${data.attempts ?? '?'} attempt(s)) — a real survey over the repository…`;
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
     case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
+    case 'shape-skipped': return `· the shape look did not complete: ${data.reason ?? 'unknown'}; going on without a shape`;
     case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
     case 'fence-point': return '· pointing at the files your rules keep as they are…';
     case 'fence-point-done': return data.reason ? `· pointing failed (${data.reason}); those rules are asked about` : `· ${data.kept ?? 0} of ${data.sent ?? 0} pointer(s) proved by code`;

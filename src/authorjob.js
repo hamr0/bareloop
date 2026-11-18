@@ -730,6 +730,7 @@ export async function authorCloseForJob({
     block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
     // SHAPE JOBS (hamr 2026-11-18, 2a): the shape the shape look proposed (src/shapelook.js) is built or refused by code HERE, before the asks (src/shapebuild.js, R1-R5), so "the rules or the shape could both fit" is one of the counted asks.
     // The row-edit turn proposes no shape. A line with a sheet is never a shape line. A Revise keeps the Drops of the last draft.
+    if (typeof look?.shapeSkipped === 'string') onPhase('shape-skipped', { reason: look.shapeSkipped });
     if (Array.isArray(look?.shapes) && look.shapes.length > 0) {
       const shapeLines = jobLines.filter((l) => lineRules(l).length > 0 && !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n));
       const shapes = buildShapes({ lines: shapeLines, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: look.shapes });

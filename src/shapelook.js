@@ -5,11 +5,11 @@
 //   `shapeLookPrompt`   the call's user text (the job, the inputs bounded, the menu of src/shapemenu.js, the answer form); `SHAPE_SYSTEM` its system text (both are prompt registers, src/promptregisters.js);
 //   `parseShapeAnswer`  strict: one JSON object `{"shapes":[...]}`, nothing else, no repair;
 //   `runShapeLook`      the sibling of `runSheetLook`: the same call, book, retry and spend plumbing (the cap is checked BEFORE the call, a 429 waits the vendor's stated time once, a transport failure is retried once and the failed
-//                       attempt is booked UNPRICED, each call's scrubbed answer rides `onCall`); an unreadable answer twice is a stop in plain words, as the sheet look's is;
+//                       attempt is booked UNPRICED, each call's scrubbed answer rides `onCall`); an unreadable answer twice is ABSENT in plain words, as the sheet look's is (the door below does not let that stop the draft);
 //   `runLookWithShape`  the look door's default (src/authorjob.js `lookFn`): `runLook` (page map / sheet look) first, then the shape look when the bareguard this package runs carries `itemShape` (`shapeAvailable()`), the job has a line with a
 //                       `~` rule that is no sheet line, and no input is a CSV. Its spend counts the earlier look's. OFF otherwise: the result is `runLook`'s, untouched.
-// Not settled by the sheet look it mirrors (named): which lines are offered when a job has both a CSV and page lines (here none: a job with a CSV input is a sheet job, as the sheet turn already says); what a failed shape look
-// costs the job (it stops the draft like the sheet look does, and the person is told in words about the shape).
+// Not settled by the sheet look it mirrors (named): which lines are offered when a job has both a CSV and page lines (here none: a job with a CSV input is a sheet job, as the sheet turn already says). A failed shape look
+// does not stop the draft (hamr 2026-11-18): it goes on without a shape, its spend booked, the reason in the draft log.
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 import { isTransportFailure } from './transport.js';
@@ -147,6 +147,8 @@ export async function runLookWithShape(o) {
   const got = await runShapeLook({ ...o, lineNums, priorCalls: base.calls ?? [] });
   const calls = [...(base.calls ?? []), ...got.calls];
   const raws = [...(base.raws ?? []), ...got.raws];
-  if (got.state !== 'PRESENT') return { ...base, state: 'ABSENT', facts: null, reason: got.reason, cause: got.cause, budgetStop: got.budgetStop, calls, raws };
+  // hamr's ruling (2a, soft fail): a shape look that fails, is unreadable twice or is capped does NOT stop the draft. The look stays PRESENT with no shapes (the rules take today's path exactly), the look's spend stays booked
+  // (`calls` carries every attempt, never forgiven) and the reason rides the look as `shapeSkipped` for the draft log. The sheet look is unchanged (it still stops).
+  if (got.state !== 'PRESENT') return { ...base, calls, raws, facts: { ...base.facts, look: { ...base.facts.look, shapeSkipped: String(got.reason ?? 'unknown') } } };
   return { ...base, calls, raws, facts: { ...base.facts, look: { ...base.facts.look, shapes: got.shapes } } };
 }

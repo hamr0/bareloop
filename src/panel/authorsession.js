@@ -727,6 +727,7 @@ export function createSession(card, deps = {}) {
     if (name === 'fence-point-done') appendDraftLog(outDir, { kind: 'fence-point', no: Math.max(0, state.steps.length - 1), edits: redactSecrets(JSON.stringify(data.edits ?? [])), results: redactSecrets(JSON.stringify(data.results ?? [])), reason: data.reason == null ? null : redactSecrets(String(data.reason)), at: new Date().toISOString() });
     if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, kept: data.kept, refused: data.refused, at: new Date().toISOString() });
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
+    if (name === 'shape-skipped') appendDraftLog(outDir, { kind: 'shape-skipped', no: Math.max(0, state.steps.length - 1), reason: redactSecrets(String(data.reason ?? '')), line: `the shape look did not complete: ${redactSecrets(String(data.reason ?? 'unknown'))}; going on without a shape`, at: new Date().toISOString() });
     if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
     if (name === 'author-try-failed') {
       lastTryRefused = true;
