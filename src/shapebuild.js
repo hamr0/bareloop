@@ -13,6 +13,7 @@
 // Not built (named): the `object` kind (src/shapemenu.js); an item count read from the person's words alone (a number, not a label): the spec says "else the count comes only from the person's words" and gives no
 // mechanism, so none is invented here. The part code signs from this (`buildShapePartOf`) and the run's brief are clauses 5 and 6, waiting for the bareguard release that carries `itemShape`.
 import { lineRules, wordsSaidOn } from './rubricstep.js';
+import { underNumbers, atMostNumbers } from './checkpick.js';
 import { SHAPE_KINDS, ENTRY_KINDS, GROUNDED_BOUNDS, UPPER_BOUNDS, COUNT_BOUNDS, nameWhy, shapeNameRules } from './shapemenu.js';
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -64,6 +65,31 @@ function boundTypeWhy(kind, key, v) {
 }
 
 /**
+ * The person's own form of an upper bound, signed by CODE whatever the AI sent (the same law as "under N bullets = N-1", src/checkpick.js): a field's own rule that says "under / fewer than / less than / below N" signs the EXCLUSIVE
+ * form (a count: N-1, `maxChars` / `maxWords` / `maxEntries`; a number or money: `lt: N`), and one that says "at most / up to / no more than N" signs N (`max`, inclusive), whether the AI sent N or N-1. Mutates `out`.
+ * @param {string} kind @param {Record<string, any>} out the grounded bounds @param {string} text the field's own rule
+ */
+function lawOfWords(kind, out, text) {
+  const unders = underNumbers(text);
+  const atMost = atMostNumbers(text);
+  for (const key of ['maxChars', 'maxWords', 'maxEntries']) {
+    const v = out[key];
+    if (!Number.isInteger(v)) continue;
+    const u = unders.find((n) => n === v || n === v + 1);
+    const a = atMost.find((n) => n === v || n === v + 1);
+    if (u !== undefined) out[key] = u - 1;
+    else if (a !== undefined) out[key] = a;
+  }
+  if (kind !== 'number' && kind !== 'money') return;
+  const v = out.lt !== undefined ? out.lt : out.max;
+  if (typeof v !== 'number') return;
+  const near = (/** @type {number} */ n) => n === v || Math.ceil(v) === n || (out.max !== undefined && n === v + 1);
+  const u = unders.find(near);
+  const a = atMost.find((n) => near(n) || n === v + 1);
+  if (u !== undefined) { delete out.max; out.lt = u; } else if (a !== undefined) { delete out.lt; out.max = a; }
+}
+
+/**
  * One field's bounds, built or refused: the menu check, then grounding. Pure.
  * @param {{kind: string, bounds: unknown, required: boolean, ruleText: string|null, refuse: (what: string, why: string) => void, top?: boolean}} o `ruleText` null = the field has no `~` rule of its own
  * @returns {Record<string, any>}
@@ -102,6 +128,7 @@ function buildBounds({ kind, bounds, required, ruleText, refuse, top = true }) {
     if (!boundGrounded(k, v, text, required)) { refuse(k, `${k} ${JSON.stringify(v)} is not in your rule for this field`); continue; }
     out[k] = v;
   }
+  if (ruleText !== null) lawOfWords(kind, out, ruleText);
   // an empty range is bareguard's refusal at sign time; say it here, at $0, in the same direction
   for (const [lo, hi] of [['minChars', 'maxChars'], ['minWords', 'maxWords'], ['minEntries', 'maxEntries']]) {
     if (Number.isInteger(out[lo]) && Number.isInteger(out[hi]) && out[lo] > out[hi]) { refuse(hi, `${hi} is below ${lo}`); delete out[hi]; }

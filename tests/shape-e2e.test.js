@@ -87,7 +87,7 @@ test('DRAFT: the shape look\'s shape builds, the gates accept the shape part (it
   assert.equal(listMatchesClose(r.closeDecl).ok, true, JSON.stringify(listMatchesClose(r.closeDecl)));
   assert.ok(r.closeDecl.list.some((/** @type {any} */ x) => x.kind === 'prose' && x.state === 'not-checked'), 'the truth of the items is Not checked');
   const card = cardOfClose({ closeDecl: r.closeDecl, jobLines: LINES });
-  assert.deepEqual(card.checkItems.filter((c) => c.fromLine[0] === 1 && c.by === 'you').map((c) => c.text), ['title · not empty', 'status · one of: in progress, closed, finished', 'summary · at most 200 characters']);
+  assert.deepEqual(card.checkItems.filter((c) => c.fromLine[0] === 1 && c.by === 'you').map((c) => c.text), ['title · not empty', 'status · one of: in progress, closed, finished', 'summary · under 200 characters']);
 });
 
 test('the worker\'s brief for a shape line: the file contract, each field in plain words and one code-built example item that bareguard accepts', async () => {
@@ -96,7 +96,7 @@ test('the worker\'s brief for a shape line: the file contract, each field in pla
   assert.match(brief, /^Job line 1 is a LIST line\. Write output\/steps\/1\.json as \{"results": \[\{\.\.\.\}, \{\.\.\.\}\]\} and nothing else/);
   assert.match(brief, /- title: not empty\n/);
   assert.match(brief, /- status: one of: in progress, closed, finished\n/);
-  assert.match(brief, /- summary: at most 200 characters\n/);
+  assert.match(brief, /- summary: at most 199 characters\n/);
   const example = JSON.parse(/One example item: (\{.*\})/.exec(brief)?.[1] ?? 'null');
   assert.equal(example.status, 'in progress');
   const { createRubric, checkStep } = await import('bareguard');
@@ -111,7 +111,7 @@ test('RUN: item 3 status "done" and item 4 summary of 236 characters: the close 
   const bad = await run(r, file, ITEMS([undefined, undefined, { status: 'done' }, { summary: 's'.repeat(236) }]));
   assert.doesNotMatch(bad.text, /outcome\s+green/, bad.text);
   const gaps = bad.spine.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.type === 'close-verdict').flatMap((e) => String(e.gap).split('\n').flatMap((x) => (/line 1: (item \d+: .*)$/.exec(x) ? [/line 1: (item \d+: .*)$/.exec(x)?.[1]] : [])));
-  assert.deepEqual([...new Set(gaps)].sort(), ['item 3: "status" is not one of the allowed values', 'item 4: "summary" is too long (236 characters, at most 200)']);
+  assert.deepEqual([...new Set(gaps)].sort(), ['item 3: "status" is not one of the allowed values', 'item 4: "summary" is too long (236 characters, at most 199)']);
   assert.equal(gaps.some((g) => /^item [12]:/.test(String(g))), false, 'items 1 and 2 are fine');
   const good = await run(r, file, ITEMS());
   assert.equal(good.rc, 0, good.text);
@@ -125,10 +125,10 @@ test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with
   const res = /** @type {any} */ (getRunResult(bad.runid, { home: bad.home }));
   const line = res.lines[0];
   assert.equal(line.kind, 'shape');
-  assert.deepEqual(line.shape.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'at most 200' }], 'the AI signed 200 for "under 200": the hint does not claim "under"');
+  assert.deepEqual(line.shape.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
   assert.deepEqual([line.shape.total, line.shape.passed, line.shape.failed], [4, 2, 2]);
   assert.deepEqual(line.shape.rows[2].cells.map((/** @type {any} */ c) => c.mark + c.text), ['g', 'rdone', 'g11 chars']);
-  assert.deepEqual(line.shape.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, at most 200)']);
+  assert.deepEqual(line.shape.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);
   assert.deepEqual(line.notChecked, ['whether each one is true \u2014 you judge it at Accept']);
   assert.equal(line.notCheckedBy['whether each one is true \u2014 you judge it at Accept'], 'default');
   const good = await run(r, file, ITEMS());
@@ -139,8 +139,20 @@ test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with
   const ac = /** @type {any} */ (getRunDetail(bad.runid, { home: bad.home })).auditChecks;
   assert.equal(ac.shapeHead, "Shape checks \u00B7 code checks each item's form, not whether it is true");
   const rows = ac.checks.filter((/** @type {any} */ r) => r.shape);
-  assert.deepEqual(rows.map((/** @type {any} */ r) => [r.text, r.result]), [['title \u00B7 not empty', 'passed'], ['status \u00B7 one of: in progress, closed, finished', 'failed'], ['summary \u00B7 at most 200 characters', 'failed']]);
+  assert.deepEqual(rows.map((/** @type {any} */ r) => [r.text, r.result]), [['title \u00B7 not empty', 'passed'], ['status \u00B7 one of: in progress, closed, finished', 'failed'], ['summary \u00B7 under 200 characters', 'failed']]);
   assert.equal(rows[1].why, 'item 3: "status" is not one of the allowed values');
   assert.ok(ac.checks.some((/** @type {any} */ r) => /this line lists items, so it has no text check/.test(r.text)), 'the floor row says lists items, not finds facts');
   assert.deepEqual(ac.notChecked.map((/** @type {any} */ r) => [r.text, r.by]), [['whether each one is true \u2014 you judge it at Accept', 'default']]);
+});
+
+test('"under 200 characters" is exclusive: a 200-character summary is RED, a 199-character one is green (code signs 199, whatever the AI sent)', async () => {
+  const { r, file } = await draft();
+  const part = r.closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step').params.parts[0];
+  assert.equal(part.fields.find((/** @type {any} */ x) => x.name === 'summary').spec.maxChars, 199);
+  const at200 = await run(r, file, ITEMS([{ summary: 's'.repeat(200) }]));
+  assert.doesNotMatch(at200.text, /outcome\s+green/, 'a 200-character summary is not under 200');
+  assert.match(at200.spine, /item 1: \\\"summary\\\" is too long \(200 characters, at most 199\)/);
+  const at199 = await run(r, file, ITEMS([{ summary: 's'.repeat(199) }]));
+  assert.equal(at199.rc, 0, at199.text);
+  assert.match(at199.text, /outcome\s+green/);
 });

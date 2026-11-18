@@ -37,7 +37,7 @@ test('every ~ rule maps to one field of the right kind and a grounded bound; a s
   assert.deepEqual(r.fields.filter((x) => x.by === 'you').map((x) => [x.name, x.kind, x.rule]), [['title', 'text', 1], ['status', 'oneOf', 2], ['summary', 'text', 3]]);
   assert.deepEqual(fieldSpec(r.fields[0]), { kind: 'text', required: true, minChars: 1 });
   assert.deepEqual(r.fields[1].bounds.values, ['in progress', 'closed', 'finished']);
-  assert.equal(r.fields[2].bounds.maxChars, 200);
+  assert.equal(r.fields[2].bounds.maxChars, 199, '"under 200" signs 199, whatever the AI sent');
   const owner = r.fields.find((x) => x.name === 'owner');
   assert.equal(owner?.by, 'agent');
   assert.equal(owner?.held, true, 'R2: no word of owner in the job: Suggested');
@@ -160,7 +160,7 @@ test('list fields: `of` is an entry spec whose bounds are grounded in the same r
   const line = { n: 1, text: 'List the words', rules: ['matching words is a list of at most 5 words, each under 40 characters'] };
   const ans = { fields: [f({ name: 'matching', kind: 'list', fromRule: 1, bounds: { of: { kind: 'text', maxChars: 40 }, maxEntries: 5 } })] };
   const r = buildShapeLine({ line, labels: [], suggestion: ans, nameRules: NR });
-  assert.deepEqual(r.fields[0].bounds, { of: { kind: 'text', maxChars: 40 }, maxEntries: 5 });
+  assert.deepEqual(r.fields[0].bounds, { of: { kind: 'text', maxChars: 39 }, maxEntries: 5 }, '"each under 40" signs 39; "at most 5" signs 5');
   const nested = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'm', kind: 'list', fromRule: 1, bounds: { of: { kind: 'list' } } })] }, nameRules: NR });
   assert.deepEqual(nested.fields[0].bounds, {});
   const str = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'm', kind: 'list', fromRule: 1, bounds: { of: 'text' } })] }, nameRules: NR });
@@ -185,4 +185,19 @@ test('buildShapes routes each suggestion by its own line; a line with no suggest
   assert.ok(out.refused.some((x) => x.line === null && x.helper === 'schema'));
   assert.ok(out.refused.some((x) => x.line === 7 && /not a line a shape can be offered for/.test(x.why)));
   assert.ok(out.refused.some((x) => x.line === 2));
+});
+
+test('the law of the words (code signs it, whatever the AI sent): under N = N-1 for counts and `lt: N` for numbers; at most N = N', () => {
+  const sign = (/** @type {string} */ rule, /** @type {string} */ kind, /** @type {any} */ bounds) => buildShapeLine({ line: { n: 1, text: 'List things', rules: [rule] }, labels: [], nameRules: NR, suggestion: { fields: [f({ name: 'x', kind, bounds, fromRule: 1 })] } }).fields[0]?.bounds;
+  for (const sent of [199, 200]) assert.deepEqual(sign('the summary is under 200 characters', 'text', { maxChars: sent }), { maxChars: 199 }, `AI sent ${sent}`);
+  for (const sent of [60, 59]) assert.deepEqual(sign('at most 60 words', 'text', { maxWords: sent }), { maxWords: 60 }, `at most: AI sent ${sent}`);
+  assert.deepEqual(sign('fewer than 6 words', 'text', { maxWords: 6 }), { maxWords: 5 });
+  assert.deepEqual(sign('less than 4 entries', 'list', { maxEntries: 4, of: 'text' }), { maxEntries: 3, of: { kind: 'text' } });
+  assert.deepEqual(sign('the price is below 450', 'number', { max: 450 }), { lt: 450 }, 'a number: the exclusive form');
+  assert.deepEqual(sign('the price is under 450', 'number', { lt: 450 }), { lt: 450 });
+  assert.deepEqual(sign('the price is under 450', 'number', { max: 449.99 }), { lt: 450 });
+  assert.deepEqual(sign('the price is up to 450', 'number', { lt: 450 }), { max: 450 }, 'at most: inclusive');
+  assert.deepEqual(sign('no more than 450', 'number', { max: 449 }), { max: 450 });
+  assert.deepEqual(sign('the summary is at most 200 characters', 'text', { maxChars: 200 }), { maxChars: 200 });
+  assert.deepEqual(sign('the summary has 200 characters', 'text', { maxChars: 200 }), { maxChars: 200 }, 'no direction word: the AI\'s bound stands');
 });
