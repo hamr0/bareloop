@@ -11,6 +11,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - Shape jobs (itemShape), the build that does not need the new bareguard (branch `feat/shape-jobs`; `docs/product/ITEM33-BUILD.md` "Addendum 2026-11-18: shape jobs"). `src/shapemenu.js` names the field-kind menu once (`boolean` with `equals` included) and the name rules; `src/shapebuild.js` builds or refuses the shape of a job line from the AI's typed suggestion by the code rules R1-R5 (a bound only from that field's own `~` rule, an AI-added field with no word of the job is Suggested, `oneOf` keeps each grounded value, an item count only from the person's "per/each <input>", `equals` only on a rule's own field); `src/shapelook.js` is the shape look, a pre-call before the asks like the sheet look (`runLookWithShape`, the look door default; the row-edit turn proposes no shape), whose words are a prompt register, built in `src/authorjob.js` before `askRounds`. `CheckBlock.setShape` holds the rows: `[you]` per rule field, `[agent]` extra fields (job-derived on, no-word Suggested, Drop and Add, kept for a Revise in the record's `shapeDropped`), one `[default]` row, the line-class exclusion, the truth of the items Not checked; "rules or shape could both fit" is one counted reading-style ask. `src/shapewords.js` words an `itemShape` gap (`item 2: "summary" is too long (201 characters, at most 200)`); `src/shaperows.js` and the card, per-row results and report (`#### Item N` blocks) read a signed `shape` part. OFF until the bareguard that carries `itemShape` is pinned (`shapeAvailable()` is false on 0.36): no job changes. Not yet built: signing the part and the run's brief (clauses 5 and 6).
 
+- Shape jobs, hamr's rulings of 2026-11-18: a failed, unreadable or capped shape look does not stop the draft (it goes on with no shape, the spend booked, a draft-log line `the shape look did not complete: <reason>; going on without a shape`); a shape line's card reads `Shape checks · code checks each item's form, not whether it is true`, then `name · sentence` rows in the person's own form (`under 200 characters`), Suggested with Add, and `Not checked · whether each one is true — you judge it at Accept`.
+
+### Changed
+
+- The refusal for a single-file Source now reads `This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.`
+
 ## [0.60.0] - 2026-11-18
 
 ### Added

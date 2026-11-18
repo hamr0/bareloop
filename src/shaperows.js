@@ -14,56 +14,67 @@ export const shapeRowKey = (line, name) => `L${line}.shape.${name}`;
 /** @param {number} line */
 export const shapeDefaultKey = (line) => `L${line}.$shape`;
 
-/** the words of the `[default]` row of a shape line: what code itself guarantees: the answer is a list of items, one object each; with a count the person's words gave @param {{min?: number, max?: number}|null} [count] */
+/** the words of the `[default]` row of a shape line, drawn only when the person's words gave an item count (hamr 2026-11-18: the card's `$` row is the Not checked line): `exactly 2 items` @param {{min?: number, max?: number}|null} [count] @returns {string|null} */
 export function shapeDefaultWords(count = null) {
-  if (count && Number.isInteger(count.min) && count.min === count.max) return `the answer is a list of exactly ${count.min} item${count.min === 1 ? '' : 's'}, each with the fields below`;
-  return 'the answer is a list of items, each with the fields below';
+  if (count && Number.isInteger(count.min) && count.min === count.max) return `the answer lists exactly ${count.min} item${count.min === 1 ? '' : 's'}`;
+  return null;
 }
 
 /** why the truth of a shape line's items is not checked: the person judges it at Accept (the Not checked row of every shape line) */
-export const SHAPE_TRUTH_WORDS = 'whether what each item says is true — you judge it at Accept';
+export const SHAPE_TRUTH_WORDS = 'whether each one is true \u2014 you judge it at Accept';
 
 /** @param {unknown} v @returns {string} */
 const q = (v) => (typeof v === 'string' ? `"${v}"` : String(v));
 
-/** one bound range as words: `at least 3`, `at most 10`, `above 3`, `below 10` @param {Record<string, any>} s @param {string} unit @returns {string[]} */
-function range(s, unit = '') {
+/** the words of a shape card's heading, once above a shape line's rows (code's, never the model's) */
+export const SHAPE_HEAD = "Shape checks \u00B7 code checks each item's form, not whether it is true";
+
+/** an upper bound `n` as the person's own form: "under N unit" when their words say under/fewer than/less than/below N+1 (so the signed N is "under N+1"), else "at most N unit" @param {number} n @param {string} unit @param {string} said */
+function upper(n, unit, said) {
   const u = unit ? ` ${unit}` : '';
+  return new RegExp(`(?:under|fewer than|less than|below)\\s+${n + 1}\\b`, 'i').test(said) ? `under ${n + 1}${u}` : `at most ${n}${u}`;
+}
+
+/** one bound range as words: `at least 3`, `at most 10`, `over 3`, `under 10` @param {Record<string, any>} s @param {string} said @returns {string[]} */
+function range(s, said) {
   return [
-    ...(s.min !== undefined ? [`at least ${q(s.min)}${u}`] : []), ...(s.gt !== undefined ? [`above ${q(s.gt)}${u}`] : []),
-    ...(s.max !== undefined ? [`at most ${q(s.max)}${u}`] : []), ...(s.lt !== undefined ? [`below ${q(s.lt)}${u}`] : []),
+    ...(s.min !== undefined ? [`at least ${q(s.min)}`] : []), ...(s.gt !== undefined ? [`over ${q(s.gt)}`] : []),
+    ...(s.max !== undefined ? [typeof s.max === 'number' ? upper(s.max, '', said) : `at most ${q(s.max)}`] : []), ...(s.lt !== undefined ? [`under ${q(s.lt)}`] : []),
   ];
 }
 
 /**
- * A field spec as one plain sentence, written by code from the signed fields. Pure.
- * @param {Record<string, any>} spec `{kind, required?, ...bounds}` @returns {string}
+ * A field spec as one plain sentence, written by code from the signed fields, in the person's own form where their words show it ("under 200 characters", not "at most 199"). Pure.
+ * @param {Record<string, any>} spec `{kind, required?, ...bounds}` @param {string} [said] the person's own rule for the field @returns {string}
  */
-export function shapeFieldSentence(spec) {
+export function shapeFieldSentence(spec, said = '') {
   const s = isRec(spec) ? spec : {};
-  /** @type {string[]} */
-  const parts = [];
+  /** @type {string} */
+  let out;
   switch (s.kind) {
     case 'text': {
-      const c = [...(s.minChars !== undefined ? [`at least ${s.minChars} characters`] : []), ...(s.maxChars !== undefined ? [`at most ${s.maxChars} characters`] : []), ...(s.minWords !== undefined ? [`at least ${s.minWords} words`] : []), ...(s.maxWords !== undefined ? [`at most ${s.maxWords} words`] : [])];
-      parts.push(['text', ...c].join(', '));
+      const c = [
+        ...(s.minChars === 1 ? ['not empty'] : s.minChars !== undefined ? [`at least ${s.minChars} characters`] : []), ...(s.maxChars !== undefined ? [upper(s.maxChars, 'characters', said)] : []),
+        ...(s.minWords !== undefined ? [`at least ${s.minWords} words`] : []), ...(s.maxWords !== undefined ? [upper(s.maxWords, 'words', said)] : []),
+      ];
+      out = c.length ? c.join(', ') : 'text';
       break;
     }
-    case 'number': parts.push(['a number', ...range(s)].join(', ')); break;
-    case 'money': parts.push(['an amount of money', ...range(s)].join(', ')); break;
-    case 'date': parts.push(['a date', ...range(s)].join(', ')); break;
-    case 'time': parts.push(['a time', ...range(s)].join(', ')); break;
-    case 'url': parts.push('a web address'); break;
-    case 'oneOf': parts.push(`one of ${(Array.isArray(s.values) ? s.values : []).map(q).join(', ')}`); break;
-    case 'boolean': parts.push(s.equals === true ? 'yes' : s.equals === false ? 'no' : 'yes or no'); break;
+    case 'number': out = ['a number', ...range(s, said)].join(', '); break;
+    case 'money': out = ['an amount of money', ...range(s, said)].join(', '); break;
+    case 'date': out = ['a date', ...range(s, said)].join(', '); break;
+    case 'time': out = ['a time', ...range(s, said)].join(', '); break;
+    case 'url': out = 'a web address'; break;
+    case 'oneOf': out = `one of: ${(Array.isArray(s.values) ? s.values : []).join(', ')}`; break;
+    case 'boolean': out = s.equals === true ? 'yes' : s.equals === false ? 'no' : 'yes or no'; break;
     case 'list': {
-      const c = [...(s.minEntries !== undefined ? [`at least ${s.minEntries} entries`] : []), ...(s.maxEntries !== undefined ? [`at most ${s.maxEntries} entries`] : []), ...(s.unique === true ? ['no repeats'] : [])];
-      parts.push([`a list of ${isRec(s.of) ? shapeFieldSentence(s.of) : 'values'}`, ...c].join(', '));
+      const c = [...(s.minEntries !== undefined ? [`at least ${s.minEntries} entries`] : []), ...(s.maxEntries !== undefined ? [upper(s.maxEntries, 'entries', said)] : []), ...(s.unique === true ? ['no repeats'] : [])];
+      out = [`a list of ${isRec(s.of) ? shapeFieldSentence(s.of, said) : 'values'}`, ...c].join(', ');
       break;
     }
-    default: parts.push(String(s.kind ?? 'a value'));
+    default: out = String(s.kind ?? 'a value');
   }
-  return `${parts.join('')}${s.required === true ? ', always present' : ''}`;
+  return out;
 }
 
 /**
@@ -94,10 +105,10 @@ export function shapePartOfLine(closeDecl, n) {
   return null;
 }
 
-/** the words of one signed field row: `name: sentence`, then the rule it covers in the person's own words @param {any} f @param {string[]} rules the line's `~` rules @returns {string} */
+/** the words of one signed field row: `name \u00B7 sentence` (the rule it comes from is the `~ [you]` tag's, the card's heading says what is checked) @param {any} f @param {string[]} rules the line's `~` rules @returns {string} */
 export function shapeFieldText(f, rules) {
   const said = Number.isInteger(f.rule) ? rules[f.rule - 1] : undefined;
-  return `${f.name}: ${shapeFieldSentence(f.spec)}${said ? ` — covers "${said}"` : ''}`;
+  return `${f.name} \u00B7 ${shapeFieldSentence(f.spec, said ?? '')}`;
 }
 
 /**
@@ -108,7 +119,7 @@ export function shapeFieldText(f, rules) {
  */
 export function shapeRowsOf(closeDecl, jobLines = null) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
-  /** @type {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number}[]} */
+  /** @type {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number, shape: true}[]} */
   const out = [];
   for (const st of stages) {
     if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params)) continue;
@@ -118,10 +129,11 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
     const rules = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === n));
     for (const f of part.fields.filter(isRec)) {
       out.push(Number.isInteger(f.rule) && f.row !== 'agent'
-        ? { line: n, key: `L${n}.~${f.rule}`, by: 'you', text: shapeFieldText(f, rules), name: String(f.name), rule: f.rule }
-        : { line: n, key: shapeRowKey(n, String(f.name)), by: 'agent', text: shapeFieldText(f, rules), name: String(f.name) });
+        ? { line: n, key: `L${n}.~${f.rule}`, by: 'you', text: shapeFieldText(f, rules), name: String(f.name), rule: f.rule, shape: true }
+        : { line: n, key: shapeRowKey(n, String(f.name)), by: 'agent', text: shapeFieldText(f, rules), name: String(f.name), shape: true });
     }
-    out.push({ line: n, key: shapeDefaultKey(n), by: 'default', text: shapeDefaultWords(Number.isInteger(part.minItems) ? { min: part.minItems, max: part.maxItems } : null) });
+    const dw = shapeDefaultWords(Number.isInteger(part.minItems) ? { min: part.minItems, max: part.maxItems } : null);
+    if (dw !== null) out.push({ line: n, key: shapeDefaultKey(n), by: 'default', text: dw, shape: true });
   }
   return out;
 }

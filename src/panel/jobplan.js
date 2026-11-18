@@ -15,6 +15,7 @@ import { NOT_REACHED } from './status.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { stageQuestionsByName } from '../stagewords.js';
+import { SHAPE_HEAD } from '../shaperows.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
@@ -23,9 +24,14 @@ import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guard
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
 /** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string}} AuditRow */
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true}} PlanCheck */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
+
+/** the one heading of a shape line's rows, code's words, only when some line has a shape row (hamr 2026-11-18) @param {PlanLine[]} lines @returns {{shapeHead?: string}} */
+function shapeHeadPart(lines) {
+  return lines.some((l) => l.checks.some((c) => c.shape === true)) ? { shapeHead: SHAPE_HEAD } : {};
+}
 
 /** the ticket filter's code-owned words as a plan part, or nothing (R5) @param {any} f @returns {{ticketFilter?: string}} */
 function filterPart(f) {
@@ -57,7 +63,7 @@ export function checkClassOfKind(kind) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec, ledger = null) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string, shape?: true}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -71,7 +77,7 @@ export function planFromSpec(spec, ledger = null) {
         if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];
         // a repo job's `!` work stage is its list row (Addendum 2026-11-15 (d)): the row's key rides on the check
         const stageRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) && spec.closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'stage' && r.key === stageKeyOf(s.name));
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: stageRow ? (stageQuestionsByName(spec).get(s.name) ?? s.name) : s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}), ...(r.shape ? { shape: /** @type {const} */ (true) } : {}) })) : [{ name: stageRow ? (stageQuestionsByName(spec).get(s.name) ?? s.name) : s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -106,7 +112,7 @@ export function planFromSpec(spec, ledger = null) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
     // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
-    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}), ...(s.shape ? { shape: true } : {}) });
     if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
   }
   // the write fence is a job-level `$` row of the signed list (hamr 2026-11-15): one check that serves no one line
@@ -140,7 +146,7 @@ export function planFromSpec(spec, ledger = null) {
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...filterPart(spec?.ticketFilter) };
+  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...filterPart(spec?.ticketFilter) };
 }
 
 /**
@@ -166,7 +172,7 @@ export function planFromConfirm(jobLines, plan) {
     const by = /** @type {any} */ (c).by === null ? {} : { by: /** @type {'agent'|'you'|'default'} */ (/** @type {any} */ (c).by ?? 'agent') };
     const served = lines.filter((l) => Array.isArray(c.fromLine) && c.fromLine.includes(l.n));
     const key = typeof (/** @type {any} */ (c).key) === 'string' ? { key: /** @type {any} */ (c).key } : {};
-    for (const line of served) line.checks.push({ name: c.text, cls: null, ...by, ...key });
+    for (const line of served) line.checks.push({ name: c.text, cls: null, ...by, ...key, ...(/** @type {any} */ (c).shape === true ? { shape: true } : {}) });
     if (served.length === 0) loose.push({ name: c.text, cls: null, ...by, ...key });
   }
   const { notChecked, readNotes } = splitReadNotes(plan?.notChecked, plan?.signedFacts);
@@ -176,7 +182,7 @@ export function planFromConfirm(jobLines, plan) {
     if (line && typeof x.text === 'string') (line.picked ??= []).push(x.text);
   }
   return {
-    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...filterPart(plan?.ticketFilter),
+    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...shapeHeadPart(lines), ...filterPart(plan?.ticketFilter),
     ...(plan?.notCheckedBy && typeof plan.notCheckedBy === 'object' && Object.keys(plan.notCheckedBy).length ? { notCheckedBy: plan.notCheckedBy } : {}),
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),

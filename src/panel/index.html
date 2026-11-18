@@ -4168,6 +4168,8 @@
     var byTag = byTagOf;
     // `ctl` (the confirm card only): draws a Drop button after an [agent] check that has a row key; a [you] or [default] row has none
     var checkLine = function(c){
+      // a shape line's field rows (hamr 2026-11-18): `\u203A name \u00B7 sentence`, words from code (src/shaperows.js), with the line's one heading above the first (the same markup, no "check \u00B7" prefix)
+      if(c.shape){ return '<div class="fold" data-testid="plan-check" data-shape="1"><span class="mk">\u203A</span> ' + escapeXml(c.name) + byTag(c.by) + (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "") + "</div>"; }
       return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "") + "</div>";
     };
     (plan.lines || []).forEach(function(l){
@@ -4175,7 +4177,11 @@
       // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
-      (l.checks || []).forEach(function(c){ h += checkLine(c); });
+      var shapeHeadDone = false;
+      (l.checks || []).forEach(function(c){
+        if(c.shape && !shapeHeadDone && plan.shapeHead){ shapeHeadDone = true; h += '<div class="fold" data-testid="plan-shape-head"><b>' + escapeXml(plan.shapeHead) + "</b></div>"; }
+        h += checkLine(c);
+      });
       (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + byTag("default") + "</div>"; });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + byTag((plan.notCheckedBy || {})[r]) + "</div>"; });
       h += "</div>";

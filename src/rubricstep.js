@@ -1117,7 +1117,7 @@ export function floorWords(n, carriesText) {
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
  * A repo job's list (Addendum 2026-11-15 (d)) adds its rows here: an `!` row per work stage (the stage's name) and a `~` row the write fence keeps (the rule in the person's words, from `jobLines`; else its number), `fence` holding the path.
  * @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines, so a `~` row reads in their own words
- * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true, fence?: string}[]}
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true, fence?: string, shape?: true}[]}
  */
 export function checksOfClose(closeDecl, jobLines = null) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
@@ -1158,7 +1158,7 @@ export function checksOfClose(closeDecl, jobLines = null) {
     .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
   // shape jobs (clause 8): a shape line's part is one plan row per field (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/shaperows.js `shapeRowsOf`)
   const shapeItems = (/** @type {number} */ line) => shapeRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
-    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
+    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key, shape: /** @type {const} */ (true) }));
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (isRec(p) && p.class === 'sheet') return sheetItems(st.params.step);
@@ -1208,7 +1208,7 @@ export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notCheckedBy = {};
   for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: checksOfClose(closeDecl, jobLines).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}) })),
+    checkItems: checksOfClose(closeDecl, jobLines).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}), ...(c.shape ? { shape: true } : {}) })),
     notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
     notCheckedBy,
   };

@@ -33,11 +33,12 @@ const CLOSE = {
 test('the card: one row per field ([you] covers its rule, [agent] for an extra field) and the [default] row, in code\'s words', () => {
   const rows = checksOfClose(CLOSE, JOB);
   assert.deepEqual(rows.map((r) => [r.by, r.key]), [['you', 'L2.~3'], ['you', 'L2.~1'], ['you', 'L2.~2'], ['agent', 'L2.shape.remote'], ['default', 'L2.$shape']]);
-  assert.equal(rows[0].text, 'name: text, at least 1 characters, always present — covers "the candidate has a name"');
-  assert.equal(rows[1].text, 'blurb: text, at most 59 words, always present — covers "each blurb is under 60 words"');
-  assert.equal(rows[2].text, 'matching: a list of text, at most 5 entries, no repeats — covers "matching words is a list of at most 5 words"');
-  assert.equal(rows[3].text, 'remote: yes');
-  assert.equal(rows[4].text, 'the answer is a list of exactly 2 items, each with the fields below');
+  assert.equal(rows[0].text, 'name \u00B7 not empty');
+  assert.equal(rows[1].text, 'blurb \u00B7 under 60 words', 'the person\'s own form: "each blurb is under 60 words" signs 59');
+  assert.equal(rows[2].text, 'matching \u00B7 a list of text, at most 5 entries, no repeats');
+  assert.equal(rows[3].text, 'remote \u00B7 yes');
+  assert.equal(rows[4].text, 'the answer lists exactly 2 items');
+  assert.ok(rows.every((r) => r.shape === true));
   assert.deepEqual(cardOfClose({ closeDecl: CLOSE, jobLines: JOB }).checkItems.map((c) => c.key), rows.map((r) => r.key));
 });
 
@@ -47,13 +48,17 @@ test('the [default] row is drawn only when its signed list row is there (like th
 });
 
 test('shapeFieldSentence: every kind in plain words', () => {
-  assert.equal(shapeFieldSentence({ kind: 'oneOf', values: ['in progress', 'closed'] }), 'one of "in progress", "closed"');
-  assert.equal(shapeFieldSentence({ kind: 'money', lt: 450, required: true }), 'an amount of money, below 450, always present');
+  assert.equal(shapeFieldSentence({ kind: 'oneOf', values: ['in progress', 'closed'] }), 'one of: in progress, closed');
+  assert.equal(shapeFieldSentence({ kind: 'money', lt: 450, required: true }), 'an amount of money, under 450');
   assert.equal(shapeFieldSentence({ kind: 'time', min: '05:00', max: '21:59' }), 'a time, at least "05:00", at most "21:59"');
+  assert.equal(shapeFieldSentence({ kind: 'text', maxChars: 199 }, 'the summary is under 200 characters'), 'under 200 characters');
+  assert.equal(shapeFieldSentence({ kind: 'text', maxChars: 200 }, 'the summary is under 200 characters'), 'at most 200 characters', 'a bound that is the written number is not "under" it');
+  assert.equal(shapeFieldSentence({ kind: 'text', minChars: 1, required: true }), 'not empty');
+  assert.equal(shapeFieldSentence({ kind: 'text' }), 'text');
   assert.equal(shapeFieldSentence({ kind: 'boolean' }), 'yes or no');
   assert.equal(shapeFieldSentence({ kind: 'boolean', equals: false }), 'no');
   assert.equal(shapeFieldSentence({ kind: 'url' }), 'a web address');
-  assert.equal(shapeDefaultWords(null), 'the answer is a list of items, each with the fields below');
+  assert.equal(shapeDefaultWords(null), null, 'no count, no default row on the card');
 });
 
 test('flattenStep passes a shape answer\'s results through only for a line whose signed class is shape', () => {
@@ -113,4 +118,41 @@ test('a facts line whose answer also has `results` is still rendered as facts (p
 
 test('rows of a close with no shape part: none', () => {
   assert.deepEqual(shapeRowsOf({ stages: [{ kind: 'rubric-step', params: { step: 1, parts: [{ class: 'fact' }] } }] }), []);
+});
+
+test('the card of a shape line (panel model): one heading in code\'s words, the rows as `name · sentence` with their tags, Not checked says the truth is the person\'s', async () => {
+  const { planFromSpec, planFromConfirm } = await import('../src/panel/jobplan.js');
+  const { SHAPE_HEAD, SHAPE_TRUTH_WORDS } = await import('../src/shaperows.js');
+  const spec = { jobLines: JOB, closeDecl: { ...CLOSE, list: [...CLOSE.list, { key: 'L2.$prose', line: 2, kind: 'prose', by: 'default', from: 'default', state: 'not-checked', reason: SHAPE_TRUTH_WORDS }] } };
+  const plan = planFromSpec(spec);
+  assert.equal(plan.shapeHead, SHAPE_HEAD);
+  assert.equal(SHAPE_HEAD, "Shape checks · code checks each item's form, not whether it is true");
+  const checks = plan.lines[0].checks;
+  assert.deepEqual(checks.filter((c) => c.shape).map((c) => [c.name, c.by]), [['name · not empty', 'you'], ['blurb · under 60 words', 'you'], ['matching · a list of text, at most 5 entries, no repeats', 'you'], ['remote · yes', 'agent'], ['the answer lists exactly 2 items', 'default']]);
+  assert.ok(plan.lines[0].refused.some((t) => t.includes('whether each one is true — you judge it at Accept')));
+  const confirm = planFromConfirm(JOB, { checkItems: cardOfClose({ closeDecl: spec.closeDecl, jobLines: JOB }).checkItems });
+  assert.equal(confirm.shapeHead, SHAPE_HEAD);
+  assert.equal(confirm.lines[0].checks.every((c) => c.shape === true || c.key === 'L2.$floor'), true);
+  assert.equal(planFromSpec({ jobLines: JOB, closeDecl: { stages: [], list: [] } }).shapeHead, undefined, 'no shape row, no heading');
+});
+
+test('the page draws a shape card: the heading once, rows as `› name · sentence` with their tags, Suggested with Add, Not checked with the $ tag (the page\'s own renderJobPlan)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { planFromSpec } = await import('../src/panel/jobplan.js');
+  const { SHAPE_TRUTH_WORDS } = await import('../src/shaperows.js');
+  const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
+  const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const { renderJobPlan } = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)(escapeXml);
+  const spec = { jobLines: JOB, closeDecl: { ...CLOSE, list: [...CLOSE.list, { key: 'L2.$prose', line: 2, kind: 'prose', by: 'default', from: 'default', state: 'not-checked', reason: SHAPE_TRUTH_WORDS }] } };
+  const plan = { ...planFromSpec(spec), suggested: [{ key: 'L2.shape.owner', line: 2, text: 'owner · text' }] };
+  const html = renderJobPlan(plan, (/** @type {string} */ op, /** @type {string} */ key) => `<button data-op="${op}" data-key="${key}">${op}</button>`);
+  assert.equal((html.match(/data-testid="plan-shape-head"/g) ?? []).length, 1);
+  assert.match(html, /<b>Shape checks · code checks each item's form, not whether it is true<\/b>/);
+  assert.match(html, /<span class="mk">›<\/span> name · not empty <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span>/);
+  assert.match(html, /<span class="mk">›<\/span> remote · yes <span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span><button data-op="drop"/);
+  assert.doesNotMatch(html, /check · name · not empty/);
+  assert.match(html, /Suggested ·[^<]*<\/span><div class="fold" data-testid="plan-suggest-row"><span class="mk">›<\/span> line 2 · owner · text <span class="by"[^>]*>! \[agent\]<\/span><button data-op="add" data-key="L2.shape.owner"/);
+  assert.match(html, /<summary>Not checked · \d/);
 });

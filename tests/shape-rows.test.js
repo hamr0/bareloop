@@ -103,7 +103,7 @@ test('the truth of the items is Not checked on the card, in plain words; the car
   assert.equal(prose?.reason, SHAPE_TRUTH_WORDS);
   const card = cardOfClose({ closeDecl: { ...c, stages: c.stages }, jobLines: LINES });
   assert.ok(card.notChecked.some((t) => t.includes(SHAPE_TRUTH_WORDS)));
-  assert.deepEqual(card.checkItems.filter((i) => i.fromLine[0] === 1).map((i) => i.key), ['L1.~1', 'L1.~2', 'L1.~3', 'L1.shape.airline', 'L1.$shape', 'L1.$floor']);
+  assert.deepEqual(card.checkItems.filter((i) => i.fromLine[0] === 1).map((i) => i.key), ['L1.~1', 'L1.~2', 'L1.~3', 'L1.shape.airline', 'L1.$floor'], 'no count: the card draws no default shape row, the Not checked line says what is not checked');
 });
 
 test('a rule no field holds is Not checked with its reason; a line left with no [you] field is no shape line', () => {

@@ -1383,8 +1383,8 @@ export function createSession(card, deps = {}) {
     return { text, heads: readoutHeadIndexes(text) };
   };
   /** S4: the sheet rows the person has dropped, waiting under Suggested (Add); only a sheet job's final card has any */
-  const sheetSuggested = () => (finalCtx?.block ? finalCtx.block.suggestedView().filter((/** @type {any} */ x) => /^L\d+\.sheet\./.test(x.key)) : []);
-  const sheetEditable = () => finalCtx?.block != null && finalCtx.block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' && r.by === 'agent');
+  const sheetSuggested = () => (finalCtx?.block ? finalCtx.block.suggestedView().filter((/** @type {any} */ x) => /^L\d+\.(sheet|shape)\./.test(x.key)) : []);
+  const sheetEditable = () => finalCtx?.block != null && finalCtx.block.rows.some((/** @type {any} */ r) => (r.kind === 'sheet' || r.kind === 'shape') && r.by === 'agent');
   const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : sheetEditable() ? { editable: true, suggested: sheetSuggested() } : {}) }, jobLines);
   /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean, block?: import('../checkblock.js').CheckBlock|null}|null} the spec the final card shows and the seed it was gated against */
   let finalCtx = null;
