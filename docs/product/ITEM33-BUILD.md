@@ -4872,8 +4872,8 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 ### Where we are (for a fresh session)
 - Branch `chore/fix-ledger` (check `git branch --show-current`).
 - Pieces 0, S1, S2, S3, S4 are built and gated. Last full gate: 6031 pass / 0 fail on b3b24cfc (== 6e303060 + a4f76cdd, byte-identical tree).
-- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). Next: POC C, then the live proof, then /branch-review, then /release.
-- S5 (surfaces and the $0 re-check) is BUILT (2026-11-18, see S5 status above). POC C is next (hamr 2026-11-18: "A, push, drop the question wording"), then the live proof.
+- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). POC C: PASS (F353, n=5 per job, underpowered leaning). Next: the live proof, then /branch-review, then /release.
+- S5 (surfaces and the $0 re-check) is BUILT (2026-11-18, see S5 status above). POC C is done: PASS, F353 (hamr 2026-11-18: "A, push, drop the question wording"); the live proof is next.
 - Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
 - fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
 - Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.

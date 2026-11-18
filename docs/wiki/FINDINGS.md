@@ -16447,3 +16447,31 @@ For each invoice, work out the days past due as of 2026-10-11 and put it in its 
 **Bars (frozen).** PASS only if, for EACH job: B1 holds in >= 4 of its 5 non-casualty drafts, AND B2 holds in 5 of 5, AND B3 holds in 5 of 5. Anything less is FAIL, reported with each failing draft; no re-tune. If POC C FAILs, the live proof is not started.
 
 **Power, stated now.** n = 5 per job is UNDERPOWERED: it gives a base-rate leaning, not a rate (a 4/5 and a true 50% rate are not separable at this n). The result is read as a leaning and never cited as a proven rate. B2 and B3 at 5/5 only mean no counterexample was seen in 5.
+
+### F353 results: POC C PASS (leaning, n=5 per job, underpowered), 2026-11-18
+
+Run exactly as the prereg above (frozen in 2fca5b3b): 10 real panel drafts (draft only: no sign, no run), DeepSeek direct, deepseek-flash, scratch HOME, in-process panel server on port 0. Provider probe before firing: two HTTP 200s. Casualties: 0 (no non-200 call, no `length` cut-off, no replacement draft). Spend: $0.0400 (state) / $0.04001 (sum of draft-log call costs); first draft $0.00683; cap $0.40 never near. `runs.jsonl`: 167 before, 167 after. Driver and per-draft raw files (captured wire bodies, draft-log, final card, resolved-spec) are scratch, `.claude/scratch/poc-c/` (not committed); the reading script is `analyze.mjs` there.
+
+Per draft (replies with `sheetChecks` = row-edit replies that carried a non-empty list; first = its length in the first such reply; checks in spec = every sheet check in the sign-prepared close; agent = extra `[agent]` rows built):
+
+- expenses1: B1 yes (2 replies, first 3); checks in spec 3, agent 0, refused 0; B2 yes; B3 yes; $0.0068.
+- expenses2: B1 yes (2, 3); checks in spec 2, agent 0, refused 1; B2 yes (the total rule is one Not checked line); B3 yes; $0.0026.
+- expenses3: B1 yes (2, 3); checks in spec 4, agent 1; B2 yes; B3 yes; $0.0027.
+- expenses4: B1 yes (1, 3); checks in spec 3; B2 yes; B3 yes; $0.0017.
+- expenses5: B1 yes (1, 3); checks in spec 3; B2 yes; B3 yes; $0.0016.
+- aging1: B1 yes (2, 4); checks in spec 4, agent 2; one code question asked (see below); B2 yes (rule 2 one Not checked line); B3 yes; $0.0072.
+- aging2: B1 yes (2, 4); checks in spec 4, agent 3; B2 yes (rule 2 Not checked); B3 yes; $0.0051.
+- aging3: B1 yes (2, 4); checks in spec 6, agent 3; B2 yes; B3 yes; $0.0051.
+- aging4: B1 yes (2, 5); checks in spec 5, agent 2; B2 yes; B3 yes; $0.0052.
+- aging5: B1 yes (1, 5); checks in spec 5, agent 3; B2 yes (rule 2 Not checked); B3 yes; $0.0021.
+
+Bars: expenses B1 5/5 (bar 4 of 5), B2 5/5, B3 5/5; aging B1 5/5, B2 5/5, B3 5/5. Verdict PASS on every bar. n=5 per job is UNDERPOWERED: this is a base-rate leaning (no counterexample in 5), not a rate, and not proof the AI always sends `sheetChecks`.
+
+Read these with it (nothing hidden):
+- B3 wording: the prereg listed `checks` among keys a "declaration/author reply" must not carry. No declaration/author reply exists in these sheet drafts (the close is built by code from the rows). The one reply carrying a `checks` key is the confirm turn's `confirm_plan`, and its `checks` was an empty list in 10 of 10, so no AI-written check text exists in any reply. I score B3 PASS on that reading and say here the literal key list matched confirm_plan. Every sheet check id in the 10 specs matches code-minted `l<N>[ra]<k>`; stage kinds were only `files-changed` and `rubric-step`.
+- B1 uses the wire bodies; in 3 drafts only one row-edit reply carried the list (expenses4, expenses5, aging5), the others two (a first try, then a retry).
+- expenses2: the AI's `sumIf` suggestion had no `column`; bareguard refused it, and the total rule showed once as Not checked with the refusal reason. A refused suggestion is a real way the sum rule goes unchecked (1 of 5 expenses drafts); the bar did not cover it.
+- aging: the "every invoice appears exactly once" rule built a `noDuplicates` check in 2 of 5 drafts (aging3, aging4) and was Not checked in the other 3 (aging1, aging2, aging5). Shown once either way; the unbuilt case is not a refusal line, so it is not in the refused count.
+- aging1 asked one code-made question: the look read the "90+" in the third `~` rule as a column word, ("no column '90+'; 'Amount' has numbers in 8 of 8 rows. Use it?"). The driver answered Agree, which replaced the rule's words with "...61-90, Amount", so that rule's card text was altered by the person's answer (a person would more likely say Drop it). The band check was still built from the line's own `bucket` words. A "90+" word read as a column is a look finding worth logging; no fix here.
+- The first draft cost $0.0068; no draft passed $0.0072. The cap was never a constraint.
+- Not measured here: whether any of these checks is right on a run (that is the live proof, S3 and S5 already test-proven), and the `Revise` path.
