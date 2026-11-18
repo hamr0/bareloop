@@ -19,6 +19,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- A robot-check page is refused: barebrowse's real marker `[BOT CHALLENGE DETECTED — …]` carries trailing text and only the bare marker was matched, so a real challenge page could be read as a page (`src/pagefetch.js`, both match sites). Ported from fwdloop v0.35.1; test-proven with the real marker, not seen live.
 - The `bareloop panel` start banner no longer says "read-only" (the panel drafts, runs and Accepts): it now reads `bareloop panel — http://127.0.0.1:<port> (Ctrl-C to stop)`.
 - The locked "The job" box on the card follows the draft: after an answer rewrites a `~` rule (column tie, an agreed column, any answer kind) the box shows the updated rule while the session is live, as the chat and plan card do (hamr 2026-11-17; page-only, the server card was already right). Test-proven, not yet seen live.
 

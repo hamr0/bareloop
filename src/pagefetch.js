@@ -155,7 +155,7 @@ async function attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWai
       new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`), { deadline: true })), timeoutMs); }),
     ]);
     if (typeof text !== 'string') return { ok: false, retry: false, error: `${u.href} did not come back as text` };
-    if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, retry: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
+    if (/\[BOT CHALLENGE DETECTED[\] ]/.test(text)) return { ok: false, retry: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
     const size = text.trim().length;
     if (size < MIN_PAGE_CHARS) return { ok: false, retry: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
     if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, retry: true, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read`, record: headerRecord(text, Date.now() - t0) };
@@ -179,7 +179,7 @@ async function attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWai
 
 /** @param {unknown} text @returns {boolean} text long enough to pass the near-empty floor, yet with no content outside the site's own chrome (the one case worth re-reading) */
 function isHeaderOnly(text) {
-  return typeof text === 'string' && !/\[BOT CHALLENGE DETECTED\]/.test(text) && text.trim().length >= MIN_PAGE_CHARS && pageContentChars(text) < MIN_CONTENT_CHARS;
+  return typeof text === 'string' && !/\[BOT CHALLENGE DETECTED[\] ]/.test(text) && text.trim().length >= MIN_PAGE_CHARS && pageContentChars(text) < MIN_CONTENT_CHARS;
 }
 
 /** the short failure record of a header-only attempt; the head is secret-masked (the log is append-only) @param {string} text @param {number} ms @returns {AttemptRecord} */
