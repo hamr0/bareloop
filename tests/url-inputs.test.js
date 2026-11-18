@@ -438,3 +438,14 @@ test('proveRubricInputs (settle): the fetch attempts ride the refusal so the dra
   assert.equal(r.ok, false);
   assert.deepEqual(!r.ok && r.attempts, rec);
 });
+
+// fwd F212: barebrowse really writes the marker with trailing words, not the bare `[BOT CHALLENGE DETECTED]`
+test('fetchPageText: barebrowse\'s real marker ("[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]") is refused as a bot challenge, tried once', async () => {
+  const real = `[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n${'x'.repeat(500)}`;
+  const b = scriptedBrowser([real, PARTIAL]);
+  const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 0 });
+  assert.equal(r.ok, false);
+  assert.match(String(!r.ok && r.error), /asked for a human check \(a bot challenge\)/);
+  assert.equal(b.state.connects, 1, 'one try, no retry');
+  assert.equal(b.state.closed, 1);
+});
