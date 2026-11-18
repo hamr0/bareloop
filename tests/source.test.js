@@ -1247,7 +1247,7 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
     'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
     'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination(, \\.\\.\\.\\(amend \\? \\{ amend \\} : \\{\\}\\))?(, alsoText: deliveredTexter\\(spec\\.closeDecl\\))? \\}\\);`),
+  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination(, \\.\\.\\.\\(amend \\? \\{ amend \\} : \\{\\}\\))?(, report: \\{ name: spec\\.job, render: deliveredReporter\\(\\{ closeDecl: spec\\.closeDecl, jobLines: spec\\.jobLines, job: spec\\.job, runNo \\}\\) \\})? \\}\\);`),
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
@@ -1356,7 +1356,7 @@ test('missingDependencies: subfolder job — node_modules already at the subfold
   assert.equal(missingDependencies(tree, 'packages/api'), null);
 });
 
-// ── copyOut `alsoText` (MD2, docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)") ──────────────────────────────
+// ── copyOut `report` (MD2, docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)" + "Ruling 2026-11-18 (later): one markdown report per run") ──────────────────
 
 /** a tree whose output/ holds the given files */
 function treeWith(/** @type {Record<string, string>} */ files) {
@@ -1367,72 +1367,84 @@ function treeWith(/** @type {Record<string, string>} */ files) {
   }
   return tree;
 }
+const dayOf = () => datedDestination(join('/x', 'y.json'), new Date(), 1).split('y-')[1].replace('.json', '');
 
-test('copyOut alsoText: a step file is delivered with its text sibling under the same dated name, both recorded with their own bytes and sha256', async () => {
-  const tree = treeWith({ 'steps/1.json': '{"text":"hello"}' });
+test('copyOut report: ONE file `<name>-<day>.md` at the destination root beside the step files, asked ONCE with every step file, recorded with its own bytes and sha256', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"hello"}', 'steps/2.json': '{"text":"b"}', 'notes.json': '{}', 'steps/3.md': 'x', 'steps/x.json': '{}' });
   const destination = tmp('bareloop-dest-md-');
-  /** @type {[string, string][]} */ const calls = [];
-  const r = await copyOut({ tree, destination, alsoText: (rel, buf) => { calls.push([rel, buf.toString()]); return 'plain hello'; } });
+  /** @type {any[]} */ const calls = [];
+  const r = await copyOut({ tree, destination, report: { name: 'my job', render: (files) => { calls.push(files.map((f) => [f.rel, f.orig.toString(), f.delivered.toString()])); return '# one report'; } } });
   assert.equal(r.stop, null, r.stop ?? undefined);
-  assert.deepEqual(calls, [['steps/1.json', '{"text":"hello"}']]);
-  const day = datedDestination(join(destination, 'steps', 'x.json'), new Date(), 1).split('x-')[1].replace('.json', '');
-  assert.deepEqual(r.files.map((f) => f.path.split('/').at(-1)), [`1-${day}.json`, `1-${day}.md`]);
-  const md = r.files[1];
-  assert.equal(readFileSync(md.path, 'utf8'), 'plain hello');
-  assert.equal(md.bytes, Buffer.byteLength('plain hello'));
-  assert.equal(md.sha256, sha256(readFileSync(md.path)), 'the recorded sha256 is of the written .md');
+  assert.equal(calls.length, 1, 'asked once');
+  assert.deepEqual(calls[0].map((c) => c[0]).sort(), ['steps/1.json', 'steps/2.json'], 'only steps/<n>.json files are offered');
+  const md = r.files.filter((f) => f.path.endsWith('.md') && !f.path.includes('/steps/'));
+  assert.equal(md.length, 1, 'one report, not one per line');
+  assert.equal(md[0].path, join(destination, `my job-${dayOf()}.md`), 'at the destination root, the job name and the dated suffix');
+  assert.equal(readFileSync(md[0].path, 'utf8'), '# one report');
+  assert.equal(md[0].bytes, Buffer.byteLength('# one report'));
+  assert.equal(md[0].sha256, sha256(readFileSync(md[0].path)), 'the recorded sha256 is of the written .md');
+  assert.equal(r.files.filter((f) => /\/steps\/[12]-.*\.json$/.test(f.path)).length, 2, 'the per-step JSON files are delivered exactly as before');
+  assert.equal(existsSync(join(destination, 'steps', `1-${dayOf()}.md`)), false, 'no per-step .md any more');
 });
 
-test('copyOut alsoText: the hook is given the AMENDED bytes (code\'s report lines are in the text file)', async () => {
+test('copyOut report: the hook is given the original bytes AND the AMENDED delivered bytes', async () => {
   const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
   const destination = tmp('bareloop-dest-md-');
-  const r = await copyOut({ tree, destination, amend: () => Buffer.from('{"text":"a + code lines"}'), alsoText: (_rel, buf) => buf.toString() });
+  const r = await copyOut({ tree, destination, amend: () => Buffer.from('{"text":"a + code lines"}'), report: { name: 'j', render: (files) => `${files[0].orig}|${files[0].delivered}` } });
   assert.equal(r.stop, null);
-  assert.equal(readFileSync(r.files[1].path, 'utf8'), '{"text":"a + code lines"}');
+  assert.equal(readFileSync(r.files.at(-1).path, 'utf8'), '{"text":"a"}|{"text":"a + code lines"}');
 });
 
-test('copyOut alsoText: a null hook result writes nothing; only steps/<n>.json files are offered to the hook', async () => {
-  const tree = treeWith({ 'steps/1.json': '{"text":"a"}', 'steps/2.json': '{"text":"b"}', 'notes.json': '{}', 'steps/3.md': 'x', 'steps/x.json': '{}' });
+test('copyOut report: a null hook result writes nothing; with no step file the hook is never asked', async () => {
   const destination = tmp('bareloop-dest-md-');
-  /** @type {string[]} */ const asked = [];
-  const r = await copyOut({ tree, destination, alsoText: (rel) => { asked.push(rel); return rel === 'steps/1.json' ? 'one' : null; } });
+  const r = await copyOut({ tree: treeWith({ 'steps/1.json': '{"text":"a"}' }), destination, report: { name: 'j', render: () => null } });
   assert.equal(r.stop, null);
-  assert.deepEqual(asked.sort(), ['steps/1.json', 'steps/2.json']);
-  assert.equal(r.files.filter((f) => f.path.endsWith('.md')).length, 2, 'steps/1 text + the worker\'s own steps/3.md; nothing for steps/2');
-  assert.equal(r.files.filter((f) => /\/1-.*\.md$/.test(f.path)).length, 1);
-  assert.equal(r.files.filter((f) => /\/2-.*\.md$/.test(f.path)).length, 0);
-});
-
-test('copyOut alsoText: a second same-day delivery lands as -2 for BOTH files; the first pair is untouched', async () => {
-  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
-  const destination = tmp('bareloop-dest-md-');
-  const r1 = await copyOut({ tree, destination, alsoText: () => 'first' });
-  const r2 = await copyOut({ tree, destination, alsoText: () => 'second' });
+  assert.equal(r.files.length, 1);
+  let asked = 0;
+  const r2 = await copyOut({ tree: treeWith({ 'notes.json': '{}' }), destination: tmp('bareloop-dest-md-'), report: { name: 'j', render: () => { asked++; return 'x'; } } });
   assert.equal(r2.stop, null);
-  assert.deepEqual(r2.files.map((f) => f.path.split('/').at(-1).replace(/^1-\d{4}-\d{2}-\d{2}/, '')), ['-2.json', '-2.md']);
+  assert.equal(asked, 0);
+  assert.equal(r2.files.length, 1);
+});
+
+test('copyOut report: a second same-day delivery lands as -2 for the JSON AND the report, with no note; the first pair is untouched', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const destination = tmp('bareloop-dest-md-');
+  const r1 = await copyOut({ tree, destination, report: { name: 'j', render: () => 'first' } });
+  const r2 = await copyOut({ tree, destination, report: { name: 'j', render: () => 'second' } });
+  assert.equal(r2.stop, null);
+  assert.deepEqual(r2.files.map((f) => f.path.split('/').at(-1)), [`1-${dayOf()}-2.json`, `j-${dayOf()}-2.md`]);
+  assert.equal('pairedTaken' in r2.files[1], false, 'the normal same-day second run carries no note');
   assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first');
 });
 
-test('copyOut alsoText: a taken sibling name is never overwritten; the text lands under the next free name, is recorded, and names the paired name it could not take (hamr 2026-11-18)', async () => {
+test('copyOut report: a taken report name is never overwritten; it lands under the next free name, is recorded, and names the name it could not take (hamr 2026-11-18)', async () => {
   const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
   const destination = tmp('bareloop-dest-md-');
-  const r1 = await copyOut({ tree, destination, alsoText: () => 'first' });
-  rmSync(r1.files[0].path); // the json is gone, the .md stays: the next json name is free again, its sibling is not
-  const r2 = await copyOut({ tree, destination, alsoText: () => 'second' });
+  const r1 = await copyOut({ tree, destination, report: { name: 'j', render: () => 'first' } });
+  rmSync(r1.files[0].path); // the json is gone, the .md stays: the next json name is free again, its report name is not
+  const r2 = await copyOut({ tree, destination, report: { name: 'j', render: () => 'second' } });
   assert.equal(r2.stop, null, r2.stop ?? undefined);
   assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first', 'never overwritten');
-  assert.equal(r2.files.length, 2);
   const md = r2.files[1];
   assert.equal(readFileSync(md.path, 'utf8'), 'second');
   assert.notEqual(md.path, r1.files[1].path);
-  assert.match(md.path.split('/').at(-1), /^1-\d{4}-\d{2}-\d{2}-2\.md$/, 'the next free same-day name');
+  assert.match(md.path.split('/').at(-1), /^j-\d{4}-\d{2}-\d{2}-2\.md$/, 'the next free same-day name');
   assert.equal(md.pairedTaken, r1.files[1].path.split('/').at(-1), 'it says which name it wanted');
   assert.equal(md.sha256, sha256(readFileSync(md.path)));
   assert.equal('pairedTaken' in r2.files[0], false, 'the json carries no note');
-  assert.equal('pairedTaken' in r1.files[1], false, 'a text file that got its paired name carries no note');
+  assert.equal('pairedTaken' in r1.files[1], false, 'a report that got its own name carries no note');
 });
 
-test('copyOut without alsoText: the delivery is exactly as before (one file per output file)', async () => {
+test('copyOut report: a job name with a path separator cannot leave the destination', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const destination = tmp('bareloop-dest-md-');
+  const r = await copyOut({ tree, destination, report: { name: '../evil/x', render: () => 'r' } });
+  assert.equal(r.stop, null);
+  assert.equal(dirname(r.files.at(-1).path), resolve(destination));
+});
+
+test('copyOut without report: the delivery is exactly as before (one file per output file)', async () => {
   const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
   const r = await copyOut({ tree, destination: tmp('bareloop-dest-md-') });
   assert.equal(r.files.length, 1);

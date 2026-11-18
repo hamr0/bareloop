@@ -73,17 +73,18 @@ test('run start records the tableSha and writes the numbered view; the close gra
   assert.equal(m.inputs[0].view, 'input/expenses.rows.txt');
   assert.equal(existsSync(join(r.tree, 'input', 'expenses.rows.txt')), true);
   const delivered = readdirSync(join(r.dest, 'steps')).sort();
-  // MD2: the report is the JSON plus its plain text beside it, same dated name; never a separate total file
-  assert.equal(delivered.length, 2, `the JSON and its text: ${delivered.join(', ')}`);
-  assert.equal(delivered.some((f) => f.includes('.total')), false);
-  assert.deepEqual(delivered.map((f) => f.replace(/\.(json|md)$/, '')).filter((v, i, a) => a.indexOf(v) === i).length, 1, 'same dated name');
-  const jsonName = delivered.find((f) => f.endsWith('.json'));
-  const mdName = delivered.find((f) => f.endsWith('.md'));
-  assert.ok(jsonName && mdName);
+  // the report is ONE markdown file for the run at the destination root; the step folder holds only the JSON
+  assert.equal(delivered.length, 1, `only the JSON in steps/: ${delivered.join(', ')}`);
+  assert.equal(delivered.some((f) => f.includes('.total') || f.endsWith('.md')), false);
+  const jsonName = delivered[0];
+  const mdName = readdirSync(r.dest).find((f) => f.endsWith('.md'));
+  assert.match(mdName ?? '', /^expenses-sheet-\d{4}-\d{2}-\d{2}\.md$/, 'one run report named by the job and the day');
   const obj = JSON.parse(readFileSync(join(r.dest, 'steps', jsonName), 'utf8'));
-  const md = readFileSync(join(r.dest, 'steps', mdName), 'utf8');
-  // `l1a1` is a box the worker invented (no check of the signed close reads it: the sum's claim is the rows box): an id no check carries is left out of the .md (hamr 2026-11-18)
-  assert.equal(md, `${obj.text}\n\nRows where Amount > 500: ${OVER.join(', ')}`, 'the .md is renderStepMd of the DELIVERED json bytes: the text with code\'s lines, then the claim named by its check sentence');
+  const md = readFileSync(join(r.dest, mdName), 'utf8');
+  // `l1a1` is a box the worker invented (no check of the signed close reads it): left out (hamr 2026-11-18). The worker's own text sits under the not-checked heading WITHOUT code's report lines; code's lines are the Count / Total bullets.
+  assert.match(md, /^# expenses-sheet — run-1\nPassed · \d{1,2} [A-Z][a-z]{2} \d{4}\n\n## 1\. List the big expenses and what they add up to\n\n### Checked by code\n/);
+  assert.ok(md.includes(`- Rows where Amount > 500: ${OVER.join(', ')}\n- Count: ${OVER.length}\n- Total: ${OVER_SUM.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n### The AI's answer (not checked — you judge it at Accept)\nTotal 99999.99 over 7 rows\n`), md);
+  assert.ok(md.endsWith('Total 99999.99 over 7 rows\n') && !/computed by code|l1a1/.test(md), 'the report lines are not printed twice');
   // both files are recorded on the spine, each with the sha256 of what was written
   const spineDir = readdirSync(r.into).map((d) => join(r.into, d)).find((d) => readdirSync(d).some((f) => /^u-[a-z0-9]+\.jsonl$/.test(f)));
   assert.ok(spineDir, 'the run\'s spine folder');

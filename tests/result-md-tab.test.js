@@ -1,4 +1,4 @@
-// MD3 (docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)"): the Result tab's top-card `Saved` row for the plain .md beside a delivered step file, and `download?view=1`.
+// MD3 (docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)"): the Result tab's top-card `Saved` row for the ONE plain .md run report (ruling 2026-11-18 (later)), and `download?view=1`.
 // REAL archived run mve5y8fa (tests/fixtures/part5) with its delivered step file, plus the .md the delivery now writes beside it and a second `destination-written` record for it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -8,7 +8,6 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makePart5World } from './part5-world.mjs';
 import { createPanelServer, RESULT_FILE_GONE, RESULT_FILE_CHANGED, RESULT_MD_RENAMED } from '../src/panel/server.js';
-import { renderStepMd } from '../src/resultmd.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STEP = join(HERE, 'fixtures', 'part5', 'mve5y8fa.step-1-2026-10-18.json');
@@ -26,8 +25,8 @@ async function world({ md = true, pairedTaken = null } = {}) {
   const text = readFileSync(spine, 'utf8');
   const rec = JSON.parse(text.split('\n').find((l) => l.includes('"type":"destination-written"')));
   let out = text.replace(rec.path, json);
-  const mdPath = join(dir, '1-2026-10-18.md');
-  const body = renderStepMd(JSON.parse(readFileSync(STEP, 'utf8')));
+  const mdPath = join(dirname(dir), 'job-2026-10-18.md'); // the ONE run report sits at the destination root, not in steps/
+  const body = '# job — run-1\nPassed · 18 Oct 2026\n\n## 1. Find the flights\n';
   if (md) {
     writeFileSync(mdPath, body);
     out += `${JSON.stringify({ type: 'destination-written', path: mdPath, declared: dir, bytes: Buffer.byteLength(body), sha256: sha(Buffer.from(body)), seq: 98, ...(pairedTaken ? { pairedTaken } : {}) })}\n`;
@@ -45,16 +44,16 @@ async function world({ md = true, pairedTaken = null } = {}) {
 test('payload: the delivered .md is listed with its index into the delivered list, its name and state ok; the bottom list still holds both files', async () => {
   const w = await world();
   const r = (await w.get('/api/runs/mve5y8fa/result')).body;
-  assert.deepEqual(r.md, [{ i: 1, name: '1-2026-10-18.md', state: 'ok', words: null }]);
+  assert.deepEqual(r.md, [{ i: 1, name: 'job-2026-10-18.md', state: 'ok', words: null }]);
   assert.equal(r.delivered.length, 2);
-  assert.deepEqual(r.delivered.map((d) => d.name), ['1-2026-10-18.json', '1-2026-10-18.md']);
+  assert.deepEqual(r.delivered.map((d) => d.name), ['1-2026-10-18.json', 'job-2026-10-18.md']);
 });
 
 test('payload: a .md saved under a new name carries code\'s note naming the paired name it could not take; one that got its own name carries none; the page types no words', async () => {
-  const w = await world({ pairedTaken: '1-2026-10-18.md' });
+  const w = await world({ pairedTaken: 'job-2026-10-18.md' });
   const r = (await w.get('/api/runs/mve5y8fa/result')).body;
-  assert.equal(r.md[0].note, RESULT_MD_RENAMED('1-2026-10-18.md'));
-  assert.equal(r.md[0].note, 'saved under a new name because 1-2026-10-18.md was already taken');
+  assert.equal(r.md[0].note, RESULT_MD_RENAMED('job-2026-10-18.md'));
+  assert.equal(r.md[0].note, 'saved under a new name because job-2026-10-18.md was already taken');
   const plain = (await (await world()).get('/api/runs/mve5y8fa/result')).body;
   assert.equal('note' in plain.md[0], false);
   assert.match(PAGE, /m\.note/);
@@ -92,7 +91,7 @@ test('download?view=1: a .md opens inline as text/plain with nosniff; without vi
   assert.equal(v.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(Buffer.from(await v.arrayBuffer()).toString('utf8'), w.body);
   const a = await fetch(`${w.base}/api/runs/mve5y8fa/download?i=1`);
-  assert.match(a.headers.get('content-disposition'), /^attachment; filename="1-2026-10-18\.md"/);
+  assert.match(a.headers.get('content-disposition'), /^attachment; filename="job-2026-10-18\.md"/);
   const j = await fetch(`${w.base}/api/runs/mve5y8fa/download?i=0&view=1`);
   assert.match(j.headers.get('content-disposition'), /^attachment/);
   const ign = await w.get('/api/runs/mve5y8fa/download?i=1&view=1&path=/etc/passwd');
