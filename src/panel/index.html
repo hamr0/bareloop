@@ -4675,7 +4675,11 @@
         ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
       '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
       resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div>' +
-      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") + '</div>';
+      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") +
+      (data.md || []).map(function(m){
+        return resultField("Saved", m.words ? '<div class="ro-value" data-testid="result-md-gone">' + escapeXml(m.name) + ' \u2014 ' + escapeXml(m.words) + '</div>'
+          : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a></div>');
+      }).join("") + '</div>';
     var ownPages = (data.pages || []).length >= 2;
     (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
     if(data.gap){

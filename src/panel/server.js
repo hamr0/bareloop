@@ -1792,6 +1792,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const stages = rubricStagesOf(spec);
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
+  const mdFiles = delivered.flatMap((d, i) => (d.path.toLowerCase().endsWith('.md')
+    ? [{ i, name: basename(d.path), state: read[i].state, words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null) }] : []));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
   // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
@@ -1911,6 +1913,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
       i, path: d.path, name: basename(d.path), bytes: d.bytes, state: read[i].state,
       words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null),
     })),
+    // MD3: the plain text files delivered beside the step files (their own `delivered` entries, same states and words); absent when the run delivered none (a red or an old run)
+    ...(mdFiles.length ? { md: mdFiles } : {}),
     gap,
   };
 }
@@ -1920,11 +1924,11 @@ const DOWNLOAD_TYPES = { '.json': 'application/json', '.md': 'text/plain', '.txt
 
 /**
  * `GET /api/runs/:runid/download?i=<n>` — delivered file `n` (an index into the run's own `destination-written` list), or why not. The path is
- * the record's, never the request's; the sha256 must still match the record.
- * @param {string} runid @param {unknown} index @param {{ home?: string }} opts
- * @returns {{ok: true, name: string, type: string, buf: Buffer}|{ok: false, code: number, error: string}}
+ * the record's, never the request's; the sha256 must still match the record. `view` (`?view=1`, MD3): a `.md` / `.txt` file is served inline (opens in the tab), any other file stays an attachment.
+ * @param {string} runid @param {unknown} index @param {{ home?: string }} opts @param {boolean} [view]
+ * @returns {{ok: true, name: string, type: string, buf: Buffer, inline: boolean}|{ok: false, code: number, error: string}}
  */
-export function getRunDownload(runid, index, opts = {}) {
+export function getRunDownload(runid, index, opts = {}, view = false) {
   const row = findRunRow(runid, opts);
   if (!row || row.via === 'import' || !existsSync(row.spine)) return { ok: false, code: 404, error: 'no such run' };
   const delivered = deliveredOf(parseJsonl(row.spine).records);
@@ -1934,7 +1938,7 @@ export function getRunDownload(runid, index, opts = {}) {
   if (got.state !== 'ok') return { ok: false, code: 409, error: got.state === 'gone' ? RESULT_FILE_GONE : RESULT_FILE_CHANGED };
   const name = basename(delivered[i].path);
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
-  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf };
+  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf, inline: view && (ext === '.md' || ext === '.txt') };
 }
 
 /**
@@ -4386,14 +4390,14 @@ export function handleRequest(req, res, opts) {
       return;
     }
     if (sub === 'download') {
-      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home });
+      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home }, url.searchParams.get('view') === '1');
       if (!got.ok) { sendText(res, got.code, got.error); return; }
       // the name is the delivered file's own basename; quotes and control characters never reach the header
       const plain = got.name.replace(/[^A-Za-z0-9._-]/g, '_');
       res.writeHead(200, {
         'content-type': `${got.type}; charset=utf-8`,
         'content-length': got.buf.length,
-        'content-disposition': `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
+        'content-disposition': got.inline ? 'inline' : `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
         'x-content-type-options': 'nosniff',
       });
       if (method === 'HEAD') res.end(); else res.end(got.buf);

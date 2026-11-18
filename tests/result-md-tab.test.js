@@ -39,7 +39,7 @@ async function world({ md = true } = {}) {
   test.after(() => close());
   const base = `http://127.0.0.1:${port}`;
   const get = async (p) => { const r = await fetch(`${base}${p}`); const t = await r.text(); let b = t; try { b = JSON.parse(t); } catch { /* text */ } return { status: r.status, body: b, headers: r.headers, raw: t }; };
-  return { ...w, json, mdPath, body, get };
+  return { ...w, json, mdPath, body, base, get };
 }
 
 test('payload: the delivered .md is listed with its index into the delivered list, its name and state ok; the bottom list still holds both files', async () => {
@@ -84,7 +84,9 @@ test('download?view=1: a .md opens inline as text/plain with nosniff; without vi
   assert.match(a.headers.get('content-disposition'), /^attachment; filename="1-2026-10-18\.md"/);
   const j = await fetch(`${w.base}/api/runs/mve5y8fa/download?i=0&view=1`);
   assert.match(j.headers.get('content-disposition'), /^attachment/);
-  for (const q of ['i=1&view=1&path=/etc/passwd', 'i=../x&view=1', 'i=9&view=1']) assert.equal((await w.get(`/api/runs/mve5y8fa/download?${q}`)).status, 404, q);
+  const ign = await w.get('/api/runs/mve5y8fa/download?i=1&view=1&path=/etc/passwd');
+  assert.equal(ign.raw, w.body, 'a path in the request is ignored: the record\'s file is served');
+  for (const q of ['i=../x&view=1', 'i=9&view=1', 'path=/etc/passwd&view=1']) assert.equal((await w.get(`/api/runs/mve5y8fa/download?${q}`)).status, 404, q);
   rmSync(w.mdPath);
   assert.equal((await w.get('/api/runs/mve5y8fa/download?i=1&view=1')).status, 409, 'a gone file is a state in words, never content');
 });
