@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CheckBlock } from '../src/checkblock.js';
-import { cardOfClose, proseLine } from '../src/rubricstep.js';
+import { cardOfClose, PROSE_WORDS } from '../src/rubricstep.js';
 
 const TEXT = 'Release notes\n## [0.54.1] - 2026-11-04\nFixed the panel. Amount due is 40 dollars.\n';
 // line 1 has a `~` rule; line 2 is plain prose that names the heading it wants found
@@ -57,7 +57,7 @@ test('a text step with no `~` rule still gives its Not checked line, and a facts
   b2.fromJob(noRule); b2.setGuards(['changed-from-seed']); b2.addLook([], []);
   const v2 = b2.closeView();
   const decl2 = { genre: 'text', lang: 'text', stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: {} }, ...v2.stages], list: v2.list, picks: v2.picks };
-  assert.ok(cardOfClose({ closeDecl: decl2, jobLines: noRule }).notChecked.includes(proseLine(1)), JSON.stringify(cardOfClose({ closeDecl: decl2, jobLines: noRule }).notChecked));
-  assert.equal(cardOfClose({ closeDecl, jobLines: JOB }).notChecked.includes(proseLine(2)), false);
+  assert.ok(cardOfClose({ closeDecl: decl2, jobLines: noRule }).notChecked.includes(`line 1: ${PROSE_WORDS}`), JSON.stringify(cardOfClose({ closeDecl: decl2, jobLines: noRule }).notChecked));
+  assert.equal(cardOfClose({ closeDecl, jobLines: JOB }).notChecked.includes(`line 2: ${PROSE_WORDS}`), false);
   assert.ok(b.rows.length > 0);
 });
