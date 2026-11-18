@@ -79,6 +79,7 @@ import {
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { filterUnsure } from '../ticketlabels.js';
+import { sheetRowsOf, sheetFoundLine } from '../sheetrows.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -1839,6 +1840,15 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
       // run's own tree still holds exactly it (sha256 against the output-judged record), else the page says there is no saved result to show
       const j = readJudged(records, n, treeRootForRun(row));
       if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); out.fromCheck = true; } catch { obj = null; } }
+    }
+    // S5: a passed check of a sheet line says what was found (the claim's own count or value, never a cell's text); a failed one keeps bareguard's gap words in `why`
+    const sheetPart = Array.isArray(st.params.parts) ? st.params.parts.find((/** @type {any} */ p) => p && p.class === 'sheet' && Array.isArray(p.checks)) : null;
+    if (sheetPart && obj && typeof obj === 'object' && obj.claims && typeof obj.claims === 'object') {
+      const idOf = new Map(sheetRowsOf({ stages: [st] }, jobLines).filter((x) => x.id !== undefined).reverse().map((x) => [x.key, x.id]));
+      out.checkRows = out.checkRows.map((/** @type {any} */ r) => {
+        const check = r.key && r.result === 'passed' ? sheetPart.checks.find((/** @type {any} */ c) => c && c.id === idOf.get(r.key)) : null;
+        return check ? { ...r, found: sheetFoundLine(check, obj.claims) } : r;
+      });
     }
     if (fp) {
       out.source = fp.source;

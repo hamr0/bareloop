@@ -4355,7 +4355,7 @@
     if(!rows.length && !gaps.length) return "";
     var mark = function(res){ return res === "passed" ? '<span class="rs-ok">\u2713</span>' : res === "failed" ? '<span class="rs-bad">\u2717</span>' : '<span class="hint">\u00B7</span>'; };
     return resultField("Each check", '<div class="ro-value" data-testid="result-checkrows">' + rows.map(function(r){
-      return '<div data-testid="result-checkrow" data-result="' + escapeXml(r.result) + '">' + mark(r.result) + " " + escapeXml(r.text) + byTagOf(r.by) + (r.result === "failed" && r.why ? ' <span class="hint">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
+      return '<div data-testid="result-checkrow" data-result="' + escapeXml(r.result) + '">' + mark(r.result) + " " + escapeXml(r.text) + byTagOf(r.by) + (r.result === "passed" && r.found ? ' <span class="hint">\u2014 ' + escapeXml(r.found) + "</span>" : "") + (r.result === "failed" && r.why ? ' <span class="hint">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
     }).join("") + gaps.map(function(g){ return '<div data-testid="result-checkrow" data-result="failed"><span class="rs-bad">\u2717</span> ' + escapeXml(g) + "</div>"; }).join("") + "</div>");
   }
   function resultTextLine(line){

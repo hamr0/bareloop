@@ -35,6 +35,32 @@ export function sheetCheckName(check) {
 /** the "covers ..." words of one check @param {string[]} rules @returns {string} "" when it covers none */
 export const coversWords = (rules) => rules.map((r) => `covers "${r}"`).join(' · ');
 
+/**
+ * What the step claimed for one check, in plain words (a green check's "found"): a number or yes/no as it is, else a count of rows / values / groups. Null when the claim has nothing to say (a `table` check, a missing box). A string claim is
+ * never repeated, because it is cell text. Copied from fwdloop src/sheetblock.js@v0.35.0 `sheetFoundWords`, words as they are.
+ * @param {any} check @param {unknown} claims the step's answer @returns {string|null}
+ */
+export function sheetFoundWords(check, claims) {
+  if (!isRec(check) || typeof check.claim !== 'string' || !isRec(claims) || !isRec(/** @type {any} */ (claims)[check.claim])) return null;
+  const box = /** @type {Record<string, any>} */ (/** @type {any} */ (claims)[check.claim]);
+  const plural = (/** @type {number} */ n, /** @type {string} */ one, /** @type {string} */ many) => `${n} ${n === 1 ? one : many}`;
+  if (typeof box.value === 'number' || typeof box.value === 'boolean') return typeof box.value === 'boolean' ? (box.value ? 'yes' : 'no') : String(box.value);
+  if (Array.isArray(box.rows)) return plural(box.rows.length, 'row', 'rows');
+  if (Array.isArray(box.keys)) return plural(box.keys.length, 'row', 'rows');
+  if (Array.isArray(box.values)) return plural(box.values.length, 'value', 'values');
+  if (Array.isArray(box.totals)) return plural(box.totals.length, 'group', 'groups');
+  if (isRec(box.days)) return plural(Object.keys(box.days).length, 'row', 'rows');
+  if (isRec(box.bands)) return plural(Object.keys(box.bands).length, 'row', 'rows');
+  return null;
+}
+
+/** the Result tab's line for a check that passed: `rows checked — 17 rows` (fwdloop's composition, `sheetblock.js` `e.found`) @param {any} check @param {unknown} claims @returns {string} */
+export function sheetFoundLine(check, claims) {
+  const name = sheetCheckName(check);
+  const f = sheetFoundWords(check, claims);
+  return f === null ? `${name} checked` : `${name} checked \u2014 ${f}`;
+}
+
 /** the words of one sheet check, its tag aside: the ONE composition (the card, the Job tab and the Suggested list all use it) @param {string} name @param {string} words @param {string} cw @returns {string} */
 export const sheetPlainText = (name, words, cw) => [name, ...(words === name ? [] : [words]), ...(cw ? [cw] : [])].join(' — ');
 
