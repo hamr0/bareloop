@@ -5113,3 +5113,51 @@ Rules (built exactly so):
 Rulings 2026-11-18 (later still), hamr: "your picks".
 - (1) The report ALWAYS lists `Count:` then `Total:`, whatever the order of the signed checks (it followed the check order, so a job with its sum check first printed Total first).
 - (2) Markdown headings inside the worker's own answer text are left as they are: not built.
+
+## Addendum 2026-11-18: shape jobs (itemShape)
+
+Status: rulings given, build not approved; POC first. Drafted 2026-11-18 on hamr's order, from source: no code changed, no AI or provider call. Rulings are in PRD v1.142 and v1.143; this addendum turns them into a build spec with the call site of every delivery clause. Lines were checked against the source of 2026-11-18 (HEAD `dcb4775b`).
+
+### Rulings (hamr 2026-11-18)
+
+- Same flow as every rubric job. No new checkbox or job kind.
+- The person writes one `~` rule per field. The drafting AI proposes "the answer is a list of items with these fields" and may propose extra fields as `!` rows. Code checks each field against bareguard's kind menu and decides.
+- Every bound in a signed field (min/max/gt/lt, chars/words, oneOf values, entry counts) must appear in the person's own words (a `~` rule or the job line). An AI-invented bound is refused by code (same law as `groundedLiterals` in src/sheetbuild.js). A bound on an `!` field the AI proposes must also be grounded, or that field is signed with no bound.
+- When rules and a shape could both fit, the AI says so (typed yes/no); code turns it into one of the 3 asks (Agree / own words). Otherwise no ask.
+- Item count: the AI picks which inputs give one item each from the REAL input labels (enum; e.g. `resume-1`, `resume-2`, not `job-description`); code proves the labels exist and signs minItems = maxItems = that count. Else the count comes only from the person's words.
+- A job line is exactly one class: facts, sheet or shape, never mixed.
+- Truth for now: code checks shape; the person judges truth at Accept; the card says Not checked for what is not checked (e.g. whether each summary is true). Per-item cite is bareguard's part 2.
+- No PDFs yet: resumes come as text copies (.txt/.md). PDF reading is out of scope.
+- `required` means present only; a person's "each item has a title" signs `required + minChars: 1`.
+
+### The bareguard check (ruling #83, build feat/item-shape)
+
+`itemShape` checks one answer field, `results`, as a list of items. It takes `minItems`/`maxItems` and `fields`, each field `{kind, required, bounds}`. Kinds: `text`, `number` (fromText), `oneOf`, `money`, `date`, `time`, `url`, `object` (depth 2) and `list` (of scalars, with `minEntries`/`maxEntries`, `unique`). Reds: `count-under`, `count-over`, `not-a-list`, `missing`, `unreadable`, `too-many`; item reds read `#<i>:<path>:<reason>` (0-based item, dotted path, `name[i]` for a list entry). Field names may not contain `.` `:` `[` `]` or a reserved reason word (code must refuse such a name before signing). bareloop needs the bareguard release that carries it and a pin bump (`bareguard` is `^0.36.0` in package.json:32 today; `grep itemShape src` finds nothing yet).
+
+### Call sites (one per delivery clause)
+
+1. Offer. src/rowedit.js `rowEditSchema` (line 78, beside the `sheetChecks` property at 93; `rowEditChannel` 100) gets an optional `itemShape` property. A new offer builder modeled on src/sheetoffer.js `sheetChecksProp` (39) and `sheetOfferRules` (83); its prompt text is registered in src/promptregisters.js (the sheetoffer entry is at line 64). Wired in src/authorflow.js next to the THE SHEET CHECKS block (2670-2681, `rowEditChannel(ticket, sheetProp)` call at 2791); strip-and-keep beside 2803-2808 (the `sheetChecks` strip), so the shape is never part of the declaration.
+2. Build or refuse. A new builder beside src/sheetbuild.js `buildSheetChecks`, called where it is called (src/authorflow.js 2907 and 3086). It does the grounding check (sheetbuild.js 90 uses bareguard `groundedLiterals`; the shape's bounds need the same law, checked against the `~` rules and the job line), the menu check (kind, name legality) and the label enum check for the item count.
+3. Ask. The "rules or shape" ask goes through src/blockasks.js `questionsOfBlock` (13) and `applyChoices` (30), as a `reading`-style ask (`counted: true`, so it counts toward the cap). The 3-ask cap site is traced: `MAX_QUESTIONS = 3` at src/authorflow.js:130; the counted asks are compared to it in src/authorjob.js 685 (and the stop that lists every ask at 769); src/checkblock.js:806 says the cap is the caller's. So the new ask joins the counted list and costs one of the 3.
+4. Rows. src/checklist.js: add `'shape'` to the row `kind` union (typedef line 45); src/checkblock.js: a `setShape` setter beside `setSheet` (167) that adds `[you]` rows (one per `~` field rule) and `[agent]` rows (extra fields, droppable, held out of the close when dropped, offered again under Suggested); the line-class exclusion beside checkblock.js 528-529 (a line is a sheet line or a facts line; shape joins that test). Final-card Drop/Add like src/panel/authorsession.js `sheetFinalEdit` (1418, called from 1566-1571).
+5. Sign. src/checkblock.js a `buildShapePartOf` beside `buildSheetPartOf` (569, `buildSheetPart` imported from src/sheetclaims.js:22); src/rubricstep.js `PART_CLASSES` (197, new `shape`) and `rubricStepShapeReds` (249; the "not both" rule at 296-299 grows to cover shape); src/declaredclose.js `SIGNED_KINDS` (111); src/rowresults.js `LINE_KINDS` (16).
+6. Run. The worker brief in src/rubricstep.js `lineBriefs` (81): the exact file contract `{"results":[{...fields}]}` plus one worked example, built by code from the signed shape (never model-written). `flattenStep` (433) must pass the shape answer's `results` through (today `results` only reaches `factClaims`, for a fact part). `buildStepSpec` (322) adds the `itemShape` check. `gradeStep`/`checkStep` stay unchanged.
+7. Words. src/rubricstep.js `plainStepGap` (463) gets a branch for itemShape gaps, e.g. `item 2: summary is too long (201 characters, at most 200)` (bareguard's 0-based `#1` shown as "item 2"); `redCount` (574) counts item reds.
+8. Views. src/rubricstep.js `checksOfClose` (1115) and `cardOfClose` (1193) rows; src/rowresults.js per-row results; src/resultmd.js `stepSection` (116) renders a shape answer as `#### Item N` blocks (list fields as lists).
+
+### POC first (riskiest assumption: can the drafting AI map `~` rules to the right shape?)
+
+- Harness: simple. Give the AI the job text, the inputs and the kind menu; ask for the shape; code applies the grounding and menu checks. DeepSeek flash direct (name provider and model first when proposing the run). Cap a few cents; size by the measured per-call cost of the first calls.
+- Jobs (5): a research tracker (title, status in progress/closed/finished, summary under 200 chars); a resume readout (job-description + resume-1, resume-2: name, matching words list, not-matching words list, blurb under 60 words; one item per resume); and 3 more from real past inputs (a flights page as a shape job, the Dell prices page, the changelog). hamr supplies his resume as a text copy plus one made-up resume; kept out of every repo and commit.
+- Pass bar, frozen with a sha before any call: every `~` rule maps to exactly one field of the right kind in at least 4 of 5 jobs; 0 invented bounds survive code; the resume job's item count picks exactly resume-1 and resume-2. n is small: declared UNDERPOWERED; a PASS proves the mapping can work, not its rate.
+- The prereg lives under `.claude/scratch/shape-poc/` and its sha is recorded before any call.
+
+### Out of scope
+
+PDF/DOCX reading; per-item cite (bareguard part 2); conditional required (ticket actions); export.
+
+### Checked against source (differences from the order's first draft)
+
+- src/resultmd.js `stepSection` would not throw on a shape answer: `isResultList` (line 42) needs every item to carry a `values` record, so an item without `values` makes `hasResults` false and the section is silently dropped (null when there is no `text`). Worse, a shape field that is itself named `values` and is an object would be rendered as a facts result. Either way it needs the explicit shape branch (clause 8).
+- `results` is already the facts-line file key (`{"results":[{"quote","values"}]}`, src/rubricstep.js 45-48, 103-107). A shape line reuses the name; that is safe only because a line is one class, so the brief, `flattenStep` and `stepSection` must pick by the line's signed class, never by the key.
+- `buildSheetChecks` is called at src/authorflow.js 2907 and 3086 (3083 is its typedef line).
