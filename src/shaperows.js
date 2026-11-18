@@ -5,7 +5,7 @@
 //   { class: 'shape', text, fields: [{ name, spec: {kind, required?, ...bounds}, rule?: <the ~ rule number it comes from>, row?: 'agent' }], minItems?, maxItems?, rules?: [<rule numbers>] }
 // Rows of one shape line: a `[you]` row per `~` rule that has a field (the rule's own row, kind `rule`), an `[agent]` row per extra field (kind `shape`, key `L<n>.shape.<name>`), and the line's `[default]` row (key
 // `L<n>.$shape`): the answer is a list of items, with the item count when the person's words gave one.
-import { createRubric } from 'bareguard';
+import { createRubric, rubricVocabulary } from 'bareguard';
 import { lineRules } from './rubricstep.js';
 import { nameWhy, shapeNameRules, SHAPE_KINDS } from './shapemenu.js';
 
@@ -145,6 +145,9 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
 /** the fields that say what a shape field IS: all but the names code gives it (the row's own key) — two drafts spell the same field alike @param {{name: string, kind: string, required?: boolean, bounds?: Record<string, any>}} f @returns {Record<string, any>} */
 export const shapeFieldBody = (f) => ({ name: f.name, kind: f.kind, required: f.required === true, bounds: f.bounds ?? {} });
 
+/** bareguard's own worked example item of `itemShape` (its address and values are bareguard's, not ours) @type {Record<string, any>} */
+const WORKED = /** @type {any} */ (rubricVocabulary).rules.itemShape.example.output.items[0];
+
 /** the answer field the `itemShape` check reads: the shape answer's one list (the step file is `{"results": [...]}`) */
 export const SHAPE_FIELD = 'results';
 
@@ -210,7 +213,7 @@ export function shapeExampleItem(fields) {
       case 'money': { const c = Array.isArray(s.currency) ? s.currency[0] : s.currency; const u = Array.isArray(s.unit) ? s.unit[0] : s.unit; const a = s.min ?? (s.gt !== undefined ? s.gt + 1 : s.max ?? (s.lt !== undefined ? s.lt - 1 : 10)); return typeof c === 'string' && c.length === 1 ? `${c}${a}` : `${a} ${u ?? c ?? ''}`.trim(); }
       case 'date': return s.min ?? '2026-01-15';
       case 'time': return s.min ?? '09:30';
-      case 'url': return 'https://example.com/page';
+      case 'url': return WORKED.link;
       case 'boolean': return s.equals ?? true;
       case 'list': return isRec(s.of) ? [one(s.of)] : [];
       default: return 'value';

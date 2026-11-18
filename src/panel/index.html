@@ -4417,8 +4417,8 @@
     }
     return h + resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }
-  function resultLineCard(line, own, note, detail, many){
-    if(line.kind === "shape") return shapeResultCard(line, detail || {}, !!many);
+  function resultLineCard(line, own, note){
+    if(line.kind === "shape") return shapeResultCard(line, resultDetail || {}, !!(resultData && (resultData.lines || []).length > 1));
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
       (own ? resultPageLink(line.page, note, "result-page-line") : "") +
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) + resultCheckRowsHtml(line) +
@@ -4718,7 +4718,7 @@
           : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a>' + (m.note ? ' \u2014 <span data-testid="result-md-note">' + escapeXml(m.note) + '</span>' : '') + '</div>');
       }).join("") + '</div>';
     var ownPages = (data.pages || []).length >= 2;
-    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote, detail, (data.lines || []).length > 1); });
+    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
