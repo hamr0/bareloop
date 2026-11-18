@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- Shape jobs (itemShape), the build that does not need the new bareguard (branch `feat/shape-jobs`; `docs/product/ITEM33-BUILD.md` "Addendum 2026-11-18: shape jobs"). `src/shapemenu.js` names the field-kind menu once (`boolean` with `equals` included) and the name rules; `src/shapebuild.js` builds or refuses the shape of a job line from the AI's typed suggestion by the code rules R1-R5 (a bound only from that field's own `~` rule, an AI-added field with no word of the job is Suggested, `oneOf` keeps each grounded value, an item count only from the person's "per/each <input>", `equals` only on a rule's own field); `src/shapeoffer.js` offers the row-edit turn an optional `itemShape` property (`src/rowedit.js`) with its words (a prompt register), wired in `src/authorflow.js` next to the sheet checks. `CheckBlock.setShape` holds the rows: `[you]` per rule field, `[agent]` extra fields (job-derived on, no-word Suggested, Drop and Add, kept for a Revise in the record's `shapeDropped`), one `[default]` row, the line-class exclusion, the truth of the items Not checked; "rules or shape could both fit" is one counted reading-style ask. `src/shapewords.js` words an `itemShape` gap (`item 2: "summary" is too long (201 characters, at most 200)`); `src/shaperows.js` and the card, per-row results and report (`#### Item N` blocks) read a signed `shape` part. OFF until the bareguard that carries `itemShape` is pinned (`shapeAvailable()` is false on 0.36): no job changes. Not yet built: signing the part and the run's brief (clauses 5 and 6).
+
 ## [0.60.0] - 2026-11-18
 
 ### Added
