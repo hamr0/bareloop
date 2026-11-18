@@ -65,7 +65,7 @@ export function planFromSpec(spec, ledger = null) {
         const fromLine = Array.isArray(s.fromLine) && s.fromLine.length ? s.fromLine.filter(Number.isInteger) : null;
         // PART 1b: a rubric-step stage is shown as the checks it RUNS — one code-worded row per fact, per count, per limit — read by
         // the same reader (`checksOfClose`) the confirm card and the sign-time invariant use, so the Job tab cannot differ from them
-        const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s], picks: spec.closeDecl.picks, list: spec.closeDecl.list }).filter((r) => r.line !== 0) : [];
+        const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s], picks: spec.closeDecl.picks, list: spec.closeDecl.list }, Array.isArray(spec.jobLines) ? spec.jobLines : null).filter((r) => r.line !== 0) : [];
         // a guard stage the signed list holds as a job-level `$` row (piece 2) is that row: one check that serves no one line, drawn once, never "Always checked"
         const guardRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) ? spec.closeDecl.list.find((/** @type {any} */ r) => r && r.kind === 'guard' && r.state === 'built' && r.key === guardKeyOf(s.name)) : null;
         if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];

@@ -12,6 +12,7 @@ import {
   GRACE_MS, validateSchedule, due, nextSlot, armTrigger as arm, recordFire as fire,
 } from '../src/triggerclock.js';
 import { readLedger } from '../src/triggerledger.js';
+import { track } from './tmp-track.mjs';
 
 const SIG = 'sig-test';
 const armTrigger = (f, now) => arm(f, now, SIG);
@@ -19,7 +20,7 @@ const recordFire = (f, d, now) => fire(f, d, now, SIG);
 const readRows = (f) => readLedger(f).rows;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const dir = () => mkdtempSync(path.join(tmpdir(), 'tclock-'));
+const dir = () => track(mkdtempSync(path.join(tmpdir(), 'tclock-')));
 const at = (y, mo, d, h, mi, s = 0) => new Date(y, mo - 1, d, h, mi, s).getTime();
 // 2026-10-12 is a Monday.
 const daily9 = { kind: 'daily', hour: 9, minute: 0 };

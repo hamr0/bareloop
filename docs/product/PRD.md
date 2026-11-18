@@ -2124,7 +2124,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 
 ### Carry memo: bigger, with check results and earlier failures; seed note ON (v1.121 — 2026-10-31; hamr rulings 2026-10-31)
 
-- **Carry note:** cap 12000 characters; each try line says how the try ended and its check result; an "Earlier failures (folded):" section carries each failed check's whole text; the last try's failure is left out only when that try failed (its retry prompt carries it), a failure from a try later passed stays. F261.
+- **Carry note:** cap 12000 characters; each try line says how the try ended and its check result; an "Earlier failures (folded):" section carries each failed check's whole text; the last try's failure is left out only when the next ask really is a retry (its prompt carries the retry gap); after a replan it stays in the memo, a failure from a try later passed stays. F261.
 - **Seed note ON by default:** the job's own failing `count-not-worse` text at start goes to the planner's first draft and, as the memo's `at start` entry, to every step and fix worker. Spec field `seedNote`, absent = on, `false` = off. F262.
 - **Secret inventory:** left as known token shapes only; a `NAME=value` style secret is not masked (F261 ruling).
 - **NEXT (hamr 2026-10-31), plan only:** A (map on a big-file read) tested with M2 after a $0 read and a signed prereg; litectx index plan (bump, `lc.indexed` fallback, index once at run start); then a larger ON/OFF proof of the memo. Details in `docs/wiki/HARNESS2.md` section 9.
@@ -2276,6 +2276,8 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 **Backlog (PARKED until after the check-ledger release): Old-run stats scan, then delete old runs** — a one-time $0 script (no AI) reads every archived run record (spines in `~/PycharmProjects/bareloop-patients`, `~/.config/bareloop/panel-sessions`, and the few under the bareloop repo) and writes one stats file with several views: by job, by provider/model, verdict, cost, wall time, failure kinds, tries to green. hamr reads it and says if it is enough; then `bareloop-patients` and old panel runs are deleted and hamr's own `!` line trims `~/.config/bareloop/runs.jsonl` with a backup first. Saved winning plans (`bareloop-patients/bridges`, `bundles`) are kept or moved into `~/.config/bareloop`, never deleted. The pinned `~/PycharmProjects/bareloop-close` stays. Agreed by hamr 2026-11-13; code goes to a sonnet builder.
 
+**Backlog (PARKED, discussed 2026-11-17, not to build now): A sheet as a list of same-shape jobs** — one signed job shape, many rows: the job names fields (e.g. from, to, price) and each sheet row fills them; ONE ROW = ONE SEPARATE RUN of the same signed workflow (hamr 2026-11-17), each with its own verdict, Resume and Rerun, plus a combined row-by-row view. The sheet's columns are values only, never new rules (a row wanting "nonstop only" is a different job). At $0 before spend: the sheet must carry every field the job uses, else nothing runs; a row with a missing or unreadable field is refused by row number while the others run. The card shows the total ceiling (rows × cap) before signing; the monthly limit applies. Builds on Reuse workflow (signed shape), place rules (code swaps a value in before spend, stops at $0 if missing) and folder triggers (N items = N runs back to back). Limit: a row that needs a fresh web search per row is search-as-input, still PARKED after POCs v3-v5 failed. Related: F347 (mixed page + sheet job, a line not tied to an input). Build only after the sheet (CSV) jobs ship, with a spec and a POC first.
+
 ### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (v1.134 — 2026-11-14)
 
 - [x] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
@@ -2302,3 +2304,61 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 - [ ] Repo jobs on the one list under hamr's law (a rule shows as kept only when code proves it, else Not checked) — spec signed 2026-11-15, `docs/product/ITEM33-BUILD.md` Addendum 2026-11-15 (d); built on feat/one-list-rubric, not live-proven.
 
+
+### Up to 2 MCP servers per job (v1.138 — 2026-11-17)
+
+- [ ] hamr ruled a job may declare up to 2 MCP servers instead of 1. `mcp` in a job spec is today a single `{server, tools}` object (validator `src/job.js` ~line 282; also `src/authorreadout.js:679`, `src/cardschedule.js`); it would become a list of at most 2 entries, each with its own signed tools list. Schema change: BUILD PARKED until hamr gives the go.
+- Ruling: MCPs are NOT pooled into one catalogue (steps are small, the signed per-step tool list is a guardrail, pooling adds a tool-search bottleneck). Code-mode/REPL style is not adopted (`run` stays locked).
+
+### F201 + sheet jobs, fast menu dropped (v1.139 — 2026-11-17)
+
+- [ ] F201 look prompt copied from fwd v0.35.0; the `named` substring guard is withdrawn (hamr 2026-11-16: no code word lists) — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17.
+- [ ] Sheet (CSV) jobs copied from fwd v0.35.0 minus hitl: report output only (value / rows / days / bands); file-written claims (a tie with fwd's tool, F341); claim names never equal a box type; a row-numbered view of the sheet; code does the math (sums and counts from the rows the worker names); corrected am7 words. POC B done (F338, F339); POC D passed (F343) — same addendum.
+- Backlog (not built, unproven): sheet as output (a new worksheet beside the person's own).
+- fwd takes code-does-math and the am7 words from bareloop's release later (not urgent).
+- [x] Launcher fast menu dropped (hamr 2026-11-17, F340).
+- [x] S5 surfaces (card, Job tab, Result) and the $0 sheet re-check script built (2026-11-18); owed: the re-check on a live run, phone width, hamr's click-through; the `stagewords.js` question text is dropped — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17, S5.
+- [x] Plain `.md` result beside each delivered step file, and its Saved link on the Result tab (fwd M15 + am2) built (2026-11-18); owed: a live run, phone width, hamr's click-through — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-18 (c).
+- [ ] POC C (drafts per job, base rate for `sheetChecks`) — same addendum.
+- fwd F194 ("first suggestion on a rule wins" can keep a weaker check) is open; reported, not fixed here — same addendum, known risks.
+
+### Sheet as a list of jobs, parked (v1.140 — 2026-11-17)
+
+- Backlog (PARKED, not built): a sheet as a list of same-shape jobs, one row = one separate run of the same signed workflow (hamr 2026-11-17). Spec, limits and F347 pointer are in the backlog line "A sheet as a list of same-shape jobs" above.
+
+### Only ~ lines are checked (v1.141 — 2026-11-17)
+
+Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replaces the S4 prose-word patches (F350) and the parked AI job rewrite (F349).
+
+**Ruling 2026-11-18 (hamr: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"): the rule below "Only ~ lines are checked" is WITHDRAWN. `!` rows keep building checks from a line's words as before; the person can Drop/Add them on the plan card. R2 (job box hint, no-~ card wording) built then UNDONE; R4 (Add writes a `~` line) DROPPED, never built; R3 pin tests kept. Flow is back to before the S4 prose-word trial (R1) plus the sheet port. Next: S5, POC C, /branch-review, /release.**
+
+**The rule (withdrawn, kept as record).** Only lines starting with `~` are captured and checked. A line without `~` says what to do and is never checked. No AI rewrite, no guessing the person's intent from step prose.
+
+**What the person sees**
+- [ ] Job box hint, one line under the box, always shown: "Only lines starting with ~ are checked. Other lines say what to do."
+- [ ] Card, for a step with no `~` rule, one Not checked line: "Line 2: no ~ rule here. What the text says, you judge it at Accept."
+- [ ] Suggested box: look unchanged ("not in your job, not checked unless you add it"). Add writes a real `~` line into the job text directly under its step, so the job box shows it; Drop removes that line again; Revise keeps it (from then on it is the person's own text). A refused Add changes nothing and says why in plain words.
+
+**What is checked**
+- [ ] `[you]` rows: only from `~` rules.
+- [ ] `[agent]` (`!`) rows: stay exactly as they worked before the two S4 patches, same flow, no change (hamr 2026-11-17 later: the earlier "only under a `~` rule" line is withdrawn; the only change is removing the forced rewrite attempt).
+- [ ] `[default]` code checks stay (file exists, saved sheet copy, write fence).
+- [ ] Step prose with no `~`: one Not checked line, judged at Accept.
+- [ ] One owner: the job lines. Card, job box, signed lines and Job tab all read that one text.
+
+**What is NOT done**
+- AI job rewrite: parked (F349, 4 rounds, no stable pass).
+- Mixed page + sheet job (F347): not built.
+- Prose-word asks (a word of a line's own prose asked like a rule word, and "every line of a sheet-only job is a sheet line"): withdrawn, F350. The two commits (3463d6bb, 6e303060) come back out.
+- The S1 `~` rule column ask (with the tie picker and its Drop it) STAYS.
+
+**Build order** (each piece names its call site and a fail-first test; full gate per piece)
+- Order: R0 → R1 → R2 → R3 → R4 → S5 → POC C → branch-review → release (hamr 2026-11-17: R0 before S5 because R1-R4 change what S5 screens show).
+- [ ] R0 POC, $0, no AI: dry-run the R1 revert in a throwaway worktree, list every code path that builds a check from step prose, show who owns the job lines. Pre-registered bars; result to hamr before R1 if any bar fails.
+- [ ] R1 Revert 3463d6bb and 6e303060 (S1 stays).
+- [ ] R2 Job box hint, and remove prompt wording that says step prose is checked.
+- [ ] R3 Pinning tests only, no code change: a `~` rule gets a code check, `!` rows and `$` defaults stay as before.
+- [ ] R4 Add on a Suggested row writes a `~` line; Drop removes it; the write reaches the signed spec jobLines and resolved-spec (F351 drift points).
+- [x] R0 done (F351): reverts clean; bar 1 failed only on a worktree artefact; R1 next.
+
+Files, tests and the live proof: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b).

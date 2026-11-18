@@ -22,11 +22,12 @@ import { keyRows } from '../src/providerrows.js';
 import { ANTH_CFG } from './helpers.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash, workflowKey, validateJob } from '../src/job.js';
+import { track } from './tmp-track.mjs';
 
 /** @type {string[]} */ const dirs = [];
 /** @type {import('node:child_process').ChildProcess[]} */ const kids = [];
 test.after(() => { for (const k of kids) { try { k.kill('SIGKILL'); } catch { /* gone */ } } for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
-const tmp = (p = 'p5-sf-') => { const d = mkdtempSync(join(tmpdir(), p)); dirs.push(d); return d; };
+const tmp = (p = 'p5-sf-') => { const d = track(mkdtempSync(join(tmpdir(), p))); dirs.push(d); return d; };
 const git = (dir, args) => execFileSync('git', args, {
   cwd: dir, encoding: 'utf8',
   env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
@@ -162,7 +163,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.from, 'signed job');
   assert.equal('locked' in a, false, 'v1.101: nothing is locked, so the prefill names no locked boxes');
   assert.equal('open' in a, false);
-  assert.equal(a.card.jobText, 'fix things\ntsc clean', 'the SIGNED job lines (with their ~ rule), not the typed text');
+  assert.equal(a.card.jobText, 'fix things\ntsc clean', 'the SIGNED job lines, not the typed text');
   assert.equal(a.card.jobText, jobTextFromSpec(spec));
   assert.equal(a.note, null, 'a job with numbered lines is not an older job');
   assert.equal(a.card.jobName, spec.job);

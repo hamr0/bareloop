@@ -154,15 +154,21 @@ export function stageQuestionsByName(spec) {
 }
 
 /**
+ * One signed fence entry in the words a person reads: `src/**` reads `src/`; a glob this cannot read as a folder or file stays as signed. The one owner both the fence question and the `~` kept-by-fence row read.
+ * @param {string} e @returns {string}
+ */
+export function fencePlace(e) {
+  const folder = /^(.+?)\/\*\*?$/.exec(e);
+  const base = folder ? `${folder[1]}/` : e;
+  return /[*?[\]{}]/.test(base) ? e : base;
+}
+
+/**
  * The plain question of the `$ [default]` write-fence row, built from the signed fence itself: `src/**` reads `src/`; an entry that is a glob this cannot read as a folder or file is quoted as it was signed.
  * @param {string[]} scope @returns {string}
  */
 export function fenceQuestionText(scope) {
-  const places = scope.map((e) => {
-    const folder = /^(.+?)\/\*\*?$/.exec(e);
-    const base = folder ? `${folder[1]}/` : e;
-    return /[*?[\]{}]/.test(base) ? e : base;
-  });
+  const places = scope.map(fencePlace);
   return `only files in ${places.join(', ')} changed?`;
 }
 

@@ -1,0 +1,266 @@
+{
+ "genre": "TEXT",
+ "lang": "text",
+ "stages": [
+  {
+   "name": "changed-from-seed",
+   "kind": "files-changed",
+   "params": {
+    "requireNonEmpty": true,
+    "allowPrefixes": [
+     "output/"
+    ]
+   }
+  },
+  {
+   "name": "line-1",
+   "kind": "rubric-step",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "step": 1,
+    "parts": [
+     {
+      "text": "the checks of line 1 on the sheet",
+      "class": "sheet",
+      "checks": [
+       {
+        "id": "l1r1",
+        "rule": "cells",
+        "table": "aging",
+        "op": "daysSince",
+        "column": "Due date",
+        "asOf": "2026-10-11",
+        "dateFormats": [
+         {
+          "column": "Due date",
+          "format": "YYYY-MM-DD"
+         }
+        ],
+        "claim": "l1r1",
+        "covers": [
+         1
+        ]
+       },
+       {
+        "id": "l1r3",
+        "rule": "cells",
+        "table": "aging",
+        "op": "band",
+        "column": "Due date",
+        "asOf": "2026-10-11",
+        "dateFormats": [
+         {
+          "column": "Due date",
+          "format": "YYYY-MM-DD"
+         }
+        ],
+        "bands": [
+         {
+          "name": "Current",
+          "lte": 0
+         },
+         {
+          "name": "1-30",
+          "gte": 1,
+          "lte": 30
+         },
+         {
+          "name": "31-60",
+          "gte": 31,
+          "lte": 60
+         },
+         {
+          "name": "61-90",
+          "gte": 61,
+          "lte": 90
+         },
+         {
+          "name": "90+",
+          "gt": 90
+         }
+        ],
+        "claim": "l1r3",
+        "covers": [
+         3
+        ]
+       },
+       {
+        "id": "l1r2",
+        "rule": "cells",
+        "table": "aging",
+        "op": "uniqueCount",
+        "column": "Invoice #",
+        "claim": "l1r2",
+        "covers": [
+         2
+        ]
+       },
+       {
+        "id": "l1a1",
+        "rule": "table",
+        "table": "aging",
+        "op": "noDuplicates",
+        "column": "Invoice #",
+        "covers": [],
+        "row": "agent"
+       },
+       {
+        "id": "l1a2",
+        "rule": "table",
+        "table": "aging",
+        "op": "noEmpty",
+        "column": "Invoice #",
+        "covers": [],
+        "row": "agent"
+       },
+       {
+        "id": "l1a3",
+        "rule": "table",
+        "table": "aging",
+        "op": "allDates",
+        "column": "Due date",
+        "dateFormats": [
+         {
+          "column": "Due date",
+          "format": "YYYY-MM-DD"
+         }
+        ],
+        "covers": [],
+        "row": "agent"
+       }
+      ],
+      "rules": [
+       1,
+       2,
+       3
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "list": [
+  {
+   "line": 1,
+   "key": "L1.~1",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 1,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.~2",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 2,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.~3",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 3,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.$floor",
+   "from": "default",
+   "by": "default",
+   "kind": "floor",
+   "state": "built"
+  },
+  {
+   "line": 1,
+   "key": "L1.$prose",
+   "from": "default",
+   "by": "default",
+   "kind": "prose",
+   "state": "not-checked",
+   "reason": "what the text says — you judge it at Accept"
+  },
+  {
+   "line": 1,
+   "key": "L1.sheet.l1a1",
+   "from": "agent",
+   "by": "agent",
+   "kind": "sheet",
+   "state": "built",
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.sheet.l1a2",
+   "from": "agent",
+   "by": "agent",
+   "kind": "sheet",
+   "state": "built",
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.sheet.l1a3",
+   "from": "agent",
+   "by": "agent",
+   "kind": "sheet",
+   "state": "built",
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.$sheet",
+   "from": "default",
+   "by": "default",
+   "kind": "sheet",
+   "state": "built",
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 0,
+   "key": "J.$guard.changed-from-seed",
+   "from": "default",
+   "by": "default",
+   "kind": "guard",
+   "state": "built"
+  },
+  {
+   "line": 0,
+   "key": "J.$fence",
+   "from": "default",
+   "by": "default",
+   "kind": "fence",
+   "state": "built"
+  }
+ ]
+}

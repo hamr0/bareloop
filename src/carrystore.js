@@ -209,15 +209,17 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     const step = kind === 'step' ? phase.slice('step:'.length) : null;
     const settled = asks.filter((a) => a.red !== undefined);
     const lt = settled[settled.length - 1];
+    // this ask is a retry of the last try only when its prompt carries the retry gap (RED_MARKER); after a replan or on a new step it does not
+    const isRetry = typeof prompt === 'string' && RED_MARKER.test(prompt);
     const notes = {
       lastTry: lt ? { step: lt.step, kind: lt.kind, n: lt.iteration, of: lt.kind === 'step' ? strikeLimit : undefined, ended: endedOf(lt), changed: lt.changed } : null,
       lastCheck: null, // the failed check's text is already in the prompt today; one copy
       events: events.map((e) => ({ ...e })),
       edits: orderEditsByRecency(edits, settled),
       // every failed check's whole text, oldest first; the newest is left out only when it belongs to the last settled try
-      // (a red try being retried: the prompt carries it, one copy). A failure from a try that was later passed is in no prompt.
+      // AND this ask is a retry of it (its prompt carries the gap, one copy); after a replan the next ask is no retry, so it stays here. A failure from a try that was later passed is in no prompt.
       // plus the start failure, oldest of all: it is never in a prompt gap, so it is never the one left out
-      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure && a !== lt).map((a) => ({ label: tryLabel(a), text: a.failure }))],
+      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure && !(a === lt && isRetry)).map((a) => ({ label: tryLabel(a), text: a.failure }))],
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
       fnRanges: getNode ? fnRangesOf(events, getNode) : {},

@@ -1,0 +1,27 @@
+{
+  "text": "Eleven expenses in the sheet are strictly above 500: item 5 at 1,200.50, item 7 at 650.80, item 8 at 595.74, item 12 at 840.87, item 13 at 600.73, \"Office supplies, bulk\" at 800.40, item 19 at 818.23, item 20 at 593.38, item 21 at 628.09, item 24 at 505.53, item 26 at 813.40, item 28 at 821.58, item 30 at 753.89, item 31 at 596.87, item 32 at 738.49, item 35 at 791.36, item 38 at 567.35 and item 39 at 889.70.\n\nCount of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 18 (computed by code from the rows named)\nTotal of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 13,206.91 (computed by code from the rows named)",
+  "claims": {
+    "l1a2": {
+      "rows": [
+        7,
+        9,
+        10,
+        14,
+        15,
+        19,
+        21,
+        22,
+        24,
+        26,
+        28,
+        30,
+        32,
+        33,
+        34,
+        37,
+        40,
+        41
+      ]
+    }
+  }
+}

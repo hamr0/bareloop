@@ -1,0 +1,4016 @@
+[
+ {
+  "id": "smwc2tpds4lnq",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "at most 80 words",
+    "rule": 1,
+    "pick": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "part": {
+     "line": 1,
+     "part": 1
+    },
+    "pickProposal": {
+     "rule": "maxWords",
+     "value": 80
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": true
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
+    "key": "L1.fact.section headings",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "section headings",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "section headings"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "### Fixed"
+    ],
+    "key": "L1.phrase.### fixed",
+    "line": 1,
+    "kind": "phrase",
+    "by": "agent",
+    "from": "agent",
+    "name": "Fixed",
+    "shape": "phrase",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "Fixed"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "code could not build a legal check from it: the fact's name: letters, spaces, \"_\" or \"-\" only (no digits), at most 64 characters",
+    "words": [
+     "## [0.54.1] - 2026-11-04"
+    ],
+    "key": "L1.phrase.## [0.54.1] - 2026-11-04",
+    "line": 1,
+    "kind": "phrase",
+    "by": "agent",
+    "from": "agent",
+    "name": "- - -",
+    "shape": "phrase",
+    "part": null
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"at most 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON, and carry text"
+   },
+   {
+    "key": "L1.fact.section headings",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"section headings\" with the words \"Fixed\", \"Added\", \"Changed\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.phrase.### fixed",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! phrase \"Fixed\" with the words \"### Fixed\""
+   },
+   {
+    "key": "L1.phrase.## [0.54.1] - 2026-11-04",
+    "line": 1,
+    "by": "agent",
+    "state": "not-checked",
+    "reason": "code could not build a legal check from it: the fact's name: letters, spaces, \"_\" or \"-\" only (no digits), at most 64 characters",
+    "text": "! phrase \"- - -\" with the words \"## [0.54.1] - 2026-11-04\""
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "section headings; Fixed",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "section headings",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         },
+         {
+          "name": "Fixed",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       },
+       {
+        "text": "at most 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         1
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       1
+      ]
+     }
+    }
+   ],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 1
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.section headings",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "section headings"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.phrase.### fixed",
+     "from": "agent",
+     "by": "agent",
+     "kind": "phrase",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "Fixed"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.phrase.## [0.54.1] - 2026-11-04",
+     "from": "agent",
+     "by": "agent",
+     "kind": "phrase",
+     "state": "not-checked",
+     "reason": "code could not build a legal check from it: the fact's name: letters, spaces, \"_\" or \"-\" only (no digits), at most 64 characters"
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · section headings — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.section headings"
+    },
+    {
+     "text": "fact · Fixed — phrase, must say \"### Fixed\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.phrase.### fixed"
+    },
+    {
+     "text": "the text is at most 80 words",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1",
+     "pick": true
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON, and carry text",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: phrase \"## [0.54.1] - 2026-11-04\" — code could not build a legal check from it: the fact's name: letters, spaces, \"_\" or \"-\" only (no digits), at most 64 characters"
+   ],
+   "notCheckedBy": {
+    "line 1: phrase \"## [0.54.1] - 2026-11-04\" — code could not build a legal check from it: the fact's name: letters, spaces, \"_\" or \"-\" only (no digits), at most 64 characters": "agent"
+   }
+  }
+ },
+ {
+  "id": "smwdhl8k5q8pn",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "under $450",
+    "rule": 1,
+    "links": [
+     {
+      "name": "price label",
+      "shape": "money",
+      "words": [
+       "From"
+      ],
+      "unit": [
+       "US dollars"
+      ],
+      "currency": [
+       "$"
+      ],
+      "source": "flights"
+     }
+    ],
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "price label"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "departure time between 05:00 and 21:59",
+    "rule": 2,
+    "links": [
+     {
+      "name": "departure time label",
+      "shape": "time",
+      "words": [
+       "Departure time:"
+      ],
+      "source": "flights"
+     }
+    ],
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "departure time label"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": false
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Boston Logan International Airport",
+     "Boston",
+     "BOS"
+    ],
+    "key": "L1.fact.origin",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "origin",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "origin"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Chicago O'Hare International Airport",
+     "Chicago",
+     "ORD"
+    ],
+    "key": "L1.fact.destination",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "destination",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "destination"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "flights",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.3-3",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 3,
+    "max": 3,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   },
+   {
+    "state": "not-checked",
+    "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked.",
+    "words": [
+     "12 results returned."
+    ],
+    "key": "L1.phrase.12 results returned.",
+    "line": 1,
+    "kind": "phrase",
+    "by": "agent",
+    "from": "agent",
+    "name": "results returned",
+    "shape": "phrase",
+    "part": null
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"under $450\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"departure time between 05:00 and 21:59\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check"
+   },
+   {
+    "key": "L1.fact.origin",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"origin\" with the words \"Boston Logan International Airport\", \"Boston\", \"BOS\""
+   },
+   {
+    "key": "L1.fact.destination",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"destination\" with the words \"Chicago O'Hare International Airport\", \"Chicago\", \"ORD\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"flights\""
+   },
+   {
+    "key": "L1.count.3-3",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 3-3"
+   },
+   {
+    "key": "L1.phrase.12 results returned.",
+    "line": 1,
+    "by": "agent",
+    "state": "not-checked",
+    "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked.",
+    "text": "! phrase \"results returned\" with the words \"12 results returned.\""
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "price label; departure time label; origin; destination",
+        "class": "fact",
+        "source": "flights",
+        "facts": [
+         {
+          "name": "price label",
+          "shape": "money",
+          "anchor": "From",
+          "unit": [
+           "US dollars"
+          ],
+          "currency": [
+           "$"
+          ],
+          "rule": {
+           "op": "lt",
+           "value": 450
+          }
+         },
+         {
+          "name": "departure time label",
+          "shape": "time",
+          "anchor": "Departure time:",
+          "rule": {
+           "op": "between",
+           "lo": "05:00",
+           "hi": "21:59"
+          }
+         },
+         {
+          "name": "origin",
+          "shape": "phrase",
+          "phrase": "Boston Logan International Airport"
+         },
+         {
+          "name": "destination",
+          "shape": "phrase",
+          "phrase": "Chicago O'Hare International Airport"
+         }
+        ],
+        "asSeen": {
+         "input": "flights",
+         "lines": [
+          "            - link \"From 161 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Thursday, November 26 and arrives at Chicago O'Hare International Airport at 2:22 PM on Thursday, November 26. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=1355]",
+          "            - generic \"Departure time: 12:12 PM.\" [ref=1405]"
+         ],
+         "labels": [
+          "Departure time:"
+         ]
+        },
+        "rules": [
+         1,
+         2
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "price label"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "departure time label"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.origin",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "origin"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.destination",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "destination"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.3-3",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.phrase.12 results returned.",
+     "from": "agent",
+     "by": "agent",
+     "kind": "phrase",
+     "state": "not-checked",
+     "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked."
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · price label — money in US dollars or $, under 450 US dollars, after \"From\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1"
+    },
+    {
+     "text": "fact · departure time label — time, between 05:00 and 21:59, after \"Departure time:\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2"
+    },
+    {
+     "text": "fact · origin — phrase, must say \"Boston Logan International Airport\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.origin"
+    },
+    {
+     "text": "fact · destination — phrase, must say \"Chicago O'Hare International Airport\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.destination"
+    },
+    {
+     "text": "fact · results — exactly 3 results, each quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.3-3"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: phrase \"12 results returned.\" — \"12 results returned.\" is on the page but in none of its results, so it is not checked."
+   ],
+   "notCheckedBy": {
+    "line 1: phrase \"12 results returned.\" — \"12 results returned.\" is on the page but in none of its results, so it is not checked.": "agent"
+   }
+  }
+ },
+ {
+  "id": "smwdiy4k3bk0v",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "under $450",
+    "rule": 1,
+    "links": [
+     {
+      "name": "price",
+      "shape": "money",
+      "words": [
+       "From"
+      ],
+      "unit": [
+       "US dollars"
+      ],
+      "currency": [
+       "$"
+      ],
+      "decimal": ".",
+      "source": "flights",
+      "reading": {
+       "op": "lt",
+       "value": 450
+      }
+     }
+    ],
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "price"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "No rule can check this, so you judge it at Accept.",
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "departure not redeye",
+    "rule": 2,
+    "part": null,
+    "aiReason": "departure not redeye - the page never shows a time right after \"Departure time\", so it is not checked."
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": false
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Boston Logan International Airport"
+    ],
+    "key": "L1.fact.origin airport",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "origin airport",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "origin airport"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Chicago O'Hare International Airport"
+    ],
+    "key": "L1.fact.destination airport",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "destination airport",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "destination airport"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "flights",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.3-3",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 3,
+    "max": 3,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   },
+   {
+    "state": "not-checked",
+    "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked.",
+    "words": [
+     "12 results returned."
+    ],
+    "key": "L1.phrase.12 results returned.",
+    "line": 1,
+    "kind": "phrase",
+    "by": "agent",
+    "from": "agent",
+    "name": "results returned",
+    "shape": "phrase",
+    "part": null
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"under $450\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "not-checked",
+    "reason": "No rule can check this, so you judge it at Accept.",
+    "text": "~ \"departure not redeye\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check"
+   },
+   {
+    "key": "L1.fact.origin airport",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"origin airport\" with the words \"Boston Logan International Airport\""
+   },
+   {
+    "key": "L1.fact.destination airport",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"destination airport\" with the words \"Chicago O'Hare International Airport\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"flights\""
+   },
+   {
+    "key": "L1.count.3-3",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 3-3"
+   },
+   {
+    "key": "L1.phrase.12 results returned.",
+    "line": 1,
+    "by": "agent",
+    "state": "not-checked",
+    "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked.",
+    "text": "! phrase \"results returned\" with the words \"12 results returned.\""
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "price; origin airport; destination airport",
+        "class": "fact",
+        "source": "flights",
+        "facts": [
+         {
+          "name": "price",
+          "shape": "money",
+          "anchor": "From",
+          "unit": [
+           "US dollars"
+          ],
+          "currency": [
+           "$"
+          ],
+          "decimal": ".",
+          "rule": {
+           "op": "lt",
+           "value": 450
+          }
+         },
+         {
+          "name": "origin airport",
+          "shape": "phrase",
+          "phrase": "Boston Logan International Airport"
+         },
+         {
+          "name": "destination airport",
+          "shape": "phrase",
+          "phrase": "Chicago O'Hare International Airport"
+         }
+        ],
+        "rules": [
+         1
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "price"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "not-checked",
+     "rule": 2,
+     "reason": "No rule can check this, so you judge it at Accept."
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.origin airport",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "origin airport"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.destination airport",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "destination airport"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.3-3",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.phrase.12 results returned.",
+     "from": "agent",
+     "by": "agent",
+     "kind": "phrase",
+     "state": "not-checked",
+     "reason": "\"12 results returned.\" is on the page but in none of its results, so it is not checked."
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · price — money in US dollars or $, under 450 US dollars, after \"From\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1"
+    },
+    {
+     "text": "fact · origin airport — phrase, must say \"Boston Logan International Airport\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.origin airport"
+    },
+    {
+     "text": "fact · destination airport — phrase, must say \"Chicago O'Hare International Airport\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.destination airport"
+    },
+    {
+     "text": "fact · results — exactly 3 results, each quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.3-3"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: \"departure not redeye\" — No rule can check this, so you judge it at Accept.",
+    "line 1: phrase \"12 results returned.\" — \"12 results returned.\" is on the page but in none of its results, so it is not checked."
+   ],
+   "notCheckedBy": {
+    "line 1: \"departure not redeye\" — No rule can check this, so you judge it at Accept.": "you",
+    "line 1: phrase \"12 results returned.\" — \"12 results returned.\" is on the page but in none of its results, so it is not checked.": "agent"
+   }
+  }
+ },
+ {
+  "id": "smwdoiysjmma3",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "under $450",
+    "rule": 1,
+    "links": [
+     {
+      "name": "price",
+      "shape": "money",
+      "words": [
+       "From"
+      ],
+      "unit": [
+       "US dollars"
+      ],
+      "currency": [
+       "$"
+      ],
+      "source": "flights",
+      "reading": {
+       "op": "lt",
+       "value": 450
+      }
+     }
+    ],
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "price"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "departure time between 05:00 and 21:00",
+    "rule": 2,
+    "links": [
+     {
+      "name": "departure time",
+      "shape": "time",
+      "words": [
+       "Departure time:",
+       "Leaves Boston Logan International Airport at"
+      ],
+      "source": "flights",
+      "reading": {
+       "op": "between",
+       "lo": "05:00",
+       "hi": "21:00"
+      }
+     }
+    ],
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "agreed": true,
+    "factNames": [
+     "departure time"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": false
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Boston",
+     "BOS",
+     "Boston Logan International Airport"
+    ],
+    "key": "L1.fact.origin",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "origin",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "origin"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Chicago",
+     "ORD",
+     "Chicago O'Hare International Airport"
+    ],
+    "key": "L1.fact.destination",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "destination",
+    "shape": "phrase",
+    "source": "flights",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "destination"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "flights",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.1-12",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 1,
+    "max": 12,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"under $450\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"departure time between 05:00 and 21:00\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check"
+   },
+   {
+    "key": "L1.fact.origin",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"origin\" with the words \"Boston\", \"BOS\", \"Boston Logan International Airport\""
+   },
+   {
+    "key": "L1.fact.destination",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"destination\" with the words \"Chicago\", \"ORD\", \"Chicago O'Hare International Airport\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"flights\""
+   },
+   {
+    "key": "L1.count.1-12",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 1-12"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "price; departure time; origin; destination",
+        "class": "fact",
+        "source": "flights",
+        "facts": [
+         {
+          "name": "price",
+          "shape": "money",
+          "anchor": "From",
+          "unit": [
+           "US dollars"
+          ],
+          "currency": [
+           "$"
+          ],
+          "rule": {
+           "op": "lt",
+           "value": 450
+          }
+         },
+         {
+          "name": "departure time",
+          "shape": "time",
+          "anchor": "Departure time:",
+          "rule": {
+           "op": "between",
+           "lo": "05:00",
+           "hi": "21:00"
+          }
+         },
+         {
+          "name": "origin",
+          "shape": "phrase",
+          "phrase": "Boston"
+         },
+         {
+          "name": "destination",
+          "shape": "phrase",
+          "phrase": "Chicago"
+         }
+        ],
+        "asSeen": {
+         "input": "flights",
+         "lines": [
+          "            - link \"From 161 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Thursday, November 26 and arrives at Chicago O'Hare International Airport at 2:22 PM on Thursday, November 26. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=1355]",
+          "            - generic \"Departure time: 12:12 PM.\" [ref=1405]"
+         ],
+         "labels": [
+          "Departure time:"
+         ]
+        },
+        "rules": [
+         1,
+         2
+        ],
+        "count": {
+         "min": 1,
+         "max": 12
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "price"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "departure time"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.origin",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "origin"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.destination",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "destination"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.1-12",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · price — money in US dollars or $, under 450 US dollars, after \"From\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1"
+    },
+    {
+     "text": "fact · departure time — time, between 05:00 and 21:00, after \"Departure time:\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2"
+    },
+    {
+     "text": "fact · origin — phrase, must say \"Boston\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.origin"
+    },
+    {
+     "text": "fact · destination — phrase, must say \"Chicago\", quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.destination"
+    },
+    {
+     "text": "fact · results — 1 to 12 results, each quoted from \"flights\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.1-12"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [],
+   "notCheckedBy": {}
+  }
+ },
+ {
+  "id": "smw9icyy07hce",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "exactly 3 list items",
+    "rule": 1,
+    "part": {
+     "line": 1,
+     "part": 1
+    },
+    "pick": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "pickProposal": {
+     "rule": "listItems",
+     "value": 3
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "at most 80 words",
+    "rule": 2,
+    "part": {
+     "line": 1,
+     "part": 2
+    },
+    "pick": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "pickProposal": {
+     "rule": "maxWords",
+     "value": 80
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": true
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "## [0.54.1] - 2026-11-04"
+    ],
+    "key": "L1.fact.release",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "release",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "release version",
+     "release date"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.1-1",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 1,
+    "max": 1,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"exactly 3 list items\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"at most 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON, and carry text"
+   },
+   {
+    "key": "L1.fact.release",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"release\" with the words \"## [0.54.1] - 2026-11-04\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.count.1-1",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 1-1"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "release version; release date",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "phrase",
+          "phrase": "0.54.1",
+          "place": {
+           "kind": "headingBetween",
+           "prefix": "## [",
+           "end": "]",
+           "shape": "semver",
+           "skip": [
+            "Unreleased"
+           ]
+          }
+         },
+         {
+          "name": "release date",
+          "shape": "phrase",
+          "phrase": "2026-11-04",
+          "place": {
+           "kind": "headingDateAfter",
+           "prefix": "## [",
+           "end": "]",
+           "shape": "semver",
+           "skip": [
+            "Unreleased"
+           ]
+          }
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        }
+       },
+       {
+        "text": "exactly 3 list items",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "at most 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 list items",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2
+      ]
+     }
+    }
+   ],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 1
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 2
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.release",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "release version",
+      "release date"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.1-1",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "version in the newest \"## [\" heading (last read 0.54.1)",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release"
+    },
+    {
+     "text": "date in the newest \"## [\" heading (last read 2026-11-04)",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release"
+    },
+    {
+     "text": "fact · results — exactly 1 result, each quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.1-1"
+    },
+    {
+     "text": "the text has exactly 3 list items",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1",
+     "pick": true
+    },
+    {
+     "text": "the text is at most 80 words",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2",
+     "pick": true
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON, and carry text",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [],
+   "notCheckedBy": {}
+  }
+ },
+ {
+  "id": "smw9idewp0mm9",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "exactly 3 list items",
+    "rule": 1,
+    "part": {
+     "line": 1,
+     "part": 1
+    },
+    "pick": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "pickProposal": {
+     "rule": "listItems",
+     "value": 3
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "at most 80 words",
+    "rule": 2,
+    "part": {
+     "line": 1,
+     "part": 2
+    },
+    "pick": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "pickProposal": {
+     "rule": "maxWords",
+     "value": 80
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": true
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "## [0.54.1] - 2026-11-04"
+    ],
+    "key": "L1.fact.release version",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "release version",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "release version",
+     "release date"
+    ]
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "### Fixed"
+    ],
+    "key": "L1.fact.fixed entries",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "fixed entries",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "fixed entries"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"exactly 3 list items\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"at most 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON, and carry text"
+   },
+   {
+    "key": "L1.fact.release version",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"release version\" with the words \"## [0.54.1] - 2026-11-04\""
+   },
+   {
+    "key": "L1.fact.fixed entries",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"fixed entries\" with the words \"### Fixed\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "release version; release date; fixed entries",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "phrase",
+          "phrase": "0.54.1",
+          "place": {
+           "kind": "headingBetween",
+           "prefix": "## [",
+           "end": "]",
+           "shape": "semver",
+           "skip": [
+            "Unreleased"
+           ]
+          }
+         },
+         {
+          "name": "release date",
+          "shape": "phrase",
+          "phrase": "2026-11-04",
+          "place": {
+           "kind": "headingDateAfter",
+           "prefix": "## [",
+           "end": "]",
+           "shape": "semver",
+           "skip": [
+            "Unreleased"
+           ]
+          }
+         },
+         {
+          "name": "fixed entries",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       },
+       {
+        "text": "exactly 3 list items",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "at most 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 list items",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2
+      ]
+     }
+    }
+   ],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 1
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 2
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.release version",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "release version",
+      "release date"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.fixed entries",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "fixed entries"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "version in the newest \"## [\" heading (last read 0.54.1)",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release version"
+    },
+    {
+     "text": "date in the newest \"## [\" heading (last read 2026-11-04)",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release version"
+    },
+    {
+     "text": "fact · fixed entries — phrase, must say \"### Fixed\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.fixed entries"
+    },
+    {
+     "text": "the text has exactly 3 list items",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1",
+     "pick": true
+    },
+    {
+     "text": "the text is at most 80 words",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2",
+     "pick": true
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON, and carry text",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [],
+   "notCheckedBy": {}
+  }
+ },
+ {
+  "id": "smw9ids3r91no",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "exactly 3 list items",
+    "rule": 1,
+    "part": {
+     "line": 1,
+     "part": 1
+    },
+    "pick": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "pickProposal": {
+     "rule": "listItems",
+     "value": 3
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "at most 80 words",
+    "rule": 2,
+    "part": {
+     "line": 1,
+     "part": 2
+    },
+    "pick": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "pickProposal": {
+     "rule": "maxWords",
+     "value": 80
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": true
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
+    "key": "L1.fact.release bullet",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "release bullet",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "release bullet"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.1-",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 1,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"exactly 3 list items\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"at most 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON, and carry text"
+   },
+   {
+    "key": "L1.fact.release bullet",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"release bullet\" with the words \"Fixed\", \"Added\", \"Changed\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.count.1-",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 1-"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "release bullet",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release bullet",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         }
+        ],
+        "count": {
+         "min": 1
+        }
+       },
+       {
+        "text": "exactly 3 list items",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "at most 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 list items",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2
+      ]
+     }
+    }
+   ],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 1
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 2
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.release bullet",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "release bullet"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.1-",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · release bullet — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release bullet"
+    },
+    {
+     "text": "fact · results — at least 1 result, each quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.1-"
+    },
+    {
+     "text": "the text has exactly 3 list items",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1",
+     "pick": true
+    },
+    {
+     "text": "the text is at most 80 words",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2",
+     "pick": true
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON, and carry text",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [],
+   "notCheckedBy": {}
+  }
+ },
+ {
+  "id": "smw9ieiiyrm5n",
+  "rows": [
+   {
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "exactly 3 bullets",
+    "rule": 1,
+    "part": null,
+    "aiReason": "exactly 3 bullets — which bullets, and whether they are the right bullets, needs reading the text to judge"
+   },
+   {
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "under 80 words",
+    "rule": 2,
+    "part": null,
+    "aiReason": "under 80 words — you chose to leave it Not checked"
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": false
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "-"
+    ],
+    "key": "L1.fact.bullet marker",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "bullet marker",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "bullet marker"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.count.1-",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 1,
+    "part": {
+     "line": 1,
+     "part": 0
+    }
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "text": "~ \"exactly 3 bullets\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "text": "~ \"under 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check"
+   },
+   {
+    "key": "L1.fact.bullet marker",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"bullet marker\" with the words \"-\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.count.1-",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! result count 1-"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "bullet marker",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "bullet marker",
+          "shape": "phrase",
+          "phrase": "-"
+         }
+        ],
+        "count": {
+         "min": 1
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "not-checked",
+     "rule": 1,
+     "reason": "waiting for your answer on the proposed check"
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "not-checked",
+     "rule": 2,
+     "reason": "waiting for your answer on the proposed check"
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.bullet marker",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "bullet marker"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.1-",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · bullet marker — phrase, must say \"-\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.bullet marker"
+    },
+    {
+     "text": "fact · results — at least 1 result, each quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.count.1-"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: \"exactly 3 bullets\" — waiting for your answer on the proposed check",
+    "line 1: \"under 80 words\" — waiting for your answer on the proposed check"
+   ],
+   "notCheckedBy": {
+    "line 1: \"exactly 3 bullets\" — waiting for your answer on the proposed check": "you",
+    "line 1: \"under 80 words\" — waiting for your answer on the proposed check": "you"
+   }
+  }
+ },
+ {
+  "id": "smw9ie5pi52mf",
+  "rows": [
+   {
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "exactly 3 bullets",
+    "rule": 1,
+    "part": null,
+    "aiReason": "which release counts as \"the latest\" (the choice of which one) needs reading the text to judge"
+   },
+   {
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "rule",
+    "origin": "job",
+    "text": "under 80 words",
+    "rule": 2,
+    "part": null,
+    "aiReason": "that the summary is an accurate/good summary of the release — judging the summary's quality or accuracy needs reading the text"
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": false
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
+    "key": "L1.fact.release bullets",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "release bullets",
+    "shape": "phrase",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "factNames": [
+     "release bullets"
+    ]
+   },
+   {
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "not-checked",
+    "reason": "a ~ rule already says it: line 1 rule 1 names the number",
+    "words": [],
+    "key": "L1.count.3-3",
+    "line": 1,
+    "kind": "count",
+    "by": "agent",
+    "from": "agent",
+    "min": 3,
+    "max": 3,
+    "part": null
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "text": "~ \"exactly 3 bullets\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "not-checked",
+    "reason": "waiting for your answer on the proposed check",
+    "text": "~ \"under 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check"
+   },
+   {
+    "key": "L1.fact.release bullets",
+    "line": 1,
+    "by": "agent",
+    "state": "built",
+    "reason": null,
+    "text": "! fact \"release bullets\" with the words \"Fixed\", \"Added\", \"Changed\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "this line finds facts, so it has no text to quote",
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.count.3-3",
+    "line": 1,
+    "by": "agent",
+    "state": "not-checked",
+    "reason": "a ~ rule already says it: line 1 rule 1 names the number",
+    "text": "! result count 3-3"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "release bullets",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release bullets",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "not-checked",
+     "rule": 1,
+     "reason": "waiting for your answer on the proposed check"
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "rule",
+     "by": "you",
+     "kind": "rule",
+     "state": "not-checked",
+     "rule": 2,
+     "reason": "waiting for your answer on the proposed check"
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.release bullets",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 0
+     },
+     "facts": [
+      "release bullets"
+     ]
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "not-checked",
+     "reason": "this line finds facts, so it has no text to quote"
+    },
+    {
+     "line": 1,
+     "key": "L1.count.3-3",
+     "from": "agent",
+     "by": "agent",
+     "kind": "count",
+     "state": "not-checked",
+     "reason": "a ~ rule already says it: line 1 rule 1 names the number"
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "fact · release bullets — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "agent",
+     "key": "L1.fact.release bullets"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON; this line finds facts, so it has no text check",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: \"exactly 3 bullets\" — waiting for your answer on the proposed check",
+    "line 1: \"under 80 words\" — waiting for your answer on the proposed check",
+    "line 1: count \"3-3\" — a ~ rule already says it: line 1 rule 1 names the number"
+   ],
+   "notCheckedBy": {
+    "line 1: \"exactly 3 bullets\" — waiting for your answer on the proposed check": "you",
+    "line 1: \"under 80 words\" — waiting for your answer on the proposed check": "you",
+    "line 1: count \"3-3\" — a ~ rule already says it: line 1 rule 1 names the number": "agent"
+   }
+  }
+ },
+ {
+  "id": "smw9ll9xoq9a8",
+  "rows": [
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~1",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "exactly 3 list items",
+    "rule": 1,
+    "part": {
+     "line": 1,
+     "part": 0
+    },
+    "pick": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "pickProposal": {
+     "rule": "listItems",
+     "value": 3
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.~2",
+    "line": 1,
+    "kind": "rule",
+    "by": "you",
+    "from": "pick",
+    "origin": "job",
+    "text": "at most 80 words",
+    "rule": 2,
+    "part": {
+     "line": 1,
+     "part": 1
+    },
+    "pick": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "pickProposal": {
+     "rule": "maxWords",
+     "value": 80
+    }
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$floor",
+    "line": 1,
+    "kind": "floor",
+    "by": "default",
+    "from": "default",
+    "text": "the file exists and its text is not empty (code's own floor)",
+    "carriesText": true
+   },
+   {
+    "state": "not-checked",
+    "reason": "code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.",
+    "words": [
+     "## ["
+    ],
+    "key": "L1.fact.release heading",
+    "line": 1,
+    "kind": "fact",
+    "by": "agent",
+    "from": "look",
+    "name": "release heading",
+    "shape": "date",
+    "lang": "en",
+    "source": "Changelog",
+    "part": null
+   },
+   {
+    "state": "built",
+    "reason": null,
+    "words": [],
+    "key": "L1.$cited",
+    "line": 1,
+    "kind": "cited",
+    "by": "default",
+    "from": "default",
+    "source": "Changelog",
+    "part": {
+     "line": 1,
+     "part": 2
+    }
+   },
+   {
+    "state": "not-checked",
+    "reason": "what the text says — you judge it at Accept",
+    "words": [],
+    "key": "L1.$prose",
+    "line": 1,
+    "kind": "prose",
+    "by": "default",
+    "from": "default"
+   }
+  ],
+  "card": [
+   {
+    "key": "L1.~1",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"exactly 3 list items\""
+   },
+   {
+    "key": "L1.~2",
+    "line": 1,
+    "by": "you",
+    "state": "built",
+    "reason": null,
+    "text": "~ \"at most 80 words\""
+   },
+   {
+    "key": "L1.$floor",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ its file output/steps/1.json must exist, be complete JSON, and carry text"
+   },
+   {
+    "key": "L1.fact.release heading",
+    "line": 1,
+    "by": "agent",
+    "state": "not-checked",
+    "reason": "code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.",
+    "text": "! fact \"release heading\" with the words \"## [\""
+   },
+   {
+    "key": "L1.$cited",
+    "line": 1,
+    "by": "default",
+    "state": "built",
+    "reason": null,
+    "text": "$ every claim is backed by a quote copied from \"Changelog\""
+   },
+   {
+    "key": "L1.$prose",
+    "line": 1,
+    "by": "default",
+    "state": "not-checked",
+    "reason": "what the text says — you judge it at Accept",
+    "text": "$ what the text says — you judge it at Accept"
+   }
+  ],
+  "view": {
+   "stages": [
+    {
+     "name": "line-1",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "exactly 3 list items",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "at most 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2
+        ]
+       },
+       {
+        "text": "every claim is backed by a quote copied from \"Changelog\"",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog"
+       }
+      ]
+     }
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 list items",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2
+      ]
+     }
+    }
+   ],
+   "list": [
+    {
+     "line": 1,
+     "key": "L1.~1",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 1,
+     "part": {
+      "line": 1,
+      "part": 0
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.~2",
+     "from": "pick",
+     "by": "you",
+     "kind": "rule",
+     "state": "built",
+     "rule": 2,
+     "part": {
+      "line": 1,
+      "part": 1
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$floor",
+     "from": "default",
+     "by": "default",
+     "kind": "floor",
+     "state": "built"
+    },
+    {
+     "line": 1,
+     "key": "L1.fact.release heading",
+     "from": "look",
+     "by": "agent",
+     "kind": "fact",
+     "state": "not-checked",
+     "reason": "code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed."
+    },
+    {
+     "line": 1,
+     "key": "L1.$cited",
+     "from": "default",
+     "by": "default",
+     "kind": "cited",
+     "state": "built",
+     "part": {
+      "line": 1,
+      "part": 2
+     }
+    },
+    {
+     "line": 1,
+     "key": "L1.$prose",
+     "from": "default",
+     "by": "default",
+     "kind": "prose",
+     "state": "not-checked",
+     "reason": "what the text says — you judge it at Accept"
+    },
+    {
+     "line": 0,
+     "key": "J.$guard.changed-from-seed",
+     "from": "default",
+     "by": "default",
+     "kind": "guard",
+     "state": "built"
+    },
+    {
+     "line": 0,
+     "key": "J.$fence",
+     "from": "default",
+     "by": "default",
+     "kind": "fence",
+     "state": "built"
+    }
+   ],
+   "fence": [
+    "output/"
+   ]
+  },
+  "plan": {
+   "checkItems": [
+    {
+     "text": "the text has exactly 3 list items",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~1",
+     "pick": true
+    },
+    {
+     "text": "the text is at most 80 words",
+     "fromLine": [
+      1
+     ],
+     "by": "you",
+     "key": "L1.~2",
+     "pick": true
+    },
+    {
+     "text": "every claim is backed by a quote copied from \"Changelog\"",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$cited"
+    },
+    {
+     "text": "its file output/steps/1.json must exist, be complete JSON, and carry text",
+     "fromLine": [
+      1
+     ],
+     "by": "default",
+     "key": "L1.$floor"
+    },
+    {
+     "text": "did the run change a file?",
+     "fromLine": [
+      0
+     ],
+     "by": "default",
+     "key": "J.$guard.changed-from-seed"
+    }
+   ],
+   "notChecked": [
+    "line 1: \"release heading\" — code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.",
+    "line 1: what the text says — you judge it at Accept"
+   ],
+   "notCheckedBy": {
+    "line 1: \"release heading\" — code could not build a legal check from it: line 1: fact \"release heading\": the label \"## [\" is not one of the labels the input \"Changelog\" holds before a date. A label is picked from that list, never typed: \"(hamr,\", \"-\", \"] -\", \"(hamr\", \"Tested\", \"blue (hamr,\", \"bold (hamr,\", \"card (hamr,\", \"switch (hamr\", \"fwdloop (hamr,\", \"decides. Tested\", \"required (hamr,\". Nothing was signed.": "agent",
+    "line 1: what the text says — you judge it at Accept": "default"
+   }
+  }
+ }
+]

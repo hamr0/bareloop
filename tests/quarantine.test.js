@@ -111,7 +111,7 @@ test('appendGreen carries the flag per RUN, not per entry — a released bridge\
 
 // ── 2. what the hold WITHHOLDS ──────────────────────────────────────────────
 
-test('a held green earns no learning credit: deriveStatus does not count it, and the release is what promotes', () => {
+test('a held green earns no reuse credit: deriveStatus does not count it, and the release is what promotes', () => {
   let b = minted('soft-green');
   b = appendGreen(b, RECORD({ runid: 'ms2', patient: 'aurora-u', verdictType: 'soft-green' })).bridge;
   assert.equal(deriveStatus(b.history), null, 'two held greens on two patients are still no evidence at all');

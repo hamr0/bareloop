@@ -79,6 +79,7 @@ import {
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { filterUnsure } from '../ticketlabels.js';
+import { sheetRowsOf, sheetFoundLine } from '../sheetrows.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -1222,14 +1223,14 @@ export function getAcceptContext(runid, opts = {}) {
  * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
  * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
  * @param {any[]} records
- * @returns {{path: string, bytes: number|null, sha256: string|null}[]}
+ * @returns {{path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}[]}
  */
 export function deliveredOf(records) {
-  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null}>} */
+  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}>} */
   const byPath = new Map();
   for (const r of records) {
     if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
-    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null });
+    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null, ...(typeof r.pairedTaken === 'string' && r.pairedTaken ? { pairedTaken: r.pairedTaken } : {}) });
   }
   return [...byPath.values()];
 }
@@ -1271,6 +1272,8 @@ export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
 /** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
 export const RESULT_FILE_GONE = 'the saved file is gone';
 export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
+/** the note for a plain .md saved under a new name because the name paired with its JSON was already taken (code-owned; the page types no words) @param {string} taken */
+export const RESULT_MD_RENAMED = (taken) => `saved under a new name because ${taken} was already taken`;
 /** the same two states for a red run's file, which is the last one the check read (not a delivered file) */
 export const RESULT_JUDGED_GONE = 'the file is gone';
 export const RESULT_JUDGED_CHANGED = 'the file changed after the check';
@@ -1791,6 +1794,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const stages = rubricStagesOf(spec);
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
+  const mdFiles = delivered.flatMap((d, i) => (d.path.toLowerCase().endsWith('.md')
+    ? [{ i, name: basename(d.path), state: read[i].state, words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null), ...(d.pairedTaken ? { note: RESULT_MD_RENAMED(basename(d.pairedTaken)) } : {}) }] : []));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
   // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
@@ -1839,6 +1844,15 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
       // run's own tree still holds exactly it (sha256 against the output-judged record), else the page says there is no saved result to show
       const j = readJudged(records, n, treeRootForRun(row));
       if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); out.fromCheck = true; } catch { obj = null; } }
+    }
+    // S5: a passed check of a sheet line says what was found (the claim's own count or value, never a cell's text); a failed one keeps bareguard's gap words in `why`
+    const sheetPart = Array.isArray(st.params.parts) ? st.params.parts.find((/** @type {any} */ p) => p && p.class === 'sheet' && Array.isArray(p.checks)) : null;
+    if (sheetPart && obj && typeof obj === 'object' && obj.claims && typeof obj.claims === 'object') {
+      const idOf = new Map(sheetRowsOf({ stages: [st] }, jobLines).filter((x) => x.id !== undefined).reverse().map((x) => [x.key, x.id]));
+      out.checkRows = out.checkRows.map((/** @type {any} */ r) => {
+        const check = r.key && r.result === 'passed' ? sheetPart.checks.find((/** @type {any} */ c) => c && c.id === idOf.get(r.key)) : null;
+        return check ? { ...r, found: sheetFoundLine(check, obj.claims) } : r;
+      });
     }
     if (fp) {
       out.source = fp.source;
@@ -1901,6 +1915,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
       i, path: d.path, name: basename(d.path), bytes: d.bytes, state: read[i].state,
       words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null),
     })),
+    // MD3: the plain text files delivered beside the step files (their own `delivered` entries, same states and words); absent when the run delivered none (a red or an old run)
+    ...(mdFiles.length ? { md: mdFiles } : {}),
     gap,
   };
 }
@@ -1910,11 +1926,11 @@ const DOWNLOAD_TYPES = { '.json': 'application/json', '.md': 'text/plain', '.txt
 
 /**
  * `GET /api/runs/:runid/download?i=<n>` — delivered file `n` (an index into the run's own `destination-written` list), or why not. The path is
- * the record's, never the request's; the sha256 must still match the record.
- * @param {string} runid @param {unknown} index @param {{ home?: string }} opts
- * @returns {{ok: true, name: string, type: string, buf: Buffer}|{ok: false, code: number, error: string}}
+ * the record's, never the request's; the sha256 must still match the record. `view` (`?view=1`, MD3): a `.md` / `.txt` file is served inline (opens in the tab), any other file stays an attachment.
+ * @param {string} runid @param {unknown} index @param {{ home?: string }} opts @param {boolean} [view]
+ * @returns {{ok: true, name: string, type: string, buf: Buffer, inline: boolean}|{ok: false, code: number, error: string}}
  */
-export function getRunDownload(runid, index, opts = {}) {
+export function getRunDownload(runid, index, opts = {}, view = false) {
   const row = findRunRow(runid, opts);
   if (!row || row.via === 'import' || !existsSync(row.spine)) return { ok: false, code: 404, error: 'no such run' };
   const delivered = deliveredOf(parseJsonl(row.spine).records);
@@ -1924,7 +1940,7 @@ export function getRunDownload(runid, index, opts = {}) {
   if (got.state !== 'ok') return { ok: false, code: 409, error: got.state === 'gone' ? RESULT_FILE_GONE : RESULT_FILE_CHANGED };
   const name = basename(delivered[i].path);
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
-  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf };
+  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf, inline: view && (ext === '.md' || ext === '.txt') };
 }
 
 /**
@@ -2182,6 +2198,9 @@ function getRunDetailBody(runid, opts) {
       synthetic: true,
     });
   }
+  // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
+  const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
+  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always };
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never
@@ -2304,7 +2323,7 @@ function getRunDetailBody(runid, opts) {
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, specForParts),
-    auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
+    auditChecks,
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
     placeRules: placeRuleLines(rawSpineRecords),
@@ -4373,14 +4392,14 @@ export function handleRequest(req, res, opts) {
       return;
     }
     if (sub === 'download') {
-      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home });
+      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home }, url.searchParams.get('view') === '1');
       if (!got.ok) { sendText(res, got.code, got.error); return; }
       // the name is the delivered file's own basename; quotes and control characters never reach the header
       const plain = got.name.replace(/[^A-Za-z0-9._-]/g, '_');
       res.writeHead(200, {
         'content-type': `${got.type}; charset=utf-8`,
         'content-length': got.buf.length,
-        'content-disposition': `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
+        'content-disposition': got.inline ? 'inline' : `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
         'x-content-type-options': 'nosniff',
       });
       if (method === 'HEAD') res.end(); else res.end(got.buf);
@@ -4588,7 +4607,7 @@ export async function panelMain(argv, ctx) {
   }
   try {
     const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
-    ctx.out(`bareloop panel — read-only, ${panelUrl(boundPort)} (Ctrl-C to stop)`);
+    ctx.out(`bareloop panel — ${panelUrl(boundPort)} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.
     await new Promise(() => {});

@@ -115,7 +115,10 @@ import {
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
-import { runPageMap, tooManyAsksText } from './pagemap.js';
+import { tooManyAsksText } from './pagemap.js';
+import { runLook } from './sheetlook.js';
+import { isSheetInput } from './inputlook.js';
+import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
@@ -440,12 +443,12 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, reds: Red[],
- *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[]}>}
+ *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[], block?: import('./checkblock.js').CheckBlock}>}
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
@@ -472,8 +475,9 @@ export async function authorCloseForJob({
   onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
-  // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
-  lookFn = runPageMap,
+  // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`). S1: the default is `runLook` (src/sheetlook.js), which hands every input
+  // that is not a CSV with a `~` rule to `runPageMap` unchanged, and reads such a CSV with the sheet look instead (one call per CSV).
+  lookFn = runLook,
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -493,6 +497,8 @@ export async function authorCloseForJob({
   carriedPicks = null, onPicks = () => {},
   // hamr 2026-11-13 (N-2): the Drop/Add choices of the draft this one follows (the picks record file's `rowChoices`); a Revise keeps them, code still judges every one
   carriedChoices = null, onChoices = () => {},
+  // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`): a Revise keeps a Drop of the very same check
+  carriedSheetDropped = null,
   // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
   // every existing caller runs byte-identical: `ask` absent means no confirm
   // turn runs at all, exactly as before this piece existed.
@@ -631,9 +637,12 @@ export async function authorCloseForJob({
       survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn) {
       onPhase('look', {});
+      const sheetLabels = (Array.isArray(inputs) ? inputs : []).filter((i) => isSheetInput(i)).map((i) => i.label);
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);
       survey = await lookFn({
         texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, prove: proverOf(frozen.texts), ...(rates ? { rates } : {}),
+        // the look is told which inputs are sheets; absent when none is, so a job with no CSV hands its look the very arguments it always had
+        ...(sheetLabels.length ? { sheets: sheetLabels } : {}),
         ...(Object.keys(lookCallOptions).length ? { callOptions: lookCallOptions } : {}),
       });
       onPhase('look-done', { state: survey?.state ?? null, facts: survey?.facts?.look?.facts?.length ?? 0 });
@@ -710,10 +719,15 @@ export async function authorCloseForJob({
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
     block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
+    // S4: the rules of a line that reads a sheet are the sheet checks' alone: no pick question, no page path (src/sheetrows.js `sheetLineNumbers`, the row-edit turn's own rule)
+    block.setSheetLines(sheetLineNumbers({ inputs, texts: ledgerTexts, jobLines }));
     block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
+    // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
+    block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
-    const scoped = answerQuestions ? scopedRules(jobLines, { inputs, look }) : [];
+    // S4: a line that reads a sheet has no count-pick path: the sheet checks decide its rules, so none of its rules is offered a pick
+    const scoped = answerQuestions ? scopedRules(jobLines.filter((l) => !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), { inputs, look }) : [];
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
     // a rule whose words already are its check is settled by the block as written (no ask, no suggestion call)
     matched.askRules = matched.askRules.filter((r) => !obviousCheck(r.text));
@@ -907,7 +921,7 @@ export async function authorCloseForJob({
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
-    ...(block ? { block, editGenerate } : {}),
+    ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -928,7 +942,7 @@ export async function authorCloseForJob({
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
-      ...(block ? { block, editGenerate } : {}),
+      ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
     });
@@ -1011,7 +1025,7 @@ export async function authorCloseForJob({
     if (lineRefusals.length || ruleRefusals.length) closeDecl.refused = [...lineRefusals, ...ruleRefusals]; else delete closeDecl.refused;
   }
 
-  return {
+  const result = {
     ok: true,
     refusal: null,
     verdictType: picked,
@@ -1029,6 +1043,9 @@ export async function authorCloseForJob({
     interview,
     confirmed,
   };
+  // S4: a rubric job's live check block rides the result without being part of it (not enumerable: nothing serialises it), so the panel's final-card Drop and Add on a sheet row edit the one list the draft was made from
+  if (block) Object.defineProperty(result, 'block', { value: block, enumerable: false });
+  return result;
 }
 
 /** The fields `assembleSpec` writes, and therefore the fields a DRAFT must not

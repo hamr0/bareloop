@@ -11,10 +11,11 @@ import { fileURLToPath } from 'node:url';
 import { createPanelServer } from '../src/panel/server.js';
 import { createAuthorRoutes } from '../src/panel/authorroutes.js';
 import { ANTH_CFG } from './helpers.js';
+import { track } from './tmp-track.mjs';
 
 const dirs = [];
 test.after(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
-const tmp = (p) => { const d = mkdtempSync(join(tmpdir(), p)); dirs.push(d); return d; };
+const tmp = (p) => { const d = track(mkdtempSync(join(tmpdir(), p))); dirs.push(d); return d; };
 const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 function makeRepo() {
   const dir = tmp('reattach-repo-');

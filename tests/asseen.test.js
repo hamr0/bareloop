@@ -39,6 +39,13 @@ test('the picker stores nothing when every label is on the first line, or none i
   assert.equal(asSeenOf(noDep, [PRICE, DEP], 'Flights'), null);
 });
 
+test('the picker bounds the block at the next result, and a label already on the first line needs no example (both inside the line cap)', () => {
+  const second = '- link "From 43 US dollars."\n- generic "x"\n- link "From 50 US dollars."\n- generic "Departure time: 9:09 AM."';
+  assert.equal(asSeenOf(second, [PRICE, DEP], 'Flights'), null, 'the second result\'s label is not the first result\'s');
+  const onFirst = '- link "From 43 US dollars. Departure time: 8:00 AM."\n- generic "Departure time: 9:09 AM."';
+  assert.equal(asSeenOf(onFirst, [PRICE, DEP], 'Flights'), null, 'a label on the first line is not searched for again below it');
+});
+
 test('the picker masks a secret in the example lines', () => {
   const page = `- link "From 43 US dollars. token sk-ant-api03-${'a'.repeat(40)}"\n- generic "Departure time: 9:09 AM."`;
   const r = asSeenOf(page, [PRICE, DEP], 'Flights');

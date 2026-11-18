@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun } from '../src/runlist.js';
+import { track } from './tmp-track.mjs';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'audit-grid');
 export const RUNID = 'mvtatlxw';
@@ -15,7 +16,7 @@ const JOB = 'pulselog-strict-live-3';
 
 /** @returns {{ home: string, opts: { home: string } }} */
 export function makeAuditGridWorld() {
-  const root = mkdtempSync(join(tmpdir(), 'audit-grid-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'audit-grid-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   const out = join(root, 'session');
@@ -40,7 +41,7 @@ export const RUBRIC_RUNID = 'mvij7kuk';
  * @returns {{ home: string, opts: { home: string } }}
  */
 export function makeRubricGridWorld() {
-  const root = mkdtempSync(join(tmpdir(), 'audit-grid-rubric-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'audit-grid-rubric-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   const out = join(root, 'session');

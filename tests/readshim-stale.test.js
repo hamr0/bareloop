@@ -27,8 +27,9 @@ import { join } from 'node:path';
 import { StalePointerError } from 'litectx';
 import { createReadShim, wrapReadTool, readShimArm, READ_SHIM_CAP } from '../src/readshim.js';
 import { createCtxTools } from '../src/tools.js';
+import { track } from './tmp-track.mjs';
 
-const mkdir = () => mkdtempSync(join(tmpdir(), 'shimstale-'));
+const mkdir = () => track(mkdtempSync(join(tmpdir(), 'shimstale-')));
 
 /** A read tool that hands back whatever is at `path` in `files`, like shell_read. */
 const readTool = (files) => ({

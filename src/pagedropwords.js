@@ -34,6 +34,12 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'phrase-no-result': (d) => `"${d.other}" is on the page but in none of its results, so it is not checked.`,
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,
+  // S1 (copied from fwdloop src/pagedropwords.js@v0.35.0): the Not-checked reasons for a job word that is not a column of the sheet. `fact` = the job's word.
+  'no-column': (d) => `there is no column '${d.fact}'`,
+  'no-fit': (d) => `no column fits '${d.fact}'`,
+  'column-tie': (d) => `two columns fit '${d.fact}' equally`,
+  // the sheet look named a word that is none of the person's own; it is not used
+  'word-not-yours': (d) => `the sheet look named '${d.fact}', which is not a word in your job, so it was not used.`,
 });
 
 /** @param {Dropped} d @returns {string} the plain sentence for one drop */

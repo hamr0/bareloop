@@ -10,12 +10,13 @@ import { join } from 'node:path';
 import { appendRun } from '../src/runlist.js';
 import { getRunDetail } from '../src/panel/server.js';
 import { attachMemos, attachLearnings, learningsHanded } from '../src/panel/handed.js';
+import { track } from './tmp-track.mjs';
 
 const RUNID = 'mvy0cx24';
 const FX = new URL('./fixtures/audit-memo/', import.meta.url).pathname;
 
 function world() {
-  const root = mkdtempSync(join(tmpdir(), 'audit-memo-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'audit-memo-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   const dir = join(root, 'session', 'source-seed', 'pulselog-panel-strict-bareloop');

@@ -1056,6 +1056,7 @@
               <button class="btn small" type="button" id="chat-q-c1" hidden></button>
               <button class="btn small" type="button" id="chat-q-c2" hidden></button>
             </div>
+            <select id="chat-q-column" data-testid="chat-q-column" aria-label="Choose a column" hidden></select>
             <label class="q-or" id="chat-q-or" data-testid="chat-q-or" for="chat-q-answer">Type your answer:</label>
             <textarea id="chat-q-answer" data-testid="chat-q-answer" rows="2" autocomplete="off" spellcheck="false" aria-label="Your answer" placeholder="Your answer, on one line"></textarea>
             <div class="hint q-err" id="chat-q-error" data-testid="chat-q-error" role="alert"></div>
@@ -4354,7 +4355,7 @@
     if(!rows.length && !gaps.length) return "";
     var mark = function(res){ return res === "passed" ? '<span class="rs-ok">\u2713</span>' : res === "failed" ? '<span class="rs-bad">\u2717</span>' : '<span class="hint">\u00B7</span>'; };
     return resultField("Each check", '<div class="ro-value" data-testid="result-checkrows">' + rows.map(function(r){
-      return '<div data-testid="result-checkrow" data-result="' + escapeXml(r.result) + '">' + mark(r.result) + " " + escapeXml(r.text) + byTagOf(r.by) + (r.result === "failed" && r.why ? ' <span class="hint">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
+      return '<div data-testid="result-checkrow" data-result="' + escapeXml(r.result) + '">' + mark(r.result) + " " + escapeXml(r.text) + byTagOf(r.by) + (r.result === "passed" && r.found ? ' <span class="hint">\u2014 ' + escapeXml(r.found) + "</span>" : "") + (r.result === "failed" && r.why ? ' <span class="hint">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
     }).join("") + gaps.map(function(g){ return '<div data-testid="result-checkrow" data-result="failed"><span class="rs-bad">\u2717</span> ' + escapeXml(g) + "</div>"; }).join("") + "</div>");
   }
   function resultTextLine(line){
@@ -4674,7 +4675,11 @@
         ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
       '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
       resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div>' +
-      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") + '</div>';
+      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") +
+      (data.md || []).map(function(m){
+        return resultField("Saved", m.words ? '<div class="ro-value" data-testid="result-md-gone">' + escapeXml(m.name) + ' \u2014 ' + escapeXml(m.words) + '</div>'
+          : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a>' + (m.note ? ' \u2014 <span data-testid="result-md-note">' + escapeXml(m.note) + '</span>' : '') + '</div>');
+      }).join("") + '</div>';
     var ownPages = (data.pages || []).length >= 2;
     (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
     if(data.gap){
@@ -5479,6 +5484,7 @@
     var qLine = document.getElementById("chat-q-line");
     var qText = document.getElementById("chat-q-text");
     var qChoices = document.getElementById("chat-q-choices");
+    var qColumn = document.getElementById("chat-q-column");
     var qC1 = document.getElementById("chat-q-c1");
     var qC2 = document.getElementById("chat-q-c2");
     var qOr = document.getElementById("chat-q-or");
@@ -6329,10 +6335,27 @@
           if(c){ btn.textContent = c.label; btn.setAttribute("data-choice", c.choice); btn.setAttribute("data-testid", "chat-q-" + c.choice); }
         });
         qChoices.hidden = cs.length === 0;
-        qOr.hidden = b.orLabel === null; qAnswer.hidden = b.orLabel === null; qSend.hidden = b.orLabel === null;
+        // a column tie: ONE choose-one picker listing every tied column (a native select, the page's own select style); a tie has no box to type in, and Send posts the picked column as the `column` choice
+        var cols = b.columns || [];
+        qColumn.hidden = cols.length === 0;
+        qColumn.textContent = "";
+        if(cols.length){
+          var first = document.createElement("option"); first.value = ""; first.textContent = "Choose a column"; qColumn.appendChild(first);
+          cols.forEach(function(c){ var o = document.createElement("option"); o.value = c; o.textContent = c; qColumn.appendChild(o); });
+        }
+        qColumn.value = "";
+        qOr.hidden = b.orLabel === null; qAnswer.hidden = b.orLabel === null; qSend.hidden = b.orLabel === null && cols.length === 0;
         if(b.orLabel !== null) qOr.textContent = b.orLabel;
         qAnswer.value = ""; qError.textContent = "";
       }
+    }
+    // hamr 2026-11-17: the locked "The job" box shows the rules as answered — the server's card (syncJobLines) holds the
+    // updated `~` lines, so while a session is live the box follows state.card.jobText. Never touches an open (unlocked) box.
+    function syncJobBoxFromSession(state){
+      var jt = state && state.card && state.card.jobText;
+      var box = document.getElementById("jf-job");
+      if(!sessionLive || typeof jt !== "string" || jt === box.value) return;
+      setVal("jf-job", jt); fitCardBoxes();
     }
     function renderActions(state){
       lastState = state;
@@ -6346,6 +6369,7 @@
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
       refreshStartEnabled();
+      syncJobBoxFromSession(state);
       // hamr 2026-10-05: while the session is live and the list changed, bring the newest progress line into view.
       // Never moves keyboard focus, and an unchanged poll tick never scrolls.
       if(progressChanged && sessionLive && progressRow.lastElementChild){
@@ -6655,6 +6679,8 @@
       var id = sessionId;
       // a choice button posts its choice and nothing else; the box's Send posts the box's words with the choice the box carries (a new rule), never read as agree or drop it
       var body = choice === qSendChoice ? {text: qAnswer.value, choice: choice} : {choice: choice};
+      // a tie's picker (a closed question, no box to type in): Send posts the `column` choice with the column chosen
+      if(choice === qSendChoice && !qColumn.hidden){ body = {text: qColumn.value, choice: "column"}; }
       authorPost("/api/author/" + id + "/send", body).then(function(r){
         qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false;
         if(id !== sessionId) return;

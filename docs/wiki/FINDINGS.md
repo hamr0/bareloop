@@ -14665,6 +14665,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 *Update 2026-10-26: FIXED by the time dry read, see F247 ("Departure time" without the colon now reads no time and is dropped as Not checked).*
 
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the note above is the state of 2026-10-26.*
+
 ## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
 
 **Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
@@ -14687,6 +14689,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
 
 *Update 2026-10-26: the "Departure time:" part (a time label whose line holds no readable time) is FIXED by the time dry read, see F247; "StaticText" and "O" are not time facts and are not covered.*
+
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the note above is the state of 2026-10-26.*
 
 ## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
 
@@ -14825,6 +14829,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - Not seen in a live run; no fix built.
 
 ## F247 — time dry read POC and build: a time label the run's checker cannot read after is Not checked (2026-10-26; built on fix/barebrowse-0241, fixes F236 and the "Departure time:" part of F237)
+
+*Update 2026-11-16: since 1583d563 (`withColon`, run mwgsl7zx) a label the page always writes with a colon ("Departure time:") is signed with it and reads its time; the "FIXED" notes under F236 and F237 are the state of 2026-10-26.*
 
 **Grounded in:** `docs/logs/time-dryread-poc-PREREG.md` (frozen at 46574ab, sha256 8502f5a2217397b98a3581a3b306149d328909a3983101600eecb6d51cb008a9), `docs/logs/time-dryread-poc-RESULTS.md` (copy of the POC results); the build is `dryReadTimes` in `src/pagedry.js`, called by `runPageMap` between the money and phrase dry reads; the sentence is `reads-no-time` in `src/pagedropwords.js`; tests `tests/time-dry.test.js` on real pages (`tests/fixtures/time-dry`, `tests/fixtures/idea-a/jfk-lax.page.txt`).
 
@@ -15904,3 +15910,641 @@ Reading: pass or fail depends on whether the worker happens to copy one line or 
 *Update 2026-11-16: the fix is filed upstream as BG-6 (`docs/product/UPSTREAM-ASKS.md`), a bareguard ask proven by POC rounds 1-2 (`.claude/scratch/poc-f337/`, round 2 PASS, single site); nothing built in bareloop.*
 
 *Update 2026-11-16 (later): bareguard declined BG-6 (guard session, hamr's ruling): the worker's quote is the proof; bareguard will not read unquoted lines or learn `listitem`; the fix is caller-side. Root cause found: the worker never sees the signed brief (the worker ask at `src/planrun.js:3671` is the planner's `step.action` plus root plus target; the fix ask at :4425; the worker system prompt at :2700 has no goal); only the planner reads it, and it paraphrases. A $0.60 POC, three sha-locked rounds in `.claude/scratch/poc-asseen/`: round 1 worker arms OLD 0/5+0/5, BRIEF 0/5+0/5, BRIEF+EX 3/5+0/5, FAIL ($0.2235); round 2 worker SIGNED-wins 2/5+1/5, FAIL ($0.0989; on page B the planner's "do NOT join two lines" won 4/5); round 3 planner PLAN-OLD 0/5+2/5 vs PLAN-EX 4/5+5/5, PASS ($0.2810). Google Flights only, DeepSeek flash, n=5. Built: 577856a9 (`asSeenOf` in `src/pagedry.js`, `asSeenBlock` in `src/planrun.js`; signed field `asSeen`). Live: run mwj9xe3c (job flights-walk-rules, panel, DeepSeek flash, 2026-11-16): the signed record held the 2-line example; the planner's step told the worker to copy from the link line "down through that same flight's following 'Departure time: <time>.' line"; all 3 quotes held both lines with [ref] marks; green first try, $0.0383 of $0.50. n=1 live, one site. Also noted, not a defect seen: the planner named the example's values as "known-good candidates", and the 3 results were the page's first 3 qualifying flights.*
+
+### F338: PRE-REGISTERED (2026-11-17) POC B for sheet jobs: does a real worker write typed claim boxes into the step file? Nothing run yet
+
+Question. A sheet job (S3 of `.claude/scratch/spec-fwd035-sheets-f201.md`) asks the worker to write `output/steps/<n>.json` with `text` and a `claims` field holding bareguard's typed boxes (`{value}`, `{rows}`, `{days}`, `{bands}`), and code grades them with `checkStep` and `tables` against the frozen sheet. fwd v0.35.0 got the same boxes through a forced tool (`emit_artifact`); bareloop never forces `toolChoice` and the worker writes a file, so there is no evidence yet that a worker writes nested claims into a file correctly. This POC measures it.
+
+Population. Two jobs, n = 50 tries each, DeepSeek flash direct (Settings row DEEPSEEK_API_KEY: shape openai-api, baseUrl `https://api.deepseek.com/v1`, model `deepseek-flash`, price in 0.6 / out 1.2 per 1M from Settings, booked with no cache discount, which over-reports). One attempt per try (no retries, no replan); each try is one independent sample in a fresh scratch workdir.
+- expenses: `tests/fixtures/sheets/expenses.csv` (40 rows, one quoted "1,200.50"); job line "List every expense over 500, with how many there are and their total"; three typed boxes (rows, count, total).
+- aging: `tests/fixtures/sheets/aging.csv` (8 invoices); fwd's F196 W2 aging line and its two `~` rules; two typed boxes (days, bands) plus a table check (no duplicate Invoice #) that needs no box. The job reads aging.csv, not ar-aging.csv, because ar-aging.csv puts every invoice in 90+ (a lazy all-90+ answer would grade green); aging.csv still lands 6 of 8 in 90+ and one each in 61-90 and 31-60, so it is a weak gradient, not a strong one. Said before data.
+- Checks are fwd's (m10b-sheet-run EXP_CHECKS / AGING_CHECKS); the only check not from fwd's tests is expenses `total` (sumIf, from fwd's F78 live job, which claimed rows, count and sum). Fixtures and job definitions are copies from fwd tag v0.35.0, commit `test: sheet fixtures copied from fwd v0.35.0`; `tests/fixtures/sheets/jobs.json`.
+- The worker surface is bareloop's real one: bare-agent `Loop` + `wireGate`, bareguard `Gate` (writeScope = the job's `output/`), shell tools `shell_read` + `shell_write` from `gatedShellOptions`, `checkArgs: true`, the real persona and strategy text (`PERSONA_TOOLS` + `strategyFor`), the real worker-ask frame (action, repository-root line, "Write your deliverable to"), thinking per the rule (step attempt 1 off), the real one text-only nudge (`TEXT_ONLY_NUDGE`, once). Round bound 8, per-call timeout 120 s.
+
+What is NOT the real surface (said before data; any of these can move the result):
+1. No planner. In a real run the worker's ask is the planner's `step.action`, a paraphrase of the brief (F337). Here the action is code-written: `RUBRIC_GOAL_HEAD`, the input files, a sheet file contract, the job lines, then fwd's `sheetBrief` (answer sentence plus bareguard's worked example per box). So this is the best case for the file way, not the end-to-end one.
+2. The file contract is a hand adaptation of `stepFileContract` ("claims" in place of "cites"). S3 is not built; the real wording is unwritten. The contract also says "the header is row 1, the first data row is row 2". fwd's executor shows the model addressed cells, bareloop's worker reads a raw CSV, so without that sentence a row-number miss would measure the missing sentence, not the file way. It is not check text.
+3. The grade is `checkStep(rubric, 'sheet', claims, {tables})` on the frozen CSV with fwd's signed checks; the S3 judge (`closeSheet` adapted) is not built, so the real judge is not exercised.
+4. The aging job's own words name 'Due date' and 2026-10-11 (the person's `~` rule); the byte check (below) allows only what the person's job words say.
+5. No transport `Retry` around the provider (one attempt per try).
+
+Frozen bars (decided before any paid call; harness sha256 `f4f3569cb1f11ebb95097b2372a3eb4f91f2f65420150971c2eeab06aa70b552` over `lib.mjs`, `prompt.mjs`, `planted.mjs`, `run.mjs` (each joined by `\n---\n` in that order) plus `jobs.json`; the code lives in gitignored `.claude/scratch/poc-b/`):
+- (a) SHAPE. Per job, at least 48 of 50 valid tries write a file that parses as JSON, is an object, has a non-empty `text`, has a `claims` object holding every expected box (and no other), each box valid against bareguard `claimSchema` of its check. Fewer than 48 in either job = FAIL; then STOP and report; options are a separate claims file or a tool, hamr decides; no re-tune.
+- (b) NO FALSE GREEN. All planted wrong files grade red at $0, and the correct hand-made file grades green. Planted set: 14 per job (bad JSON, JSON array, missing `claims`, claims not an object, no text, a missing box, a wrong box type, a string value, a wrong count or total, one row missing, one row extra, rows off by one, rows as strings, a wrong day, a missing day, a wrong band, all-90+). Bar: 28 of 28 red and 2 of 2 correct green. Any miss = FAIL.
+- (c) NO CHECK TEXT. The worker's system text and ask text carry no check-field key (`"op"`, `"rule"`, `"cmp"`, `"where"`, `"lte"`, `"gte"`, `"gt"`, `"column"`, `"asOf"`, `"dateFormats"`, `"table"`, `"covers"`, `"format"`, `"name"`), no whole check object, no camelCase op name (`countIf`, `sumIf`, `daysSince`, `noDuplicates`), and no column name, bound, date or band that the person's own job words do not already say. The plain-word ops (rows, band, count, sum) are ambiguous with box keys and ordinary words and are not tested as text; the box names and bareguard's worked example ARE in the prompt, by design (the same exception fwd took). Byte-checked at $0 by `run.mjs --dry`.
+- Recorded, NOT barred: content green rate per job (box right against the sheet), the red gaps, $ per try and seconds per try (median and p90), rounds per try, text-only endings and whether the nudge recovered. Reference points only, no bar: fwd's deepseek-flash $0.00720 and 6.3 s per try; bareloop's own first attempt $0.0064 and 8.5 s.
+- Cap: hard $2.00 total (both jobs, the probe included, spend booked at the Settings price); the harness stops launching tries and stops an in-flight loop at the next round when the booked total reaches it. Dry estimate before data: about $0.0035 per try, about $0.35 for 100 tries (chars/3.5 tokens, 3 rounds, no cache discount; an estimate, not a measurement).
+- Probe: two consecutive 200s from the battery's own model (two 8-token completions) before the first try, else no fire.
+- Casualty: a provider or transport error, a halt, or a cap stop is NOT a sample; reported apart. A reply cut at max_tokens is a distinct field, excluded from the denominator and counted apart. Three consecutive casualties stop the run (a condition, not a casualty). Per-job attempt ceiling 60. A job short of 50 valid tries by the ceiling is reported with its actual n and cannot pass (a) on a smaller n.
+- Reading: n = 50 per job gives a shape rate, not a content rate; content is an anecdote-grade number for two small sheets on one model and one provider. A failed round is reported FAIL; a second round is pre-registered; never re-tuned.
+
+$0 results before any paid call (`node .claude/scratch/poc-b/run.mjs --dry`, no key in the environment): planted 28 of 28 red; correct file green for both jobs; prompt byte check PASS (found only: "500" for expenses, "Due date" and "2026-10-11" for aging, each also in the person's own job words); a scripted-provider wiring check through the real Loop, Gate, shell tools and `checkArgs` (`--wire`) wrote and graded green for both jobs, and a write outside `output/` was denied and graded "no file written". Real `runs.jsonl` 163 lines before and after; the harness never touches it.
+
+**RESULT (2026-11-17, round 1, tag `round1`, harness sha256 `f4f3569c...b552` as frozen; results in gitignored `.claude/scratch/poc-b/results/round1/` (`tries.jsonl`, `files/`), log `round1.out`).** Numbers re-computed from `tries.jsonl` before writing: 100 valid tries (50 per job), 0 casualties, 0 cut-offs, 0 text-only endings, booked spend $0.481 (probe included), real `runs.jsonl` 163 lines before and after.
+- (a) SHAPE: **FAIL**. Expenses 50 of 50 ok. Aging **38 of 50** (bar 48). All 12 bad aging tries carry the same reason, `bad-box: days .days: missing`.
+- (b) NO FALSE GREEN: PASS at $0 before the fire (28 of 28 planted red, 2 of 2 correct green). (c) NO CHECK TEXT: PASS (byte check, $0, before the fire). Neither bar was tested by the paid tries.
+- Content (recorded, not barred): expenses green **3 of 50** (3 of 50 shape-ok); aging green **29 of 38** shape-ok (29 of 50 valid).
+- Cost and time per valid try, median / p90, booked with no cache discount: expenses $0.0059 / $0.0078, 5.8 s / 8.2 s, median 4 rounds; aging $0.0035 / $0.0051, 4.3 s / 6.1 s, median 3 rounds. Reference only: fwd deepseek-flash $0.00720 and 6.3 s per try. Aging is under fwd on both; expenses is under fwd at the median (cost and seconds) and over it at p90 (cost $0.0078, 8.2 s); fwd's figure is a single per-try number, so medians are the like-for-like read.
+- Cause 1, aging shape (the 12 tries are tries 1, 2, 8, 11, 19, 26, 28, 36, 37, 38, 42, 47): in every one of the 12 the worker wrote each box ONE LEVEL SHORT: `"claims": {"days": {"2": 269, "3": 238, ...}, "bands": {"2": "90+", ...}}` where the box is `{"days": {"days": {...}}}`, i.e. the inner `days` / `bands` key is dropped (example: `files/aging-1.json`). It is not the doubled nesting that was first suspected; no file holds `days.days.days`. The values inside are right-shaped and mostly right. The brief's worked example is `{"days":{"days":{"2":30,...}},"bands":{"bands":{...}}}`: claim name and box type are the same word, so the example reads as a stutter and a worker collapses it. That is a reading from the 12 identical files, not a tested cause (no arm changes the name yet).
+- Cause 2, expenses content: the worker reads the raw CSV and numbers the rows itself. Of the 47 red files, 45 name rows that do not qualify or omit rows that do (`c_over`), 43 fail `c_total`, 13 fail `c_count`; the count itself is right in 37 of 50 files. In 41 of the 47 reds every wrongly added and every omitted row is next to (plus or minus 1) a true row or a claimed row, which fits a row-numbering slip while counting lines in a raw CSV with a quoted comma ("Office supplies, bulk", "1,200.50"), not a threshold misread (examples: `files/expenses-1.json`, `-3.json`: one omitted row, one extra row, total off). The true set is 18 rows. Row numbers alone do not explain the 43 wrong totals; the total is a sum over the worker's own picks, so a wrong pick set gives a wrong total, but wrong arithmetic is not ruled out.
+- Reading: n = 50 per job, one model, one provider, two small sheets, no planner. The shape result for aging is a naming effect read off identical files and is NOT yet shown to be caused by the name. Content 3 of 50 on expenses is a worker that cannot reliably list matching rows from a raw CSV; it is not a harness defect shown by the planted files (they grade red and the correct file green), and it is not a statement about other models. Bar (a) is a FAIL for aging; round 2 is pre-registered below (F339), never a re-tune of round 1.
+
+### F339: PRE-REGISTERED (2026-11-17) POC B round 2: claim names that are not box types, and a row-numbered view of the sheet. Nothing run yet
+Question. Same as F338, after its round 1 FAIL on aging shape. Do two changes, claim names that never equal a box type and a row-numbered text view of the sheet beside the CSV, bring aging shape to the bar and expenses content to a usable rate?
+
+Population and surface: identical to F338 (same two jobs, same fixtures, DeepSeek flash direct from Settings, price 0.6 / 1.2 per 1M booked with no cache discount, bareloop's real Loop, Gate, shell tools with `checkArgs`, persona and strategy, no planner, one attempt per try, thinking per `workerThinkingMode` attempt 1, `ROUNDS` 8, max_tokens 32000). n = 50 valid tries per job. The five "NOT the real surface" caveats of F338 stand.
+
+EXACTLY TWO changes from round 1; nothing else moves:
+1. Claim names never equal a box type. In `tests/fixtures/sheets/jobs.json` the aging check claims `days` becomes `ageDays` and `bands` becomes `ageBand`. The expenses names `over`, `count`, `total` do not equal a box type (`rows`, `value`, `days`, `bands`) and stay. The worked example in the prompt follows from the names (`{"ageDays":{"days":{...}},"ageBand":{"bands":{...}}}`); `lib.mjs` `truth()` and the planted set follow the new names. The hand-made correct file and every planted file use the new names.
+2. The worker gets a row-numbered view: beside the frozen CSV, a plain text file `input/<sheet>.rows.txt` (expenses.rows.txt, aging.rows.txt), one line per CSV line, `row N: <that line exactly as in the CSV>`, header = row 1. It is read with the normal `read` tool. It holds the sheet's own lines and the row numbers only, no check text. The ask lists it as the second input file, and the file contract says to read it for row numbers (replacing the round 1 sentence that said how rows are numbered). This is what product S3 would write at run start.
+
+Frozen bars (decided before any paid call; harness sha256 `f990832bfe956ba29fc036c382c91fd50813d5dd5d051a24eb4a2e1c18783018`, same method as F338: `lib.mjs`, `prompt.mjs`, `planted.mjs`, `run.mjs` joined by `\n---\n` in that order, plus `jobs.json`; the code lives in gitignored `.claude/scratch/poc-b/`):
+- (a) SHAPE: per job at least 48 of 50 valid tries pass the F338 shape check. Fewer in either job = FAIL; STOP and report, hamr decides; no re-tune.
+- (b) NO FALSE GREEN: all planted wrong files grade red and the correct hand-made file green, at $0, with the new names. Planted set 14 per job as in F338 (names changed only): 28 of 28 red, 2 of 2 green.
+- (c) NO CHECK TEXT: the F338 byte check on system text and ask text, plus the numbered view: each view line equals `row N: ` plus the CSV line, the line count equals the CSV's, and no check-field key, op name or check id is in it; and no claim name equals a box type. Byte-checked at $0 by `run.mjs --dry`.
+- (d) CONTENT (new): per job, at least 40 of 50 valid tries grade green on content (`checkStep` over the frozen table). Fewer = content FAIL for that job; a content FAIL does not fail (a), and the two are reported apart.
+- Recorded, NOT barred: $ and seconds per try (median and p90), rounds, text-only endings, the red gaps. Reference only: fwd $0.00720 and 6.3 s; round 1 expenses $0.0059 and 5.8 s, aging $0.0035 and 4.3 s (medians).
+- Cap: hard $1.00 total (probe included, booked at the Settings price); round 1 cost $0.481, and round 2 adds one input file per ask. Probe: two consecutive 200s from the battery's own model before the first try. Casualty, cut-off, three-consecutive-casualties stop, attempt ceiling 60 per job: as F338. One attempt per try; no retries.
+- Reading: a PASS on (a) and (d) at n = 50 is one model, two small sheets, no planner, anecdote-grade for content. Attribution: the two changes land together, so a gain cannot be split between them; the reading is "the pair", not either lever. A failed round is reported FAIL; a third round, if any, is pre-registered, never re-tuned.
+
+$0 results before any paid call (`node .claude/scratch/poc-b/run.mjs --dry` and `--wire`, no key in the environment): harness sha printed equals the frozen one above; planted 28 of 28 red; correct file green for both jobs; byte check PASS (found only "500" for expenses, "Due date" and "2026-10-11" for aging, each in the person's own job words; views derived exactly from the CSV lines, 41 and 9 lines; no claim name equals a box type); the scripted-provider wiring check (reads the numbered view, writes the correct file) graded green for both jobs and a write outside `output/` was denied. Real `runs.jsonl` 163 lines before and after.
+
+RESULT (2026-11-17, F339 round 2; verified from `.claude/scratch/poc-b/results/round2/tries.jsonl` and `round2.out`): 100 valid tries (50 per job), 0 casualties, $0.601 total, cap $1.00 not hit.
+- (a) SHAPE: PASS. expenses 50/50, aging 50/50 (bar 48).
+- (b) NO FALSE GREEN and (c) NO CHECK TEXT: PASS at $0 before any paid call (planted 28 of 28 red, correct file 2 of 2 green; byte check clean; no claim name equals a box type).
+- (d) CONTENT: aging PASS, green 44/50 (reds: c_bands 6, c_days 1). expenses FAIL, green 5/50 (red mentions: c_total wrong 45, c_over omits rows 13, c_count wrong 13; a try can carry several).
+- Recorded: $ per try median / p90: expenses $0.0080 / $0.0109 (range $0.0052-$0.0138), aging $0.0041 / $0.0043 (max $0.0120). Seconds per try median / p90: expenses 5.8 / 7.8, aging 4.5 / 5.4. Reference fwd $0.00720 and 6.3 s.
+- Reading: the row-numbered view fixed row-finding (expenses c_over right 37/50) and the non-box claim names fixed shape (aging 50/50). The remaining expenses miss is arithmetic, summing 18 amounts, not delivery of the sheet. The total check was added by us; fwd's tests have none. One model, two small sheets, no planner: anecdote-grade; round 2 is a FAIL on (d) for expenses, reported apart from (a), no re-tune.
+
+hamr's rulings 2026-11-17:
+1. Tool vs file is a tie on deepseek-flash (fwd: 1 bad call in its archive, $0.00720, 6.3 s; bareloop: 0 of 109 in its archive, 100 of 100 in round 2, $0.0041-0.0080, 4.5-5.8 s; not a same-job head-to-head). Each repo keeps its way.
+2. bareloop copies fwd's sheet code but keeps file-written claims plus three fixes: claim names never equal a box type, a row-numbered view of the sheet, and code does the math (the worker names rows; code computes sums and totals). The third is new: to be specced and POC'd at $0 first.
+3. fwd takes code-does-math and the am7 corrected words later from bareloop's release, not urgent.
+
+### F340: launcher fast-menu POC missed its bar; hamr DROPPED the idea (2026-11-16/17)
+Question. Can the launcher menu show sooner by a worker thread plus lazy imports? (An earlier 2026-11-03 "menu first, load after" POC also failed: the prompt came no sooner; hamr parked it.) The scratch copy `.claude/scratch/menu-poc-b` is not on disk now; the numbers below are the session's own readings, not re-verifiable here.
+- Today's menu: wall about 0.52 s to the menu on a pipe (machine load about 1; median of 5); 0.95 s to `>` on a pty (load 2.4-4.8; range 0.93-1.53 s; median of 7). Bare `node` start is about 0.14 s. A stub that only counts files costs 0.43 s.
+- POC (worker thread plus lazy import): `>` at 0.23-0.25 s; the runs line at about 1.0 s; pick `4` to status 0.94 s down to 0.24 s; `q` exit 0.94 s down to 0.29 s.
+- Pre-set bar: 0.15 s. MISSED. The bar sat below node's own start (0.14 s plus any work), so it was the wrong bar; reported as a miss, not re-tuned.
+- Cost of shipping it: a worker thread, an ANSI rewrite of the menu (old Windows terminal risk), 3 new files.
+- hamr's ruling (2026-11-17): not worth it. DROPPED. Not parked; no re-proposal.
+
+### F341: tool answer (fwd) vs file answer (bareloop), $0 archive reads on both sides (2026-11-17)
+Question. fwd delivers a worker's answer through a forced tool; bareloop's worker writes a step file. Does either lose on shape? Both sides read their own archives; this is NOT a same-job head-to-head and fwd's 10-vs-10 paid POC was not run.
+- fwd (its own read of 141 audit files): deepseek-flash after am37: 114 rows, 17 reds, $0.00720, 6.3 s per row. Before am37: 207 rows, 52 reds, $0.00653, 11.2 s. Muse forced: 11 rows, 0 reds, $0.02139, 9.7 s. Muse before am37: 22 rows, 17 reds. Text-instead-of-tool: 21 rows, all Muse, 0 deepseek. checkArgs bad call: 1. Forcing is fwd M4d am37 (round 2 only, after a text ending; F141/F141b Muse 5/5 forced vs 0/5). The tool answer was a build choice at fwd ce4f366f (2026-09-24), never POC'd.
+- bareloop: 47 rubric-step runs on disk (2026-10-12 to 11-16, all deepseek-flash direct), 109 graded attempts, 0 shape reds (nearest: 3 "no value given" in u-mvcur592), 71 content reds. First attempt median $0.0064 / 8.5 s (p90 $0.0125 / 16.1 s); retry median $0.0224 / 68.8 s (about 3.5x, thinking on). Text-only ending: 0 of 124 rubric attempts, 1 across 80 spines (u-mwi3gz3p, a repo job; the nudge recovered it). The old 3 of 1,491 is not re-verifiable (data gone).
+- Mechanism difference: `shell_write` content is one string and `checkArgs` checks top-level args only, so the inner JSON is checked only at the close (`src/rubricstep.js` parseStepFile :381-387, plainStepGap :427-454).
+- Verdict (hamr): a tie on deepseek-flash; each repo keeps its way. Round 2 of POC B (F339) adds the live file-answer shape: 100 of 100.
+
+### F342: fix-ledger refactor results (2026-11-16/17)
+- 55 tests deleted whose bareloop-patients data was gone: skipped tests 57 to 2; pass count unchanged at 5826.
+- Temp-dir leaks: 38 test files fixed through `tests/tmp-track.mjs`; full-suite `/tmp` entries 881 before, 881 after (no growth).
+- Memo keeps the last red try after a replan (3206c182). Test-proven only, not seen live.
+- Fence row carries `fencePlace` (309bd333). A bare `test` stays `test` because stored-spec views have no tree root; hamr: leave it.
+- The CLI "SIGNING PREPARED" readout is reachable only through `scripts/run-author.mjs` (not shipped), so no test was built for it.
+
+### F343: POC D — code does the math, $0 replay (2026-11-17)
+Question. If the worker only names rows and code computes the sum and count from the frozen table (spec: `docs/product/ITEM33-BUILD.md`, addendum 2026-11-17, S3 (iii) and POC D), does the arithmetic problem seen in F339 (expenses green 5/50, c_total wrong 45) go away, and is the delivered figure code's own?
+
+Input: the 100 saved round-2 worker files (`.claude/scratch/poc-b/results/round2/files/expenses-*.json`, `aging-*.json`, 50 per job). No provider call; $0.
+
+Method: only the rows each worker named are read (`claims.over.rows` for expenses). Code computes the sum of the check's column (Amount) and the count over those named rows from the frozen table (`tests/fixtures/sheets/expenses.csv`). The row-based check grades the named rows against the rows the condition selects (Amount > 500), red naming the wrong or missing row numbers. The report line is `Total of rows 3, 5, 9: 1,234.50 (computed by code from the rows named)` and carries code's number. The worker's own total and count are ignored. Aging has no sum or count check (its checks are daysSince, band, noDuplicates), so the row path is applied only where such a check exists; what applies and what does not is reported plainly.
+
+Frozen bars (written before any number exists):
+- (a) Code's sum and count equal the truth for 100% of files whose named rows equal the true rows (expect 37 of 50 for expenses).
+- (b) A file with wrong or omitted rows grades red naming rows: 13 of 13 for the c_over-red files.
+- (c) The delivered report carries the code's number, never the worker's, byte-checked on all 100 files.
+- (d) The expenses green rate under the new check is reported next to 5/50, never compared as a win (the check changed).
+- Planted 28 of 28 red and 2 of 2 green still hold.
+- A failed bar is reported FAIL; no re-tune.
+
+Results (2026-11-17; script `.claude/scratch/poc-d/run.mjs`, untracked scratch; $0, no provider call):
+- (a) PASS. Of 50 expenses files, 37 name exactly the 18 true rows; for all 37 code's sum (13,065.10) and count (18) equal the truth (37 of 37).
+- (b) PASS. 13 of 50 files name wrong or omitted rows (the same 13 as F339's c_over reds); 13 of 13 grade red, and each gap names row numbers (example: `c_over: claim omits rows: 7; c_over: claim names rows that do not qualify: 2`). The row check agreed with an independent set comparison on all 50.
+- (c) PASS for the 50 expenses files: the report line is code's own text built from the named rows in 50 of 50; in 44 of 50 the worker's own total differed from code's, and in 0 of those did the worker's figure appear in the report. NOT measurable on aging: it has no sum or count check (daysSince, band, noDuplicates), so the row path does not apply, no report line is delivered, and the bar's "all 100" is 50 files, not 100.
+- (d) Reported, not a win (the check changed): expenses green under the new rows check 37 of 50, next to 5 of 50 under the old total/count check.
+- Planted: 28 of 28 red and 2 of 2 green still hold under the old checks (via `runPlanted`).
+- Surprise, for the build: under the rows-only check, planted files that carry a wrong worker total or count but the right rows (`wrong-count-19`, `total-off-by-a-cent`, `value-is-string`, `missing-box-total`) grade GREEN. That follows the spec (worker totals are not graded; the report shows code's number) but means the old planted "red" for those is no longer red; the wrong figure is simply never delivered. Planted wrong-rows files grade red (3 of 3; the `rows-as-strings` file is a shape red before the row check).
+- Reading: 100 saved files, one model, one 40-row sheet; the row path removes the arithmetic failure by construction, and the remaining misses are row picks (13 of 50).
+
+### F344: POC A2 — F201 look prompt, one paid draft (2026-11-17)
+Question. With piece 0 built (the look prompt is fwd's F201 text, commits 69f163ae and ad7829b4; the check block's `named` guard is gone), does the look still tie `~ be friendly` to the page words "Select flight"? Spec: `docs/product/ITEM33-BUILD.md`, addendum 2026-11-17, "POC A2 (piece 0, paid)".
+
+Case: live run mwi76vh8, draft session `smwi75mbqjjbs` (read only). Job, quoted:
+```
+List 3 flights from Boston to Chicago
+~ under $450
+~ departure time between 05:00 and 21:00
+~ be friendly
+```
+Input: `flights: https://www.google.com/travel/flights?q=Flights+from+BOS+to+ORD+on+2026-12-04+one+way&hl=en&curr=USD`, served from the saved page (`tests/fixtures/phrase-link/flights.txt`, byte-identical to the session's `source-seed/tree/input/flights.txt`), so the page is the same as the old draft's. Provider DeepSeek direct, model deepseek-flash, cap $0.30, drafting only (no worker run), n=1 = anecdote either way. The run uses the real drafting path (`createSession`, `src/panel/authorsession.js`), scratch HOME.
+
+Old-prompt control (draft-log line 13, label `page-map`, old look): the look tied all three rules to page words: rule 1 price `words ["From"]` (money, lt 450), rule 2 departure time `words ["Departure time:"]` (time, between 05:00 and 21:00), rule 3 friendly `words ["Select flight"]` (phrase). The signed list (resolved-spec.json) carried L1.~1, L1.~2, L1.~3 all `state built`, facts price / departure time / friendly. So `be friendly` was a built rule tied to "Select flight".
+
+Frozen bars (before any number exists):
+- (1) The draft reaches a signable plan.
+- (2) `be friendly` ends Not checked or an ordinary `!` row, NOT linked to a rule row via a tied look fact.
+- (3) The other rules the old draft tied (price via "From", departure time via "Departure time:") are still tied.
+- A failed bar is reported FAIL; no re-tune, no second try.
+
+Results (2026-11-17; script `.claude/scratch/poc-a2/run.mjs`, untracked scratch; new draft session `smwkhzs9n5hgf` under `.claude/scratch/poc-a2/home/.config/bareloop/panel-sessions/`; real `createSession` path, the saved flights page served through `fetchUrl`; probe 2 of 2 HTTP 200 first; the one look question handling was not needed, none was asked; 2 revise calls ran inside the draft, as in the old one):
+- (1) PASS. The session reached the plan menu and then `prepared` (spec hash 0a8d65a67c81ea39d1abee9bfa79a2d0aa3e4a11dc4231e6fe877b0b2550469b); signing was prepared, not signed, no run started.
+- (2) PASS. The F201 look (draft-log `page-map`) returned no fact for rule 3 and listed it under `cannot`: `{"from":"line 1 rule 3","why":"Friendliness is tone/style, not something the page states per result."}`. The plan card says: `line 1: "be friendly" - No rule can check this, so you judge it at Accept.` It is Not checked (`notCheckedBy` you); no check row is tied to "Select flight".
+- (3) PASS. Rule 1 is still tied: `fact · price limit - money in US dollars or $, under 450 US dollars, after "From", quoted from "flights"` (L1.~1). Rule 2 is still tied: `fact · departure time - time, between 05:00 and 21:00, after "Departure time:", quoted from "flights"` (L1.~2). The agent also kept `exactly 3 results` (L1.count.3-3).
+- Old-prompt control (same case, draft-log line 13): the old look tied rule 3 to "Select flight" and all three rules were built rows.
+- Cost: $0.0121 total drafting (page-map $0.0082, ledger-suggest $0.0004, note-ask $0.0001, confirm $0.0004, author $0.0019, revise-1 $0.0005, revise-2 $0.0005), spend complete; under the $0.30 cap. Probe calls: 2 tiny calls, not metered. `~/.config/bareloop/runs.jsonl` 164 lines before and 164 after.
+- Reading: n=1, one model, one page; the old prompt tied the rule, the F201 prompt did not, on the same page. An anecdote, not a base rate. One small difference: the new look's rule 2 words are `Departure time` (the old: `Departure time:`); the signed check still reads after `Departure time:`.
+
+### F345: helper verb experiment, 0 uptake in 2 runs (2026-11-17)
+Question (hamr). Would a worker on a big repo benefit from spawning a helper? Context: Claude Code REPL/code mode, Cloudflare code mode, executor.sh, RLM.
+- Built on branch `experiment/helper-verb` (kept, unmerged, not developed further): a read-only `ask_helper` verb (read/grep/recall/get under the same fence, 2,000-char answer, 3 calls per ask, round cap 8 ruled by hamr, thinking off, spend on the same cap), off by default. Spec `.claude/scratch/spec-helper-verb.md`; prereg `docs/logs/HELPER-VERB-PREREG.md` on that branch (commit 2536e4fa, sha256 a7ea60405b1a317ec65fe4622503355e9caa46a86cbe090b4a3553cfe0a1a051), frozen before run 2's patient existed.
+- Full gate on 4dbce6f3: 5860 pass, 1 fail (a codeversion test assumes `.git` is a directory; worktree-only, unrelated).
+- Runs: DeepSeek flash direct, $1 cap, patients were bareloop copies. Run mwkhxqmu (missing `judge-round` in SPEND_RECORD_TYPES, 1 file deep): green, 2.1 min, spend at least $0.1627, 0 `ask_helper` calls, 59 tool calls. Run mwkic3r1 (legSpend find vs findLast, 5 files on the call path, held to the prereg hardness bar): green, 3.7 min, spend at least $0.2109, 0 `ask_helper` calls, 59 tool calls.
+- The spine shows helper-verb on with its strategy line sent in both runs. Both fixes were correct, each with extra unrequested lines.
+- Also: no MCP pooling or code mode adopted (PRD v1.138); up to 2 MCP servers per job is in the PRD, parked.
+- Patients and the worktree were deleted after the runs; the spines stay in `.claude/scratch/helper-run*/` (untracked).
+Reading: per the frozen prereg, "0 uptake in 2 runs, n=2, UNDERPOWERED, not proof the verb is useless". One model, two jobs, no OFF arm, so no lift claim either way.
+
+### F346: archive read of the worker's per-round instruction lines (2026-11-17)
+Question. Which lines of the worker prompt (PERSONA_TOOLS, retrieval/edit/component strategies, read-shim strategies) still match a failure seen in real runs? $0 read, no model calls; report `.claude/scratch/archive-read-persona.md`, scripts in `.claude/scratch/archive-read/`.
+- Corpus: 135 real spines with a gate audit. deepseek-flash direct 83 runs (273 writeable asks); Fireworks 47 runs (35 asks, 34 of the output runs one injection harness); claude-sonnet-5 5 runs (16 asks, one Python job family). No Muse, haiku or clipipe runs survive. The 704-run archive behind F282 is gone.
+- No before/after split exists: every line dates 2026-07-13 to 2026-08-19 and the oldest run is 2026-09-06, so a rate is a rate with the line present and a zero is not evidence the line is unneeded.
+- STILL FIRES: P3/P4 arbiter books (deepseek-flash scout 3 of 83 runs and step/fix 1 of 83; Fireworks scout 31 of 36 output runs, one harness; every probe denied, 0 allowed). P5-P7 read little (zero-write capped asks 21 of 137 deepseek-flash repo, 2 of 16 sonnet-5; 0 of 35 Fireworks). P8 text-only ending 1 of 273 asks (mwi3gz3p). EDIT_STRATEGY whole-file rewrites 9 against 580 edits on deepseek-flash repo.
+- NOT SEEN: the F10 groping signature (0 of 135 runs); the F18 magnitude of 9 or more reads of one file (0 of 324 asks, max 6).
+- CANNOT MEASURE: P1; P2 (the gate sees the resolved path); "never put file contents in your reply"; R3; the broader R1/R2 whole-file-read failure; select/compress/isolate (15 steps granted, ctx_stash 0); READ_SHIM_STRATEGY; READ_SHIM_DIFF_STRATEGY (never rendered in this archive, no data rather than a zero).
+- Instrument blind spots: no system prompt in the spine, no read offsets or bytes delivered, no recall query, no reply text, and no OFF arm ever. Repo genre is almost all one strict-typing family.
+Reading: n=135 runs but thin and single-genre; no line is safe to cut. A persona ON/OFF test needs those records first; parked.
+
+### F347: mixed page + sheet job — a job line is not tied to one input (2026-11-17, not seen live)
+- What: S2's sheet check builder (commit 4ce24ab0, src/authorflow.js authorClose ~2663-2675) treats any job line with a `~` rule as a sheet line whenever a CSV input exists. Nothing links a job line to a particular input. In a job with a URL page AND a CSV, the AI could propose a sheet check on a page line.
+- Already caught: code keeps only real sheet columns (columnAt) and only words found on the page, so most wrong mixes are refused.
+- Gap: a page line whose words happen to name a real sheet column could get a sheet check.
+- Status: NOT seen live (every sheet job so far has a sheet only). hamr 2026-11-17: log it, fix only if a real mixed job shows it. Design talk with hamr open (line-to-input tie: AI maps, code checks, ask when unsure).
+
+## F348 — Would fewer, bigger turns (a REPL-style loop) help bareloop? Measured only: the late-round cost rise on deepseek-flash is mostly thinking-on output (off: 1.6x round 12 over round 1), and with thinking off about 10-13% of worker time is one-read-per-round chains; F145 is not a like-for-like comparison
+
+**2026-11-17, $0 archive read. Measured only; nothing changed, nothing built.**
+**Origin.** hamr asked whether a REPL-style loop (fewer, bigger turns) would help bareloop. Two questions: Q1, does a late round cost more than an early one (F145 said no)? Q2, how much worker time is single read-only rounds that could have been one turn?
+
+**Data.** 72 pointer runs in `runs.jsonl`, all deepseek-flash (71 with worker rounds: 2,126 rounds, 383 asks). The Anthropic control is only 6 runs reachable (5 + 1, 432 rounds); F145's 233 runs are not reachable through `runs.jsonl`. Scripts and outputs: `.claude/scratch/turns-measure/` (`measure.mjs`, `measure-thinking.mjs`, `results.json`, `results-thinking.json`, `rounds.json`; untracked).
+
+### THE CONFOUND (read this first)
+The Anthropic control and F145's archive ran with **thinking ON at every phase** (hamr's statement; those spines predate the rule, so no per-call record exists to check it). The deepseek-flash runs ran under **today's split rule** (planner on, scout off, step attempt 1 off, attempt 2+ on, fix on; F232, "Thinking is ONE rule"). Thinking makes rounds longer and output-heavier. **Neither the Anthropic control nor F145 is a like-for-like comparison with the deepseek-flash numbers below.**
+
+**Step 1 split.** The `worker-round` records carry NO thinking field. The spine does carry per-CALL records written since commit d23042ba (2026-10-17): `thinking-decision` (mode sent) before a call and `thinking-status` (bare-agent's verdict) after it. I gave each round the mode of the latest decision before it (no ask mixes modes; 0 mixed; decision phase matched the round phase every time). Coverage: 50 of 71 runs, 1,266 of 2,126 rounds; the other 21 runs (860 rounds) predate the rule and have no record, shown as "unknown" (deepseek-flash thinks by default, not recorded per call). All 254 status records read "applied"; 20 on-rounds have no status record.
+
+| mode | runs | rounds | avg output tokens/round | computed $ (all phases) |
+|---|---|---|---|---|
+| on | 50 | 580 | 1,859 | 2.69 |
+| off | 50 | 686 | 255 | 1.47 |
+| unknown (pre-rule) | 21 | 860 | 2,233 | 4.56 |
+
+Matched asks reaching round 12 (computed $/round, ask mode = mode of its first round; small n):
+
+| mode | asks | round 1 | round 12 | 12 over 1 |
+|---|---|---|---|---|
+| on | 11 | 0.00158 | 0.00722 | 4.6x |
+| off | 10 | 0.00145 | 0.00235 | 1.6x |
+| unknown | 25 | 0.00089 | 0.00791 | 8.9x |
+
+What it changes: the growth is mostly a thinking-on effect. Output at round 12 is 2,818 tokens (on) against 194 (off), so it tracks output, as F145 said. Under thinking off the curve is close to F145's shape (1.6x, not flat but near). What it does not change: all three cuts are one model, small n (10 to 25 asks), and still not the Anthropic setup. The full-table ratio below stands as the mixed-rule reading.
+
+### Q1 — token mix and cost per position (deepseek-flash, pointer, 71 runs)
+Token mix: cacheRead **83.89%**, cacheWrite **0%**, freshInput 9.27%, output 6.85%. (Sonnet control, 5 runs: cacheRead 91.94%, cacheWrite 7.18%, output 0.88%.)
+- bare-agent maps only `prompt_tokens_details.cached_tokens` (provider-openai.js:249), so cacheWrite 0 is structural on the OpenAI shape, not a finding.
+- The cache-read price is bare-agent's default 0.1x, not DeepSeek's real discount.
+- Booked column excludes the F206 booking-error runs mul5fofw and mulbz0ny (153 rounds at the default rate, **$6.53 of the $12.26 booked**). Computed uses config rates for all rounds.
+
+| round # | n | avg cacheRead | avg output | booked $ | computed $ |
+|---|---|---|---|---|---|
+| 1 | 383 | 1,925 | 1,243 | 0.0019 | 0.0023 |
+| 2 | 280 | 3,105 | 517 | 0.0021 | 0.0031 |
+| 4 | 210 | 10,506 | 1,150 | 0.0022 | 0.0030 |
+| 8 | 95 | 26,898 | 2,863 | 0.0046 | 0.0064 |
+| 12 | 46 | 44,274 | 2,604 | 0.0046 | 0.0065 |
+
+Matched asks reaching 12 (46 asks, same asks at every position): computed 0.00118 (round 1) to 0.00654 (round 12) = **~5.5x**; booked 0.00093 to 0.00464 (~5.0x). Sonnet control, 11 matched asks: computed 0.0152 to 0.0252 (~1.7x).
+
+**Read.** F145's "flat or falling" does NOT hold on deepseek-flash (round 12 is ~5.5x round 1 on matched asks, computed), but the amounts are tiny: **$8.72 computed for all 72 runs**. No cost argument for batching turns shows up in dollars at this scale.
+
+### Q2 — how much time is collapsible
+Step and fix worker rounds, pointer, 70 runs, 209 asks, 1,655 rounds, 2,367 calls. Calls per round: 0: 208, 1: 701, 2: 648, 3: 58, 4+: 40. Single read-only rounds: 446. Chains of consecutive single read-only rounds: 93 (lengths 2: 52, 3: 27, 4: 6, 5: 2, 6: 1, 7: 4, 11: 1), 264 rounds in chains.
+
+Collapsible rounds (a chain of n loses n-1): upper 171, visible-dependency-free 168, pessimistic 124. Median round 2.55 s, worker wall 13,551 s. **Time share: 3.2% upper, 3.2% visible, 2.3% pessimistic.**
+
+Split by thinking mode (ask mode; same rounds): on, 511 rounds, median 4.06 s, shares 4.1 / 4.1 / 3.1%; **off, 443 rounds, median 1.61 s, shares 13.5 / 12.9 / 9.8% (70 asks, 31 chains; about 113 s of 837 s)**; unknown, 701 rounds, 3.3 s, 2.2 / 2.2 / 1.5%. Reading: the 3.2% is a blend; where thinking is off, rounds are short and the collapsible share is the same order as Sonnet's. Sonnet (5 thinking-on runs, 16 asks, 350 rounds): 14.8 / 13.2 / 10.3%.
+
+### Side notes
+- Fireworks cache numbers are unreliable: 43 of 464 rounds have zero cacheRead.
+- The booked total ($12.26) is inflated by the F206 runs; use computed for comparisons.
+
+**Outcome.** Measured, no change, no build.
+
+### Limits
+- Ask boundary is my definition (a new phase, iteration, or run/step/replan/scout marker starts an ask), not a recorded field.
+- Position tables mix phases (scout, plan, step, fix).
+- Round seconds are the gap since the previous spine record, so they include tool time.
+- Scratch spine copies were not verified identical to the originals.
+- Runs without a gate audit (4) are excluded from Q2.
+- The thinking split is a join by file order, matched asks per mode are 10 to 25; one model, one corpus.
+
+### F349: POC — AI offers a job rewrite that moves hidden rules to ~ lines (2026-11-17)
+
+Idea (hamr, design, not built): before drafting, one AI call reads the job and offers a rewrite that moves rules hidden in a step line onto `~` lines; the person picks Use this or Keep mine; after that only `~` lines are checked. The rewrite must never invent a rule. Pre-registered here before any model call. Harness and key: `.claude/scratch/poc-rewrite/` (`run.mjs`, `jobs.json`, `key.md`).
+
+Setup: DeepSeek direct, model deepseek-flash, thinking off, temperature 0, JSON reply, n=1 call per job, cap $0.20 (rates from the Settings row, 0.6 / 1.2 per 1M).
+
+The 12 jobs (9 real from `~/.config/bareloop/panel-sessions/*/card.json` jobText, 3 hand-written and marked; no secret-shaped text present; no real job had all rules on `~` lines with a clean step line, so two of the "all on ~" cases are hand-written; no real sheet job existed, one hand-written sheet job added):
+1. (real, web, hidden) `List 3 flights from Boston to Denver with price and departure time`
+2. (real, web, hidden) `List every laptop on the page with its name and price.` / `~ price is under 1500 euros`
+3. (real, repo, hidden) `Run the type checker in strict mode with no emit and confirm zero errors in src/checks.js, confirm no new type errors in any other file under src/ against the pre-change baseline, and run the existing test suite to confirm every existing test still passes.`
+4. (real, ticket, hidden) `Write a one-sentence triage note saying what the ticket asks, quoting its title word for word` / `~ the note must quote the ticket title exactly` / `State whether the ticket is open or closed, as written`
+5. (real, web, hidden) `Find the last 3 releases with their version and date` / `Write a short summary of what changed` / `~ under 80 words` / `~ one paragraph`
+6. (real, repo, hidden) `Make npm test pass with no failing tests, by fixing the cause in the source code under src/` / `~ do not edit any file under test/` / `~ do not lower the number of tests that run` / `~ no suppression comments and no any annotations`
+7. (real, web, hidden) `List 3 stays in Porto` / `~ under €200 total`
+8. (real, repo, nothing hidden, all rules on ~) `Fix the bug in src/sum.js so the tests in test/sum.test.js pass` / `~ don't edit test/` / `~ no new dependencies` / `~ keep the comment at the top of src/sum.js`
+9. (HAND-WRITTEN, web, all on ~) `List flights` / `~ 3 in total` / `~ from Boston to Chicago` / `~ under $450` / `~ nonstop`
+10. (HAND-WRITTEN, sheet, all on ~) `Sum the Amount column of the sheet` / `~ report the total only` / `~ round to 2 decimals`
+11. (real, web, plain) `Find the latest release heading`
+12. (HAND-WRITTEN, web, plain) `Summarize the page`
+
+Groups: hidden-rule = jobs 1-7 (7); all-on-~ = 8, 9, 10 (3); plain = 11, 12 (2).
+
+Answer key (frozen before any call; ~ = own rule line; variants in brackets):
+- 1: step "List flights"; ~ [3 in total | 3 flights], ~ from Boston to Denver, ~ price, ~ departure time (price and departure time may share one line).
+- 2: step "List every laptop on the page"; ~ name, ~ price (may share one line); keep ~ price is under 1500 euros.
+- 3: step "Run the type checker"; ~ strict mode, ~ no emit (may share a line), ~ zero errors in src/checks.js, ~ no new type errors in other files under src/ against the baseline, ~ existing tests still pass.
+- 4: step "Write a triage note saying what the ticket asks"; ~ one sentence, ~ quote the title word for word / exactly (the existing ~ may serve this one). Line 2 step "State whether the ticket is open or closed"; "as written" optional.
+- 5: step "Find the releases"; ~ last 3, ~ version and date (may share a line). Step "Write a summary of what changed"; ~ short optional; keep ~ under 80 words and ~ one paragraph.
+- 6: step "Make npm test pass"; ~ no failing tests, ~ fix the cause in the source code under src/ [or edit only src/]; keep the 3 existing ~ lines.
+- 7: step "List stays in Porto"; ~ 3 in total; keep ~ under €200 total.
+- 8, 9, 10, 11, 12: no rewrite (a rewrite identical to the input also counts).
+
+Frozen bars:
+- (a) EXTRACT: in at least 5 of the 7 hidden-rule jobs, every rule in the key appears as its own ~ line (variants allowed). Judged by hand against the key.
+- (b) NO INVENTION: 12 of 12 jobs — every ~ line's words are found in the original job text. Code check: each content word, case-blind, plural/singular tolerated (strip ies/es/s); numbers and currency signs must match exactly as tokens; the stop-words in, total, the, a, an, of, to, from, with, and, or, only, all, be, is, are, at, on, for, by, it, its, as, that, this, so are skipped (frozen now; needed because the idea's own example "3 in total" uses "in" and "total"). One invented rule = FAIL.
+- (c) NO-OP: every no-hidden-rule job (8-12) gets "no rewrite" or a rewrite identical to the input.
+- (d) STEP KEPT: each rewritten step line keeps the job's action, judged by hand against the key; each reported.
+Report-only: cost, cut-offs (excluded from the denominator, counted apart), latency.
+
+Prompt (full text, the job text appended after "Job:"):
+```
+You rewrite a job so that rules hidden inside a step line move onto their own "~" lines.
+A job is lines. A line starting with "~" is a rule for the step line above it. Other lines are steps.
+Move counts, limits, routes, fields, formats and other constraints out of a step line into separate rules, one rule per item. Keep the step line's action. Keep the person's existing "~" lines unchanged.
+Use only words that are in the job. Never add a rule or a word the person did not write.
+If no step line hides a rule, answer {"rewrite": null}.
+Otherwise answer JSON only: {"rewrite":[{"line":"<step line>","rules":["<rule text without ~>", ...]}, ...]}
+Job:
+```
+
+Results (run once, n=1 per job, no re-tune; provider probe 2x HTTP 200 first; runs.jsonl 167 lines before and after):
+
+Per job (output as `step` / `~ rule`; keys above):
+- 1: `List flights from Boston to Denver` / `~ 3` / `~ price` / `~ departure time`. Route left in the step, count as bare "3". (a) miss.
+- 2: no rewrite. Key wanted name and price as rules. (a) miss.
+- 3: step `Run the type checker in strict mode with no emit` / `~ in strict mode` / `~ with no emit`; step `confirm zero errors in src/checks.js` / `~ zero errors in src/checks.js`; step `confirm no new type errors ... baseline` / `~ no new type errors in any other file under src/` / `~ against the pre-change baseline`; step `run the existing test suite ...` / `~ every existing test still passes`. Every key rule is a ~ line (rules also stay in the step text, and the one step became four). (a) hit.
+- 4: `Write a one-sentence triage note ... word for word` / `~ one-sentence` / `~ quoting its title word for word`. Key rules hit, but the person's own `~ the note must quote the ticket title exactly` and the whole second step `State whether the ticket is open or closed` were dropped. (a) hit; (d) step lost.
+- 5: `Find the last 3 releases with their version and date` / `~ last 3 releases` / `~ with their version and date`. Key rules hit, but the second step and the person's `~ under 80 words` / `~ one paragraph` were dropped. (a) miss (keep rule); (d) step lost.
+- 6: `Make npm test pass ...` / `~ no failing tests` / `~ fixing the cause in the source code under src/`. The person's 3 own `~` lines were dropped. (a) miss (keep rule).
+- 7: `List 3 stays in Porto` / `~ under €200 total`. The count stayed in the step. (a) miss.
+- 8: (nothing hidden) rewrote to `Fix the bug in src/sum.js so the tests in test/sum.test.js pass` / `~ in src/sum.js` / `~ so the tests in test/sum.test.js pass`, dropping the person's 3 `~` lines. (c) miss.
+- 9, 10, 11, 12: no rewrite. (c) hit.
+
+Bars:
+- (a) EXTRACT: FAIL, 2 of 7 (jobs 3 and 4).
+- (b) NO INVENTION: PASS, 12 of 12 (0 invented words by the code check). The check is weak on its own: "~ 3" and fragments pass; it catches new words, not dropped rules.
+- (c) NO-OP: FAIL, 4 of 5 (job 8 got a junk rewrite).
+- (d) STEP KEPT: FAIL at job level: first steps kept everywhere, but whole steps were dropped in jobs 4 and 5 (a rewrite that loses a step changes the job).
+- Report-only: cost $0.00203 total (12 calls, about $0.00017 each); cut-offs 0 of 12; latency 0.65-1.3 s per call.
+
+Odd: the model dropped the person's existing `~` lines in 5 of the 6 jobs that had them (2 kept). The prompt said to keep them; the model did not. It also left rules inside the step (jobs 1, 7) and duplicated them (job 3), and it split rules at the word level ("~ 3", "~ with no emit") rather than as a rule. Verdict: the idea as one plain call FAILS its bars (a) (c) (d); (b) alone is not a safe signal. No second round.
+
+#### Round 2 (prereg)
+
+hamr ruled a round 2 of F349. Same 12 jobs, SAME frozen answer key and bars (a)-(d) as round 1; nothing loosened. Cap $0.20, n=1 call per job, deepseek-flash direct, thinking off, temperature 0. Script `.claude/scratch/poc-rewrite/run2.mjs`. Two changes only:
+
+1. The AI only points; code does the bookkeeping. The model returns, per step, the exact words that are guardrails. Code cuts each pointed phrase out of the step line (first case-blind occurrence in the line as it stands), tidies leftovers (double spaces, space before comma/period, doubled commas, "and and", a preposition left before "and", a dangling "and" / "with" / "from" / "to" / "in" / "of" / "by" / "under" / comma at either end), and adds the phrase as written as its own `~` line directly under that step, in the model's order, before the person's own `~` lines. Every other line and every `~` line the person wrote is kept untouched by code. Refused and counted: a phrase that is not an exact (case-blind) substring of its step line, and a move that would leave the step line without a word. A refused move changes nothing. The job's step lines are shown to the model numbered ("1 ...", "2 ..."; `~` lines are not numbered), since the job text itself has no numbers. So (b) is now: every move is an exact substring, refusals reported.
+2. The prompt (hamr's words, verbatim, job text filled at the end):
+```
+This is a job a person wants done. Each numbered line is a step, and the lines starting with ~ under a step are its guardrails: the rules the result must meet, and they are what gets checked. Sometimes a person writes a guardrail inside the step itself. For example, in 'List 3 flights from SFO to LAX under $500 nonstop', the words '3', 'from SFO to LAX', 'under $500' and 'nonstop' are guardrails hidden in the step. Read the job below. Is there any step that has a guardrail within it that could be moved to its own ~ line to make the job clearer? Copy the words exactly as the person wrote them; never add, reword or invent a rule, and leave the person's own ~ lines alone. If no step hides a guardrail, say so.
+Answer only JSON: {"moves":[{"line":<step number>,"words":["<exact words>", ...]}]}, or {"moves":[]} when nothing is hidden.
+THE JOB:
+<job text>
+```
+Scoring: (a) hand-judged against the key on the final job text code produced; (b) all moves exact substrings, 12 of 12 jobs, refusals reported; (c) no-hidden-rule jobs 8-12 end byte-identical to the input; (d) each step keeps its action, hand-judged. Report-only: refusals, cost, cut-offs, latency, final job text per job. A FAIL is reported FAIL; no round 3.
+
+Round 2 results (n=1 per job, no re-tune; provider probe 2x HTTP 200; runs.jsonl 167 lines before and after; all 12 calls HTTP 200, 0 cut-offs, 0 parse errors):
+
+Final job text code produced (moves the model pointed at in brackets):
+- 1 [3 | from Boston to Denver | with price and departure time]: `List flights` / `~ 3` / `~ from Boston to Denver` / `~ with price and departure time`.
+- 2 [none]: unchanged (key wanted name and price as rules).
+- 3 [in strict mode | with no emit | zero errors in src/checks.js | no new type errors in any other file under src/ against the pre-change baseline | every existing test still passes]: `Run the type checker and confirm, confirm, and run the existing test suite to confirm.` / 5 `~` lines with those phrases. Every key rule is a `~` line, but the step reads garbled (the tidy left "confirm, confirm, and").
+- 4 [one-sentence | quoting its title word for word]: `Write a triage note saying what the ticket asks` / `~ one-sentence` / `~ quoting its title word for word` / the person's own `~` kept / `State whether the ticket is open or closed, as written` untouched.
+- 5 [last 3 | short]: `Find the releases with their version and date` / `~ last 3` / `Write a summary of what changed` / `~ short` / person's 2 `~` kept. "version and date" was not pointed at.
+- 6 [with no failing tests | by fixing the cause in the source code under src/]: `Make npm test pass` / those two as `~` / the person's 3 `~` kept.
+- 7 [3 | in Porto]: `List stays` / `~ 3` / `~ in Porto` / `~ under €200 total` kept. Porto, an extra move beyond the key, left the step.
+- 8 to 12 [none each]: byte-identical to the input.
+
+Bars (frozen, unchanged):
+- (a) EXTRACT: PASS, 5 of 7 (jobs 1, 3, 4, 6, 7). Misses: job 2 (no move), job 5 ("version and date" left in the step).
+- (b) NO INVENTION: PASS, 12 of 12 jobs; every pointed phrase was an exact substring. Refusals: 0 phrase refusals, 0 empty-step refusals.
+- (c) NO-OP: PASS, 5 of 5 byte-identical.
+- (d) STEP KEPT: PASS, every step kept its action and no step or person `~` line was lost (code kept them); caveat: job 3's step became ungrammatical and job 7's step lost "in Porto" to a rule.
+- Report-only: cost $0.00228 total (about $0.00019 per call); latency 0.62-1.13 s.
+
+Reading: all four bars pass, (a) at the threshold (5 of 7, n=1). The round-1 failure class (dropped person lines, dropped steps, junk rewrite of a clean job) is gone because code keeps the lines. What remains is cosmetic and unproven at scale: the tidy leaves a garbled step when several phrases are cut from one long sentence (job 3), and the model both under-points (jobs 2, 5) and over-points (job 7, Porto). Two of 7 hidden-rule jobs were missed, so n=1 on 12 jobs is an anecdote at the bar. No round 3.
+
+#### Round 3 (prereg)
+
+Why: round 2 passed all four bars (n=1) but job 3's step came out `Run the type checker and confirm, confirm, and run the existing test suite to confirm.` Cause (code, not the model): the model pointed at five phrases in one sentence; each phrase was the object of a verb ("confirm"). Cutting the object left the verb orphaned three times (`... checker and confirm , confirm , and run ... to confirm .`) and the old tidy only trimmed leftovers at the ends of the line, never in the middle. Fix, code only: cuts leave a marker; a word sitting directly before 2 or more cut points in one step (its object was moved out) is dropped; a run of separators/markers ("and", commas) that holds a cut point collapses to one separator (and, else comma, else nothing at the ends); the old end-trim stays. Proved at $0 by re-applying the SAVED round-2 model answers (`results2.json`) through the fixed code, no calls: job 3 now reads `Run the type checker and run the existing test suite.` plus the same 5 `~` lines; the other 11 jobs came out byte-identical to round 2.
+
+Round 3 setup: prompt unchanged (hamr's round-2 text), fixed tidy code (`run3.mjs`), n=3 calls per job (36 calls), same 12 jobs, same frozen key and bars (a)-(d), deepseek-flash direct, thinking off, temperature 0, total cap $1.00 across all rounds. Stability rules, frozen now: report each bar per repeat (3 scores); "held" = all four bars pass in at least 2 of the 3 repeats AND (b) passes in 3 of 3 (any invented or non-substring move in any repeat = FAIL). Also reported: per job, how often each key rule was moved (0-3), and any garbled step.
+
+Round 3 results (36 calls, all HTTP 200, 0 cut-offs, 0 parse errors; provider probe 2x200; runs.jsonl 167 before and after; raw in `.claude/scratch/poc-rewrite/results3.json`):
+
+Per repeat, frozen bars:
+- (a) EXTRACT: repeat 1 FAIL 4 of 7 (jobs 1, 3, 6, 7); repeat 2 PASS 5 of 7 (jobs 1, 3, 4, 6, 7); repeat 3 FAIL 4 of 7. Job 4 was handled in 1 of 3 repeats; jobs 2 and 5 never.
+- (b) NO INVENTION: PASS, PASS, PASS (12 of 12 each; every pointed phrase an exact substring; 0 refusals of any kind in 36 calls).
+- (c) NO-OP: PASS, PASS, PASS (5 of 5 byte-identical each).
+- (d) STEP KEPT: PASS, PASS, PASS (no step or person `~` line lost; job 3 now reads `Run the type checker and run the existing test suite.` with its 5 `~` lines in all 3 repeats; no garbled step anywhere).
+
+Held verdict: NOT HELD (FAIL). (b) passed 3 of 3, but all four bars passed together in only 1 of 3 repeats (repeat 2), needing 2. The cause is (a) only. Round 2's (a) pass at 5 of 7 was the lucky side of a coin flip on job 4.
+
+Move counts per job (3 repeats; each key rule moved 0-3 times):
+- Job 1: 3, route, price and departure time: 3/3 each.
+- Job 2 (miss): name and price: 0/3. The model answered "no move" every time.
+- Job 3: strict mode, no emit, zero errors, no new errors, tests pass: 3/3 each.
+- Job 4 (unstable): one sentence and quote the title: 1/3 each (repeat 2 only; the other two repeats returned no move).
+- Job 5 (miss): "last 3" 3/3 and "short" 3/3, but "version and date": 0/3.
+- Job 6: no failing tests, fix in src: 3/3 each.
+- Job 7: "3": 3/3 (and the extra "in Porto": 3/3, which takes Porto out of the step).
+- Jobs 8-12: no move 3/3.
+
+Cost: $0.00679 for round 3; running total over rounds 1-3 about $0.011 of the $1.00 cap. The model is deterministic enough at temperature 0 that 6 of 12 jobs gave identical output all 3 times; the only wobble was job 4.
+
+#### Round 4 (prereg)
+
+Why: round 3 was NOT HELD because (a) wobbled; the model never pointed at list-fields wording ("with its name and price" in job 2, "with their version and date" in job 5, 0 of 3 each) and job 4 moved in 1 of 3 repeats. ONE change: one more example in the prompt showing a list-fields guardrail being moved, with no test-set job as the example. Everything else as round 3: fixed tidy code, n=3 per job (36 calls), same 12 jobs, same frozen key and bars (a)-(d), same held rule (all four bars pass in at least 2 of 3 repeats AND (b) 3 of 3), deepseek-flash direct, thinking off, temperature 0, total cap $1.00 across all rounds. Script `run4.mjs`.
+
+Prompt text, hamr's round-2 text with the one sentence added after the first example (job text filled at the end as before):
+```
+This is a job a person wants done. Each numbered line is a step, and the lines starting with ~ under a step are its guardrails: the rules the result must meet, and they are what gets checked. Sometimes a person writes a guardrail inside the step itself. For example, in 'List 3 flights from SFO to LAX under $500 nonstop', the words '3', 'from SFO to LAX', 'under $500' and 'nonstop' are guardrails hidden in the step. Likewise, in 'Find 5 hotels in Rome with name and price', the words '5', 'in Rome' and 'with name and price' are guardrails hidden in the step. Read the job below. Is there any step that has a guardrail within it that could be moved to its own ~ line to make the job clearer? Copy the words exactly as the person wrote them; never add, reword or invent a rule, and leave the person's own ~ lines alone. If no step hides a guardrail, say so.
+Answer only JSON: {"moves":[{"line":<step number>,"words":["<exact words>", ...]}]}, or {"moves":[]} when nothing is hidden.
+THE JOB:
+<job text>
+```
+Also reported: per-job move counts for jobs 2, 4, 5 and any new extra moves.
+
+Round 4 results (36 calls, all HTTP 200, 0 cut-offs, 0 parse errors, 0 refusals; probe 2x200; runs.jsonl 167 before and after; raw in `results4.json`):
+
+Per repeat, frozen bars:
+- (a) EXTRACT: PASS 5 of 7 (jobs 1, 2, 5, 6, 7), PASS 5 of 7 (same), PASS 6 of 7 (adds job 4). Job 3 is now a miss in all 3: the model cut the sentence into "in src/checks.js", "under src/", "against the pre-change baseline" and left "zero errors" and "no new type errors" in the step, so the key's rules are not whole `~` lines.
+- (b) NO INVENTION: PASS, PASS, PASS (12 of 12 each; every phrase an exact substring).
+- (c) NO-OP: FAIL, FAIL, FAIL (4 of 5 each). Job 8 (nothing hidden) now got `Fix the bug` / `~ in src/sum.js` / `~ so the tests in test/sum.test.js pass` in all 3 repeats, the person's own `~` lines kept.
+- (d) STEP KEPT: PASS in all 3 by the strict reading (each step still carries its action; no step or person `~` line lost), with caveats: job 2's step became `List laptop on the page.` (the word "every" moved to a rule), job 3's step is a half-cut run-on (`Run the type checker and confirm zero errors, confirm no new type errors in any other file and run the existing test suite to confirm every existing test still passes.`), job 8's step became `Fix the bug`.
+
+Held verdict: NOT HELD (FAIL). (b) passed 3 of 3, but (c) failed in 3 of 3 repeats, so all four bars passed together in 0 of 3.
+
+Move counts (3 repeats):
+- Job 2: "with its name and price" 3/3 (was 0/3 in round 3, so the example worked for it); but the extra move "every" also 3/3.
+- Job 4: one sentence and quote the title 1/3 (repeat 3 only), the same as round 3.
+- Job 5: "last 3" 3/3 and "with their version and date" 3/3 (was 0/3); "short" moved 1/3.
+- Extra moves new this round: job 8's whole goal tail ("in src/sum.js", "so the tests in test/sum.test.js pass") 3/3, job 2's "every" 3/3, job 3's fragments 3/3. Job 7's "in Porto" 3/3 as before.
+
+Cost: $0.00772 for round 4; total over rounds 1-4 about $0.019 of the $1.00 cap.
+
+Reading: the Rome example fixed the list-fields miss (jobs 2 and 5 now 3/3) but taught the model to over-move: it now rewrites a job whose rules were already on `~` lines and cuts a clause into fragments. (a) is stable now; (c) broke. No round 5 without hamr's word.
+
+#### Decision (hamr 2026-11-17)
+
+The AI job rewrite is PARKED, not built. Four rounds, total about $0.019, and no stable pass: round 2 passed once, round 3 did not hold (extraction 4, 5, 4 of 7), round 4 fixed the list-fields miss with one example but then over-moved (a job with nothing hidden got rewritten, the no-op bar failed 3 of 3). Each prompt fix broke another bar. The misses were the safe kind: the words stayed in the step and nothing was invented.
+
+Replaced by a simpler rule: ONLY `~` lines are captured and checked. A line without `~` says what to do and is never checked; the job box says so plainly. No AI rewrite, no guessing. The AI may still SUGGEST a good missing rule the person did not write (from the person's own words and what the input shows, code-checked, the existing `!` rule). It shows under Suggested ("not in your job, not checked unless you add it"), and Add writes a real `~` line into the job text, so the job text always matches what is checked. Spec: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b). No round 5.
+
+### F350: S4 prose-word patches, seen live, withdrawn (2026-11-17)
+
+Setup: scratch panel 127.0.0.1:4711, scratch HOME `.claude/scratch/live-s1/home`, DeepSeek flash, `expenses.csv`. Draft sessions only (no run ids), about $0.007 each.
+
+Walk 1 (before ruling A, commit 3463d6bb). Job: "1 List the prices of the expenses, with no expense listed twice. / 2 List the large expenses and how many there are. ~ Price over 500".
+- Line 2 worked: tie ask Price to Amount, `[you]` rows where Amount > 500, `[agent]` count, `[default]` saved copy. Drop moved the `[agent]` count to Suggested with Add.
+- Line 1 failed: no `~` rule, so it was not a sheet line. It still asked "prices: Amount or Tax?" (that box had no Drop it button) and swapped the word ("List the Amount of the expenses"), then built no sheet check. "No expense listed twice" was unchecked and hidden under "what the text says".
+- Odd Not checked row: line 2 "expenses" — there is no column 'expenses' `[agent]`.
+
+Fix tried: ruling A (6e303060: every line of a sheet-only job is a sheet line, plus Drop it on the prose box). Walk 2:
+- Line 1 got checks, but (i) the same check twice on line 2 (`[you]` rows where Amount > 500 AND `[agent]` rows where Amount > 500).
+- (ii) A pointless question "I found 2 columns matching 'large expenses': Amount, Tax" (a phrase treated as a column word).
+- (iii) A weak AI pick "no duplicate Amount" for "no expense listed twice" (two expenses can cost the same).
+
+hamr: "now we are patching". Redesign: only `~` lines are checked (F349 decision; PRD v1.141; `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b)). The two patches (3463d6bb, 6e303060) come back out (piece R1).
+
+Note on the commit split: b3b24cfc was split by hamr's own `!` line into 6e303060 (code) and a4f76cdd (bareloop-b1's F348); the tree is byte-identical.
+
+### F351: R0 POC — revert dry run, prose-check paths, job-line owner (2026-11-17, prereg)
+
+Spec: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-17 (b), piece R0. $0, no AI or provider call. Throwaway worktree (`.claude/scratch/r0-wt`) and scratch only; the real tree changes only by this finding's result append.
+
+Tasks (verbatim from the addendum):
+- (i) Dry-run the R1 revert of 6e303060 then 3463d6bb in a throwaway git worktree. Report conflicts; list every file whose result differs from `3463d6bb^` and why (later S4 commits on the same lines); run the full suite there (`node scripts/hermetic.mjs`, one suite at a time) and quote exit code and last line.
+- (ii) The R3 report: every code path that today (after the dry-run revert) builds a check from step prose (look facts, sheet checks, `[agent]` rows, `$` defaults), with file:line, read from source, not guessed.
+- (iii) R4 feasibility: name the one owner of the job lines; show by reading code where Add/Drop would write/remove a `~` line and which views read it (card, job box, signed lines, Job tab); list any second copy of the job text that would drift.
+
+Bars (FROZEN): revert dry-run suite exit 0 OR every failure explained by a named later commit; R3 report complete (every builder of checks visited); R4 has exactly one owner OR the drift points are listed.
+
+If any bar fails, the result goes to hamr before R1 starts.
+
+Result (run 2026-11-17, prereg commit 8a3560de; $0, no AI call; throwaway worktree `.claude/scratch/r0-wt` at 8a3560de, removed after; `~/.config/bareloop/runs.jsonl` was 167 lines before and 167 after).
+
+**(i) Revert dry run.** `git revert --no-edit 6e303060` then `3463d6bb`: both applied with NO conflict (c2ee0202, 5eda6044 in the worktree). The 18 files the two commits touched (`bareloop.context.md`, `CHANGELOG.md`, `src/authorflow.js`, `src/blockasks.js`, `src/checkblock.js`, `src/questionbox.js`, `src/sheetfind.js`, `src/sheetlook.js`, `src/sheetoffer.js`, `src/sheetrows.js`, `tests/sheet-ask`, `sheet-draft`, `sheet-find`, `sheet-look-run`, `sheet-prose-ask` (deleted), `sheet-rowedit`, `sheet-rows`, `sheet-tie-box` tests) were diffed against `3463d6bb^`: ZERO differences, all 18 byte-identical (the only later commits after 6e303060 are docs-only, `git log 3463d6bb..HEAD` shows no src/tests/CHANGELOG/context change). The addendum's worry about later S4 commits on the same lines does not arise.
+Full suite in the worktree (`node scripts/hermetic.mjs`, machine quiet: no other `node --test`, load under 3): `exit=1`, last line `# duration_ms 470594.057458`; tally `# tests 6024, # pass 6021, # fail 1, # skipped 2`. The one failure: `not ok 997 - codeVersion() reads THIS checkout's real HEAD sha, resolved independently off .git/HEAD` (`tests/codeversion.test.js:48`), error `ENOTDIR: not a directory, open '.../r0-wt/.git/HEAD'`. Cause: in a git worktree `.git` is a FILE, the test reads `.git/HEAD` as a directory path. It is a worktree harness artefact, NOT a later commit and not the revert. Not re-run in the real tree (where `.git` is a directory); stated as read from the test and the error, not proven by a second run.
+(Gate baseline for comparison, from the Where-we-are block: 6031 pass / 0 fail at b3b24cfc. The reverted tree has 6021 + 1 fail = 6022 of 6024 counted, 2 skipped; fewer tests than 6031 is expected, the revert deletes `sheet-prose-ask` and the prose cases.)
+
+**(ii) Code paths that build a check from step (non-`~`) prose, read from the reverted worktree.** "Prose" = a job line's own text (`l.text`) as opposed to its `~` rules.
+- `src/pagemap.js:41-42` `mapPrompt`: sends `LINE n: <text>` plus rules to the look AI and asks "for each job line and each ~ rule" for page-word facts; a fact with no `forRule` (from `line N`) is step-prose-derived. Builds from prose: YES (AI maps prose to a look fact).
+- `src/checkblock.js:238-258` `addLook`: a look fact not tied to a rule (`forRule` absent) becomes a `!` row (`kind 'fact'`, `by 'agent'`, `from 'look'`). Builds from prose: YES (the carrier of the row).
+- `src/checkblock.js:323-328` `inJob` + `said` (`:214`) + `match` split (`:272-299`): a `!` row whose words are in the line text OR its `~` rules is "job-derived" and BUILT (Drop-able); only words not in the job are held to Suggested. `said()` includes `l.text`. Builds from prose: YES. This is the exact spot where step prose makes a built check today.
+- `src/checkblock.js:431-455` `matchBang`, `:513-566` `buildLine`, `:587-621` `factsOf`: turn those `!` rows into a signed fact part. Builds from prose: YES (downstream of the above).
+- `src/checkblock.js:899-948` `applyEdit` / `editAdd` / `addCount` (AI row edits, `EDIT_OPS` `:36`; fed by `rowEditUserText` `src/authorflow.js:2683`, which shows the AI the whole line text): an AI-added fact, phrase or count on any non-sheet line is a `!` row, built when `inJob`. Builds from prose: YES.
+- `src/checkblock.js:951-958` `addCount` and `:431` `matchCount` `:332-336`: a count `!` row is built unless a `~` rule names the number; the number may come from prose via `inJob` `:324`. Builds from prose: YES.
+- `src/noteask.js:23-33` `notePrompt` + `src/authorjob.js:763` `askNotes` + `checkblock.js:644-651` `buildNote`: the AI reads ONLY the line text ("text only, no ~ rules") and a "yes" builds a `$ note` row and a `nonEmpty` text part. Builds from prose: YES (a `$` default whose existence is decided by the AI reading prose).
+- `src/sheetlook.js:94-153` `applySheetWords`: a look word tied to the line's own prose (`at.rule === undefined`) with a real header that "is yours" (`isYours` `:105`, `wordsSaidOn` includes prose) becomes a column look fact (`:117, :123`); on a sheet line (`checkblock.js:529`) a `!` fact is forced Not checked ("sheetFacts"); a prose word with an ask gets `rule null` and `addSheetAsks` `:264-268` drops it (no row). Builds a check from prose: NO on sheet lines (Not checked); the same fact on a non-`~` line enters `addLook` above (counted there). Reading only, not run: whether that column-shaped fact survives `rubricStepShapeReds` on a non-sheet line was not tested.
+- `src/sheetrows.js:57-62` `sheetLineNumbers`: a SHEET line is a line with a `~` rule. Sheet checks (`sheetoffer.js:83-99` `sheetOfferRules` / `sheetSuggestProp`, `src/sheetbuild.js` `buildSheetChecks`, `checkblock.js:167-181` `setSheet`, `:569-585` `buildSheetPartOf`) exist only on lines with a `~` rule. Builds from prose: NO for rows on a no-`~` line; YES-in-part on a `~` line: the sheet `[agent]` rows (`checkblock.js:171-173`, built unless dropped) come from the AI's `sheetChecks`, which are shown the whole line (`sheetoffer.js:86-91` rules text "a job line with a guardrail"; line text is in the row-edit prompt), so an `[agent]` check on a `~` line is not limited to that `~` rule's meaning (its `covers` may be `[]`, `sheetrows.js:73-80`). This matches R3's expectation "[agent] only when it belongs to a ~ rule": NOT enforced today.
+- `src/checkblock.js:623-642` `buildDefaults` (`$cited`, `$numbers`) and `:119-123` `fromJob` (`$floor`): decided from the line's structure and inputs, no prose read. Builds from prose: NO (they exist for every line, including no-`~` lines; that is the intended "[default] stays").
+- `src/checkblock.js:781-796` `buildRepo` + `:692-707` `addStages` (repo jobs): the drafter writes work stages from the goal/lines (`fromLine`) and each becomes a `!` stage row, built. Builds from prose: YES (the drafter reads the line text).
+- `src/checkblock.js:338-402` `matchRule`, `:415-430` `matchCountRule`, `:773-779` `matchRepoRule`: built from a `~` rule's own words. Builds from prose: NO.
+- `src/pagemap.js:245-288` `askableFromLook`: loops `lineRules(l)` only. NO.
+- `src/blockasks.js` (questions/answers of the block): operates on rows asked about, never reads `l.text`. NO.
+Net: the expected R3 result "none after R1" is NOT what the reverted tree does. Prose reaches checks through five paths: the look prompt (`pagemap.js:41`), `inJob`/`said` (`checkblock.js:214, :323`), AI row edits (`rowEditUserText`), the note question (`noteask.js`), repo work stages (`addStages`), plus sheet `[agent]` rows with `covers: []`. These need a decision before R3 (hamr's), not a quiet fix.
+
+**(iii) Job-line owner (R4 feasibility).** The one owner of the TEXT is `parseJobBlock` (`src/jobblock.js:28-55`: lines and their `~` rules) and, once a session is live, the session's own `jobLines` array (`src/panel/authorsession.js:510-511`) mutated in place by `syncJobLines` (`authorsession.js:1203-1215`): it splices `jobLines`, rewrites `draft.jobLines = signedJobLines(lines)` (`:1208`), `state.card.jobText = jobBoxText(lines)` and `card.jobText` (`:1210-1211`), `answers[1] = renderJobLines(lines)` (`:1212`). That door already exists and already writes `~` lines (try-3 answers, `:1268-1276`; `CheckBlock.syncJob` `checkblock.js:670-682` then rebuilds rule rows from it, used on the repo path `authorjob.js:1017`). Where Add/Drop would write: `authorsession.js:1407-1430` `sheetFinalEdit` (calls `block.rowChoice(k, op)` at `:1418`, undo at `:1430`; sheet jobs only) and the repo/stage Drop door (`rowChoice` `checkblock.js:1094-1117`, `kind 'stage'` branch), plus the CLI confirm card `src/authorflow.js:2308` (`block.rowChoice`). `rowChoice` today only flips `r.choice` (`checkblock.js:1111`); it never touches job text. So the R4 write would go: rowChoice succeeds -> add/remove a `~` line in `jobLines[n].rules` -> `syncJobLines(jobLines)`; that single call refreshes signed lines, card box and answers.
+Views that read the one text: plan card and Job tab via `signedJobLines` -> `spec.jobLines` (`src/panel/jobplan.js:87, :126`, `server.js:3706`, `jobTextFromSpec` `server.js:3555-4110`); the job box via `state.card.jobText` (`src/panel/index.html:6349-6355` `syncJobBoxFromSession`, `:6736`, `:6482`).
+Second copies that can drift (each must be refreshed in the same step as an Add/Drop):
+- `CheckBlock.lines` (`checkblock.js:227, :671`; text only) and the rule rows (`kind 'rule'`, `text`, `:228`) rebuilt only through `syncJob` (`:670`), which the rubric path never calls (only repo, `authorjob.js:1017`); a rubric/sheet Add that writes `jobLines` must also call `block.syncJob(jobLines)` or the block keeps the old rules.
+- `draft.jobLines` (`authorsession.js:1113`, set `:1208`) and `finalCtx.spec.jobLines`/`resolved-spec.json` (written by `sheetFinalEdit` `:1440`, which clones `finalCtx.spec` and does NOT re-write `spec.jobLines`): a `~` added there would not reach the signed spec unless that door also sets `spec.jobLines` and the spec hash is recomputed.
+- `answers[1]` (`:1212`, the drafter's text) and the draft's goal sentence `spec.goal` (the model's own wording, never re-derived).
+- `card.jobText` stored in card.json (`:1211`), `state.card.jobText`, and the browser textarea `#jf-job` (`index.html:5836, :6351`; only follows while locked and live), plus the reuse origin's `jobText` (`authorsession.js:348`, `index.html:6530`).
+- `rowChoices` / `choicesRecord` (`checkblock.js:1119-1137`) key a Drop/Add by the line's WORDS, so an Add that edits a line's rules does not change that key (rules are not in `lineWords`), but a Revise reading `jobText` back through `parseJobBlock` is the only place that rebuilds rows: consistent only if `jobBoxText` (`jobblock.js:106-108`) was refreshed.
+- `src/interviewrun.js:587-609` (CLI interview) parses the job text itself through the same `parseJobBlock`: no second parser.
+So: one parser and one existing write door (`syncJobLines`), not one stored copy; Add/Drop is not wired to it yet, and the final-card door (`sheetFinalEdit`) bypasses `jobLines`/`spec.jobLines` and `block.syncJob`.
+
+**Bars.**
+- Bar 1 (revert suite exit 0 OR every failure explained by a named later commit): FAIL as written. Exit was 1 with one failing test. It is explained, but by a worktree artefact (`.git` is a file), not by a later commit, so the frozen clause is not literally met. Reverts are clean and byte-identical; everything else passed (6021). hamr decides whether this reads as met.
+- Bar 2 (R3 report complete, every builder of checks visited): PASS. Every file the task listed (`checkblock`, `sheetfind`, `sheetlook`, `sheetoffer`, `sheetrows`, `pagemap`, `authorflow`, `blockasks`) was read, plus the callers `noteask`, `sheetbuild`, `pagerules`, `authorjob`. The result is NOT "none": five prose paths (listed above), so R3 is not a verify-only piece.
+- Bar 3 (R4 one owner OR drift points listed): PASS on the OR (drift points listed). One parser and one write door (`syncJobLines`), but Add/Drop is not wired to it and the final-card door bypasses it.
+Per the pre-registered rule, bar 1 failed strictly: result to hamr before R1.
+
+**Reading (hamr 2026-11-17).** hamr: "yes, our focus is only get code check for ~ and ! stays as it worked before, same flow no changes, we are just removing the forceful attempt to rewrite the job". So the six prose paths in (ii) are the working `!` flow from before the patches, not defects; F350's three problems all came from the two patches (3463d6bb, 6e303060); bar 1's single failure is a worktree artefact (`.git` is a file there), not a code defect. R3 becomes pinning tests only; R1 (revert) and R4 (Add writes a `~` line, reaching the signed spec jobLines) go ahead.
+
+
+### F352: R2 built, gated, then reverted on ruling; R4 dropped (2026-11-18)
+
+R2 (job box hint "Only lines starting with ~ are checked" and the card line "Line N: no ~ rule here") was built and gated (88b8a975, 89bb7b0c, e285026b), then reverted on hamr's ruling: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"
+
+- Why: the hint is false once `!` rows stay, since they still build checks from plain lines; the card line also showed on lines that do have a `~` rule. The old wording ("what the text says, you judge it at Accept") was always right.
+- R4 (Add writes a `~` line into the job text) is DROPPED, never built; it came from the cancelled job-rewrite idea. F351 (iii) drift notes stay as record.
+- Record: the Drop/Add flow for `!` rows is unchanged since v0.59.0; only sheet `[agent]` rows gained the same Drop/Add in S4.
+- R3 pin tests (`tests/pin-tilde-flow.test.js`) stay; none pinned R2 wording.
+
+### F353: POC C — the AI's use of `sheetChecks` (prereg, 2026-11-18)
+
+Frozen before any paid call. A failed round is reported FAIL; a second round is a new prereg, never a re-tune. hamr 2026-11-18: "A, push, drop the question wording" (A = POC C, then the live proof; POC C FAIL stops before any live proof).
+
+**From ITEM33-BUILD.md "#### POC C" (verbatim):**
+- What: 5 drafts per job (expenses, aging) on DeepSeek flash direct; count how often the row-edit reply carries `sheetChecks` and how many code builds.
+- Bar: `sheetChecks` present in at least 4 of 5 drafts per job; every `~` rule shows once; no declaration/stage carries an AI-written check. (fwd saw this only 2 of 2 live; this is the base-rate establisher.)
+- Cap: $0.40.
+
+**Instrument (what the driver reads; nothing else decides a bar).** Draft only, through the real panel code: an in-process `createPanelServer` (scratch HOME `.claude/scratch/poc-c/home`, port 0, so never 4700), POST `/api/author/start` with a rubric card, drive the session to `phase: 'prepared'` (answering a code-made question as below, then `sign-prepare`), then POST `abandon`. No sign, no run. Provider key `DEEPSEEK_API_KEY` rides the driver's env only; config row deepseek-flash direct, `https://api.deepseek.com/v1`, `openai-api` shape, 0.6 / 1.2 USD per 1M tokens (as the live-s1 walk). Every model call is captured by wrapping `https.request` in the driver: request body and response body only, never a header. Per draft the driver saves: the captured calls, the session's `draft-log.jsonl`, `state.finalPlan`, and the session's `resolved-spec.json` (written by sign-prepare).
+
+**Countable definitions (frozen).**
+- B1 `sheetChecks` present: in the captured responses of the draft, a call whose request carries the row-edit tool (name `submit_edits`, `ROW_EDIT_TOOL` in src/rowedit.js) has a tool call whose JSON arguments hold a `sheetChecks` that is an array of length >= 1. Present if ANY such reply of the draft has it (any try; no Revise is issued). Absent otherwise (also when the property is an empty array or not an array). Reading is from the captured wire body, never from what code later kept.
+- B1b report-only counts per draft: number of suggestions in the first reply that carries `sheetChecks`; "code builds" = the count of `draft-log.jsonl` rows with `phase: 'final'`, `rowKind: 'sheet'`, `by: 'agent'`, `state: 'built'` (keys `L<n>.sheet.*`); "code refused" = rows in the draft-log `draft-notbuilt` line plus rows with `rowKind: 'sheet'`, `state: 'not-checked'`. No bar on these.
+- B2 every `~` rule shows once: for each `~` line of the job text (numbered k within its job line n), (i) the draft-log `phase: 'final'` rows with `rowKind: 'rule'` and key `L<n>.~<k>` number exactly 1, AND (ii) in `state.finalPlan.checkItems` (the final card's check list, the same list the card draws) the rule's words (the words of that row; after a code column pick, as the row reads) appear in exactly 1 item text, or the rule is named exactly once in `state.finalPlan.notChecked`, and never in both, never twice. A draft passes B2 only if EVERY `~` rule of its job meets (i) and (ii). A `~` rule that is in neither list (zero) fails.
+- B3 no declaration/stage carries an AI-written check: (i) no captured row-edit reply's arguments carries any key other than `edits`, `sheetChecks` (and `ticketFilter`, which does not apply); no captured declaration/author reply carries a `closeDecl`, `stages`, `close`, `checks` or `verdictType` key; and (ii) in the draft's `resolved-spec.json`, every check of every `sheet` part of every stage of `closeDecl` has an `id` that matches `/^l\d+[ra]\d+$/` (an id code mints), and every stage's `kind` is in the code-owned catalogue the validator accepts (the spec passed sign-prepare, which is the validator's own acceptance). A draft passes B3 only if (i) and (ii) both hold. The AI's `sheetChecks` suggestions themselves are typed suggestions that code builds or refuses (S2); they are not an "AI-written check" under this bar.
+- A draft that cannot reach `prepared` (refused, plan-red, cap stop) is a draft that FAILS B1/B2/B3 only if the AI's reply was the cause; a provider error, a cut-off reply (finish reason `length`), a transport failure or a harness fault is a CASUALTY: counted apart, reported, excluded from the denominator, and replaced by one fresh draft of that job (max 2 replacements per job). A refusal by code on a model answer (plan-red) is not a casualty: it counts as a FAIL on B1 only if no reply carried `sheetChecks`, else it is scored on B2/B3 from what exists (a missing final card makes B2 FAIL).
+- A code-made column question during a draft (a tie) is answered by the driver the way a person would: `agree` if offered, else the first listed column; each is logged. The job texts below use the real column names, so none is expected.
+
+**Jobs (exact text; one `~` per rule; inputs line; the sheets are the repo fixtures, copied to `.claude/scratch/poc-c/data/`).**
+
+Expenses, input `expenses: .claude/scratch/poc-c/data/expenses.csv` (absolute path in the card), table `expenses` (Date, Description, Amount, Tax; 40 rows; 17 amounts over 500 summing to 12406.51, incl. one "1,200.50"; fixture bytes equal to the live-s1 sheet):
+```
+List every expense over 500, with how many there are and their total
+~ Amount over 500
+~ the count of the expenses over 500
+~ the total of the Amount of the expenses over 500
+```
+Aging, input `aging: .claude/scratch/poc-c/data/aging.csv` (Invoice #, Customer, Due date, Amount; 8 invoices; `ar-aging.csv` is not used: it gives every invoice 90+, as POC B's jobs.json notes), the job date 2026-10-11:
+```
+For each invoice, work out the days past due as of 2026-10-11 and put it in its bucket: Current, 1-30, 31-60, 61-90, 90+
+~ days past due is the days since the Due date as of 2026-10-11
+~ every invoice appears exactly once
+~ each invoice is in the right bucket: Current, 1-30, 31-60, 61-90, 90+
+```
+(Both texts follow the POC B jobs and the live-s1 wording: line 1 states the job, rules ride as `~` lines.) Card: `checkType: rubric`, provider `DEEPSEEK_API_KEY`, model `deepseek-flash`, thinking off, destination `.claude/scratch/poc-c/out` (absolute), capUsd 0.1 per draft.
+
+**Run plan.** n = 5 drafts per job, expenses then aging, alternating job by draft (E1 A1 E2 A2 ...). Before firing: two consecutive HTTP 200 probes with the product's own client (node `https`, tiny request), and a $0 check that each job's columns and values match its sheet. Spend: the first draft's cost is read from its draft-log; the batch stops before the next draft if spent + one draft's cost would pass $0.40 (then the undone drafts are reported as not run, and the bar is read on what ran, said so). `~/.config/bareloop/runs.jsonl` is 167 lines before and must be 167 after; the real HOME is not touched.
+
+**Bars (frozen).** PASS only if, for EACH job: B1 holds in >= 4 of its 5 non-casualty drafts, AND B2 holds in 5 of 5, AND B3 holds in 5 of 5. Anything less is FAIL, reported with each failing draft; no re-tune. If POC C FAILs, the live proof is not started.
+
+**Power, stated now.** n = 5 per job is UNDERPOWERED: it gives a base-rate leaning, not a rate (a 4/5 and a true 50% rate are not separable at this n). The result is read as a leaning and never cited as a proven rate. B2 and B3 at 5/5 only mean no counterexample was seen in 5.
+
+### F353 results: POC C PASS (leaning, n=5 per job, underpowered), 2026-11-18
+
+Run exactly as the prereg above (frozen in 2fca5b3b): 10 real panel drafts (draft only: no sign, no run), DeepSeek direct, deepseek-flash, scratch HOME, in-process panel server on port 0. Provider probe before firing: two HTTP 200s. Casualties: 0 (no non-200 call, no `length` cut-off, no replacement draft). Spend: $0.0400 (state) / $0.04001 (sum of draft-log call costs); first draft $0.00683; cap $0.40 never near. `runs.jsonl`: 167 before, 167 after. Driver and per-draft raw files (captured wire bodies, draft-log, final card, resolved-spec) are scratch, `.claude/scratch/poc-c/` (not committed); the reading script is `analyze.mjs` there.
+
+Per draft (replies with `sheetChecks` = row-edit replies that carried a non-empty list; first = its length in the first such reply; checks in spec = every sheet check in the sign-prepared close; agent = extra `[agent]` rows built):
+
+- expenses1: B1 yes (2 replies, first 3); checks in spec 3, agent 0, refused 0; B2 yes; B3 yes; $0.0068.
+- expenses2: B1 yes (2, 3); checks in spec 2, agent 0, refused 1; B2 yes (the total rule is one Not checked line); B3 yes; $0.0026.
+- expenses3: B1 yes (2, 3); checks in spec 4, agent 1; B2 yes; B3 yes; $0.0027.
+- expenses4: B1 yes (1, 3); checks in spec 3; B2 yes; B3 yes; $0.0017.
+- expenses5: B1 yes (1, 3); checks in spec 3; B2 yes; B3 yes; $0.0016.
+- aging1: B1 yes (2, 4); checks in spec 4, agent 2; one code question asked (see below); B2 yes (rule 2 one Not checked line); B3 yes; $0.0072.
+- aging2: B1 yes (2, 4); checks in spec 4, agent 3; B2 yes (rule 2 Not checked); B3 yes; $0.0051.
+- aging3: B1 yes (2, 4); checks in spec 6, agent 3; B2 yes; B3 yes; $0.0051.
+- aging4: B1 yes (2, 5); checks in spec 5, agent 2; B2 yes; B3 yes; $0.0052.
+- aging5: B1 yes (1, 5); checks in spec 5, agent 3; B2 yes (rule 2 Not checked); B3 yes; $0.0021.
+
+Bars: expenses B1 5/5 (bar 4 of 5), B2 5/5, B3 5/5; aging B1 5/5, B2 5/5, B3 5/5. Verdict PASS on every bar. n=5 per job is UNDERPOWERED: this is a base-rate leaning (no counterexample in 5), not a rate, and not proof the AI always sends `sheetChecks`.
+
+Read these with it (nothing hidden):
+- B3 wording: the prereg listed `checks` among keys a "declaration/author reply" must not carry. No declaration/author reply exists in these sheet drafts (the close is built by code from the rows). The one reply carrying a `checks` key is the confirm turn's `confirm_plan`, and its `checks` was an empty list in 10 of 10, so no AI-written check text exists in any reply. I score B3 PASS on that reading and say here the literal key list matched confirm_plan. Every sheet check id in the 10 specs matches code-minted `l<N>[ra]<k>`; stage kinds were only `files-changed` and `rubric-step`.
+- B1 uses the wire bodies; in 3 drafts only one row-edit reply carried the list (expenses4, expenses5, aging5), the others two (a first try, then a retry).
+- expenses2: the AI's `sumIf` suggestion had no `column`; bareguard refused it, and the total rule showed once as Not checked with the refusal reason. A refused suggestion is a real way the sum rule goes unchecked (1 of 5 expenses drafts); the bar did not cover it.
+- aging: the "every invoice appears exactly once" rule built a `noDuplicates` check in 2 of 5 drafts (aging3, aging4) and was Not checked in the other 3 (aging1, aging2, aging5). Shown once either way; the unbuilt case is not a refusal line, so it is not in the refused count.
+- aging1 asked one code-made question: the look read the "90+" in the third `~` rule as a column word, ("no column '90+'; 'Amount' has numbers in 8 of 8 rows. Use it?"). The driver answered Agree, which replaced the rule's words with "...61-90, Amount", so that rule's card text was altered by the person's answer (a person would more likely say Drop it). The band check was still built from the line's own `bucket` words. A "90+" word read as a column is a look finding worth logging; no fix here.
+- The first draft cost $0.0068; no draft passed $0.0072. The cap was never a constraint.
+- Not measured here: whether any of these checks is right on a run (that is the live proof, S3 and S5 already test-proven), and the `Revise` path.
+
+### F354: S5 live proof, expenses and aging (prereg, 2026-11-18)
+
+Frozen before any paid call. hamr 2026-11-18 ("A"): after POC C passed (F353), run the S5 live proof from ITEM33-BUILD.md "### Live proof (end of S5)". A stop for a product defect is a result; no src/ patch, no bigger cap, no re-fire.
+
+**Setup.** Real panel server code in-process (`createPanelServer`, port 0, scratch HOME `.claude/scratch/live-proof/home`; never 4700), DeepSeek direct, `deepseek-flash`, thinking off. Same two job texts as F353 (each rule on its own `~` line), same sheets (`expenses.csv`: 40 rows, 17 over 500 summing 12406.51; `aging.csv`: 8 invoices, job date 2026-10-11). Card cap $0.30 per job (drafting + run, engine-enforced, run ceiling = cap - drafting spend), Time cap 20 min, total $0.60. Spend is read from the spine/ledger, never run.log. `~/.config/bareloop/runs.jsonl` is 167 lines before and must be 167 after.
+
+**$0 checks before spend (done, results below in F354 results).** Key readable (length only); two consecutive HTTP 200s with the product's client (`node https`): 200, 200; each job's direction and values match its saved sheet (expenses: 17 rows over 500, sum 12406.51; aging as of 2026-10-11: INV-100..105 are 90+ (269..118 days), INV-106 61-90 (88), INV-107 31-60 (57)); no secret shape in either sheet; close fails on seed (read from the sign-prepared close with `sheet-recheck.mjs` before sign: no step file; and again from the run's spine at run start).
+
+**Bars (countable; the spec's "Done when").**
+- L1 per job: draft reaches `prepared`, is signed, and the run ends with a verdict (green, or a clean red caught: a red whose spine/ledger names a reason); a provider error is a casualty, reported, not counted.
+- L2 per job: the card (the final plan's check list + Not checked list) shows each `~` rule exactly once (counted as in F353 B2).
+- L3 per job: `node scripts/sheet-recheck.mjs <run folder>` prints ok for every check and exits 0 (only asked of a run that ended green; a red run is reported with its recheck output as is).
+- L4 per job: on a COPY of the run folder, editing one cell of the frozen sheet copy makes the recheck stop at $0 naming the mismatch (exit 1, no provider, no spend).
+- L5 expenses: on a copy, a claim naming 18 rows instead of 17 is red naming the row. Aging: the analogue is one row name changed in the claim (a row the sheet does not have in that bucket), red naming the row.
+- L6 Revise after a column answer walked once: only if a column question comes up naturally in a draft; if none, said so and not manufactured.
+- Spend: <= $0.30 per job and <= $0.60 total from the spine/ledger; the cap is enforced by the engine, never widened.
+- hamr clicks through the panel himself before any done claim (a scratch recipe is left; this proof is not a done claim).
+
+**WATCH.** In F353 aging1 the look asked "use Amount?" on the `~` rule containing "90+" (a band word read as a column word). Record whether it recurs in these two drafts. If it does, answer it as a person would (Drop it, or own words keeping the rule text), never Agree to a wrong column, and log it.
+
+**Power.** n = 1 per job: an anecdote that the wiring runs end to end live, not a rate.
+
+### F354 results: S5 live proof, both jobs green, 2026-11-18
+
+Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`, real panel server code in-process on port 0, scratch HOME `.claude/scratch/live-proof/home` (driver `live.mjs`, scratch, not committed). Casualties: 0. `~/.config/bareloop/runs.jsonl`: 167 before, 167 after. No panel left running (a `panel --port 4792` was started once to check it answers HTTP 200, then stopped by PID).
+
+**$0 checks (before spend).** Key readable (35 chars, no newline); provider probe with the product's client `node https`: 200, 200. Sheets match the jobs (see the correction below). No secret shape in either sheet. Close fails on seed: the sign-prepared close run with `sheet-recheck.mjs` before sign says NOT OK ("no step file for job line 1" on every sheet check, exit 1), and each run's spine carries `close-precheck` verdict `needs_revision` before any worker token. No refused tracked files: both inputs are plain CSV files (no repo).
+
+**Per job.**
+- expenses: draft `smwltomciwtd4`, run `mwltot43`, verdict green (soft-green, door open: "Needs you: Accept", goal met), spend $0.0139 total from the spine (`job-end` $0.01207 + drafting $0.00181; the ledger `settled` row says 0.0138804, spendComplete true), about 33 s. Cap $0.30 never near.
+- aging: draft `smwltpmn30ryq`, run `mwltpuy8`, verdict green (same door), spend $0.0229 total (job-end $0.01787 + drafting $0.00506; `settled` 0.02293284, spendComplete true), about 66 s.
+- Total $0.0368 of $0.60.
+
+**L2 each `~` rule once.** Both final cards: `L1.~1`, `L1.~2`, `L1.~3` appear exactly once each in `checkItems` (by `you`), none in Not checked (the only Not checked line is "line 1: what the text says — you judge it at Accept"). Aging also carried 3 built `[agent]` sheet checks (no duplicate / no empty Invoice #, all Due dates dates) and the `$` defaults; expenses none.
+
+**L3 recheck (run folders = the panel session folders).** `node scripts/sheet-recheck.mjs <folder>`: expenses `ok table expenses 2e9b53969bea`, `ok l1r1`, `ok l1r2`, `ok l1r3`, `ok`, exit 0. Aging `ok table aging ef5d7f4cacae`, `ok l1r1 l1r3 l1r2 l1a1 l1a2 l1a3`, `ok`, exit 0.
+
+**L4 one-cell edit of the frozen sheet, on COPIES of the run folders (recheck only: no provider, $0).** expenses (row 2 Amount 336.19 to 536.19): `mismatch table expenses: the saved sheet is not the bytes frozen at the source door`, every sheet check `RED ... stopped: input "expenses" - the saved sheet no longer gives the table this run recorded at its start`, exit 1. aging (INV-100 Amount 200.00 to 201.00): same words for input "aging", 6 RED, exit 1. I did not re-run the engine (`run-u`) on a tampered copy; only the recheck script was shown to stop.
+
+**L5 claim one row too many, on COPIES.** expenses: the worker's claim listed 18 rows; I added row 2 (an amount of 336.19) so the claim names 19: `RED l1r1 line 1: l1r1: claim names rows that do not qualify: 2`, exit 1. aging (analogue): the band claim for row 8 (INV-106, 61-90) changed to 90+: `RED l1r3 line 1: l1r3: claimed band is wrong: 8`, exit 1. (The "18 instead of 17" in the spec is wrong, see the correction.)
+
+**CORRECTION (my prereg and F353 numbers were wrong).** The expenses sheet has 18 amounts over 500, summing 13206.91 (python `csv`: 40 rows, 18, 13206.91), not 17 / 12406.51. My earlier hand parse split a quoted description ("Office supplies, bulk") on its comma and dropped row 19 (800.40); F353 and the F354 prereg copied that. The worker's 18 rows are right, and the recheck agrees. The sum is computed by code from the claimed rows (the worker's text does not state it). F353's "17" is a wrong fixture note, not a result that changes.
+
+**WATCH.** The "90+" band word read as a column word did NOT recur: no code question was asked in either draft (0 asks, so nothing to Drop or Agree). One draft each, so this says only it did not happen in 2 of 2 here (F353: 1 of 10).
+
+**Revise walk.** Not walked: no column question came up, so there was no column answer to Revise after; I did not manufacture one by changing the job. The Revise-after-a-column-answer item of the spec stays open.
+
+**Surprises / not done.**
+- The `panel --port N` banner still says "read-only", while the launcher's own `start` spawns that same command as the full panel (answers HTTP 200); stale wording, not touched.
+- Not seen live here: a red run (both ran green first try; n=1 each, an anecdote that the wiring runs end to end, not a rate); the panel click-through, which is hamr's; phone width.
+- A tampered-copy test shows the script stops; it does not show the engine's own run-start path stops on a changed sheet (that is test-proven in S3/S5, not re-run live).
+- Panel recipe: `HOME=/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-proof/home node /home/hamr/PycharmProjects/bareloop/bin/bareloop.mjs panel --port 4792`; its runs list shows live-expenses and live-aging (checked through `runsListPayload`, both "passed", "Needs you: Accept"). Stop by PID.
+
+### F355: Reuse of a sheet job refused at signing (live, hamr's walk, 2026-11-18, $0)
+
+**What was seen.** "Reuse workflow" on a green sheet rubric job refused at the signing gates: `broken-close-rubric`, `input "expenses": this run recorded no table fingerprint for it at its start` (`src/sheetrun.js` `readStageSheets`). Session `smwm1446s2vx9`, $0.
+
+**Cause (verified in source and by a red test).** A fresh draft records the sheet's `tableSha` (`recordSheetShas`) inside the author loop (`src/authorflow.js`) before the seed read and the signing gates. The Reuse branch in `src/panel/authorsession.js` skips the author loop and went straight to `finish(reused, null)` and the signing gates, so the reuse session's own `source.json` carried no fingerprint. The run start (`freezeSheets`) records it unconditionally, so only the signing gates were affected.
+
+**Fix.** The Reuse branch now calls `recordSheetShas` for a spec whose close carries a sheet part, before `finish`; an unreadable sheet refuses in the run start's words. The check in `src/sheetrun.js` and `prepareSigning` are untouched. Commit fc07add1; test `tests/sheet-reuse-sign.test.js` (real `prepareSigning`, real expenses.csv; red before with the same refusal, green after; the fresh draft's fingerprint equals the reuse's).
+
+**Why no earlier test saw it.** No earlier test or POC reused a sheet job: the Reuse tests (p5-startfrom, reuse-fence, reuse-imported) use repo specs, and the sheet tests only drafted. Found by hamr's walk, not by the suite.
+
+### F356: The sheet total read a decimal comma, 1e3 and 0x10 as numbers (self-review probe, 2026-11-18, $0)
+
+**What was seen.** A self-review probe of `sheetTotalLines` (`src/sheetclaims.js`): cells `12,50` and `3,00` gave `Total of rows 2, 3: 1,550 (computed by code from the rows named)` (true 15.50); `1e3` summed as 1000 and `0x10` as 16. The line is printed as computed by code in the delivered report and .md, so a wrong number could reach the person. Not seen live.
+
+**Cause (verified in source and by a red test).** The sumIf loop did `Number(cell.replaceAll(',', ''))`: every comma was a thousands mark and JS `Number()` accepts exponent and hex forms.
+
+**Fix.** A cell counts only if it is a strict plain number (optional sign, digits, commas only as thousands groups of exactly three, optional decimals); any other cell takes the existing "not computed (row N has no number in the column ...)" line. Commits aa7bbda6 (red test) and the fix after it; test `tests/sheet-total-strict.test.js`. `src/sheetfind.js` PLAIN_NUMBER (copied from fwdloop) is untouched: out of scope.
+
+**Why no earlier test saw it.** The existing total tests used only `1,234.50`-style cells. Test-proven only, not seen live.

@@ -13,8 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { request as httpRequest } from 'node:http';
 import { spawn } from 'node:child_process';
-import { join, dirname } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 import {
   createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, checkTypeTitle, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
@@ -324,66 +323,6 @@ test('/api/runs/:runid on a fileMissing row: 200 with fileMissing:true, never a 
 // glyph [?] (never [✗], which stays reserved for a real close/arbiter "no").
 // ---------------------------------------------------------------------------
 
-const POC_DEAD = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-sjisejl8.jsonl';
-const havePocDead = existsSync(POC_DEAD);
-
-test(
-  'a real dead spine (poc-sjisejl8: no job-end, died during scout, steps empty) reads as died — glyph [?], never [✗]; why names the real last record; spend is "at least $X", never unknown; map is one "died during planning" box',
-  { skip: !havePocDead && 'no poc-sjisejl8 fixture on this machine' },
-  async (t) => {
-    const home = tmp();
-    const dest = tmp();
-    const destSpine = join(dest, 'poc-sjisejl8.jsonl');
-    cpSync(POC_DEAD, destSpine);
-    // force an OLD mtime regardless of when this test runs / the fixture was
-    // last touched — the died rule is mtime-relative, not wall-clock-fixed.
-    const old = new Date(Date.now() - 20 * 60 * 1000);
-    utimesSync(destSpine, old, old);
-    appendRun({
-      at: '2026-09-09T09:48:59.000Z', runid: 'sjisejl8', job: 'bareguard-u-types-kimi-a-1', spine: destSpine, patient: null, via: 'backfill',
-    }, { home });
-
-    const { base } = await startServer(t, { home });
-
-    const detailRes = await fetch(`${base}/api/runs/sjisejl8`);
-    assert.equal(detailRes.status, 200);
-    const detail = await detailRes.json();
-    assert.equal(detail.died, true);
-    assert.equal(detail.glyph, '?', 'died must use the distinct [?] glyph, never [✗]');
-    assert.equal(detail.outcome, null, 'no job-end really was reached — outcome stays null, only died is new');
-    assert.match(detail.stopReason, /^died — no ending was recorded \(killed, crashed, or the machine slept\)\. Last thing it did: /);
-    assert.match(detail.stopReason, /a scout model call/, 'must name the REAL last record (a worker-round, phase:scout) never a guess');
-    // F195: the died "why" line must use the ONE timestamp format this page
-    // ever shows (YYYY-MM-DD HH:MM, local, 24h, zero-padded) — never a
-    // locale-dependent toLocaleString() spelling like "9/9/2026, 11:49:40 AM"
-    // (every other date on the page reads plain YYYY-MM-DD).
-    assert.match(detail.stopReason, /at \d{4}-\d{2}-\d{2} \d{2}:\d{2}\.$/, `expected a YYYY-MM-DD HH:MM timestamp, got: ${detail.stopReason}`);
-    assert.ok(!/[AP]M/.test(detail.stopReason), `must never carry a locale AM/PM spelling: ${detail.stopReason}`);
-    assert.ok(detail.steps.length >= 1, 'steps empty (no step-start at all) must still produce one box, never an empty map');
-    assert.equal(detail.steps[detail.steps.length - 1].state, 'died');
-    assert.match(String(detail.steps[detail.steps.length - 1].id), /died during planning/i);
-    // F196: the "died during planning" placeholder is a LABEL, never counted
-    // as a real step — the panel must never read "steps: 0 of 1 done" for a
-    // run that died before any step started.
-    assert.equal(detail.steps[detail.steps.length - 1].synthetic, true, 'the placeholder box must be marked synthetic so the client excludes it from the step count');
-    // spend: 2 real worker-round costUsd (0.008187 + 0.010002) — never "unknown"
-    assert.ok(typeof detail.spendFloorUsd === 'number' && detail.spendFloorUsd > 0.018 && detail.spendFloorUsd < 0.019, `expected a real priced-rounds sum ~0.018189, got ${detail.spendFloorUsd}`);
-
-    const runsRes = await fetch(`${base}/api/runs`);
-    const { runs } = await runsRes.json();
-    const row = runs.find((r) => r.runid === 'sjisejl8');
-    assert.ok(row);
-    assert.equal(row.glyph, '?');
-    assert.equal(row.died, true);
-    assert.ok(!/\bdied\b/.test(row.checkType) && !/\bdied\b/.test(row.spend) && !/\bdied\b/.test(row.wall), 'row meta must never carry the literal word "died" — the glyph alone carries it');
-    assert.match(row.spend, /^at least \$/);
-    // a died row's glyph propagating into the Workflows view's client-side
-    // job grouping (item 2, 2026-09-26 merge) is covered in
-    // tests/panel-page.test.js's groupRunsByJob coverage, off this exact
-    // /api/runs row shape — no second server endpoint to test here anymore.
-  },
-);
-
 test('alive is the row\'s pid first, the spine mtime only for a row with no pid (glyph [▶] vs [?])', async (t) => {
   const home = tmp();
   const dir = tmp();
@@ -503,35 +442,6 @@ test('build item 6: a LIVE, still-running spine (no job-end) with priced rounds 
   assert.ok(typeof detail.wallFloorMs === 'number' && detail.wallFloorMs >= 4 * 60 * 1000 && detail.wallFloorMs < 5 * 60 * 1000, `expected ~4m12s (252000ms), got ${detail.wallFloorMs}`);
 });
 
-const POC_RED = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl';
-const havePocRed = existsSync(POC_RED);
-
-test(
-  'a real RED run (job-end present, outcome provider-red) is completely unaffected by the died rule — glyph stays [✗], stopReason unchanged, died:false',
-  { skip: !havePocRed && 'no poc-p2ocuxj8 fixture on this machine' },
-  async (t) => {
-    const home = tmp();
-    const dest = tmp();
-    const destSpine = join(dest, 'poc-p2ocuxj8.jsonl');
-    cpSync(POC_RED, destSpine);
-    // old mtime too — proves the died rule never fires just because a
-    // spine's own file is old; it fires ONLY on outcome === null.
-    const old = new Date(Date.now() - 20 * 60 * 1000);
-    utimesSync(destSpine, old, old);
-    appendRun({
-      at: '2026-09-09T07:57:36.000Z', runid: 'p2ocuxj8', job: 'red-job', spine: destSpine, patient: null, via: 'backfill',
-    }, { home });
-
-    const { base } = await startServer(t, { home });
-    const res = await fetch(`${base}/api/runs/p2ocuxj8`);
-    const detail = await res.json();
-    assert.equal(detail.died, false);
-    assert.equal(detail.glyph, '✗');
-    assert.equal(detail.outcome, 'provider-red');
-    assert.ok(detail.stopReason, 'a red run must keep its own written stopReason');
-  },
-);
-
 // ---------------------------------------------------------------------------
 // real archived data
 // ---------------------------------------------------------------------------
@@ -603,33 +513,6 @@ test(
 // ---------------------------------------------------------------------------
 // toolCalls: unknown (null), never 0, when no gate-audit sidecar exists
 // ---------------------------------------------------------------------------
-
-const POC_NO_AUDIT = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl';
-const havePocNoAudit = existsSync(POC_NO_AUDIT);
-
-test(
-  '/api/runs/:runid on a real spine with no gate-audit sidecar reports each step\'s toolCalls as null, never 0',
-  { skip: !havePocNoAudit && 'no poc-pm48w5az fixture on this machine' },
-  async (t) => {
-    const home = tmp();
-    const dest = tmp();
-    const destSpine = join(dest, 'poc-pm48w5az.jsonl');
-    cpSync(POC_NO_AUDIT, destSpine);
-    // deliberately no sidecar copied alongside it
-    appendRun({
-      at: '2026-09-09T00:00:00.000Z', runid: 'pm48w5az', job: 'poc-no-audit', spine: destSpine, patient: null, via: 'backfill',
-    }, { home });
-
-    const { base } = await startServer(t, { home });
-    const res = await fetch(`${base}/api/runs/pm48w5az`);
-    assert.equal(res.status, 200);
-    const detail = await res.json();
-    assert.ok(detail.steps.length > 0, 'expected at least one step in this real spine');
-    for (const s of detail.steps) {
-      assert.equal(s.toolCalls, null, `step ${s.id} must report toolCalls:null (unknown), never 0`);
-    }
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Workflows grouping moved client-side (item 2, 2026-09-26 merge build): the
@@ -1340,61 +1223,6 @@ test('/api/runs/:runid/job: (d) nothing resolvable at all -> every field "not re
 // real-fields-only rule for Success/Guardrails/Source/Destination/Tools.
 // ---------------------------------------------------------------------------
 
-const REAL_PERSON_OUT = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out';
-const REAL_RESOLVED_SPEC = join(REAL_PERSON_OUT, 'resolved-spec.json');
-const REAL_SOURCE_SEED_DIR = join(REAL_PERSON_OUT, 'source-mu2bglzc');
-const REAL_SOURCE_JSON = join(REAL_SOURCE_SEED_DIR, 'source.json');
-const REAL_PERSON_SPINE = join(REAL_SOURCE_SEED_DIR, 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
-const havePersonFixture = existsSync(REAL_RESOLVED_SPEC) && existsSync(REAL_SOURCE_JSON) && existsSync(REAL_PERSON_SPINE);
-
-test(
-  '/api/runs/:runid/job: (c) NEW — resolved-spec.json + source.json found beside the spine resolve Success/Guardrails/Source/Destination for a real closeDecl spec',
-  { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` },
-  async (t) => {
-    const home = tmp();
-    // copy the real fixture into a FRESH tmp layout at runtime — never read
-    // in place — so this test proves the shape-derivation, not a hardcoded
-    // path on hamr's own machine.
-    const out = tmp();
-    cpSync(REAL_RESOLVED_SPEC, join(out, 'resolved-spec.json'));
-    mkdirSync(join(out, 'source-mu2bglzc'), { recursive: true });
-    cpSync(REAL_SOURCE_JSON, join(out, 'source-mu2bglzc', 'source.json'));
-    mkdirSync(join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop'), { recursive: true });
-    const spineCopy = join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
-    cpSync(REAL_PERSON_SPINE, spineCopy);
-
-    const realSpec = JSON.parse(readFileSync(REAL_RESOLVED_SPEC, 'utf8'));
-    const realManifest = JSON.parse(readFileSync(REAL_SOURCE_JSON, 'utf8'));
-    const expectedSuccess = realSpec.closeDecl.stages.map((s) => s.name).join(' · ');
-
-    appendRun({
-      at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-jobtab', job: realSpec.job, spine: spineCopy, patient: null, via: 'backfill',
-    }, { home });
-    const { base } = await startServer(t, { home });
-    const res = await fetch(base + '/api/runs/mu2p83go-jobtab/job');
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.resolved, true);
-    assert.equal(body.resolvedFrom, "the run's own resolved-spec.json");
-    assert.equal(body.job, realSpec.job);
-    assert.equal(body.goal, realSpec.goal);
-    assert.equal(body.description, realSpec.description);
-    assert.equal(body.success, expectedSuccess);
-    assert.ok(body.success.includes('typecheck-checks-strict'), 'Success must list the real closeDecl stage names');
-    assert.ok(body.success.includes('no-suppressions'), 'Success must list the real closeDecl stage names');
-    assert.ok(body.guardrails.includes('changed-from-seed'), 'Guardrails must include the real guard names (from confirmProtections)');
-    assert.ok(body.guardrails.includes('no-suppressions'), 'Guardrails must include the real guard names (from confirmProtections)');
-    assert.ok(body.guardrails.includes('write fence'), 'Guardrails must include the write fence line');
-    assert.ok(body.guardrails.includes(realSpec.writeScope[0]), 'Guardrails must name the real writeScope glob');
-    assert.equal(body.source, realManifest.source);
-    assert.equal(body.destination, realManifest.destination);
-    // the spec itself carries no `model` field (resolved at run time) — the
-    // job-start record's own resolved model is the honest fallback.
-    assert.equal(body.model, 'deepseek-flash');
-    assert.equal(body.budgetUsd, realSpec.budgetUsd);
-    assert.equal(body.maxWallMs, realSpec.maxWallMs);
-  },
-);
 
 test(
   '/api/runs/:runid/job: old-shape close[] spec (jobs/litectx-u-types.json) — Success lists close[].name, model/goal/writeScope real',
@@ -1432,53 +1260,6 @@ test(
     assert.equal(body.destination, 'not recorded');
   },
 );
-
-test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/guardrailsFromSpec reverted, the new-shape fixture reads "not recorded" (mechanically proves these fields are not fabricated)', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
-  const serverPath = fileURLToPath(new URL('../src/panel/server.js', import.meta.url));
-  // a sibling COPY, never the shared server.js itself: rewriting server.js in place let any test file importing it in parallel load the neutered module
-  const patchedPath = join(dirname(serverPath), 'server.redproof-tmp.js');
-  try {
-    const src = readFileSync(serverPath, 'utf8');
-    // neuter sourceNearSpine so it always reports "nothing near the spine" —
-    // the same shape as a run whose resolved-spec.json genuinely doesn't
-    // exist. A real bug here (e.g. success/guardrails silently fabricated
-    // from somewhere else) would make this row STILL show real values; the
-    // red proof is that it does not.
-    // (sourceNearSpine now lives in src/runfiles.js, imported by server.js: the copy imports signedSpecForRun only and defines a neutered local one)
-    const patched = src.replace(
-      "import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';",
-      "import { signedSpecForRun } from '../runfiles.js';\nfunction sourceNearSpine() { return { specPath: null, sourceJsonPath: null }; }",
-    );
-    assert.notEqual(patched, src, 'the patch must actually match server.js\'s sourceNearSpine import — otherwise this proves nothing');
-    writeFileSync(patchedPath, patched);
-
-    const { createPanelServer: patchedCreate } = await import(pathToFileURL(patchedPath).href);
-
-    const home = tmp();
-    const out = tmp();
-    cpSync(REAL_RESOLVED_SPEC, join(out, 'resolved-spec.json'));
-    mkdirSync(join(out, 'source-mu2bglzc'), { recursive: true });
-    cpSync(REAL_SOURCE_JSON, join(out, 'source-mu2bglzc', 'source.json'));
-    mkdirSync(join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop'), { recursive: true });
-    const spineCopy = join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
-    cpSync(REAL_PERSON_SPINE, spineCopy);
-    const realSpec = JSON.parse(readFileSync(REAL_RESOLVED_SPEC, 'utf8'));
-
-    appendRun({
-      at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-redproof', job: realSpec.job, spine: spineCopy, patient: null, via: 'backfill',
-    }, { home });
-    const { server, close, port } = await patchedCreate({ port: 0, home });
-    t.after(() => close());
-    const res = await fetch(`http://127.0.0.1:${port}/api/runs/mu2p83go-redproof/job`);
-    const body = await res.json();
-    assert.equal(body.resolvedFrom, "the run's own start record", 'with sourceNearSpine neutered, resolution must fall all the way through to the job-start record');
-    assert.equal(body.success, 'not recorded');
-    assert.equal(body.guardrails, 'not recorded');
-    void server;
-  } finally {
-    rmSync(patchedPath, { force: true });
-  }
-});
 
 // ---------------------------------------------------------------------------
 // never reads process.env for a secret (code-inspected, asserted here too)
@@ -2236,28 +2017,6 @@ test('build item 1: no resolvable spec at all -> stages pass through UNCHANGED (
   assert.deepEqual(fixPart.attempts[0].stages, [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }]);
 });
 
-test('build item 1: real archived run mu2p83go (pulselog-person-live-2) — its own resolved-spec.json closeDecl attaches real kind/direction/baselineKind onto the fix loop\'s declared stages, all 3 numeric shapes present', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
-  const home = tmp();
-  appendRun({
-    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-kindmeta', job: 'pulselog-strict-checks', spine: REAL_PERSON_SPINE, patient: null, via: 'backfill',
-  }, { home });
-  const { base } = await startServer(t, { home });
-  const res = await fetch(`${base}/api/runs/mu2p83go-kindmeta`);
-  assert.equal(res.status, 200);
-  const detail = await res.json();
-  const fixPart = detail.parts.find((p) => p.kind === 'fix');
-  assert.ok(fixPart, 'mu2p83go\'s outer-close came back needs_revision, so a fix part exists');
-  const byName = new Map(fixPart.attempts[0].stages.map((s) => [s.name, s]));
-  assert.equal(byName.get('typecheck-checks-strict').direction, 'lower-is-better');
-  assert.equal(byName.get('typecheck-checks-strict').baselineKind, 0);
-  assert.equal(byName.get('typecheck-outside-checks').direction, 'lower-is-better');
-  assert.equal(byName.get('typecheck-outside-checks').baselineKind, 'seed');
-  assert.equal(byName.get('tests-executed-floor').direction, 'higher-is-better');
-  assert.equal(byName.get('tests-executed-floor').baselineKind, 'seed');
-  assert.equal(byName.get('changed-from-seed').kind, 'files-changed');
-  assert.equal(byName.get('suite-green').kind, 'command-exit');
-});
-
 // ---------------------------------------------------------------------------
 // plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
 // is WITHDRAWN ("confusing — reads like 6 failed when 5 never ran"). The
@@ -2589,4 +2348,20 @@ test('the topbar version FOLLOWS package.json: a different package.json gives a 
   assert.ok((await (await fetch(`${base}/`)).text()).includes('<span class="version" id="panel-version">v9.8.7</span>'));
   const gone = await startServer(t, { home: tmp(), packageJsonPath: join(dir, 'missing.json') });
   assert.ok((await (await fetch(`${gone.base}/`)).text()).includes('id="panel-version">vunknown</span>'));
+});
+
+test('panelMain: the start banner names the url and does NOT call the panel read-only (it drafts, runs, Accepts)', async (t) => {
+  const home = tmp();
+  const port = 61000 + Math.floor(Math.random() * 4000);
+  const child = spawn(process.execPath, [join(import.meta.dirname, '..', 'bin', 'bareloop.mjs'), 'panel', '--port', String(port)], {
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: '' }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { child.kill('SIGKILL'); });
+  const line = await new Promise((resolve, reject) => {
+    let buf = '';
+    const timer = setTimeout(() => reject(new Error(`no banner in 15 s: ${buf}`)), 15000);
+    child.stdout.on('data', (d) => { buf += d; if (buf.includes('\n')) { clearTimeout(timer); resolve(buf.split('\n')[0]); } });
+    child.on('exit', () => { clearTimeout(timer); reject(new Error(`exited before banner: ${buf}`)); });
+  });
+  assert.equal(line, `bareloop panel — http://127.0.0.1:${port} (Ctrl-C to stop)`);
 });

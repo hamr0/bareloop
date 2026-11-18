@@ -1,0 +1,32 @@
+{
+  "text": "Aging as of the anchor date 2026-10-11: for each invoice, days past due = calendar days from its Due date to 2026-10-11, then bucketed as Current (0 days / not yet due), 1-30, 31-60, 61-90, or 90+ (more than 90 days). INV-100 due 2026-01-15 = 269 days -> 90+; INV-101 due 2026-02-15 = 238 days -> 90+; INV-102 due 2026-03-15 = 210 days -> 90+; INV-103 due 2026-04-15 = 179 days -> 90+; INV-104 due 2026-05-15 = 149 days -> 90+; INV-105 due 2026-06-15 = 118 days -> 90+; INV-106 due 2026-07-15 = 88 days -> 61-90; INV-107 due 2026-08-15 = 57 days -> 31-60. All 8 invoices were placed into a bucket.",
+  "claims": {
+    "l1r1": {
+      "days": {
+        "2": 269,
+        "3": 238,
+        "4": 210,
+        "5": 179,
+        "6": 149,
+        "7": 118,
+        "8": 88,
+        "9": 57
+      }
+    },
+    "l1r2": {
+      "value": 8
+    },
+    "l1r3": {
+      "bands": {
+        "2": "90+",
+        "3": "90+",
+        "4": "90+",
+        "5": "90+",
+        "6": "90+",
+        "7": "90+",
+        "8": "61-90",
+        "9": "31-60"
+      }
+    }
+  }
+}

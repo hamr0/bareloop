@@ -4594,3 +4594,522 @@ Item 2 left a reading question (Agree only) with no way out. hamr's ruling: a RE
 
 - (e) item 3 as built (968eb3d4, 19c9625b, f07472b5): a repo `~` rule is kept by the write fence only when the AI points at it and code proves it, in the rubric's order. One small call before the asks (`src/fencepointcall.js`, `runFencePoint`) answers row edits `{op: 'fence', line, rule, path}`; each goes through `CheckBlock.applyDelta` (`editFence`) and `provesFence` decides (path on the listing, the rule's own words name it as a whole token, no path it names lies where the run may change). Every other `~` rule is Not checked at once with `REASON.noRule`: a repo rule is never asked (option A of (f)). The call's reply and each edit's accept or refusal are in the draft log (`kind: fence-point`). This is the pointing shape (e) first called the reverted side path (fa94a85b), now on the one block's row edits instead of its own module. `closeDecl.fenceKept` stays readable for old signed specs only.
 - The draft readout of (e) is built (`buildReadout`, `src/authorreadout.js`, from fwdloop v0.34.0): panel Chat above the signed-ready card and the CLI under SIGNING PREPARED; display only. The CLI print is test-proven only.
+
+
+## Addendum 2026-11-17: F201 + sheet (CSV) jobs copied from fwdloop v0.35.0
+
+Status: rulings given by hamr in chat 2026-11-17 (below); the build itself is NOT yet approved — it waits for hamr's go. POC B is DONE (F338, F339); POC D (code does the math) is pending, at $0, before S3. Numbers marked (est) are estimates, not measured. Order on one branch: piece 0, S1..S5.
+
+
+### Goal
+- Bring fwd's F201 page-look prompt (piece 0), then fwd's whole sheet (CSV) job (S1..S5) into bareloop, as the report-style rubric job on plain files.
+- The person gets numbers checked by code against a frozen copy of their sheet; the sheet is never edited.
+
+### Rulings (fixed, hamr 2026-11-17)
+- Copy from fwd tag v0.35.0. ONE new branch off bareloop main. Order: piece 0 (F201), then S1..S5. fwd's F196 fixes (S6) are folded into the piece they belong to.
+- Sheet output is a REPORT: value / rows / days / bands answers, checked by code against the frozen sheet. No sheet as output. Bareloop never edits the person's sheet.
+- Worker answer: a `claims` field (typed boxes, bareguard `claimSchema`) in the per-line step file `output/steps/<n>.json`, beside `text` (and `cites`).
+- This adds a new `sheet` part class to the signed rubric-step params. New hash. Old jobs untouched; only new drafts get it.
+- Words: use CORRECT words, not fwd's am7 wording (see S4).
+- Standing rulings, stated not asked:
+  - rubric jobs on plain files only (not repo jobs)
+  - reds name row numbers and counts, never cell text
+  - the agreed column lives as a row on the one check list (no separate signed field)
+  - no size cap beyond the 16 MB source door
+  - SKIP all Ask / hitl / send / askSheetCard / closeUnbuiltSheetSteps / applyDocWords / addressCells / emit-artifact tool
+  - "judge it at the Ask" becomes "judge it at Accept"
+  - bareguard helpers are imported, never copied
+  - no dependency bumps (bareguard stays ^0.36.0, already exports every helper needed)
+- Process: POC first where risky; each piece names its CALL SITE; a fail-first test per piece; each piece one or more commits; the orchestrator (not the builder) runs the full gate after each piece; builders are sonnet, run tests only via `npm test`.
+
+### Piece 0: F201 prompt, withdraw `named` guard
+
+What the person sees: nothing new. Fewer wrong ties of a `~` rule to page words that do not carry its meaning (live run mwi76vh8: "be friendly" tied to "Select flight").
+
+Files (changed):
+- `src/pagemap.js` `mapPrompt` (line 41)
+- `src/checkblock.js` (the `named` guard, ~lines 188-193)
+- `src/promptregisters.js` (the register entry at lines 53-55 names `mapPrompt()`; update only if its text description needs it)
+
+Call site: `mapPrompt` is called by `runPageMap` (`src/pagemap.js:143`), which is the look door `authorjob.js:476`. Nothing new to wire.
+
+Copied from fwd: the text of `mapPrompt` at fwd commit e6473e30 (`src/pagemap.js` diff: goal paragraph, the "do ONE of two things" block, `why` per fact in the JSON form, and a `cannot` list for a rule the page cannot show).
+
+Kept from bareloop (not in fwd's text):
+- the date / number / lang / decimal extras
+- the `reading` line
+- "A label must appear ONCE on its page line and sit right before the value" (line 54)
+
+Changes:
+- The JSON form gains `why` (per fact) and `cannot` (list of line, rule, reason).
+- The parser (`parseMapAnswer`) accepts and IGNORES both. No code reads `cannot`. This is the same as fwd.
+- WITHDRAW the `named` substring guard in `checkblock.js` (hamr 2026-11-16: "no code word lists / carve-outs for intent"). Delete it; a tied fact then uses the existing tie path as it did before 2026-11-15.
+
+Tests (fail-first):
+- prompt contains the new lines and still contains the ONCE line and the extras (red on today's prompt)
+- parser accepts `why`/`cannot` and returns the same facts as without them
+- a test that the `named` carve-out is gone: a phrase fact whose words are not in the rule's text now links to the rule row (the old behaviour; this test is red on main only because of the guard)
+- neighbour tests: grep tests for old prompt wording and for "do not contain" guard wording; update them (builders skip neighbours)
+
+Done when:
+- the suite is green on the exit code AND the last line
+- the $0 replay passes (below)
+- one paid run on the mwi76vh8 job shape (POC A below) was read by hand
+
+Known and stated: fwd's open bug 2 (the look's `forRule` tie is trusted, not proven by code) is REDUCED by the prompt but NOT closed. The `named` guard was one patch for it; removing it means a wrong tie can reach the card. Nothing more is built for it here. A person still sees the tied rule on the card and decides at Accept.
+
+### S1: CSV reader, column finder, sheet look
+
+What the person sees: gives a `.csv` as a file input. A job word that is no column of the sheet gets one question: "no column 'X'; 'Amount' has numbers in 17 of 17 rows. Use it?" (Agree / Drop it / own words). An agreed column rewrites the `~` rule's own words in place ("Price over 500" becomes "Amount over 500"); it adds no line. A rule that already names a real header asks nothing.
+
+2026-11-17 (hamr): a column tie asks which column (each tied column a choice); it never goes Not checked silently. Shape (hamr, same day): "I found 3 columns matching 'Price': Amount, Tax, Total. Choose one." with the page's native select listing ALL tied columns in sheet order (no cutoff), [Drop it] and [Send]; NO own-words box (a closed question: the door refuses a typed answer and a column not in the list, in plain words); the tail "(your answer replaces that ~ rule on line N)" stays; the CLI prints a numbered list. The tie counts toward the 3-ask cap. A tie on a word of a line's own prose (no `~` rule to replace) cannot ask and stays Not checked.
+
+The door: `src/source.js` already accepts `.csv` (no extension filter; only NUL byte, `.env`, symlink, secret shape and 16 MB refuse; URL `text/*` covers `text/csv`). No door change. `bareloop.context.md` gets one line saying CSV is accepted as text and what is checked.
+
+Files (new): `src/csv.js`, `src/sheetfind.js`, `src/sheetlook.js`.
+Files (changed): `src/authorjob.js` (look door at ~474-476), `src/inputlook.js` (tell the look which inputs are sheets), the question/answer path that applies an agreed column (`src/noteask.js` / `src/questionbox.js` / `src/panel/authorroutes.js`, exact file named by the builder after reading; the answer replaces the rule via the same one-in-one-out path as other asks).
+
+Call site: `authorjob.js` look door. For a CSV input with a `~` rule on a line, it calls `lookAtSheet` (one AI call per CSV) instead of `runPageMap`. The look's call, book, retry and spend go through the same plumbing `runPageMap` uses (copy its pattern; the sheet look is a sibling of `runPageMap`).
+
+Copied from fwd v0.35.0:
+- `csv.js` all of it (115 lines) except `colLetter`/`colIndex`/`parseCellRef` (retired cell cites) (`csv.js:8-37` dropped)
+- `sheetfind.js` (52): `findColumn:31`, `columnQuestion:50`, `columnTail:52`
+- `sheetlook.js` (168): `sheetPrompt:31`, `parseSheetAnswer:56`, `applySheetWords:78`, `lookAtSheet:157`; NOT `applyDocWords:134`
+- F196 fixes folded here (commits 680bd45c, 365709e1, 99e37a3f, ee79f051): a `~` rule that contains a real header is tied by code and asks nothing; one word one question (the rule's wins); the prose-word tail says the answer becomes the agent's check; a plural matches ("amounts" is "Amount").
+
+Adapted:
+- `sheetlook.js` imports fwd's `pagebits.js` helpers (`lineRules`, `countPhrase`, `wordsSaidOn`, `wordForms`) and `tieOf` from `pagerules.js`. Bareloop has `lineRules`/`wordsSaidOn` in `rubricstep.js` and its own `pagerules.js`; the builder maps each import to the bareloop equivalent and reports any that is missing (do not invent).
+- "your answer replaces that ~ rule on line N" is already bareloop's one-in-one-out wording; reuse it.
+
+Tests (fail-first), fixtures copied to `tests/fixtures/sheets/` from fwd: `aging.csv`, `aging-dup.csv`, `expenses.csv`, `ar-aging.csv` (git show v0.35.0 paths: `test/fixtures/m10b-sheets/*.csv`, `fixtures/ar-aging.csv`):
+- reader: quoted cell `"1,200.50"` is one cell; a blank line does not shift row numbers; BOM dropped (port fwd `m10b-csv-reader` 87 lines)
+- finder: one fitting column offers; a tie offers nothing; FIT_RATIO 0.9 (port `m10-sheetfind` 66)
+- look: word kept only if it is a real header; no-column word asks once; rule naming a header asks nothing (port `m10-sheetask` 141, `m10-sheet-own-word` 45, `m17-f196-aging-ask` 66, `m10-draft-sheet` 188 minus doc parts), each against a fake provider
+- each shown red by breaking the source alone
+
+Done when: a draft with the real expenses.csv (Amount and Tax both fit) and `~ Price over 500` asks one tie question at $0 in tests and, after picking Amount, the rule reads `Amount over 500` with no added line (picking Tax gives `Tax over 500`); a sheet where one column fits asks the Agree question and Agree gives the same rewrite.
+
+### S2: check builder (code builds every sheet check on bareguard)
+
+What the person sees: nothing yet; the next pieces show it. Behind it: the AI only sends typed suggestions (`sheetChecks`) on the row-edit reply; code builds or refuses each one.
+
+Files (new): `src/sheetchecks.js`, `src/sheetoffer.js`, `src/sheetbuild.js`.
+Files (changed): `src/rowedit.js` (115 lines): add an optional `sheetChecks` property, as it already takes the `ticket` flag (fwd `rowedit.js:108-139`); `src/authorjob.js` or the drafting path that calls the row-edit turn.
+
+Call site: the row-edit turn in drafting (same place the ticket filter rides today). With a CSV input and sheet lines present, the turn is shown the block's lines plus the sheet lines and the sheets' text, with `sheetSuggestProp(tables, lineNums)` as the schema (line is an enum of real sheet line numbers). The reply's `sheetChecks` go to `buildSheetChecks`.
+
+Copied from fwd v0.35.0:
+- `sheetchecks.js` (192): `SHEET_RULES`, `MAX_SHEET_CHECKS=20`, `sheetCheckColumns:29`, `sheetCheckSentence:68`, `bareguardChecks:97`
+- `sheetoffer.js` (142): `sheetChecksProp:39`, `sheetOpsBrief:64`, `sheetOfferRules:81`, `sheetSuggestProp:97`, `isColumnChoiceRule:104`, `columnChoiceParts:114`, `swapColumnWord:127`, `agreedColumnWords:142`
+- `sheetbuild.js` (148): `toSuggestion:30`, `buildSheetLine:43`, `buildSheetChecks:114`
+- Refusals run in this order, all on bareguard helpers (imported): vocabulary, line's sheets, schema (`checkSchema`), `columnAt`, `checkTables`, `groundedLiterals`, `claimSchema`, and `runTableChecks` for a table check.
+- ids: `l<line>r<n>` for a rule row, `l<line>a<k>` for an `[agent]` row; the claim name is the id.
+- am3 (a second check on a rule is its own `[agent]` row) and am5 (a table check already failing on its sheet is refused at build) and am7 (a table check is never a rule's row) are all inside `sheetbuild.js`; copy as they stand.
+- F196 A (line enum; the turn shows only real sheet lines) folded here.
+
+Adapted / dropped:
+- `sheetCheckReds`, `sheetCoversReds`, `sheetCheckWordReds`, `sheetNoClaimReds` (`sheetchecks.js:105-192`): in fwd these are validator reds in `declaration.js`. Bareloop has no per-step declaration validator, so copy them only as helpers the builder and the stage-shape validator call (the build already refuses the same things). Keep `sheetNoClaimReds` (a table-only step has nothing to answer) as a stage-shape red.
+- `declaration.js` `close.sheet` / `close.columns` / `checkColumnsKey`: SKIP. The checks live in the new `sheet` part of the stage (S3); the agreed column is a row on the list (ruling).
+
+Tests (fail-first): port `m10b-sheet-checks` (112), `m16-am4-sheet-bareguard` (92), `m17-p4-sheet-build` (278), `m17-am7-table-row` (76) against fake provider and the 4 fixtures. Include the forced cases from fwd F194: a number not in the person's words refused; a non-header column refused; a failing table check refused at build; a check naming an op outside the vocabulary refused; AI-set id/claim/text dropped; a second check on a held rule becomes its own `[agent]` row. Also a schema test: the reply's `sheetChecks` property is optional, absent for non-CSV jobs, and a non-sheet job's turn is byte-identical to today (byte-diff gate).
+
+Done when: on aging.csv a scripted reply of 4 suggestions builds 4 checks with code ids; each forced bad suggestion is refused with a reason naming the helper.
+
+### S3: the stage, claims in the step file, frozen sheet, the judge
+
+This is the risky piece (POC B first, see POCs).
+
+What the person sees: the run writes `output/steps/<n>.json` with `text` and `claims`. The run start refuses an unreadable sheet at $0. A changed sheet after start stops the check at $0 naming the input. A wrong claim is a red naming row numbers/counts.
+
+Files (changed): `src/rubricstep.js` (`PART_CLASSES:178`, `rubricStepShapeReds:230`, `stepFileContract:34`, `lineBriefs:79`, `buildStepSpec:293`, `gradeStep:485`, `parseStepFile:381`, `flattenStep:398`); `src/kinds.js` (the rubric-step stage run at ~1458-1501, where input shas are built: add the table for each sheet role); the run-start input freeze (find via `inputShas` in `kinds.js:1458-1467` and the manifest writer in `planrun.js`).
+Files (new): `src/sheetrun.js`, `src/sheetclaims.js`.
+
+Call site:
+- Run start (planrun / the freeze that records input sha256): for each CSV input named by a `sheet` part, compute `tableSha` over the FROZEN copy and record it with the input. An unreadable table (ragged row, repeated header) refuses at $0, naming the input.
+- Stage close (`kinds.js` rubric-step): `gradeStep` builds the rubric with the sheet checks and calls `checkStep(rubric, step, flattenedStep, { tables })`.
+- Worker brief (`lineBriefs`/`stepFileContract`): tells the worker the claim boxes' shape.
+
+Design choices (visible):
+- New `sheet` part class in the stage params (`PART_CLASSES`). It holds the built checks as data (bareguard cells/table check objects plus `covers`/`row`). Changing the signed params gives a new hash. Old jobs have no `sheet` part and are read as signed, untouched.
+- Step file shape: `{ "text": "...", "cites": {...}, "claims": { "<claim id>": <typed box> } }`. Box shape per claim is bareguard's `claimSchema` (`{value}`, `{rows}`, `{days}`, `{bands}`).
+- The worker is told only the worked example of each box (`rubricVocabulary...example`), NEVER the check (op, condition, bound, column). This is the same exception fwd took ("a step never sees its close") and it already exists for page facts.
+- A table check has no claim (it judges the sheet); a cells check has one. Two checks with the same claim name share a box.
+- The judge is `closeSheet` adapted: same call as fwd (`createRubric` + `checkStep` with `tables`), same stopped-sha message, same `renderGaps` for the red. No model grades.
+- Lock: the signature locks the job, not the file. Each run records the `tableSha` of its own frozen copy once; every check of that run uses that recorded value (fwd am1).
+- Reds: row numbers and counts only; never cell text; found-words for a green claim repeat only the step's own number, count of rows/days/bands; a string claim is never repeated.
+- Trend number for the fix-loop governor: reuse the stage's existing `redCount` (failing claims + other failing checks), as `gradeStep` already does. No new governor.
+- A step with a `sheet` part and no `claims` key is red "answer the claim boxes" (not a crash).
+
+Three additions (hamr 2026-11-17, from POC B rounds 1-2, F338/F339):
+- (i) Claim names never equal a box type (`rows`, `value`, `days`, `bands`). The validator reds at stage-shape time if a claim name equals a box type (e.g. `ageDays`, not `days`).
+- (ii) Row-numbered view. Run start writes `input/<sheet>.rows.txt` beside the frozen CSV: one line per CSV line, `row N: <line exactly as in the CSV>`, header = row 1, no check text, no claim names. The file contract lists it as the second input and says to read it for row numbers. The sheet's tableSha still comes from the frozen CSV only; the view is derived, never graded.
+- (iii) Code does the math. For a sum/total/count check the worker does NOT write the number. It names the rows in a `rows` box (the rows it says qualify). Ops: sumIf and countIf (both; the same box serves a sum and a count of one condition). At stage close, code reads the named rows from the frozen table and computes sum (of the check's column) and count, and appends to the delivered report a plain line, `Total of rows 3, 5, 9: 1,234.50 (computed by code from the rows named)`; the report shows the code's number, never the worker's. The check then reads: the `rows` check carries the truth (named rows equal the rows the condition selects; wrong or missing rows are the red, named by row number). A sum computed by code from rows that pass the rows check cannot be wrong arithmetic; if the rows check is red the run is red whatever the sum. Worker-written totals in the text are not graded and not delivered as a figure. Old fwd-style `value` boxes for sum/count stay legal for jobs with no sum/count check. Spec'd and POC'd at $0 BEFORE build (POC D).
+
+Copied from fwd v0.35.0: `sheetrun.js` (135): `sheetRolesOf:19`, `tableShaOfFrozen:33`, `readRunSheets:46`, `closeSheet:73`, `tableChecksFailingOnInput:115`; `sheetclaims.js` (58): `sheetClaims:16`, `sheetAnswerProps:36`, `sheetBrief:53`.
+Adapted: `readRunSheets` reads bareloop's frozen input files and recorded manifest, not fwd's `run.json`/`readRunInputs`. `sheet-record.js` (fwd's `line-checks.json` writer) is replaced by bareloop's own per-stage record (`rowresults.js`); no new file. `sheetAnswerProps` becomes the file-contract text and a validator for the written JSON, not a forced tool schema (no emit-artifact tool in bareloop).
+
+Tests (fail-first): port `m10b-sheet-run` (346): lock holds / one changed cell stops at $0 naming the input / a claim of 18 rows instead of 17 is red naming the row / an unreadable table refuses at start / table-only step red / a request-construction test proving the worker brief carries no op, condition, bound or column. Plus: an old signed spec (no `sheet` part) grades byte-identically before and after (byte-diff gate); a spec with `sheet` part signs to a different hash.
+
+Done when: on expenses.csv a hand-written step file with the right claims grades green and with 18 rows grades red naming a row, with a real `checkStep` (no stub of the library seam).
+
+### S4: the one list: rows, tags, Drop/Add, Not checked
+
+What the person sees: on the plan card each `~` rule of a sheet line is ONE row: `[you]` rule row (`l2r1`), plus `[agent]` rows for the AI's other checks, with Drop (and Add back), at $0 and with no AI call. A `[default]` row says the column exists / the sheet is the frozen one. A table check ("the sheet has 8 rows", "no duplicate Invoice #") is its own `[agent]` row, on by default, with Drop; it never sits on a `~` rule's row. A Revise keeps a Drop of the very same check.
+
+Words (CORRECT, not fwd's):
+- rule whose check was refused: its refusal reason, unchanged
+- a table check was picked but cannot check this rule: "A check was picked, but it cannot check this rule, so you judge it at Accept."
+- no check picked: bareloop's existing `NO_VALUE_WHY` in `checkblock.js:56`: "No check was picked for it, so you judge it at Accept."
+- fwd's am7 sentence says "judge it at the Ask" and "no sheet check covers it"; neither is used.
+
+Files (changed): `src/checkblock.js` (new row source for sheet checks; sheet rows join `rows`, carry tag `by`, Drop/Add through the existing `rowChoice`); `src/pickrecord.js` (a `sheetDropped` list in the picks record, copied from fwd `pickrecord.js:122-131`, so a Revise keeps a Drop); `src/rowedit.js` (already done in S2); the Drop/Add route in `src/panel/authorroutes.js`.
+Files (new): `src/sheetrows.js` only if CheckBlock would otherwise grow past reason (est ~120 lines); otherwise fold into `checkblock.js`. Builder decides after reading and reports.
+
+Call site: `CheckBlock` construction at drafting and the existing Drop/Add route; `buildSheetChecks` output is fed in as rows.
+
+Copied from fwd: `sheetrows.js:23-118` (`sheetRowsOf`, `withSheetCard`, `droppedSheetOf`, `keyOfSameCheck:68`, `sheetChoice:82`, `withSheetRows:118`); `sheetblock.js` `sheetByCheck:64`, `uncoveredRules:132`, `sheetCheckName:36` + `SHEET_OP_NAMES:21` (words), `sheetLineBlocks:82` only as far as the card needs it.
+Adapted: the fwd `kind:'sheet'` list rows map onto CheckBlock's existing row vocabulary (`kind`, `by`, `from`, `state`); a new `kind: 'sheet'` is added to `checklist.js` typedef (line 45) and `SIGNED_ROW_FIELDS` is unchanged (no new signed field; ruling). SKIP `closeUnbuiltSheetSteps`: a sheet line with no built check is Not checked with the reason; and the run needs at least one check anyway (existing bareloop rule).
+F196 fixes folded here: one Not checked line per `~` rule (a look column-drop of a word inside a `~` rule makes no line of its own); `[agent]` row shows only a rule no rule row holds; plan card shows the list only (no old "Guardrails / Not checked: none" block).
+
+Tests (fail-first): port `m16-am4-sheet-rows` (225), `m16-am4-sheet-route` (111), `m17-p5-sheet-line` (74), `m16-tags-origin` sheet parts (127), `m17-p4-f196` (105): every `(line, rule)` shows once; Drop and Add cost $0 and call no AI (assert zero provider calls); Revise keeps the Drop; the two am7 sentences, each exact; a rule has never two rows.
+
+Done when: on the aging fixture each `~` rule is one row or one Not checked line, a Drop + Add round-trips to the same list, and no AI is called by either.
+
+### S5: surfaces and the $0 re-check
+
+What the person sees: Job tab and plan card show the sheet rows with tags; Result tab shows each check with check/cross and what was found ("17 rows checked", "rows 2, 3 repeat"), and Not checked again; Audit shows the checks of the latest close only (existing rule).
+
+Files (changed): `src/panel/jobplan.js` (renderer; one renderer drives the plan card and Job tab), `src/rowresults.js` (per-row result words), ~~`src/stagewords.js` (plain question text for a sheet check, owned by code)~~ DROPPED (hamr 2026-11-18: no call site; Audit and Result already use the code-owned `sheetPlainText` words, and the rubric-step stage question covers sheet lines), the Result/Audit routes in `src/panel/runroutes.js`, the card HTML in `src/panel/index.html`.
+Files (new): `scripts/sheet-recheck.mjs` adapted from fwd `scripts/m10b-recheck.mjs` (89): re-runs a run's signed checks on its saved frozen sheet and says ok.
+
+Call site: panel routes already call the plan renderer and `rowresults`; sheet rows ride them. The script is run by hand.
+
+Copied: fwd `sheetCheckSentence`/`sheetFoundWords` words (`sheetblock.js:46`) as they are; plan-card layout follows bareloop's own classes, not fwd's CSS (a lab mock is content only).
+SKIP: `askSheetCard:178`, `claimLines:154`, Ask views in `panel/data.js:2892-2913`.
+
+Tests (fail-first): browser-free renderer tests for each surface; the Result block shows ✓/✗ with found-words and never cell text (assert on the aging fixture with a planted cell string that must not appear). UI: orchestrator takes OWN screenshots of the card, Job tab and Result tab in context beside neighbours (hamr's rule); phone width cannot be checked by barebrowse; name that gap, hamr checks it in DevTools.
+
+Done when: a run's Result tab shows the checks with found-words; `sheet-recheck.mjs` says ok on the live-walk runs.
+
+Status 2026-11-18: BUILT e46d3925, a9ec25ad, e95bf580, dcdc896b. Gate exit 0, 6035 pass / 0 fail on dcdc896b. The orchestrator took screenshots of the Job and Result tabs on a $0 demo run. OWED: `sheet-recheck.mjs` on a live run, phone width (barebrowse cannot check it), hamr's click-through.
+
+### POCs
+All pre-registered: bars written to FINDINGS and committed (sha-frozen) BEFORE any data. A failed round is reported FAIL, then a second round is registered, never re-tuned. Probe the provider with 2 consecutive 200s before firing. Scratch HOME; keys by env prefix only (`$(pass show amr/deepseek_api | head -1)`); builders count `~/.config/bareloop/runs.jsonl` lines before/after.
+
+#### POC A (piece 0, $0 replay)
+- What: replay F201's new prompt over saved looks if the saved calls exist, else skip and say so. fwd had F200/F201 data; the bareloop archive of the mwi76vh8 page is the case.
+- Bar (frozen first): on the saved mwi76vh8 page + job, no `~` rule of the "be friendly" kind is tied to page words whose meaning it does not carry; the old prompt (control) does tie. If the archive cannot replay at $0, say so and rely on the paid run.
+- Cap: $0.
+
+#### POC A2 (piece 0, paid)
+- What: one real run on the mwi76vh8 job shape. Provider DeepSeek direct, model deepseek-flash.
+- Bar: the draft reaches a signable plan; "be friendly" ends Not checked or an ordinary `!` row, not a tied rule; other tied rules (price, place) are still tied. n=1 is an anecdote; stated.
+- Cap: $0.30.
+
+#### POC B: DONE (F338 round 1, F339 round 2; hamr's rulings 2026-11-17 in F339)
+Round 2 (n=50 per job, deepseek-flash direct, $0.601, 0 casualties): shape 50/50 both jobs; content aging green 44/50, expenses 5/50 (c_total wrong 45, c_over 13, c_count 13). Naming fixed shape, the row view fixed row-finding; the expenses miss is arithmetic. Feeds S3 (i)-(iii). Original plan kept below for the record.
+
+#### POC B (S3, the risky assumption: does a real worker write `claims` correctly?)
+- What: on a throwaway copy, a real worker (DeepSeek direct, deepseek-flash) is told the file contract for 2 sheet jobs (expenses: rows over 500, count and sum; aging: days and bands) and writes `output/steps/<n>.json` with `claims`. A hand-built stage and the real S3 judge grade it. 5 runs per job.
+- Bars (frozen before any run):
+  - (a) at least 4 of 5 per job write a file the parser accepts with every claim box present and typed.
+  - (b) every written-valid file that is WRONG is red (no false green): check with deliberately perturbed files (10/10 red).
+  - (c) the request carries no op, condition, bound or column (byte-diff of the worker's brief against the contract text).
+  - Report-only: cost, tries to green, cut-off count (truncated replies excluded from the denominator and counted apart).
+  - If (a) fails, STOP and report. Options then: a separate claims file, or a tool; hamr decides. No re-tune.
+- Cap: $1.00 total, kill by worker PID if reached.
+
+#### POC D (S3 (iii), $0, before build: code does the math)
+- What: replay the 50 saved round-2 expenses files (`.claude/scratch/poc-b/results/round2/files/expenses-*.json`) and 50 aging files through the sumIf/countIf path: take only the rows each worker named, compute sum and count in code from the frozen table, grade the new row-based check.
+- Bar (frozen in FINDINGS before the run): (a) code's sum and count equal the truth for 100% of files whose named rows equal the true rows (expect 37 of 50 for expenses); (b) a file with wrong or omitted rows grades red naming rows, 13 of 13 for c_over-red files; (c) the delivered report carries the code's number, never the worker's, byte-checked on all 100 files; (d) expenses green rate under the new check is reported next to 5/50, never compared as a win (the check changed). Planted 28 of 28 red, 2 of 2 green still hold.
+- Cap: $0.
+
+#### POC C (S2 + S4, the AI's use of `sheetChecks`)
+- What: 5 drafts per job (expenses, aging) on DeepSeek flash direct; count how often the row-edit reply carries `sheetChecks` and how many code builds.
+- Bar: `sheetChecks` present in at least 4 of 5 drafts per job; every `~` rule shows once; no declaration/stage carries an AI-written check. (fwd saw this only 2 of 2 live; this is the base-rate establisher.)
+- Cap: $0.40.
+
+### Build order and gates
+- Branch off main (name given by hamr at launch). One piece at a time.
+- Per piece: builder (sonnet) writes fail-first tests, builds, commits per deliverable, runs only `npm test`. The orchestrator then runs the full gate, one suite at a time with load under 15, and quotes the exit code and the last line.
+- CHANGELOG [Unreleased]: one line per piece (0: prompt + `named` withdrawn; S1..S5 as above). The orchestrator checks coverage after each builder.
+- `bareloop.context.md`: one CSV door line (S1) and the claims box contract (S3).
+- Prompt-commit-check: pieces touching `pagemap`/`authorflow` carry Failure/Addresses/Corrects labels; run it before any push.
+- Push the branch early once piece 0 is green (CI is the only different-machine gate).
+- After S5 green: ask hamr for `/branch-review`, then `/release`. Not before.
+
+### Live proof (end of S5)
+- Two jobs, expenses (`expenses.csv`: rows over 500, their count and sum) and aging (`ar-aging.csv` / aging.csv: days past due as of the job date, each invoice in its bucket, every invoice once).
+- Provider deepseek (DeepSeek direct), model deepseek-flash. Cap $0.30 per job drafting + run, $0.60 total. Real panel on a port other than 4700, scratch HOME.
+- Check before spending, at $0: close fails on seed, no refused tracked files, key readable, job direction/values match the saved sheet.
+- Done when: both draft, sign, run green (or a clean red caught); each card shows each `~` rule once; `sheet-recheck.mjs` says ok; a one-cell edit of the frozen copy stops at $0; a claim of 17 instead of 18 is red naming the row (corrected 2026-11-18: 18 rows, 13206.91; F354; was "18 instead of 17"). A Revise after the column answer is walked once (fwd never did).
+- hamr clicks through the panel himself before any done claim.
+
+### Out of scope
+- sheet as output / writing a worksheet; editing the person's sheet; .xlsx; bareguard diff ops; repo jobs; .docx headings (`applyDocWords`); Ask/hitl/send; the Ask card; schedules/triggers specific to sheets (the sheet per run is just the run's input); a sheet size cap; dependency bumps; "Keep going"; closing fwd's open bug 2 fully.
+- PRD backlog line to add (NOT edited here; add after hamr's word, to `docs/product/PRD.md` next to the other Backlog lines near line 2263): "**Backlog (PARKED, later idea, unproven): sheet as output (new worksheet).** A sheet job today is a report; writing a new worksheet beside the person's own, never editing it, is not built and has no POC."
+
+### After it lands
+- Tell fwd (one message) that bareloop uses the correct am7 words, so they take our fix.
+- fwd's later sheet fixes are re-copied from fwd's own release tag, not this one.
+
+### Known open risks / unknowns (honest)
+- Sizes are estimates (est): about 1,100-1,300 lines of copied src, 400-600 lines of adapted src, about 2,000 test lines. Not measured.
+- `sheetChecks` AI use is n=2 live in fwd (both walks, one draft each); POC C is the first base rate.
+- Revise after a column answer was never walked live in fwd.
+- fwd's sheet code was proven with a forced-tool answer (`emit_artifact`). Bareloop's worker writes a file instead. fwd gives NO evidence for file-written claims; POC B is the first. This is the largest unknown.
+- Piece 0: fwd's bug 2 (the `forRule` tie is trusted) is reduced, not closed; withdrawing `named` removes one existing patch for it.
+- F194 build finding, open in fwd: "first suggestion on a rule wins" can keep the weaker check (a table check before a cells check on the same rule, or two checks where the kept one is weaker). am3 and am7 handle table rows; a weaker cells check kept on a rule can still hide a red that fwd's old two-check set caught. Reported, not fixed here.
+- The shared fwd files carried many small changes (drafter 106 sheet hits, declaration 51). Bareloop has no declaration validator, so some fwd reds have no bareloop home; the builder lists each one it dropped.
+- A moved sheet between draft and run is allowed (the signature locks the job, not the file); a column the new sheet lacks stops at $0 naming it. Not walked live.
+- Phone width of the new cards cannot be checked by barebrowse.
+- Signed-hash change is limited to new drafts, but any bridge/reuse minted on old specs is unaffected; reuse of a sheet job uses the whole signed plan (existing rule).
+
+## Addendum 2026-11-17 (b): only ~ lines are checked
+
+Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first") — starts with R0 POC; branch chore/fix-ledger. Order: R0, R1, R2, R3, R4.
+
+### Where we are (for a fresh session)
+- Branch `chore/fix-ledger` (check `git branch --show-current`).
+- Pieces 0, S1, S2, S3, S4 are built and gated. Last full gate: 6031 pass / 0 fail on b3b24cfc (== 6e303060 + a4f76cdd, byte-identical tree).
+- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). POC C: PASS (F353, n=5 per job, underpowered leaning). Next: the live proof, then /branch-review, then /release.
+- S5 (surfaces and the $0 re-check) is BUILT (2026-11-18, see S5 status above). POC C is done: PASS, F353 (hamr 2026-11-18: "A, push, drop the question wording"); the live proof RAN (F354, 2026-11-18): expenses and aging both green first try ($0.0368 total), recheck ok, both $0 tamper checks red naming the mismatch, each `~` rule shown once, WATCH did not recur; the Revise-after-a-column-answer walk was NOT done (no column question came up). The expenses sheet has 18 rows over 500 (sum 13206.91), not 17 (F353 note wrong). Next: hamr clicks through the scratch panel (recipe in F354 results), then /branch-review, then /release.
+- Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
+- fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
+- Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
+- R0 DONE 2026-11-17 (F351): the revert applies clean and all 18 files are byte-identical to `3463d6bb^`. Bar 1 failed only on a worktree artefact: `tests/codeversion.test.js` reads `.git` as a directory, in a worktree it is a file; it passes in the real tree. Bars 2 and 3 PASS. hamr's later ruling (above) settles R3 as pinning tests only. R1 is next.
+
+### Goal
+- Only `~` lines are captured and checked. A line without `~` says what to do and is never checked. The person is told so in the job box.
+- The job text always matches what is checked: an accepted suggestion becomes a real `~` line.
+
+### Rulings (fixed, hamr 2026-11-17)
+- The AI job rewrite is PARKED (F349, rounds 1-4, no stable pass). No AI rewrite, no guessing.
+- The AI may still SUGGEST a good missing rule the person did not write, from captured intent (the person's own words + what the input shows; code-checked words; the existing `!` rule). It shows under the existing Suggested box ("not in your job, not checked unless you add it").
+- Add writes a `~` line into the job text. Today Add only turns the card row on (`CheckBlock.rowChoice`, `src/checkblock.js` ~1141-1163, sets `choice 'add'`); it does not touch the job text.
+- `[default]` code checks (file exists, saved sheet copy, write fence, etc.) stay.
+- ~~`[agent]` extra checks only when they belong to a `~` rule (e.g. "count rows over 500" for `~ Amount over 500`); never from step prose.~~ **[WITHDRAWN 2026-11-17 (later): `!` agent rows built from a line's text stay exactly as they worked before the two patches; see the ruling below.]**
+- **Ruling 2026-11-17 (later)** — hamr: "yes, our focus is only get code check for ~ and ! stays as it worked before, same flow no changes, we are just removing the forceful attempt to rewrite the job"
+  Meaning: `~` gets a code check; `!` stays as it worked before, same flow, no changes; the only change is removing the forceful rewrite attempt (the two S4 patches). The six prose paths in F351 (ii) are the working `!` flow, not defects.
+- **Ruling 2026-11-18** — hamr: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"
+  - R2 UNDONE: built (88b8a975, 89bb7b0c, e285026b), then reverted on this ruling. Reason: the hint "Only lines starting with ~ are checked. Other lines say what to do." is false now that `!` rows still build checks from plain lines; the card line "Line N: no ~ rule here..." also showed wrongly on lines that do have a `~` rule. The old wording ("what the text says, you judge it at Accept") was always right.
+  - R4 DROPPED, never built: it came from the cancelled job-rewrite idea. The F351 (iii) drift notes stay as record.
+  - The job-box hint and the "no ~ rule here" card wording are WITHDRAWN.
+- The S4 prose-word patches come out, in revertable commits: 3463d6bb (item 5: a word of a line's own prose is asked like a rule word and its answer swaps the word in the line) and 6e303060 (ruling A: every line of a sheet-only job is a sheet line; it ALSO added Drop it to the prose tie box, which goes away with item 5). The `~` rule column ask (S1, with the tie picker and its Drop it) STAYS.
+- Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
+
+### What the person sees
+- ~~Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
+- ~~Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
+- Suggested row: unchanged look. Add now also shows the new `~` line in the job box under its step; Drop of that row removes the line again.
+
+### Pieces
+
+R0. POC ($0, no AI, before any code change)
+- Pre-registered in FINDINGS as F351 and committed BEFORE running; the result is appended after. Run in throwaway worktrees and scratch only, never the real tree.
+- (i) Dry-run the R1 revert of 6e303060 then 3463d6bb in a throwaway git worktree. Report conflicts; list every file whose result differs from `3463d6bb^` and why (later S4 commits on the same lines); run the full suite there (`node scripts/hermetic.mjs`, one suite at a time) and quote exit code and last line.
+- (ii) The R3 report: every code path that today (after the dry-run revert) builds a check from step prose (look facts, sheet checks, `[agent]` rows, `$` defaults), with file:line, read from source, not guessed.
+- (iii) R4 feasibility: name the one owner of the job lines; show by reading code where Add/Drop would write/remove a `~` line and which views read it (card, job box, signed lines, Job tab); list any second copy of the job text that would drift.
+- Bars (frozen): revert dry-run suite exit 0 OR every failure explained by a named later commit; R3 report complete (every builder of checks visited); R4 has exactly one owner OR the drift points are listed.
+- If any bar fails, the result goes to hamr before R1 starts.
+
+R1. Revert 3463d6bb and 6e303060
+- Files: those the two commits touched: `src/checkblock.js`, `src/sheetfind.js`, `src/sheetlook.js`, `src/authorflow.js`, `src/blockasks.js`, `src/questionbox.js`, `src/sheetoffer.js`, `src/sheetrows.js`, `tests/sheet-ask.test.js`, `tests/sheet-find.test.js`, `tests/sheet-prose-ask.test.js`, `tests/sheet-draft.test.js`, `tests/sheet-look-run.test.js`, `tests/sheet-rowedit.test.js`, `tests/sheet-rows.test.js`, `tests/sheet-tie-box.test.js`, CHANGELOG.md, `bareloop.context.md`.
+- Call site: none new (a removal).
+- Method: `git revert` of each commit (newest first). BEFORE doing it for real, do both reverts in a throwaway git worktree and check the result is byte-identical to the tree just before 3463d6bb for every file the later commits did not also touch (diff against `3463d6bb^`); report any file that differs and why (later S4 commits touching the same lines). Conflicts are reported, not hand-resolved blind.
+- Tests that change back: `tests/sheet-prose-ask.test.js` is deleted (it was added by 3463d6bb); `tests/sheet-tie-box.test.js` loses the Drop-it-on-prose-tie case; `sheet-ask`, `sheet-find`, `sheet-draft`, `sheet-look-run`, `sheet-rowedit`, `sheet-rows` return to their pre-S4-item-5 expectations. Kept: every S1 test (the `~` rule column ask and its tie picker with Drop it).
+- Fail-first: after the revert, the named tests must pass at the old expectations; one test of the S1 ask must still pass unchanged (proves S1 stayed).
+- Done when: full `npm test` exit 0, last line quoted; CHANGELOG lines of the two commits are gone; nothing else from S4 lost (builder lists the S4 commits and shows each still present).
+
+R2. **[UNDONE 2026-11-18: built and gated, then reverted on ruling; see Ruling 2026-11-18.]** Job box hint and prompt text that implies step prose is checked
+- Files: `src/panel/index.html` (hint under `#jf-job`, line ~952), the drafter/look prompts (`src/promptregisters.js`, `src/pagemap.js`, `src/sheetlook.js`, `src/authorflow.js`) — builder greps for wording that tells the AI or the person a step line is checked.
+- Call site: the hint is static markup in the job form; prompt text is read by the existing prompt builders. Conditional injection only; no blanket "what if" text.
+- Tests fail-first: a panel markup test that the hint text is on the page; a prompt test that the old wording is gone (grep the neighbour tests for the old wording first).
+- Done when: the hint shows in the real panel (builder's own screenshot), full gate green.
+
+R3. Pinning tests only, NO code change (ruling 2026-11-17 later)
+- The `!` rows built from a line's text (the six paths in F351 (ii)) are the working flow and stay as they were before the two patches. The earlier "agent rows only under a `~` rule" ruling is withdrawn.
+- Add pinning tests that today's flow holds: a `~` rule gets a code check; `!` rows still appear as before; `[default]` rows stay; a step with no `~` still gives its Not checked line. Show each can fail against a mutated scratch copy (never `git checkout`).
+- Files: tests only. Call site: the existing draft flow (`CheckBlock` reconcile), nothing new wired.
+- Done when: tests green, full gate exit 0.
+
+R4. **[DROPPED 2026-11-18: never built.]** Add on a Suggested row writes a `~` line (one owner: the job lines)
+- Files: `src/checkblock.js` (`rowChoice`, `choicesRecord`), `src/panel/authorsession.js` (the Drop/Add door ~1407-1430 and the final-card Suggested view ~1377), `src/panel/index.html` (job box follows the session job text, ~6349).
+- Behaviour: Add on a `suggested` row inserts a `~` line directly under its step in the job text; the card, job box, signed lines and Job tab all read that one text. Drop of an added suggestion removes that `~` line again. Revise keeps it (a `~` line is the person's own text from then on). $0, no AI call. A refused Add (code cannot build a legal check) changes nothing and says why in plain words, as today.
+- Call site: the panel Add/Drop action (`authorsession.js` ~1418) calls `rowChoice`; the job text edit happens in that one door and the row becomes a `~` (you) row, so `choice 'add'` is no longer a separate state.
+- Drift points (F351 (iii)): the write must reach the signed spec. `sheetFinalEdit` (`authorsession.js` ~1440) clones `finalCtx.spec` and never rewrites `spec.jobLines` or `resolved-spec.json`; Add/Drop must set `spec.jobLines` there (and recompute the spec hash), call `syncJobLines`, and on the rubric/sheet path also `block.syncJob(jobLines)` so the block's rule rows follow.
+- Tests fail-first: Add writes the line (job text before/after); signed spec jobLines and resolved-spec carry the added `~` line (and lose it on Drop); the card shows the rule once, tagged `~`; Drop removes the line and the row returns to Suggested; Revise after Add keeps the line; a refused Add leaves the text untouched; signed lines equal the job box lines.
+- Done when: gate green; builder's own screenshot of the job box before/after Add.
+
+### Out of scope
+- The AI rewrite (parked, F349). Mixed page + sheet (F347). New suggestion kinds. Any change to the `~` rule column ask (S1).
+
+### Live proof
+- One scratch-panel draft on `expenses.csv`: a job with a step that hides a rule and one `~` rule. Done when: only the `~` rule is checked, the hiding step reads Not checked, a Suggested rule appears, and Add puts it into the job box as a `~` line. DeepSeek direct, deepseek-flash, cap $0.10, port other than 4700, scratch HOME. Check at $0 first (close fails on seed, key readable, job matches the saved sheet).
+- hamr clicks through the panel himself before any done claim; phone width is unchecked (barebrowse cannot emulate it).
+
+### Known open risks
+- R1 revert may conflict with later S4 commits on the same lines; reported, not guessed.
+- A suggestion's Add writes a line the person did not type; the Suggested label says "not checked unless you add it", so the write is the person's own click.
+- Old signed jobs are untouched; only new drafts get the new text.
+
+## Addendum 2026-11-18 (c): plain .md result (fwd M15 + am2)
+
+Status: build APPROVED (hamr 2026-11-18: "picks go", answers below). Drafted 2026-11-18 on hamr's order ("port fwd's .md result for every job"); written from source, no code changed, no AI or provider call. Read before writing: fwdloop at its newest tag `v0.35.1` (`docs/wiki/the-module-ladder.md` "M15" and "M15 am1/am2", commits `1dda2c6b`, `0874b058`, `38ad25da`, `src/send.js`, `src/panel/result.js`, `src/panel/server.js`), and bareloop's own delivery and Result tab (below, with lines). fwdloop is never edited.
+
+### What the person sees
+
+Today a green rubric job writes one JSON file per job line into the Destination folder, e.g. `steps/1-2026-11-18.json` (`{"text": ..., "claims": {...}}`). That is a machine file: hamr's own words on fwd's walk were that a JSON answer "is not friendly". ~~New: beside each delivered step file, bareloop writes a plain text file with the same dated name and `.md`: `steps/1-2026-11-18.md`.~~ [SUPERSEDED 2026-11-18: one markdown report per run at the Destination root, see "Ruling 2026-11-18 (later)" below.] The JSON stays (the Result tab and the Audit read it; see the questions). The .md is the text the person would paste or send on.
+
+Preview 1, the expenses live-proof run (job line 1 is a SHEET line; real worker output from `.claude/scratch/live-proof/out/steps/1-2026-11-18.json`, run `mwltot43`). A sheet line writes its `text` AND its claims, each claim named with code's own check sentence (hamr's answer 7, 2026-11-18; `sheetCheckSentence`, src/sheetchecks.js:67, the words the Result tab and Audit use), never the rule id `l1r1`:
+
+```
+18 expenses have an Amount over 500; their row numbers are listed in claims.
+
+Count of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 18 (computed by code from the rows named)
+Total of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 13,206.91 (computed by code from the rows named)
+
+Rows where Amount > 500: 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41
+```
+
+(The claim line's name is the sentence of the FIRST check of the signed close that carries that claim id: here `l1r1` is shared by a rows, a countIf and a sumIf check, and the rows check comes first. A claim id no check carries keeps fwd's `friendlyName` of the key [WITHDRAWN 2026-11-18, ruling B: it is left out]. A claim that is a map of rows, such as `days` or `bands`, writes one line per row: `<sentence>, row 2: 269`.)
+
+(Those last two lines are code's own report lines, already added to the delivered copy by `deliveredAmender`; the .md is made from those same delivered bytes, so they are in it.)
+
+Preview 2, a FACTS line (the flights shape, fwd's am1+am2 form; invented values for the shape only):
+
+```
+## Result 1
+Price: 282 USD
+Airline: Example Air
+from the page: "Example Air  nonstop  282 USD"
+
+## Result 2
+Price: 301 USD
+Airline: Other Air
+from the page: "Other Air  1 stop  301 USD"
+```
+
+A TEXT line writes its text exactly (no heading, no checks, no JSON). `cites` stay on the Result tab as the proof (question 4).
+
+Preview 3, the Result tab top card. Today (src/panel/index.html `renderResult`, the `result-head` card): a title `Result`, a `Status` row, a `Money` and a `Time` row side by side, and, when the run read exactly one web page, a `Page read` link with the page-may-have-moved note. Everything below it stays as today: one `Line n` card per job line (job line text and rules, the Answer box or fact rows, each check with its mark and what was found, `(you confirmed)`, `Not checked` per line), the check gap on a red run, the bottom `Not checked` card, `How the page was read`, the Accept/Rerun door, and the bottom `Saved` card (one row per delivered file: its name, its full path, `Download <name>`, or the words `the saved file is gone` / `the saved file changed after the run`). New: one `Saved` row in the top card, as fwd's top card has (fwd M15 item 5), linking the .md:
+
+```
++----------------------------------------------------------------------+
+| Result                                                               |
+| Status   [v] passed . rubric . expenses - run-1                      |
+| Money    $0.0139                      Time    33 s                   |
+| Page read  https://example.com/page   (only on a one-page run)       |
+| Saved    1-2026-11-18.md   (link, opens the text in the tab)         |
+|          (or: 1-2026-11-18.md - the saved file is gone)              |
+|          (or: 1-2026-11-18.md - the saved file changed after the run)|
++----------------------------------------------------------------------+
+| Line 1   <job line text> ... (unchanged: rules, Answer or rows,     |
+|          checks, Not checked)                                        |
++----------------------------------------------------------------------+
+| Not checked / How the page was read / door / Saved (unchanged)       |
+|   Saved: 1-2026-11-18.json   path   [Download 1-2026-11-18.json]    |
+|          1-2026-11-18.md     path   [Download 1-2026-11-18.md]       |
++----------------------------------------------------------------------+
+```
+
+A run with several job lines shows one link per .md (the `Saved` row lists them, newest line last). A red run delivered nothing, so the row is absent (fwd: "a run that sent nothing shows no link"). The Result tab for every job already exists in bareloop (rubric payload and the generic payload for non-rubric runs; `resultKindOf`, src/panel/server.js:1452), so fwd's M15 items 1 and 2 (Result tab for every job; a text line's card shows the text) are ALREADY built here (the `Answer` box, `resultTextLine`, src/panel/index.html:4361); they are not part of this build.
+
+### What is copied from fwd, what is adapted (fwd at `v0.35.1`)
+
+Copied (rewrite into one new bareloop file, `src/resultmd.js`, with fwd's tests as the starting cases, never a file copy):
+- `leaves`, `words`, `friendlyName`, `blockLines`, `isResultList`, `renderSentMd`: fwd `src/send.js:31-95`. Names as words (am2 (1)): split at lowercase-to-capital, `_` and `-`; first letter capital, later words lowercase; a last name of `value` or `rows` dropped; two lines getting the same words both keep the `a.b` form. `## Result k` blocks and the last line `from the page: "<quote>"` (am1 + am2 (2)). A `{text}`-only answer is the text exactly.
+- The Saved link on the top card and `?view=1` (open inline, `text/plain`, nosniff, otherwise an attachment): fwd `src/panel/result.js:29-30` (the two state words, which bareloop already has as `RESULT_FILE_GONE` / `RESULT_FILE_CHANGED`, src/panel/server.js:1273-1274), `src/panel/result.js:303` (download types, bareloop already has the same table at src/panel/server.js:1919), `src/panel/server.js:649` (the `view=1` branch).
+- fwd's tests `test/m15-send-md.test.js` (the cases, re-pointed at bareloop's step-file shapes).
+
+Adapted:
+- fwd renders ONE accepted answer; bareloop has one step file per job line, shaped by line kind (src/rubricstep.js:103-133): FACTS `{results:[{quote, values}]}` (optionally `+ text`), SHEET `{text, claims}`, TEXT `{text, cites}`. So the renderer reads a step file, not an answer: `text` first, then the `results` blocks. `claims` are written after the text, named by code's check sentence (answer 7), not by the rule id. `cites` are not written (answer 4).
+- fwd records the .md's sha256 as `sentSha256` on its audit row. bareloop needs no new field: the .md is delivered through the same path as the JSON, and `destination-written` already records `{path, declared, bytes, sha256}` of what was written (src/userrun.js:2329). The Result tab's existing `readDelivered` (src/panel/server.js:1287) already checks that sha256 and says gone / changed.
+- fwd's `hasResultCards` decider (every job but Tickets) is not needed: bareloop's Result tab already shows for every ended run.
+
+### Where bareloop differs, and exactly where the .md is written
+
+bareloop has no "send" step, and delivery is not at Accept. From source: `copyOut` (src/source.js:1097) runs in `src/userrun.js:2322`, inside `if (outcome === 'green' && frontDoor)`, that is at the MINTED GREEN, before the review door is rendered (the comment at src/userrun.js:2300 says so). Accept never re-delivers: the door-accept path re-runs mechanical stages only and has no `copyOut` call (grep: `copyOut(` has the one caller, src/userrun.js:2322; `destination-written` has the one writer, src/userrun.js:2329). So a green run's files exist in the Destination folder before the person has pressed Accept; Accept confirms the verdict, it does not write the file. The .md therefore lands at the same moment and by the same function as the JSON: on a minted green, inside `copyOut`, never on a red, never overwriting (`pickDelivery` gives `name-YYYY-MM-DD.ext`, `-2`, `-3` the same day; `COPYFILE_EXCL`/`wx` backstop). The destination is still proved at $0 before any token (unchanged).
+
+A second difference: fwd's send writes the .md only (the JSON stays in the run folder for the Audit). bareloop's delivered JSON IS what the Result tab reads for rows and facts (`stepOfDelivered`, `readDelivered`, src/panel/server.js:1322, 1287), so the JSON is kept and the .md is added beside it (question 1).
+
+### Pieces (each with its call site)
+
+- **MD1 the renderer.** ~~`src/resultmd.js`: `renderStepMd(obj)`~~ [SUPERSEDED 2026-11-18: the renderer is `renderRunMd`, one markdown report per run, see the ruling below] `src/resultmd.js`: `renderStepMd(obj)` (pure, no I/O, returns a string or null when nothing is writable: not a JSON object, no `text` and no `results`). Call site: MD2. Fail-first tests (`tests/resultmd.test.js`): text-only is the text exactly; a facts file gives `## Result k` blocks with names as words and the last `from the page:` line, quotes byte-exact; `expenseTotal.value` gives `Expense total: ...`; two lines with the same words keep `a.b`; a sheet file writes the text, a blank line, then one line per claim named with the check's own sentence (`Rows where Amount > 500: 7, 9, ...`), never `l1r1`, never JSON braces; a claim id no check carries keeps fwd's `friendlyName`; a file with `text` and `results` writes text, a blank line, the blocks; replayed at $0 over every real archived step file the repo holds (`.claude/scratch/live-proof/out/steps/*.json`, the fixture files under tests/fixtures that are step files) with no value lost or changed. Done when: those pass, red before the file exists. Must fail when: a value is dropped, changed or reordered; a quote differs by one character; JSON braces or check marks appear.
+- **MD2 the delivery.** ~~`copyOut` (src/source.js:1097) gets one optional hook `alsoText: (rel, buf) => string|null`~~ [SUPERSEDED 2026-11-18: the hook is `report: {name, render}`, called once per delivery, see the ruling below] `copyOut` (src/source.js:1097) gets one optional hook `alsoText: (rel, buf) => string|null` (beside the existing `amend`, same shape, called with the AMENDED bytes so code's report lines are in the .md). For each delivered file whose `rel` matches `steps/<n>.json` and whose hook result is non-null, it writes the sibling through `pickDelivery` (never overwrites, `wx`), and adds `{path, bytes, sha256}` to the returned `files` (so the one `destination-written` loop at src/userrun.js:2327-2330 records it with no change). The caller src/userrun.js:2322 passes the hook for rubric jobs only. Fail-first tests (in `tests/source.test.js`'s copyOut block and a userrun-level test): a green run with a step file delivers the JSON and the .md, both recorded; the .md is never written on a red; a second same-day run gets `-2`; an existing `.md` is never overwritten [CHANGED 2026-11-18, ruling A: `destination-exists` WITHDRAWN, it lands under the next free name with a note]; a hook returning null writes nothing; the delivered .md's sha256 equals the record's. Done when: a $0 scripted green run (no provider) leaves both files and two `destination-written` records. Must fail when: a red run leaves a .md; a file is overwritten (a taken paired name must give the next free name, recorded with `pairedTaken`, never a refusal); the .md differs from `renderStepMd` of the delivered JSON bytes; the graded tree file is touched.
+- **MD3 the Result tab.** `getRunResult` (src/panel/server.js:1784) adds to the rubric payload `md: [{i, name, state, words}]`, the delivered files whose name ends `.md`, read with the existing `readDelivered` states (no new state logic). `renderResult` (src/panel/index.html:4659) draws the top-card `Saved` row from `data.md`: a link to `/api/runs/<id>/download?i=<n>&view=1` (opens the text in the tab), or `<name> - the saved file is gone` / `... changed after the run` from the payload's words (the page types none). `getRunDownload` (src/panel/server.js:1927 and its route ~4391) gets `view=1`: `Content-Disposition: inline`, `text/plain`, `nosniff`, for `.md`/`.txt` only; without it the download is an attachment as today. The bottom `Saved` card is unchanged and lists both files. Fail-first tests (`tests/panel*.test.js`): payload carries the .md with `ok`; a deleted .md reads `gone`; an edited .md reads `changed`; a red run has no `md`; `view=1` serves `text/plain` + nosniff and never a path from the request; an old run (no .md delivered) shows no top-card row and no error. Done when: the orchestrator's own screenshot of a real green Result tab shows the row, in context beside the neighbouring cards, link opening the text. Must fail when: the page builds any words of its own for gone/changed; a request names a path; an old run's tab breaks. Phone width is hamr's own DevTools check, named as unchecked until he does it.
+- **MD4 docs.** `bareloop.context.md` (adopter contract: the delivered files now include a `.md` per step file, what it holds, what it leaves out), CHANGELOG line, PRD one-liner tick with a pointer here (no numbers in the tick). Done when: the contract names the file and its shape without the integrator opening source.
+
+Not a piece: anything on the Audit or the spine beyond the extra `destination-written` records (they already carry path, bytes, sha256). No change to checks, to what is graded, or to any arbiter code (the .md is written from bytes already delivered after the green; it can never change a verdict, and a failure to write it is reported beside the green like any copy-out refusal, never folded into it).
+
+### Repo jobs and Tickets
+
+fwd's scope is every job but a Tickets MCP one (its grid is kept). bareloop's repo jobs deliver no files at all: `frontDoorFromManifest` returns null for `kind: 'repo'` (src/source.js, the D3 note), so `copyOut` never runs for them, their work lands on a branch, and their Result tab is the generic one (diff, work box). On that reading a repo job has no step file to turn into text, so it gets no .md under this spec. Question 5 asks hamr; I have not decided. Ticket jobs: a ticket job is a rubric job (PRD item 33 tickets rung); whether it delivers a step file today is not established here, so I do not claim it. Question 6.
+
+### hamr's answers, 2026-11-18 ("picks go")
+
+1. Keep the .json and add the .md beside it.
+2. ~~One .md per job line (per delivered step file).~~ [SUPERSEDED 2026-11-18, ruling "one markdown report per run" below: ONE .md per run]
+3. Facts lines write `from the page: "<quote>"` under each result (fwd am2).
+4. Text-line `cites` are not written.
+5. Repo jobs: no .md (they deliver no file).
+6. Ticket jobs: checked from source whether they deliver step files via copyOut; if yes they get the .md like any rubric job (finding recorded in the build log below).
+7. CHANGED from the draft: sheet lines write the text AND the claims, every claim named with code's own plain check sentence (the Result-tab/Audit words), never the rule id; ~~fwd's `friendlyName` of the key when no check carries the id~~ [WITHDRAWN 2026-11-18, ruling B below: such a claim is left out].
+8. Old runs are not rewritten.
+
+### Open questions for hamr (plain list; ANSWERED above, kept as the record)
+
+1. Keep the JSON and add the .md beside it (my pick, because the Result tab reads the delivered JSON for rows and facts), or write only the .md as fwd does (then the Result tab would have to read the tree copy instead, a bigger change)?
+2. One .md per job line (my pick, same dated name as its JSON), or one combined file for the whole job as fwd's M13 am9 does for its last Ask (`## Line <n>: <your line words>` sections)? Combined needs one more piece.
+3. A facts line: write `from the page: "<quote>"` as fwd's am2 does (my pick), or leave the quote on the Result tab only?
+4. A text line's `cites` (the quotes behind it): not written (my pick, fwd writes none for a text answer), or a last `Quotes` block?
+5. Repo jobs: no .md (nothing is delivered; my reading of the source), or should a repo job write something (for example its end summary) to a file? That is a new delivery, not a port.
+6. Ticket jobs: same as every rubric job once I confirm they deliver step files, or keep as they are?
+7. Sheet lines: write `text` only (my pick, claim names are rule ids), or also a readable claims block such as `Rows over 500: 7, 9, 10, ...`? That needs a words map for the rule ids and is not in fwd.
+8. Old runs: not rewritten (the usual rule), only new greens get the .md. Agreed?
+
+### Build log (2026-11-18)
+
+- MD1 `src/resultmd.js` (`renderStepMd`, `stepClaimWords`, `deliveredTexter`), tests `tests/resultmd.test.js` with real archived step files kept under `tests/fixtures/resultmd/` (a test never reads untracked scratch). MD2 `copyOut` `alsoText` (src/source.js) and its one call site (src/userrun.js, beside `amend`). MD3 `getRunResult` `md`, `getRunDownload` `view`, `renderResult` top-card row. MD4 this contract, the CHANGELOG line and the PRD tick.
+- Answer 6, ticket jobs, from source: `frontDoorFromManifest` (src/source.js) returns null only for a `kind: 'repo'` manifest. A Tickets job on a plain source (an issues-list address among its Inputs, read at run start by `refreezeUrlInputs`) has a destination and a rubric close, so `copyOut` runs and it gets the `.md` like any rubric job. A Tickets job on a code repo (`ticket.repo`, the real archived run `mw1zse2m`, `tests/fixtures/result-tab`) delivers no file, so it gets none. A Tickets job's Result tab is fwd's grid (`resultGrid`), which has no top card, so the `Saved` row does not appear there; its `.md` is in the Destination folder only. Not exercised end to end with a ticket reader.
+- Answer 7, the claim name: the plain sentence of the FIRST check of the step that carries the claim id (`sheetCheckSentence`, src/sheetchecks.js:67), first letter capital. `l1r1` is shared by a rows, a countIf and a sumIf check, and the rows check comes first. A claim only a sumIf/countIf check carries is not written (code's number replaces the worker's, which is never read). A claim id no check carries keeps fwd's `friendlyName` of the key (a worker's stray box is then shown as written: test `tests/sheet-run-e2e.test.js`). A `days`/`bands` map writes one line per row, `<sentence>, row <k>: <value>`.
+- Name of the text file: the JSON's own dated name with `.md`, written `wx` straight after the JSON (not a second `pickDelivery`), so the pair always matches; ~~an existing file at that name refuses `destination-exists`~~ [SUPERSEDED 2026-11-18, ruling A below].
+
+### Rulings 2026-11-18 (hamr), after the build
+
+A) On a taken paired name: "i'd still add it with a new name, and note it, so a good run won;t get wasted". Built: `copyOut` writes the `.md` under the next free same-day name (`pickDelivery`, `wx` backstop stays), its file entry and `destination-written` record carry `pairedTaken` (the basename it could not take), and the Result tab top-card `Saved` row shows `<name> - saved under a new name because <paired name> was already taken`, the words owned by `RESULT_MD_RENAMED` (src/panel/server.js), the page types none. This replaces the `destination-exists` refusal for the `.md` (struck above).
+
+B) On a claim box no check carries (a stray `l1a1`): "leave it out". Built: `claimLines` (src/resultmd.js) skips it; the earlier friendlyName line (`L1a1: 99999.99`) is struck above.
+
+### Ruling 2026-11-18 (later): one markdown report per run
+
+hamr walked the built per-step .md live (scratch HOME, run `mwlzzp9y`, `walk-md`) and found: (1) it is plain text, not markdown; (2) a LABEL BUG: the row-list claim printed as `Count of rows where Amount > 500: 7, 9, ...` because the claim was named with the sentence of the FIRST check carrying the claim id, which on that job was the count check, not the rows check; (3) the worker's own sentence ("Eleven expenses ...", wrong; code's count is 18) sat at the top as if it were the answer. He chose "A": ONE markdown report per run, not per job line, laid out as this preview he approved:
+
+```
+# walk-md — run-1
+Passed · 18 Nov 2026
+
+## 1. List the expenses over 500, how many there are and what they add up to
+Rule: Amount over 500
+
+### Checked by code
+- Rows where Amount > 500: 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41
+- Count: 18
+- Total: 13,206.91
+
+### The AI's answer (not checked — you judge it at Accept)
+Eleven expenses in the sheet are strictly above 500: item 5 at 1,200.50, …
+```
+
+Rules (built exactly so):
+- One file per green run, written at the same moment and by the same path as before (`copyOut` on a minted green, never on red, never overwriting; a taken name gets the next free name plus the existing `RESULT_MD_RENAMED` note). It replaces the per-step `steps/<n>-<date>.md`. Name `<job name>-YYYY-MM-DD.md` (`-2`, `-3` the same day, the dated-name helper) at the Destination folder root. The per-step `.json` files stay exactly as before.
+- H1 `<job name> — run-N` (N is the panel's own number, `runNumbers` in src/runlist.js, read at delivery from the run list this run's row was appended to at its start; if the list cannot be read the title is the job name alone). Line 2 `Passed · <date>` (`18 Nov 2026`).
+- Per job line: H2 `<n>. <line text>`, one `Rule: <text>` line per `~` rule of that line.
+- H3 `Checked by code`: a bullet list. A sheet line names each claim the run's checks grade with the sentence of the check that grades THAT claim's kind (a row-list claim takes the rows check's sentence; this is the label-bug fix: a claim is named by the first check carrying it that is not a `sumIf`/`countIf`); count and total are code's own computed numbers as `Count: 18` / `Total: 13,206.91`, never the worker's; `days`/`bands` maps as bullets. A facts line is the fwd am2 blocks: `#### Result k`, value bullets, `from the page: "<quote>"`. A claim no check carries is left out (ruling B stands).
+- H3 `The AI's answer (not checked — you judge it at Accept)` carries the worker's text when the line has text and its prose is Not checked (read from the signed close: a `prose` Not checked row of the line, or, for a close with no list, a stage with no fact part); a line whose text is checked gets the heading `The answer`.
+- No check marks, no JSON. Code's `(computed by code from the rows named)` report lines stay in the delivered JSON; in the .md they are the `Count` and `Total` bullets (never printed twice, the worker's own text is taken from the file as the tree holds it).
+- The Result tab's top-card `Saved` row links the one run .md (payload unchanged: it lists every delivered `.md`).
+
+Rulings 2026-11-18 (later still), hamr: "your picks".
+- (1) The report ALWAYS lists `Count:` then `Total:`, whatever the order of the signed checks (it followed the check order, so a job with its sum check first printed Total first).
+- (2) Markdown headings inside the worker's own answer text are left as they are: not built.

@@ -67,6 +67,7 @@ import { join, sep, dirname } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
+import { readStageSheets } from './sheetrun.js';
 import { rowResultsOf } from './rowresults.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
@@ -1467,6 +1468,10 @@ async function runRubricStep(stage, ctx) {
     inputShas[label] = row.sha256;
     inputs[label] = buf.toString('utf8');
   }
+  // S3: each sheet the stage reads, as bareguard's table of the run's FROZEN copy, held to the `tableSha` the run recorded at its start (an unrecorded or changed sheet is a stop naming the input)
+  const sheets = await readStageSheets({ workdir: ctx.workdir, recorded, params: p });
+  if (!sheets.ok) return stop(sheets.why);
+  Object.assign(inputShas, sheets.shas);
   // the step file: a regular file, read once, bounded
   const abs = join(ctx.workdir, stepFileRel(step));
   /** @type {string|null} */
@@ -1498,7 +1503,7 @@ async function runRubricStep(stage, ctx) {
       return stop(`the checked facts of line ${n} (${stepFileRel(n)}) could not be read for the number tie: ${/** @type {Error} */ (e).message}`);
     }
   }
-  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing }, inputShas);
+  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing, ...(sheets.roles.length > 0 ? { tables: sheets.tables } : {}) }, inputShas);
   if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
   // REPORT-ONLY: what each cited check read, handed to the runner's seam (the spine's `rubric-evidence`); nothing below reads it
   if (graded.evidence && typeof ctx.onRubricEvidence === 'function') {

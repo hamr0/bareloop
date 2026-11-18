@@ -59,12 +59,12 @@ test('session: a check question carries its box and its thread message is held b
 
 /** renderQuestionBox against stubs: the DOM it touches, one fake element each */
 function boxHarness() {
-  const el = () => ({ hidden: true, textContent: '', value: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-  const e = { qBox: el(), qHead: el(), qLine: el(), qText: el(), qChoices: el(), qC1: el(), qC2: el(), qOr: el(), qAnswer: el(), qError: el(), qSend: el(), mainBtn: el(), mainHint: el(), row: el() };
-  const names = 'qBox,qHead,qLine,qText,qChoices,qC1,qC2,qOr,qAnswer,qError,qSend,mainBtn,mainHint,sessionId';
+  const el = () => ({ hidden: true, textContent: '', value: '', attrs: {}, kids: /** @type {any[]} */ ([]), setAttribute(k, v) { this.attrs[k] = v; }, appendChild(k) { this.kids.push(k); } });
+  const e = { qBox: el(), qHead: el(), qLine: el(), qText: el(), qChoices: el(), qC1: el(), qC2: el(), qColumn: el(), qOr: el(), qAnswer: el(), qError: el(), qSend: el(), mainBtn: el(), mainHint: el(), row: el() };
+  const names = 'qBox,qHead,qLine,qText,qChoices,qC1,qC2,qColumn,qOr,qAnswer,qError,qSend,mainBtn,mainHint,sessionId';
   const run = new Function(...names.split(','), 'document', 'state', `var qKey = null;\n${fnSrc('renderQuestionBox')}\nreturn function(s){ renderQuestionBox(s); };`);
-  const doc = { querySelector: () => e.row };
-  const render = run(e.qBox, e.qHead, e.qLine, e.qText, e.qChoices, e.qC1, e.qC2, e.qOr, e.qAnswer, e.qError, e.qSend, e.mainBtn, e.mainHint, 'sess', doc);
+  const doc = { querySelector: () => e.row, createElement: () => ({ value: '', textContent: '' }) };
+  const render = run(e.qBox, e.qHead, e.qLine, e.qText, e.qChoices, e.qC1, e.qC2, e.qColumn, e.qOr, e.qAnswer, e.qError, e.qSend, e.mainBtn, e.mainHint, 'sess', doc);
   return { e, render };
 }
 const ASK = (text, over = {}) => ({ pendingAsk: { kind: 'answer', index: 1, source: 'look', box: { head: 'A question the plan raised (1 of 2)', line: 'About job line 1', text, choices: [], orLabel: 'Type your answer:' }, ...over } });
@@ -113,4 +113,17 @@ test('page: a question with choices shows its buttons (labels, data-choice); a q
   assert.deepEqual([e.qAnswer.hidden, e.qSend.hidden, e.qOr.textContent], [false, false, 'Or type a different Destination:']);
   render(ASK('plain'));
   assert.equal(e.qChoices.hidden, true, 'a question without choices has no button row');
+});
+
+test('page: a column tie shows ONE picker listing every column (a first "Choose a column" option, then each), Drop it and Send, and no answer box; an ordinary question has no picker', () => {
+  const { e, render } = boxHarness();
+  render(ASK('I found 3 columns matching \'Price\': Amount, Tax, Total. Choose one.', { box: { head: 'h', line: 'l', text: 't', choices: [{ choice: 'drop', label: 'Drop it' }], columns: ['Amount', 'Tax', 'Total'], orLabel: null, sendChoice: 'rule' } }));
+  assert.equal(e.qColumn.hidden, false);
+  assert.deepEqual(e.qColumn.kids.map((/** @type {any} */ k) => k.value), ['', 'Amount', 'Tax', 'Total']);
+  assert.equal(e.qAnswer.hidden, true, 'no own-words box');
+  assert.equal(e.qSend.hidden, false, 'Send is how the picked column is posted');
+  assert.equal(e.qC1.textContent, 'Drop it');
+  const { e: e2, render: r2 } = boxHarness();
+  r2(ASK('plain'));
+  assert.equal(e2.qColumn.hidden, true);
 });

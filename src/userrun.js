@@ -41,6 +41,8 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
+import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
+import { deliveredReporter } from './resultmd.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -69,7 +71,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
+import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList, runNumbers } from './runlist.js';
 // P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
 // one owner of where a leg starts and ends; every reader below asks it.
 import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath } from './legs.js';
@@ -1652,6 +1654,15 @@ async function execute(ctx) {
       throw new ExitSignal(2);
     }
     if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
+    // S3 SHEET FREEZE: each csv input a `sheet` part reads gets its `tableSha` (bareguard's fingerprint of the table made from THIS run's frozen copy) recorded once beside the input in source.json,
+    // and its row-numbered view written beside it and committed into the seed. A sheet bareguard cannot read as a table refuses here, before any provider call, naming the input.
+    const sheetFreeze = await freezeSheets({ into: ctx.into, closeDecl: spec.closeDecl });
+    if (!sheetFreeze.ok) {
+      err(`${SELECTOR}: ${sheetFreeze.error}`);
+      settleRefused(sheetFreeze.error);
+      throw new ExitSignal(2);
+    }
+    if (typeof sheetFreeze.seed === 'string' && sheetFreeze.seed) SEED = sheetFreeze.seed;
     // PLACE RULES: every place-rule fact of the signed spec is read, by CODE, from this run's own copy of its input (the copy the refetch above just froze); the values are
     // bound as those facts' phrases on the run's in-memory copy inside `runJob`, after the approval check, and are never written to the signed spec. Any rule not found
     // stops the run here, before any provider call.
@@ -2301,14 +2312,26 @@ async function execute(ctx) {
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
     // may produce more than one file — `copyOut` delivers every non-empty file
     // under `output/`, each under its own dated name, and returns the list.
-    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination });
+    // S3 (iii): the delivered report carries code's own total and count at the END of the step file's text: a green only (this is the place `copyOut` runs), the DELIVERED copy only, the graded tree file untouched
+    /** @type {((rel: string, buf: Buffer) => Buffer)|undefined} */
+    let amend;
+    try {
+      const rep = await sheetReportLines({ workdir: wd, closeDecl: spec.closeDecl });
+      if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
+      else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
+    } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
+    // the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title
+    /** @type {number|null} */
+    let runNo = null;
+    for (const home of [deps.runlistHome, cfgHome]) { try { runNo = runNo ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo }) } });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
       // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same
       // day), so the declared directory is not the path anything actually
       // wrote. The spine records what happened, not what was asked for.
       for (const f of co.files) {
-        emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256 });
+        emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256, ...(f.pairedTaken ? { pairedTaken: f.pairedTaken } : {}) });
         out(`\nDESTINATION  written — ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}…)`);
       }
     } else {

@@ -41,7 +41,7 @@ import { startCmd, stopCmd, restartCmd, statusCmd, installCmd, updateCmd, menuCm
 import { askBundle, resolveBundleRef, listResumableBundleRuns, RECENT_BUNDLES } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
-// PANEL-BUILD.md P1 — the read-only panel HTTP server (`bareloop panel`).
+// PANEL-BUILD.md P1 — the panel HTTP server (`bareloop panel`).
 // One more caller of the same `src/` library functions this file already
 // calls (the layering law, PANEL-BUILD.md §2) — `src/panel/server.js` never
 // re-implements the spine/run-list read side, it calls `src/replayio.js`/
@@ -361,7 +361,7 @@ async function mainInner(argv, deps, holder) {
   if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home, invokedAs: 'bareloop run-u' });
   // `bareloop runs` — PANEL-BUILD.md P1's one run list. Read-only ($0): no run trigger, no key ever read.
   if (cmd === 'runs') return doRuns(rest, ctx);
-  // `bareloop panel [--port N]` — PANEL-BUILD.md P1's read-only HTTP panel.
+  // `bareloop panel [--port N]` — PANEL-BUILD.md P1's HTTP panel (it also drafts, runs and Accepts).
   // Never runs a job, spends money, or reads a key: it serves the run list
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.

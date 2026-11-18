@@ -1090,21 +1090,29 @@ async function listOutputFiles(dir, rel = '') {
  * refuse `destination-contained`, which a containment check against `tree`
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
- * @param {{tree: string, into?: string, destination: string}} o
- * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string}[]}|SourceRefusal>}
+ * `amend` (S3), when given, is `(rel under output/, bytes) => bytes`: the DELIVERED copy is written from what it returns (the file in the tree is never touched), and the delivery record is of those bytes.
+ * `report` (MD2, "Ruling 2026-11-18 (later): one markdown report per run"), when given, is `{name, render}`: after every file is delivered, `render` is asked ONCE with every step file (`steps/<n>.json`) as `{rel, orig, delivered}`
+ * (`orig` the bytes as the tree holds them, `delivered` the amended copy); a string is written as ONE file `<name>-YYYY-MM-DD.md` at the destination root and recorded like any delivered file; null writes nothing.
+ * It takes the dated suffix of the first delivered step file (so a same-day second run gets `-2` for both). Never overwriting: when that name is taken it lands under the next free same-day name (`pickDelivery`) and its file entry
+ * carries `pairedTaken`, the basename it could not take (hamr 2026-11-18). It writes only inside this green-only door.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}}} o
+ * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string, pairedTaken?: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination }) {
+export async function copyOut({ tree, into, destination, amend, report }) {
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
   const destAbs = resolve(destination);
   await mkdir(destAbs, { recursive: true });
   const outputDir = join(tree, 'output');
   const candidates = await listOutputFiles(outputDir);
-  /** @type {{path: string, bytes: number, sha256: string}[]} */
+  /** @type {{path: string, bytes: number, sha256: string, pairedTaken?: string}[]} */
   const delivered = [];
+  /** @type {{rel: string, orig: Buffer, delivered: Buffer, suffix: string}[]} */
+  const stepFiles = [];
   for (const rel of candidates) {
     const srcPath = join(outputDir, rel);
-    const buf = await readFile(srcPath);
+    const read = await readFile(srcPath);
+    const buf = amend === undefined ? read : amend(rel.split(sep).join('/'), read);
     if (buf.length === 0) continue; // an empty file is not a delivered result — skipped, never refused
     const declaredFile = join(destAbs, rel);
     await mkdir(dirname(declaredFile), { recursive: true });
@@ -1115,12 +1123,32 @@ export async function copyOut({ tree, into, destination }) {
       // `pickDelivery` choosing a free name and this line — a mutation that
       // drops it survives every test in this file for exactly that reason,
       // and is a known, accepted survivor, not a gap.
-      await copyFile(srcPath, pick.path, fsConstants.COPYFILE_EXCL);
+      if (buf === read) await copyFile(srcPath, pick.path, fsConstants.COPYFILE_EXCL);
+      else await writeFile(pick.path, buf, { flag: 'wx' });
     } catch (e) {
       if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${pick.path} already exists — bareloop never overwrites a person's file`);
       return refuse('destination-write-failed', `copying to ${pick.path} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
     }
     delivered.push({ path: pick.path, bytes: buf.length, sha256: sha256Hex(buf) });
+    const relPosix = rel.split(sep).join('/');
+    if (/^steps\/\d+\.json$/.test(relPosix)) stepFiles.push({ rel: relPosix, orig: read, delivered: buf, suffix: /(-\d{4}-\d{2}-\d{2}(?:-\d+)?)\.json$/.exec(pick.path)?.[1] ?? '' });
+  }
+  const text = report !== undefined && stepFiles.length > 0 ? report.render(stepFiles.map(({ rel, orig, delivered: d }) => ({ rel, orig, delivered: d }))) : null;
+  if (report !== undefined && text !== null && text.length > 0) {
+    const name = report.name.replace(/[/\\\0]/g, '-').replace(/^\.+/, '') || 'report';
+    const paired = join(destAbs, `${name}${stepFiles[0].suffix}.md`);
+    let mdPath = paired;
+    if (existsSync(paired)) {
+      const mdPick = pickDelivery(join(destAbs, `${name}.md`));
+      if (mdPick.stop !== null) return mdPick;
+      mdPath = mdPick.path;
+    }
+    const mdBuf = Buffer.from(text, 'utf8');
+    try { await writeFile(mdPath, mdBuf, { flag: 'wx' }); } catch (e) {
+      if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${mdPath} already exists — bareloop never overwrites a person's file`);
+      return refuse('destination-write-failed', `copying to ${mdPath} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+    }
+    delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf), ...(mdPath !== paired ? { pairedTaken: basename(paired) } : {}) });
   }
   if (delivered.length === 0) {
     return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);
@@ -1461,6 +1489,22 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify(next, null, 2)}\n`);
   const read1 = fresh.find((f) => f.ticket !== undefined)?.ticket;
   return { ok: true, refreshed: rows.map((/** @type {any} */ r) => r.label), seed, ...(read1 === undefined ? {} : { ticketText: read1.text }) };
+}
+
+/**
+ * Commit whatever the run start just wrote into the prepared tree as the tree's new seed (S3: the numbered view of a sheet, `src/sheetrun.js`), so a file bareloop made is never read as a worker write.
+ * The same plumbing `refreezeUrlInputs` uses: every git call pins the hooks path and the identity.
+ * @param {string} tree the prepared tree @param {string} message
+ * @returns {Promise<{ok: true, seed: string}|{ok: false, error: string}>}
+ */
+export async function commitFrozenFiles(tree, message) {
+  const add = await git(tree, [...NO_HOOKS, 'add', '-A', '-f']);
+  if (!add.ok) return { ok: false, error: `the files written at the run's start could not be staged: ${add.err}` };
+  const commit = await git(tree, [...GIT_IDENTITY, ...NO_HOOKS, 'commit', '-q', '--allow-empty', '-m', message]);
+  if (!commit.ok) return { ok: false, error: `the files written at the run's start could not be committed: ${commit.err}` };
+  const head = await git(tree, ['rev-parse', 'HEAD']);
+  if (!head.ok) return { ok: false, error: `git rev-parse HEAD failed in ${tree}: ${head.err}` };
+  return { ok: true, seed: head.out.trim() };
 }
 
 /**

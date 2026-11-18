@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
+import { createRubric, checkStep, renderGaps, numbersInQuote, tableSha } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { OFFERED, plainWords } from './checkwords.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
-import { stageQuestionsByName, guardQuestionText, fenceQuestionText } from './stagewords.js';
+import { stageQuestionsByName, guardQuestionText, fenceQuestionText, fencePlace } from './stagewords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
+import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
+import { sheetRowsOf } from './sheetrows.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -109,6 +111,21 @@ export function lineBriefs(closeDecl) {
       });
       continue;
     }
+    // S3: a SHEET line. The worker is told the BOX of each claim (bareguard's own worked example) and where to read row numbers, never the check: no op, condition, bound or column.
+    if (sheetPartOf(st.params)) {
+      const brief = sheetBrief(sheetChecksOf(st.params));
+      out.push({
+        line: n,
+        text: [
+          `Job line ${n} is a SHEET line. Write ${stepFileRel(n)} as {"text": "...", "claims": {...}} - "text" is your answer to the line in your own words, "claims" holds one box for each name listed under "fields" below; no "cites".`,
+          `  ${brief.answer}`,
+          `  fields: ${JSON.stringify(brief.fields)}`,
+          '  To name a row, use the row number the numbered view of the sheet shows for it (the second input file for the sheet): the header is row 1 and the first data row is row 2.',
+          ...(brief.math ? ['  Do not write a total or a count for the rows you name: code adds them up from the rows you name.'] : []),
+        ].join('\n'),
+      });
+      continue;
+    }
     const tie = st.params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
     if (tie) {
       out.push({
@@ -130,7 +147,9 @@ export function lineBriefs(closeDecl) {
  * @returns {string}
  */
 export function rubricGoal({ jobLines, files, confirmedGoal = null, closeDecl = null }) {
-  const inputs = files.map((f) => `  - ${f.label}: ${f.rel}`).join('\n');
+  // S3: the numbered view of each sheet a stage reads is listed right after its sheet, as the second input for it (written at run start beside the frozen csv, src/sheetrun.js)
+  const roles = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' ? sheetRolesOfParams(st.params) : [])) : [];
+  const inputs = files.flatMap((f) => [`  - ${f.label}: ${f.rel}`, ...(roles.includes(f.label) ? [`  - ${f.label}, the same sheet with each line numbered by its sheet row: ${sheetViewRel(f.rel)}`] : [])]).join('\n');
   const lines = jobLines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
   return [
     RUBRIC_GOAL_HEAD,
@@ -175,7 +194,7 @@ export function confirmedGoalOf(goal) {
 // (src/authoring.js `checkRubricParts`) so no signed stage ever carries one.
 
 /** the closed set of classes a part is sorted into; `none` = "I could not sort this one" (a red, in plain words, never a guess) */
-export const PART_CLASSES = Object.freeze(['countable', 'fact', 'judged', 'guard', 'none']);
+export const PART_CLASSES = Object.freeze(['countable', 'fact', 'sheet', 'judged', 'guard', 'none']);
 /**
  * The counted/quoted checks a `countable` part may name, with the fields each needs — read off bareguard's own rule table
  * (`rubricVocabulary`): the names are bareguard's, so a check this build cannot run is inexpressible, not rejected late.
@@ -205,7 +224,7 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen', 'checks']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -251,7 +270,9 @@ export function rubricStepShapeReds(p, at) {
       red('invalid-value', `${w}.rules`, 'the numbers of the line\'s ~ rules this part carries out (distinct integers, 1 or more)');
     }
     if (Object.hasOwn(part, 'asSeen') && part.class !== 'fact') red('invalid-value', `${w}.asSeen`, 'only a fact part carries the as-seen example');
+    if (Object.hasOwn(part, 'checks') && part.class !== 'sheet') red('invalid-value', `${w}.checks`, 'only a sheet part carries sheet checks');
     if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
+    if (part.class === 'sheet') { sheetShapeReds(part, Number.isInteger(p.step) ? p.step : 0, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'guard') {
       if (!nameList(part.domains)) red('invalid-value', `${w}.domains`, 'a non-empty array of web domains the rule is about');
       return;
@@ -272,6 +293,14 @@ export function rubricStepShapeReds(p, at) {
       }
     }
   });
+  // S3: a step reads one sheet part; a line is a sheet line or a facts line (the step file holds `claims` or `results`), and a sheet input is not also quoted on the same step (one input, one fingerprint)
+  const sheetParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'sheet');
+  if (sheetParts.length > 1) red('invalid-value', `${at}.parts`, 'one sheet part per step: the checks of a sheet line all go in one');
+  if (sheetParts.length > 0 && p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact')) red('invalid-value', `${at}.parts`, 'a line is a sheet line or a facts line, not both: its step file holds "claims" or "results"');
+  if (sheetParts.length > 0) {
+    const quoted = citedLabels(p).filter((l) => sheetRolesOfParams(p).includes(l));
+    if (quoted.length > 0) red('invalid-value', `${at}.parts`, `the sheet "${quoted[0]}" is also quoted (cited) on this step; a step reads a sheet by its claims, not by quotes from it`);
+  }
   return reds;
 }
 
@@ -300,6 +329,11 @@ export function buildStepSpec(params, inputShas) {
       checks.push({ id: `p${i + 1}-facts`, rule: 'cited', claims: `cites:${part.source}`, source: part.source, decides: factDecides(part) });
       if (part.count?.min !== undefined) checks.push({ id: `p${i + 1}-count-min`, rule: 'min', field: `claims:${part.source}`, value: part.count.min });
       if (part.count?.max !== undefined) checks.push({ id: `p${i + 1}-count-max`, rule: 'max', field: `claims:${part.source}`, value: part.count.max });
+      return;
+    }
+    if (part.class === 'sheet') {
+      // S3: every sheet check as bareguard grades it (a sumIf/countIf is the rows check of its condition: the worker names rows, code adds up); `inputShas[role]` is the table's own fingerprint
+      for (const c of gradedChecks(Array.isArray(part.checks) ? part.checks : [])) checks.push(c);
       return;
     }
     if (part.class !== 'countable') return;
@@ -393,9 +427,10 @@ export function parseStepFile(bytes) {
  * @param {string[]} [countLabels] labels whose claim COUNT a minClaims/maxClaims part reads
  * @param {any} [factPart] the step's `fact` part: its `results` become claims (text built by code) under `cites:<source>`
  * @param {(Record<number, string>|undefined)[]} [asWritten] per result, the value spans a page-form fact's claim text is written with (see factClaims)
+ * @param {string[]} [sheetClaimNames] S3: the claim names a sheet part reads; each becomes the field of that name, taken from the file's `claims` object
  * @returns {Record<string, any>}
  */
-export function flattenStep(obj, countLabels = [], factPart = null, asWritten = []) {
+export function flattenStep(obj, countLabels = [], factPart = null, asWritten = [], sheetClaimNames = []) {
   /** @type {Record<string, any>} */
   const fields = {};
   // the number of claims listed under each label a claim-count check names (0 when the label is absent): counted HERE, by
@@ -412,6 +447,7 @@ export function flattenStep(obj, countLabels = [], factPart = null, asWritten = 
   // a missing or non-string `text` is read as empty, so the one red a worker sees is "text is missing or empty"
   fields.text = typeof obj.text === 'string' ? obj.text : '';
   if (isRec(obj.cites) && !factPart) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
+  if (isRec(obj.claims)) for (const name of sheetClaimNames) if (Object.hasOwn(obj.claims, name)) fields[name] = obj.claims[name];
   return fields;
 }
 
@@ -472,7 +508,8 @@ export function plainStepGap(step, why, g, params = null) {
  * Grade ONE step: build the rubric, run it over the step file's fields, and say what happened in the close's own terms.
  * Pure of the filesystem (the runner in src/kinds.js reads the files). `stopped` = the instrument failed (never a red).
  * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>,
- *   factQuotes?: Record<number, string[]>, factMissing?: number[]}} o
+ *   factQuotes?: Record<number, string[]>, factMissing?: number[], tables?: Record<string, {header: string[], rows: any[]}>}} o
+ *   `tables` (S3) maps each sheet role a `sheet` part reads to bareguard's table of the run's FROZEN csv; `inputShas[role]` is the `tableSha` recorded at the run's start, and bareguard stops the check if the table no longer gives it
  *   `factQuotes` maps an earlier fact line's number to the quotes its (already checked) step file holds — what a prose step's numbers are tied to
  *   `factMissing` lists the earlier fact lines whose step file is not there (yet): a normal red, never an instrument fault
  *   `inputs` maps each cited label to its frozen TEXT; its sha256 is taken here from that text, and bareguard compares it to
@@ -482,7 +519,7 @@ export function plainStepGap(step, why, g, params = null) {
  *   rawGaps?: any[], extraGaps?: string[], evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
  *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
-export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [] }, inputShas) {
+export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [], tables = {} }, inputShas) {
   let rubric;
   try { rubric = createRubric(buildStepSpec(params, inputShas)); } catch (e) {
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
@@ -490,8 +527,13 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   const parsed = parseStepFile(bytes);
   const countLabels = [...new Set(params.parts.filter((/** @type {any} */ x) => x.class === 'countable' && (x.check === 'minClaims' || x.check === 'maxClaims')).map((/** @type {any} */ x) => String(x.source)))];
   const factPart = factPartOf(params);
-  const check = (/** @type {(Record<number, string>|undefined)[]} */ asWritten = []) => checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPart, asWritten), {
-    inputs, ...(outputBytes === null ? {} : { outputBytes }),
+  // S3: the claim names a sheet part reads, and the sheet's tables (passed to bareguard only when the step has a sheet part, so an old spec's call is the call it always was)
+  const sheetChecks = gradedChecks(sheetChecksOf(params));
+  const claimNames = [...new Set(sheetChecks.filter((c) => c.rule === 'cells' && typeof c.claim === 'string').map((c) => c.claim))];
+  const sheetIds = new Set(sheetChecks.map((c) => c.id));
+  const claimsMissing = sheetChecks.length > 0 && parsed.obj !== null && !isRec(parsed.obj.claims);
+  const check = (/** @type {(Record<number, string>|undefined)[]} */ asWritten = []) => checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPart, asWritten, claimNames), {
+    inputs, ...(outputBytes === null ? {} : { outputBytes }), ...(sheetChecks.length > 0 ? { tables } : {}),
   });
   let r = await check();
   // a fact that signs a page form (`lang` / `decimal`) has a canonical value but its claim text must spell it as the quote does: bareguard's own
@@ -524,9 +566,19 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   // the stage's ONE trend number for the fix-loop governor (F192 e, mirrored): failing CLAIMS under a `cited` check (bareguard's
   // own `measured` count of unsupported quotes), plus 1 for every other failing check — lower is better, compared to the
   // best so far through the same `closeGrade` {stage, value} path numeric stages use
+  if (claimsMissing) {
+    extraCount += 1;
+    extra.push(`line ${params.step}: answer the claim boxes - ${stepFileRel(params.step)} has no "claims" object; add one box for each name the brief for this line lists under "fields"`);
+    r = { ...r, gaps: r.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)), full: { ...r.full, gaps: r.full.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)) } };
+  }
   const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
   const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
-  if (r.verdict === 'stopped') return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
+  if (r.verdict === 'stopped') {
+    // S3: a sheet that no longer gives the table the run recorded at its start is named by its input, before any other word
+    const moved = sheetRolesOfParams(params).filter((role) => !isRec(tables[role]) || tableSha(tables[role]) !== inputShas[role]);
+    if (moved.length > 0) return { verdict: 'stopped', gapLines: [], fault: `input ${moved.map((m) => `"${m}"`).join(', ')} - the saved sheet no longer gives the table this run recorded at its start`, detail };
+    return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
+  }
   const seen = {
     ...(Array.isArray(r.full.evidence) && r.full.evidence.length > 0 ? { evidence: r.full.evidence } : {}),
     ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
@@ -658,6 +710,12 @@ export function checkRubricParts(stages, { inputLabels = null, red, picks = null
         red('rubric-part-judged', w, `line ${line}: this rule needs the judge, which arrives in the next build. Nothing spent.` + (factLine ? ' This line lists facts: a limit you can say as a time, number, date or money fact goes INSIDE its fact part (add the fact, list the rule\'s number in that part\'s "rules"); anything else goes in "refused", never a part of its own.' : ''), { line: step, stage: label });
       } else if (part.class === 'guard') {
         red('rubric-part-guard', w, `line ${line}: '${said}' is about web sources, and this job has no web input. Nothing spent.`, { line: step, stage: label });
+      } else if (part.class === 'sheet') {
+        if (Array.isArray(inputLabels)) {
+          for (const role of sheetRolesOfParams({ parts: [part] })) {
+            if (!inputLabels.includes(role)) red('rubric-part-source', `${w}.checks`, `line ${line}: '${said}' reads the sheet "${sayText(role)}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
+          }
+        }
       } else if (part.class === 'fact') {
         if (Array.isArray(inputLabels) && !inputLabels.includes(part.source)) {
           red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for quotes from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
@@ -1080,7 +1138,7 @@ export function checksOfClose(closeDecl, jobLines = null) {
     ...list.filter((/** @type {any} */ x) => x.kind === 'stage' && stageNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: Number(x.line), text: questions.get(stageNameOfKey(x.key)) ?? stageNameOfKey(x.key), by: /** @type {'agent'} */ ('agent'), key: String(x.key) })),
     ...list.filter((/** @type {any} */ x) => x.kind === 'rule' && typeof x.fence === 'string').map((/** @type {any} */ x) => {
       const said = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === x.line))[Number(x.rule) - 1];
-      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${x.fence} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
+      return { line: Number(x.line), text: `${said ? `"${said}"` : `rule ${x.rule}`} \u2014 kept by the write fence: ${fencePlace(String(x.fence))} is outside the places the run may change`, by: /** @type {'you'} */ ('you'), key: String(x.key), fence: String(x.fence) };
     }),
   ].sort((a, b) => a.line - b.line);
   // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows
@@ -1088,8 +1146,12 @@ export function checksOfClose(closeDecl, jobLines = null) {
   // the job-level `$` write fence row (hamr 2026-11-15): once, after the guards; its words need the fence the close signs
   const fence = fenceOfClose(closeDecl);
   const fenceRows = fence ? list.filter((/** @type {any} */ x) => x.kind === 'fence').map((/** @type {any} */ x) => ({ line: 0, text: fenceRowText(fence), by: /** @type {'default'} */ ('default'), key: String(x.key) })) : [];
+  // S4: a sheet line's part is one plan row per check (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/sheetrows.js `sheetRowsOf`); the `[default]` row needs its signed row, as the floor does
+  const sheetItems = (/** @type {number} */ line) => sheetRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
+    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+      if (isRec(p) && p.class === 'sheet') return sheetItems(st.params.step);
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';

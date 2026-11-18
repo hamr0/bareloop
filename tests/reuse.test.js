@@ -586,7 +586,7 @@ test('N4/F115: readResume reads a provider-red spine as resumable off the BARE C
   assert.equal(graded.restart, null);
 });
 
-test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned learning credit', async () => {
+test('an ALREADY-GREEN tree ends the loop but mints NOTHING — no unearned reuse credit', async () => {
   const dir = seed(BRIDGE('alpha'));
   const runs = scriptedRuns([{ outcome: 'already-green' }]); // no plan-accepted: nothing was drafted
   const r = await runReuse(runOpts({

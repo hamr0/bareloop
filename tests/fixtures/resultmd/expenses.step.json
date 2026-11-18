@@ -1,0 +1,27 @@
+{
+  "text": "18 expenses have an Amount over 500; their row numbers are listed in claims.\n\nCount of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 18 (computed by code from the rows named)\nTotal of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 13,206.91 (computed by code from the rows named)",
+  "claims": {
+    "l1r1": {
+      "rows": [
+        7,
+        9,
+        10,
+        14,
+        15,
+        19,
+        21,
+        22,
+        24,
+        26,
+        28,
+        30,
+        32,
+        33,
+        34,
+        37,
+        40,
+        41
+      ]
+    }
+  }
+}

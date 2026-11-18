@@ -28,6 +28,9 @@ import { join } from 'node:path';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun } from '../src/userrun.js';
+import { track } from './tmp-track.mjs';
+// the run's spine directory lands beside the patient, directly in the tmp dir, under this fixed name
+track(join(tmpdir(), 'userrun-runlist-home-fixture-bareloop'));
 import { readRunList } from '../src/runlist.js';
 import { scriptedProvider } from './helpers.js';
 

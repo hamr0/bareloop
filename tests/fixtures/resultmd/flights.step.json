@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "quote": "From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2326]\n            - generic \"Departure time: 12:12 PM.",
+      "values": {
+        "price": "144",
+        "departure time": "12:12 PM"
+      }
+    },
+    {
+      "quote": "From 144 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 1:29 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 3:32 PM on Friday, November 20. Total duration 3 hr 3 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=2415]\n            - generic \"Departure time: 1:29 PM.",
+      "values": {
+        "price": "144",
+        "departure time": "1:29 PM"
+      }
+    },
+    {
+      "quote": "From 144 US dollars. Nonstop flight with JetBlue. Leaves Boston Logan International Airport at 2:40 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 4:40 PM on Friday, November 20. Total duration 3 hr. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2504]\n            - generic \"Departure time: 2:40 PM.",
+      "values": {
+        "price": "144",
+        "departure time": "2:40 PM"
+      }
+    }
+  ]
+}

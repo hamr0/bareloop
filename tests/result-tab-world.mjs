@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRun } from '../src/runlist.js';
+import { track } from './tmp-track.mjs';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'result-tab');
 export const RUNS = {
@@ -26,7 +27,7 @@ export const git = (/** @type {string} */ cwd, /** @type {string[]} */ ...a) => 
  * @param {{ repoFor?: Record<string, boolean> }} [o] `repoFor[id]` = true: the run's source.json names `<root>/repo` as its repo (a worktree run); {@link makeRepoWithBranch} makes it
  */
 export function makeResultWorld(ids = Object.keys(RUNS), o = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'result-tab-'));
+  const root = track(mkdtempSync(join(tmpdir(), 'result-tab-')));
   const home = join(root, 'home');
   mkdirSync(home, { recursive: true });
   /** @type {Record<string, string>} */
