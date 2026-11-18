@@ -16404,3 +16404,46 @@ R2 (job box hint "Only lines starting with ~ are checked" and the card line "Lin
 - R4 (Add writes a `~` line into the job text) is DROPPED, never built; it came from the cancelled job-rewrite idea. F351 (iii) drift notes stay as record.
 - Record: the Drop/Add flow for `!` rows is unchanged since v0.59.0; only sheet `[agent]` rows gained the same Drop/Add in S4.
 - R3 pin tests (`tests/pin-tilde-flow.test.js`) stay; none pinned R2 wording.
+
+### F353: POC C — the AI's use of `sheetChecks` (prereg, 2026-11-18)
+
+Frozen before any paid call. A failed round is reported FAIL; a second round is a new prereg, never a re-tune. hamr 2026-11-18: "A, push, drop the question wording" (A = POC C, then the live proof; POC C FAIL stops before any live proof).
+
+**From ITEM33-BUILD.md "#### POC C" (verbatim):**
+- What: 5 drafts per job (expenses, aging) on DeepSeek flash direct; count how often the row-edit reply carries `sheetChecks` and how many code builds.
+- Bar: `sheetChecks` present in at least 4 of 5 drafts per job; every `~` rule shows once; no declaration/stage carries an AI-written check. (fwd saw this only 2 of 2 live; this is the base-rate establisher.)
+- Cap: $0.40.
+
+**Instrument (what the driver reads; nothing else decides a bar).** Draft only, through the real panel code: an in-process `createPanelServer` (scratch HOME `.claude/scratch/poc-c/home`, port 0, so never 4700), POST `/api/author/start` with a rubric card, drive the session to `phase: 'prepared'` (answering a code-made question as below, then `sign-prepare`), then POST `abandon`. No sign, no run. Provider key `DEEPSEEK_API_KEY` rides the driver's env only; config row deepseek-flash direct, `https://api.deepseek.com/v1`, `openai-api` shape, 0.6 / 1.2 USD per 1M tokens (as the live-s1 walk). Every model call is captured by wrapping `https.request` in the driver: request body and response body only, never a header. Per draft the driver saves: the captured calls, the session's `draft-log.jsonl`, `state.finalPlan`, and the session's `resolved-spec.json` (written by sign-prepare).
+
+**Countable definitions (frozen).**
+- B1 `sheetChecks` present: in the captured responses of the draft, a call whose request carries the row-edit tool (name `submit_edits`, `ROW_EDIT_TOOL` in src/rowedit.js) has a tool call whose JSON arguments hold a `sheetChecks` that is an array of length >= 1. Present if ANY such reply of the draft has it (any try; no Revise is issued). Absent otherwise (also when the property is an empty array or not an array). Reading is from the captured wire body, never from what code later kept.
+- B1b report-only counts per draft: number of suggestions in the first reply that carries `sheetChecks`; "code builds" = the count of `draft-log.jsonl` rows with `phase: 'final'`, `rowKind: 'sheet'`, `by: 'agent'`, `state: 'built'` (keys `L<n>.sheet.*`); "code refused" = rows in the draft-log `draft-notbuilt` line plus rows with `rowKind: 'sheet'`, `state: 'not-checked'`. No bar on these.
+- B2 every `~` rule shows once: for each `~` line of the job text (numbered k within its job line n), (i) the draft-log `phase: 'final'` rows with `rowKind: 'rule'` and key `L<n>.~<k>` number exactly 1, AND (ii) in `state.finalPlan.checkItems` (the final card's check list, the same list the card draws) the rule's words (the words of that row; after a code column pick, as the row reads) appear in exactly 1 item text, or the rule is named exactly once in `state.finalPlan.notChecked`, and never in both, never twice. A draft passes B2 only if EVERY `~` rule of its job meets (i) and (ii). A `~` rule that is in neither list (zero) fails.
+- B3 no declaration/stage carries an AI-written check: (i) no captured row-edit reply's arguments carries any key other than `edits`, `sheetChecks` (and `ticketFilter`, which does not apply); no captured declaration/author reply carries a `closeDecl`, `stages`, `close`, `checks` or `verdictType` key; and (ii) in the draft's `resolved-spec.json`, every check of every `sheet` part of every stage of `closeDecl` has an `id` that matches `/^l\d+[ra]\d+$/` (an id code mints), and every stage's `kind` is in the code-owned catalogue the validator accepts (the spec passed sign-prepare, which is the validator's own acceptance). A draft passes B3 only if (i) and (ii) both hold. The AI's `sheetChecks` suggestions themselves are typed suggestions that code builds or refuses (S2); they are not an "AI-written check" under this bar.
+- A draft that cannot reach `prepared` (refused, plan-red, cap stop) is a draft that FAILS B1/B2/B3 only if the AI's reply was the cause; a provider error, a cut-off reply (finish reason `length`), a transport failure or a harness fault is a CASUALTY: counted apart, reported, excluded from the denominator, and replaced by one fresh draft of that job (max 2 replacements per job). A refusal by code on a model answer (plan-red) is not a casualty: it counts as a FAIL on B1 only if no reply carried `sheetChecks`, else it is scored on B2/B3 from what exists (a missing final card makes B2 FAIL).
+- A code-made column question during a draft (a tie) is answered by the driver the way a person would: `agree` if offered, else the first listed column; each is logged. The job texts below use the real column names, so none is expected.
+
+**Jobs (exact text; one `~` per rule; inputs line; the sheets are the repo fixtures, copied to `.claude/scratch/poc-c/data/`).**
+
+Expenses, input `expenses: .claude/scratch/poc-c/data/expenses.csv` (absolute path in the card), table `expenses` (Date, Description, Amount, Tax; 40 rows; 17 amounts over 500 summing to 12406.51, incl. one "1,200.50"; fixture bytes equal to the live-s1 sheet):
+```
+List every expense over 500, with how many there are and their total
+~ Amount over 500
+~ the count of the expenses over 500
+~ the total of the Amount of the expenses over 500
+```
+Aging, input `aging: .claude/scratch/poc-c/data/aging.csv` (Invoice #, Customer, Due date, Amount; 8 invoices; `ar-aging.csv` is not used: it gives every invoice 90+, as POC B's jobs.json notes), the job date 2026-10-11:
+```
+For each invoice, work out the days past due as of 2026-10-11 and put it in its bucket: Current, 1-30, 31-60, 61-90, 90+
+~ days past due is the days since the Due date as of 2026-10-11
+~ every invoice appears exactly once
+~ each invoice is in the right bucket: Current, 1-30, 31-60, 61-90, 90+
+```
+(Both texts follow the POC B jobs and the live-s1 wording: line 1 states the job, rules ride as `~` lines.) Card: `checkType: rubric`, provider `DEEPSEEK_API_KEY`, model `deepseek-flash`, thinking off, destination `.claude/scratch/poc-c/out` (absolute), capUsd 0.1 per draft.
+
+**Run plan.** n = 5 drafts per job, expenses then aging, alternating job by draft (E1 A1 E2 A2 ...). Before firing: two consecutive HTTP 200 probes with the product's own client (node `https`, tiny request), and a $0 check that each job's columns and values match its sheet. Spend: the first draft's cost is read from its draft-log; the batch stops before the next draft if spent + one draft's cost would pass $0.40 (then the undone drafts are reported as not run, and the bar is read on what ran, said so). `~/.config/bareloop/runs.jsonl` is 167 lines before and must be 167 after; the real HOME is not touched.
+
+**Bars (frozen).** PASS only if, for EACH job: B1 holds in >= 4 of its 5 non-casualty drafts, AND B2 holds in 5 of 5, AND B3 holds in 5 of 5. Anything less is FAIL, reported with each failing draft; no re-tune. If POC C FAILs, the live proof is not started.
+
+**Power, stated now.** n = 5 per job is UNDERPOWERED: it gives a base-rate leaning, not a rate (a 4/5 and a true 50% rate are not separable at this n). The result is read as a leaning and never cited as a proven rate. B2 and B3 at 5/5 only mean no counterexample was seen in 5.
