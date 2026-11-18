@@ -1,6 +1,6 @@
 // S5 test world: the REAL engine (`main --spec`, in-process, scripted worker, $0) on a sheet job whose close is built by the real CheckBlock (so the signed spec carries the one list and the sheet part), laid out the way a
 // panel-authored run is (<dir>/resolved-spec.json, <dir>/source-seed/{source.json,tree/,<job>-bareloop/u-<id>.jsonl}) with an injected scratch HOME. Never writes outside its scratch dirs.
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +33,12 @@ export function overRows(csv) {
 
 /**
  * Run the expenses sheet job once. `named` = the rows the scripted worker names; `claimN` = the count it claims (the second check's value is the worker's own).
- * @param {{named?: number[], planted?: boolean}} [o]
+ * `root` (the demo recipe only): lay the run out under that folder instead of a tracked temp dir.
+ * @param {{named?: number[], planted?: boolean, root?: string}} [o]
  */
-export async function runSheetJob({ named, planted = true } = {}) {
-  const dir = track(mkdtempSync(join(tmpdir(), 'sheet-s5-')));
+export async function runSheetJob({ named, planted = true, root } = {}) {
+  const dir = root ? join(root, 'session') : track(mkdtempSync(join(tmpdir(), 'sheet-s5-')));
+  if (root) mkdirSync(dir, { recursive: true });
   const csvText = readFileSync(EXPENSES, 'utf8');
   const csv = planted ? csvText.replace('item 8,595.74', `${PLANTED},595.74`) : csvText;
   const csvPath = join(dir, 'expenses.csv');
@@ -72,7 +74,8 @@ export async function runSheetJob({ named, planted = true } = {}) {
     { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(prep.prep.tree, 'output', 'steps', '1.json'), content: step } }] },
     { text: 'wrote' },
   ]);
-  const home = track(mkdtempSync(join(tmpdir(), 'sheet-s5-home-')));
+  const home = root ? join(root, 'home', '.config', 'bareloop') : track(mkdtempSync(join(tmpdir(), 'sheet-s5-home-')));
+  if (root) mkdirSync(home, { recursive: true });
   /** @type {string[]} */ const out = [];
   /** @type {string[]} */ const err = [];
   const rc = await main(['--spec', specPath, '--approve', jobSpecHash(spec)], { provider, env: {}, out: (s) => out.push(String(s)), err: (s) => err.push(String(s)), runlistHome: home });
