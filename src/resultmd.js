@@ -127,7 +127,7 @@ function stepSection(obj, claimWords, reportLines) {
       checked.push([`#### Result ${i + 1}`, ...lines, ...(typeof r.quote === 'string' ? ['', `from the page: "${r.quote}"`] : [])].join('\n'));
     });
   }
-  const bullets = [...(isRec(o.claims) ? claimLines(o.claims, claimWords) : []), ...reportLines.map(reportBullet)];
+  const bullets = [...(isRec(o.claims) ? claimLines(o.claims, claimWords) : []), ...[...reportLines].sort((a, b) => Number(b.startsWith('Count of')) - Number(a.startsWith('Count of'))).map(reportBullet)]; // Count then Total, whatever the signed check order (hamr 2026-11-18)
   if (bullets.length) checked.push(bullets.join('\n'));
   return { checked, answer: hasText && o.text.trim() !== '' ? o.text : null };
 }
