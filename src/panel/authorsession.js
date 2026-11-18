@@ -39,6 +39,8 @@ import {
   authorCloseForJob, assembleSpec, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS, PLAIN_FOLDER_DEFERRED_FIELDS,
 } from '../authorjob.js';
 import { prepareSigning } from '../authorjob.js';
+import { recordSheetShas } from '../sheetrun.js';
+import { sheetRolesOf } from '../sheetclaims.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor,
@@ -1093,6 +1095,11 @@ export function createSession(card, deps = {}) {
       if (workflowKey(reused) !== deps.reuse.workflowKey) {
         refuse('the reused spec is not the signed workflow (more than Source, Destination and the caps differ) — refusing');
         return;
+      }
+      // S4: a sheet stage is graded at the seed against the fingerprint this session records beside its own copy of the input; a draft records it inside the author loop, which a Reuse skips (src/sheetrun.js `recordSheetShas`)
+      if (sheetRolesOf(reused.closeDecl).length > 0) {
+        const rec = await recordSheetShas({ into: dirname(prep.tree), closeDecl: reused.closeDecl });
+        if (!rec.ok) { refuse(rec.error); return; }
       }
       await finish(reused, null);
       return;
