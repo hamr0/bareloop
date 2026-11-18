@@ -2362,3 +2362,16 @@ Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replac
 - [x] R0 done (F351): reverts clean; bar 1 failed only on a worktree artefact; R1 next.
 
 Files, tests and the live proof: `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17 (b).
+
+
+### Shape check (schema) for fixed-field answers (v1.142 — 2026-11-18)
+
+Ruled by hamr 2026-11-18.
+
+- [ ] New use case: SHAPE CHECK for fixed-field report answers. Example: a research tracker where each item has a title (text, not empty), a status (one of: in progress / closed / finished) and a summary (text, at most 200 characters). It passes when the whole answer fits the shape; the words may vary. It checks shape only, never wording or truth.
+- Truth stays with cite: a field may also be marked cited (its value quoted from a real input line). Shape and truth are separate checks, never mixed. The person still judges truth at Accept (e.g. whether "finished" is really finished).
+- Same flow as every rubric job, nothing new: the person writes `~` rules, the drafting AI proposes `!` rows, code (never the AI) builds the schema, the person signs it, bareguard checks every run. The AI checks stay as they are.
+- Bareguard owns the check (asked of the bareguard session 2026-11-18): items with min/max count; fields required/optional; kinds text min/max chars, number min/max, one-of list, plus existing money/time/date; optional cited per field; later, a field required only if another field has a value (ticket actions). Reds name item + field, e.g. `#2:summary:too-long`. bareloop tests against bareguard's release.
+- Second use: ticket actions (close/route/reply), not built yet; they need the "required only if" rule.
+- Page facts (flights, prices) are already covered by cited facts; no change there.
+- Status: use case agreed; bareguard asked; bareloop side to be specced next; no build yet; POC before any build.
