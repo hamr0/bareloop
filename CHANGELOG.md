@@ -17,6 +17,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The `bareloop panel` start banner no longer says "read-only" (the panel drafts, runs and Accepts): it now reads `bareloop panel — http://127.0.0.1:<port> (Ctrl-C to stop)`.
 - The locked "The job" box on the card follows the draft: after an answer rewrites a `~` rule (column tie, an agreed column, any answer kind) the box shows the updated rule while the session is live, as the chat and plan card do (hamr 2026-11-17; page-only, the server card was already right). Test-proven, not yet seen live.
 
 - The carry note keeps the last red try's failure unless the next ask is a retry of that try (its prompt carries the retry gap); after a strike-limit replan the new step's first ask used to lose that failure. (Corrects the 0.4x wording "left out only when that try failed".)

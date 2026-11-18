@@ -4601,7 +4601,7 @@ export async function panelMain(argv, ctx) {
   }
   try {
     const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
-    ctx.out(`bareloop panel — read-only, ${panelUrl(boundPort)} (Ctrl-C to stop)`);
+    ctx.out(`bareloop panel — ${panelUrl(boundPort)} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.
     await new Promise(() => {});
