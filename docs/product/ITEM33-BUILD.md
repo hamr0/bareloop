@@ -5109,3 +5109,7 @@ Rules (built exactly so):
 - H3 `The AI's answer (not checked — you judge it at Accept)` carries the worker's text when the line has text and its prose is Not checked (read from the signed close: a `prose` Not checked row of the line, or, for a close with no list, a stage with no fact part); a line whose text is checked gets the heading `The answer`.
 - No check marks, no JSON. Code's `(computed by code from the rows named)` report lines stay in the delivered JSON; in the .md they are the `Count` and `Total` bullets (never printed twice, the worker's own text is taken from the file as the tree holds it).
 - The Result tab's top-card `Saved` row links the one run .md (payload unchanged: it lists every delivered `.md`).
+
+Rulings 2026-11-18 (later still), hamr: "your picks".
+- (1) The report ALWAYS lists `Count:` then `Total:`, whatever the order of the signed checks (it followed the check order, so a job with its sum check first printed Total first).
+- (2) Markdown headings inside the worker's own answer text are left as they are: not built.
