@@ -16475,3 +16475,25 @@ Read these with it (nothing hidden):
 - aging1 asked one code-made question: the look read the "90+" in the third `~` rule as a column word, ("no column '90+'; 'Amount' has numbers in 8 of 8 rows. Use it?"). The driver answered Agree, which replaced the rule's words with "...61-90, Amount", so that rule's card text was altered by the person's answer (a person would more likely say Drop it). The band check was still built from the line's own `bucket` words. A "90+" word read as a column is a look finding worth logging; no fix here.
 - The first draft cost $0.0068; no draft passed $0.0072. The cap was never a constraint.
 - Not measured here: whether any of these checks is right on a run (that is the live proof, S3 and S5 already test-proven), and the `Revise` path.
+
+### F354: S5 live proof, expenses and aging (prereg, 2026-11-18)
+
+Frozen before any paid call. hamr 2026-11-18 ("A"): after POC C passed (F353), run the S5 live proof from ITEM33-BUILD.md "### Live proof (end of S5)". A stop for a product defect is a result; no src/ patch, no bigger cap, no re-fire.
+
+**Setup.** Real panel server code in-process (`createPanelServer`, port 0, scratch HOME `.claude/scratch/live-proof/home`; never 4700), DeepSeek direct, `deepseek-flash`, thinking off. Same two job texts as F353 (each rule on its own `~` line), same sheets (`expenses.csv`: 40 rows, 17 over 500 summing 12406.51; `aging.csv`: 8 invoices, job date 2026-10-11). Card cap $0.30 per job (drafting + run, engine-enforced, run ceiling = cap - drafting spend), Time cap 20 min, total $0.60. Spend is read from the spine/ledger, never run.log. `~/.config/bareloop/runs.jsonl` is 167 lines before and must be 167 after.
+
+**$0 checks before spend (done, results below in F354 results).** Key readable (length only); two consecutive HTTP 200s with the product's client (`node https`): 200, 200; each job's direction and values match its saved sheet (expenses: 17 rows over 500, sum 12406.51; aging as of 2026-10-11: INV-100..105 are 90+ (269..118 days), INV-106 61-90 (88), INV-107 31-60 (57)); no secret shape in either sheet; close fails on seed (read from the sign-prepared close with `sheet-recheck.mjs` before sign: no step file; and again from the run's spine at run start).
+
+**Bars (countable; the spec's "Done when").**
+- L1 per job: draft reaches `prepared`, is signed, and the run ends with a verdict (green, or a clean red caught: a red whose spine/ledger names a reason); a provider error is a casualty, reported, not counted.
+- L2 per job: the card (the final plan's check list + Not checked list) shows each `~` rule exactly once (counted as in F353 B2).
+- L3 per job: `node scripts/sheet-recheck.mjs <run folder>` prints ok for every check and exits 0 (only asked of a run that ended green; a red run is reported with its recheck output as is).
+- L4 per job: on a COPY of the run folder, editing one cell of the frozen sheet copy makes the recheck stop at $0 naming the mismatch (exit 1, no provider, no spend).
+- L5 expenses: on a copy, a claim naming 18 rows instead of 17 is red naming the row. Aging: the analogue is one row name changed in the claim (a row the sheet does not have in that bucket), red naming the row.
+- L6 Revise after a column answer walked once: only if a column question comes up naturally in a draft; if none, said so and not manufactured.
+- Spend: <= $0.30 per job and <= $0.60 total from the spine/ledger; the cap is enforced by the engine, never widened.
+- hamr clicks through the panel himself before any done claim (a scratch recipe is left; this proof is not a done claim).
+
+**WATCH.** In F353 aging1 the look asked "use Amount?" on the `~` rule containing "90+" (a band word read as a column word). Record whether it recurs in these two drafts. If it does, answer it as a person would (Drop it, or own words keeping the rule text), never Agree to a wrong column, and log it.
+
+**Power.** n = 1 per job: an anecdote that the wiring runs end to end live, not a rate.
