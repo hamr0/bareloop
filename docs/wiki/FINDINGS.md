@@ -16538,3 +16538,13 @@ Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`,
 **Fix.** The Reuse branch now calls `recordSheetShas` for a spec whose close carries a sheet part, before `finish`; an unreadable sheet refuses in the run start's words. The check in `src/sheetrun.js` and `prepareSigning` are untouched. Commit fc07add1; test `tests/sheet-reuse-sign.test.js` (real `prepareSigning`, real expenses.csv; red before with the same refusal, green after; the fresh draft's fingerprint equals the reuse's).
 
 **Why no earlier test saw it.** No earlier test or POC reused a sheet job: the Reuse tests (p5-startfrom, reuse-fence, reuse-imported) use repo specs, and the sheet tests only drafted. Found by hamr's walk, not by the suite.
+
+### F356: The sheet total read a decimal comma, 1e3 and 0x10 as numbers (self-review probe, 2026-11-18, $0)
+
+**What was seen.** A self-review probe of `sheetTotalLines` (`src/sheetclaims.js`): cells `12,50` and `3,00` gave `Total of rows 2, 3: 1,550 (computed by code from the rows named)` (true 15.50); `1e3` summed as 1000 and `0x10` as 16. The line is printed as computed by code in the delivered report and .md, so a wrong number could reach the person. Not seen live.
+
+**Cause (verified in source and by a red test).** The sumIf loop did `Number(cell.replaceAll(',', ''))`: every comma was a thousands mark and JS `Number()` accepts exponent and hex forms.
+
+**Fix.** A cell counts only if it is a strict plain number (optional sign, digits, commas only as thousands groups of exactly three, optional decimals); any other cell takes the existing "not computed (row N has no number in the column ...)" line. Commits aa7bbda6 (red test) and the fix after it; test `tests/sheet-total-strict.test.js`. `src/sheetfind.js` PLAIN_NUMBER (copied from fwdloop) is untouched: out of scope.
+
+**Why no earlier test saw it.** The existing total tests used only `1,234.50`-style cells. Test-proven only, not seen live.

@@ -19,6 +19,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The sheet report's code-computed total no longer misreads a cell: `12,50` (decimal comma) summed as 1,250, `1e3` as 1000 and `0x10` as 16. Only a plain number counts (sign, digits, commas as thousands groups of three); any other cell takes the existing "not computed (row N has no number in the column ...)" line (`src/sheetclaims.js`). Found by a self-review probe; test-proven only, not seen live.
 - Reuse workflow on a green sheet job no longer refuses at the signing gates ("this run recorded no table fingerprint"): a Reuse skips the author loop where a draft records the sheet's `tableSha`, so the reuse session now records it beside its own copy of the input, before the gates (`src/panel/authorsession.js`); the check itself is unchanged. Found live (hamr's walk), $0.
 - A robot-check page is refused: barebrowse's real marker `[BOT CHALLENGE DETECTED — …]` carries trailing text and only the bare marker was matched, so a real challenge page could be read as a page (`src/pagefetch.js`, both match sites). Ported from fwdloop v0.35.1; test-proven with the real marker, not seen live.
 - The `bareloop panel` start banner no longer says "read-only" (the panel drafts, runs and Accepts): it now reads `bareloop panel — http://127.0.0.1:<port> (Ctrl-C to stop)`.
