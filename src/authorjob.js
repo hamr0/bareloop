@@ -116,7 +116,8 @@ import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { tooManyAsksText } from './pagemap.js';
-import { runLook } from './sheetlook.js';
+import { runLookWithShape } from './shapelook.js';
+import { buildShapes } from './shapebuild.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
@@ -477,7 +478,7 @@ export async function authorCloseForJob({
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
   // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`). S1: the default is `runLook` (src/sheetlook.js), which hands every input
   // that is not a CSV with a `~` rule to `runPageMap` unchanged, and reads such a CSV with the sheet look instead (one call per CSV).
-  lookFn = runLook,
+  lookFn = runLookWithShape,
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -727,6 +728,15 @@ export async function authorCloseForJob({
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
     block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
+    // SHAPE JOBS (hamr 2026-11-18, 2a): the shape the shape look proposed (src/shapelook.js) is built or refused by code HERE, before the asks (src/shapebuild.js, R1-R5), so "the rules or the shape could both fit" is one of the counted asks.
+    // The row-edit turn proposes no shape. A line with a sheet is never a shape line. A Revise keeps the Drops of the last draft.
+    if (Array.isArray(look?.shapes) && look.shapes.length > 0) {
+      const shapeLines = jobLines.filter((l) => lineRules(l).length > 0 && !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n));
+      const shapes = buildShapes({ lines: shapeLines, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: look.shapes });
+      block.setShape(shapes);
+      if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
+      onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
+    }
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
     // S4: a line that reads a sheet has no count-pick path: the sheet checks decide its rules, so none of its rules is offered a pick
     const scoped = answerQuestions ? scopedRules(jobLines.filter((l) => !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), { inputs, look }) : [];
@@ -923,7 +933,7 @@ export async function authorCloseForJob({
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
-    ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
+    ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each

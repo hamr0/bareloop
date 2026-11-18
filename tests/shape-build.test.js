@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildShapeLine, buildShapes, boundGrounded, fieldSpec, NO_FIELD_WHY } from '../src/shapebuild.js';
 import { SHAPE_KINDS, shapeAvailable, nameWhy, shapeNameRules } from '../src/shapemenu.js';
-import { shapeMenuLines } from '../src/shapeoffer.js';
+import { shapeMenuLines } from '../src/shapelook.js';
 
 const NR = { max: 128, forbidden: ['.', ':', '[', ']'], reserved: ['missing', 'wrong-type', 'wrong-value'] };
 const TRACKER = { n: 1, text: 'List my research items', rules: ['each item has a title', 'status is in progress, closed or finished', 'the summary is under 200 characters'] };
