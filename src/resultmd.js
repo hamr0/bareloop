@@ -1,7 +1,7 @@
 // borrowed-from: fwdloop src/send.js@v0.35.1 (M15 items 3, am1, am2: `leaves`, `words`, `friendlyName`, `blockLines`, `isResultList`, `renderSentMd`), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)", MD1.
 // Rewritten for bareloop's step files: one JSON file per job line (FACTS `{results:[{quote, values}]}` + optional `text`, SHEET `{text, claims}`, TEXT `{text, cites}`), turned into the plain text file written beside it.
 // What this throws away: `cites` (hamr's answer 4), a result's keys other than `quote` and `values`, any key of the file other than `text`, `results` and `claims`. Pure: no I/O.
-import { sheetChecksOf } from './sheetclaims.js';
+import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 
 const SCALAR = ['string', 'number', 'boolean'];
@@ -51,13 +51,14 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 /**
  * The claim lines of a SHEET step file. A claim id a check carries is named with that check's own plain sentence (`claimWords`, from {@link stepClaimWords}); an id no check carries keeps
  * fwd's `friendlyName` of the key. A map of rows (`days`, `bands`) writes one line per row.
- * @param {Record<string, any>} claims @param {Record<string, string>} claimWords @returns {string[]}
+ * @param {Record<string, any>} claims @param {Record<string, string|null>} claimWords @returns {string[]}
  */
 function claimLines(claims, claimWords) {
   /** @type {string[]} */
   const out = [];
   for (const [id, box] of Object.entries(claims)) {
-    const label = Object.hasOwn(claimWords, id) ? cap(claimWords[id]) : null;
+    if (Object.hasOwn(claimWords, id) && claimWords[id] === null) continue; // a number code computes itself: the worker's is never read, so never printed
+    const label = Object.hasOwn(claimWords, id) ? cap(/** @type {string} */ (claimWords[id])) : null;
     const ls = leaves([], box);
     if (label === null) { out.push(...blockLines(leaves([id], box))); continue; }
     for (const l of ls) {
@@ -73,7 +74,7 @@ function claimLines(claims, claimWords) {
 /**
  * The plain-text file for one delivered step file. `text` first, exactly; then one `## Result k` block per result (a line per value, in the order the file holds them, then `from the page: "<quote>"`);
  * then, for a sheet line, one line per claim. Never JSON braces, never check marks. Null when there is nothing writable: not an object, or neither `text` nor `results`.
- * @param {unknown} obj the parsed step file @param {Record<string, string>} [claimWords] claim id -> the check's plain sentence ({@link stepClaimWords}) @returns {string|null}
+ * @param {unknown} obj the parsed step file @param {Record<string, string|null>} [claimWords] claim id -> the check's plain sentence, or null for a claim that is not written ({@link stepClaimWords}) @returns {string|null}
  */
 export function renderStepMd(obj, claimWords = {}) {
   if (!isRec(obj)) return null;
@@ -100,15 +101,23 @@ export function renderStepMd(obj, claimWords = {}) {
 
 /**
  * claim id -> the plain sentence of the FIRST check of job line `n`'s rubric-step that carries it (`sheetCheckSentence`, the words the Result tab and Audit use). One claim box is often shared
- * by a rows, a countIf and a sumIf check; the first names it. `{}` when the line has no sheet checks.
- * @param {any} closeDecl the signed close declaration @param {number} n the job line @returns {Record<string, string>}
+ * by a rows, a countIf and a sumIf check; the first names it. A claim that only sumIf / countIf checks carry is `null` (not written): code computes that number from the rows named and never reads the
+ * worker's, so the file must not print it. `{}` when the line has no sheet checks.
+ * @param {any} closeDecl the signed close declaration @param {number} n the job line @returns {Record<string, string|null>}
  */
 export function stepClaimWords(closeDecl, n) {
-  /** @type {Record<string, string>} */
+  /** @type {Record<string, string|null>} */
   const out = {};
+  /** @type {Record<string, boolean>} */
+  const onlyMath = {};
   for (const st of Array.isArray(closeDecl?.stages) ? closeDecl.stages : []) {
     if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params) || st.params.step !== n) continue;
-    for (const c of sheetChecksOf(st.params)) if (typeof c.claim === 'string' && !Object.hasOwn(out, c.claim)) out[c.claim] = sheetCheckSentence(c);
+    for (const c of sheetChecksOf(st.params)) {
+      if (typeof c.claim !== 'string') continue;
+      onlyMath[c.claim] = (onlyMath[c.claim] ?? true) && c.rule === 'cells' && ROW_MATH_OPS.includes(c.op);
+      if (!Object.hasOwn(out, c.claim)) out[c.claim] = sheetCheckSentence(c);
+    }
   }
+  for (const id of Object.keys(out)) if (onlyMath[id]) out[id] = null;
   return out;
 }
