@@ -1091,12 +1091,14 @@ async function listOutputFiles(dir, rel = '') {
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
  * `amend` (S3), when given, is `(rel under output/, bytes) => bytes`: the DELIVERED copy is written from what it returns (the file in the tree is never touched), and the delivery record is of those bytes.
- * `alsoText` (MD2), when given, is `(rel under output/, amended bytes) => string|null`, asked only for a step file (`steps/<n>.json`): a string is written beside the delivered JSON under the SAME dated name with `.md`
- * (never overwriting: when that name is taken, hamr 2026-11-18, it is written under the next free same-day name instead, via `pickDelivery`, and its file entry carries `pairedTaken`, the basename it could not take) and recorded like any delivered file; null writes nothing. It writes only inside this green-only door.
- * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, alsoText?: (rel: string, buf: Buffer) => string|null}} o
+ * `report` (MD2, "Ruling 2026-11-18 (later): one markdown report per run"), when given, is `{name, render}`: after every file is delivered, `render` is asked ONCE with every step file (`steps/<n>.json`) as `{rel, orig, delivered}`
+ * (`orig` the bytes as the tree holds them, `delivered` the amended copy); a string is written as ONE file `<name>-YYYY-MM-DD.md` at the destination root and recorded like any delivered file; null writes nothing.
+ * It takes the dated suffix of the first delivered step file (so a same-day second run gets `-2` for both). Never overwriting: when that name is taken it lands under the next free same-day name (`pickDelivery`) and its file entry
+ * carries `pairedTaken`, the basename it could not take (hamr 2026-11-18). It writes only inside this green-only door.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}}} o
  * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string, pairedTaken?: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination, amend, alsoText }) {
+export async function copyOut({ tree, into, destination, amend, report }) {
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
   const destAbs = resolve(destination);
@@ -1105,6 +1107,8 @@ export async function copyOut({ tree, into, destination, amend, alsoText }) {
   const candidates = await listOutputFiles(outputDir);
   /** @type {{path: string, bytes: number, sha256: string, pairedTaken?: string}[]} */
   const delivered = [];
+  /** @type {{rel: string, orig: Buffer, delivered: Buffer, suffix: string}[]} */
+  const stepFiles = [];
   for (const rel of candidates) {
     const srcPath = join(outputDir, rel);
     const read = await readFile(srcPath);
@@ -1127,22 +1131,24 @@ export async function copyOut({ tree, into, destination, amend, alsoText }) {
     }
     delivered.push({ path: pick.path, bytes: buf.length, sha256: sha256Hex(buf) });
     const relPosix = rel.split(sep).join('/');
-    const text = alsoText !== undefined && /^steps\/\d+\.json$/.test(relPosix) ? alsoText(relPosix, buf) : null;
-    if (text !== null && text.length > 0) {
-      const paired = pick.path.replace(/\.json$/, '.md');
-      let mdPath = paired;
-      if (existsSync(paired)) {
-        const mdPick = pickDelivery(declaredFile.replace(/\.json$/, '.md'));
-        if (mdPick.stop !== null) return mdPick;
-        mdPath = mdPick.path;
-      }
-      const mdBuf = Buffer.from(text, 'utf8');
-      try { await writeFile(mdPath, mdBuf, { flag: 'wx' }); } catch (e) {
-        if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${mdPath} already exists — bareloop never overwrites a person's file`);
-        return refuse('destination-write-failed', `copying to ${mdPath} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
-      }
-      delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf), ...(mdPath !== paired ? { pairedTaken: basename(paired) } : {}) });
+    if (/^steps\/\d+\.json$/.test(relPosix)) stepFiles.push({ rel: relPosix, orig: read, delivered: buf, suffix: /(-\d{4}-\d{2}-\d{2}(?:-\d+)?)\.json$/.exec(pick.path)?.[1] ?? '' });
+  }
+  const text = report !== undefined && stepFiles.length > 0 ? report.render(stepFiles.map(({ rel, orig, delivered: d }) => ({ rel, orig, delivered: d }))) : null;
+  if (report !== undefined && text !== null && text.length > 0) {
+    const name = report.name.replace(/[/\\\0]/g, '-').replace(/^\.+/, '') || 'report';
+    const paired = join(destAbs, `${name}${stepFiles[0].suffix}.md`);
+    let mdPath = paired;
+    if (existsSync(paired)) {
+      const mdPick = pickDelivery(join(destAbs, `${name}.md`));
+      if (mdPick.stop !== null) return mdPick;
+      mdPath = mdPick.path;
     }
+    const mdBuf = Buffer.from(text, 'utf8');
+    try { await writeFile(mdPath, mdBuf, { flag: 'wx' }); } catch (e) {
+      if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${mdPath} already exists — bareloop never overwrites a person's file`);
+      return refuse('destination-write-failed', `copying to ${mdPath} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+    }
+    delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf), ...(mdPath !== paired ? { pairedTaken: basename(paired) } : {}) });
   }
   if (delivered.length === 0) {
     return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);

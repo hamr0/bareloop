@@ -42,7 +42,7 @@ import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prchecko
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
-import { deliveredTexter } from './resultmd.js';
+import { deliveredReporter } from './resultmd.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -71,7 +71,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
+import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList, runNumbers } from './runlist.js';
 // P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
 // one owner of where a leg starts and ends; every reader below asks it.
 import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath } from './legs.js';
@@ -2320,7 +2320,11 @@ async function execute(ctx) {
       if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
       else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
     } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
-    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), alsoText: deliveredTexter(spec.closeDecl) });
+    // the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title
+    /** @type {number|null} */
+    let runNo = null;
+    for (const home of [deps.runlistHome, cfgHome]) { try { runNo = runNo ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo }) } });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
       // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same

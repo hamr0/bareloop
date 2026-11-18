@@ -1,8 +1,9 @@
-// borrowed-from: fwdloop src/send.js@v0.35.1 (M15 items 3, am1, am2: `leaves`, `words`, `friendlyName`, `blockLines`, `isResultList`, `renderSentMd`), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)", MD1.
-// Rewritten for bareloop's step files: one JSON file per job line (FACTS `{results:[{quote, values}]}` + optional `text`, SHEET `{text, claims}`, TEXT `{text, cites}`), turned into the plain text file written beside it.
+// borrowed-from: fwdloop src/send.js@v0.35.1 (M15 items 3, am1, am2: `leaves`, `words`, `friendlyName`, `blockLines`, `isResultList`), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)", MD1 and "Ruling 2026-11-18 (later): one markdown report per run".
+// Rewritten for bareloop's step files: one JSON file per job line (FACTS `{results:[{quote, values}]}` + optional `text`, SHEET `{text, claims}`, TEXT `{text, cites}`), turned into ONE markdown report for the whole run.
 // What this throws away: `cites` (hamr's answer 4), a result's keys other than `quote` and `values`, any key of the file other than `text`, `results` and `claims`. Pure: no I/O.
 import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
+import { lineRules, proseNotCheckedItems, refusedOf } from './rubricstep.js';
 
 const SCALAR = ['string', 'number', 'boolean'];
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -28,13 +29,13 @@ function friendlyName(parts) {
   return w[0][0].toUpperCase() + w[0].slice(1) + (w.length > 1 ? ` ${w.slice(1).join(' ')}` : '');
 }
 
-/** the lines of one block; two lines with the same words both keep the `a.b` form @param {{parts: string[], text: string}[]} ls */
+/** the lines of one block, each a bullet; two lines with the same words both keep the `a.b` form @param {{parts: string[], text: string}[]} ls */
 function blockLines(ls) {
   const f = ls.map((l) => friendlyName(l.parts));
   /** @type {Record<string, number>} */
   const n = {};
   for (const x of f) n[x] = (n[x] || 0) + 1;
-  return ls.map((l, i) => `${n[f[i]] > 1 ? l.parts.join('.') : f[i]}: ${l.text}`);
+  return ls.map((l, i) => `- ${n[f[i]] > 1 ? l.parts.join('.') : f[i]}: ${l.text}`);
 }
 
 /** a list of results: every item an object holding a `values` object @param {any} v */
@@ -49,93 +50,142 @@ const ROW_MAPS = ['days', 'bands'];
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 /**
- * The claim lines of a SHEET step file. A claim id a check carries is named with that check's own plain sentence (`claimWords`, from {@link stepClaimWords}); an id no check carries is left out. A map of rows (`days`, `bands`) writes one line per row.
+ * The claim bullets of a SHEET step file. A claim id a check carries is named with the plain sentence of the check that grades that claim's KIND (`claimWords`, from {@link stepClaimWords}); an id no check
+ * carries is left out. A map of rows (`days`, `bands`) writes one bullet per row.
  * @param {Record<string, any>} claims @param {Record<string, string|null>} claimWords @returns {string[]}
  */
 function claimLines(claims, claimWords) {
   /** @type {string[]} */
   const out = [];
   for (const [id, box] of Object.entries(claims)) {
-    if (Object.hasOwn(claimWords, id) && claimWords[id] === null) continue; // a number code computes itself: the worker's is never read, so never printed
-    const label = Object.hasOwn(claimWords, id) ? cap(/** @type {string} */ (claimWords[id])) : null;
-    const ls = leaves([], box);
-    if (label === null) continue; // a claim box no check carries is left out (hamr 2026-11-18)
-    for (const l of ls) {
+    if (!Object.hasOwn(claimWords, id) || claimWords[id] === null) continue; // a number code computes itself (the worker's is never read), or a box no check carries: left out
+    const label = cap(/** @type {string} */ (claimWords[id]));
+    for (const l of leaves([], box)) {
       let p = l.parts;
-      if (p.length === 2 && ROW_MAPS.includes(p[0])) { out.push(`${label}, row ${p[1]}: ${l.text}`); continue; }
+      if (p.length === 2 && ROW_MAPS.includes(p[0])) { out.push(`- ${label}, row ${p[1]}: ${l.text}`); continue; }
       if (p.length > 0 && BOX_KEYS.includes(p[p.length - 1])) p = p.slice(0, -1);
-      out.push(`${p.length ? `${label}, ${p.flatMap(words).map((x) => x.toLowerCase()).join(' ')}` : label}: ${l.text}`);
+      out.push(`- ${p.length ? `${label}, ${p.flatMap(words).map((x) => x.toLowerCase()).join(' ')}` : label}: ${l.text}`);
     }
   }
   return out;
 }
 
+const COMPUTED = ' (computed by code from the rows named)';
+
+/** code's own report line (`Count of rows 3, 5: 2 (computed by code from the rows named)`) as a bullet `- Count: 2` / `- Total: 1,234.50` @param {string} line */
+function reportBullet(line) {
+  const m = /^(Count|Total) of [^:]*: (.*)$/.exec(line);
+  const rest = (m ? m[2] : line).endsWith(COMPUTED) ? (m ? m[2] : line).slice(0, -COMPUTED.length) : (m ? m[2] : line);
+  return m ? `- ${m[1]}: ${rest}` : `- ${rest}`;
+}
+
 /**
- * The plain-text file for one delivered step file. `text` first, exactly; then one `## Result k` block per result (a line per value, in the order the file holds them, then `from the page: "<quote>"`);
- * then, for a sheet line, one line per claim. Never JSON braces, never check marks. Null when there is nothing writable: not an object, or neither `text` nor `results`.
- * @param {unknown} obj the parsed step file @param {Record<string, string|null>} [claimWords] claim id -> the check's plain sentence, or null for a claim that is not written ({@link stepClaimWords}) @returns {string|null}
+ * claim id -> the plain sentence of the FIRST check of job line `n`'s rubric-step that carries it and is not a sumIf / countIf (`sheetCheckSentence`, the words the Result tab and Audit use). One claim box is often
+ * shared by a countIf, a sumIf and a rows check; the rows check names the box (the box holds the rows). A claim that only sumIf / countIf checks carry is `null` (not written): code computes that number from the rows
+ * named and never reads the worker's. `{}` when the line has no sheet checks.
+ * @param {any} closeDecl the signed close declaration @param {number} n the job line @returns {Record<string, string|null>}
  */
-export function renderStepMd(obj, claimWords = {}) {
+export function stepClaimWords(closeDecl, n) {
+  /** @type {Record<string, string|null>} */
+  const out = {};
+  /** @type {Set<string>} */
+  const seen = new Set();
+  for (const st of Array.isArray(closeDecl?.stages) ? closeDecl.stages : []) {
+    if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params) || st.params.step !== n) continue;
+    for (const c of sheetChecksOf(st.params)) {
+      if (typeof c.claim !== 'string') continue;
+      seen.add(c.claim);
+      if (c.rule === 'cells' && ROW_MATH_OPS.includes(c.op)) continue;
+      if (typeof out[c.claim] !== 'string') out[c.claim] = sheetCheckSentence(c);
+    }
+  }
+  for (const id of seen) if (!Object.hasOwn(out, id)) out[id] = null;
+  return out;
+}
+
+/** the date as plain words, `18 Nov 2026`, in the machine's local day (the day the dated file names use) @param {Date} d */
+export function plainDate(d) {
+  return `${d.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * One job line's section. `checked` = the bullets code stands behind (fact results, claim rows, code's count and total), `answer` = the worker's own text (report lines stripped) or null. Null when the file holds neither text nor results.
+ * @param {unknown} obj the original step file @param {Record<string, string|null>} claimWords @param {string[]} reportLines code's report lines of this file
+ * @returns {{checked: string[], answer: string|null}|null}
+ */
+function stepSection(obj, claimWords, reportLines) {
   if (!isRec(obj)) return null;
   const o = /** @type {Record<string, any>} */ (obj);
   const hasText = typeof o.text === 'string';
   const hasResults = isResultList(o.results);
   if (!hasText && !hasResults) return null;
   /** @type {string[]} */
-  const parts = [];
-  if (hasText) parts.push(o.text);
+  const checked = [];
   if (hasResults) {
     o.results.forEach((/** @type {any} */ r, /** @type {number} */ i) => {
       const lines = blockLines(Object.entries(r.values).flatMap(([n, x]) => leaves([n], x)));
-      if (typeof r.quote === 'string') lines.push(`from the page: "${r.quote}"`);
-      parts.push([`## Result ${i + 1}`, ...lines].join('\n'));
+      checked.push([`#### Result ${i + 1}`, ...lines, ...(typeof r.quote === 'string' ? ['', `from the page: "${r.quote}"`] : [])].join('\n'));
     });
   }
-  if (isRec(o.claims)) {
-    const lines = claimLines(o.claims, claimWords);
-    if (lines.length) parts.push(lines.join('\n'));
-  }
-  return parts.join('\n\n');
+  const bullets = [...(isRec(o.claims) ? claimLines(o.claims, claimWords) : []), ...reportLines.map(reportBullet)];
+  if (bullets.length) checked.push(bullets.join('\n'));
+  return { checked, answer: hasText && o.text.trim() !== '' ? o.text : null };
+}
+
+/** is the prose of job line `n` Not checked? Read from the signed close: a list-built close has a `prose` Not checked row for the line, an older one derives it from its stages (the Result tab's own reading) @param {any} closeDecl @param {number} n */
+function proseNotChecked(closeDecl, n) {
+  return proseNotCheckedItems(closeDecl).some((i) => i.line === n) || refusedOf(closeDecl).some((r) => r.line === n && r.kind === 'prose');
 }
 
 /**
- * claim id -> the plain sentence of the FIRST check of job line `n`'s rubric-step that carries it (`sheetCheckSentence`, the words the Result tab and Audit use). One claim box is often shared
- * by a rows, a countIf and a sumIf check; the first names it. A claim that only sumIf / countIf checks carry is `null` (not written): code computes that number from the rows named and never reads the
- * worker's, so the file must not print it. `{}` when the line has no sheet checks.
- * @param {any} closeDecl the signed close declaration @param {number} n the job line @returns {Record<string, string|null>}
+ * The ONE markdown report of a green run. H1 `<job> — run-N`, `Passed · <date>`, then per delivered step file: `## <n>. <line>`, a `Rule:` line per `~` rule, `### Checked by code` (bullets) and the worker's text under
+ * `### The AI's answer (not checked — you judge it at Accept)`, or `### The answer` when the line's prose is checked. Null when no step file is writable. Pure.
+ * @param {{job: string, runNo: number|null, now: Date, closeDecl: any, jobLines: any[], steps: {n: number, orig: Buffer, delivered: Buffer}[]}} o
+ * @returns {string|null}
  */
-export function stepClaimWords(closeDecl, n) {
-  /** @type {Record<string, string|null>} */
-  const out = {};
-  /** @type {Record<string, boolean>} */
-  const onlyMath = {};
-  for (const st of Array.isArray(closeDecl?.stages) ? closeDecl.stages : []) {
-    if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params) || st.params.step !== n) continue;
-    for (const c of sheetChecksOf(st.params)) {
-      if (typeof c.claim !== 'string') continue;
-      onlyMath[c.claim] = (onlyMath[c.claim] ?? true) && c.rule === 'cells' && ROW_MATH_OPS.includes(c.op);
-      if (!Object.hasOwn(out, c.claim)) out[c.claim] = sheetCheckSentence(c);
-    }
-  }
-  for (const id of Object.keys(out)) if (onlyMath[id]) out[id] = null;
-  return out;
-}
-
-/**
- * `copyOut`'s `alsoText` hook for a signed close: `(rel under output/, delivered bytes) => text|null`. Only a step file whose job line has a rubric-step stage is written (a rubric job's file); a file that is not a
- * JSON object, or has nothing writable, is null. Reads the bytes it is given; touches no file.
- * @param {any} closeDecl @returns {(rel: string, buf: Buffer) => string|null}
- */
-export function deliveredTexter(closeDecl) {
-  const stages = Array.isArray(closeDecl?.stages) ? closeDecl.stages : [];
-  return (rel, buf) => {
-    const m = /^steps\/(\d+)\.json$/.exec(rel);
-    if (!m) return null;
-    const n = Number(m[1]);
-    if (!stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n)) return null;
+export function renderRunMd({ job, runNo, now, closeDecl, jobLines, steps }) {
+  /** @type {string[]} */
+  const sections = [];
+  for (const s of [...steps].sort((a, b) => a.n - b.n)) {
     /** @type {unknown} */
     let obj;
-    try { obj = JSON.parse(buf.toString('utf8')); } catch { return null; }
-    return renderStepMd(obj, stepClaimWords(closeDecl, n));
+    /** @type {unknown} */
+    let sent;
+    try { obj = JSON.parse(s.orig.toString('utf8')); sent = JSON.parse(s.delivered.toString('utf8')); } catch { continue; }
+    // code's report lines sit at the END of the delivered copy's `text`; the original text is the worker's own
+    const textOf = (/** @type {unknown} */ v) => (isRec(v) && typeof (/** @type {Record<string, any>} */ (v)).text === 'string' ? /** @type {string} */ (/** @type {Record<string, any>} */ (v).text) : '');
+    const origText = textOf(obj);
+    const sentText = textOf(sent);
+    const report = sentText.startsWith(origText) ? sentText.slice(origText.length).split('\n').map((l) => l.trim()).filter(Boolean) : [];
+    const sec = stepSection(obj, stepClaimWords(closeDecl, s.n), report);
+    if (sec === null || (sec.checked.length === 0 && sec.answer === null)) continue;
+    const jl = jobLines.find((/** @type {any} */ l) => isRec(l) && l.n === s.n);
+    const lines = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`];
+    for (const r of jl ? lineRules(jl) : []) lines.push(`Rule: ${r}`);
+    const parts = [lines.join('\n')];
+    if (sec.checked.length) parts.push(['### Checked by code', sec.checked.join('\n\n')].join('\n'));
+    if (sec.answer !== null) parts.push([proseNotChecked(closeDecl, s.n) ? '### The AI\'s answer (not checked — you judge it at Accept)' : '### The answer', sec.answer].join('\n'));
+    sections.push(parts.join('\n\n'));
+  }
+  if (sections.length === 0) return null;
+  return `${[`# ${job}${runNo === null ? '' : ` — run-${runNo}`}\nPassed · ${plainDate(now)}`, ...sections].join('\n\n')}\n`;
+}
+
+/**
+ * `copyOut`'s `report` hook for a signed close: `(delivered step files) => markdown|null`, called once with every delivered `steps/<n>.json` (the file as the worker wrote it and the delivered copy with code's report lines).
+ * Only a step file whose job line has a rubric-step stage is written. Reads the bytes it is given; touches no file.
+ * @param {{closeDecl: any, jobLines: any[]|null|undefined, job: string, runNo: number|null, now?: Date}} o
+ * @returns {(files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}
+ */
+export function deliveredReporter({ closeDecl, jobLines, job, runNo, now }) {
+  const stages = Array.isArray(closeDecl?.stages) ? closeDecl.stages : [];
+  return (files) => {
+    const steps = files.flatMap((f) => {
+      const m = /^steps\/(\d+)\.json$/.exec(f.rel);
+      if (!m) return [];
+      const n = Number(m[1]);
+      return stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n) ? [{ n, orig: f.orig, delivered: f.delivered }] : [];
+    });
+    return renderRunMd({ job, runNo, now: now ?? new Date(), closeDecl, jobLines: Array.isArray(jobLines) ? jobLines : [], steps });
   };
 }
