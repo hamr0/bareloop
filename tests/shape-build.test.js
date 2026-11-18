@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildShapeLine, buildShapes, boundGrounded, fieldSpec, NO_FIELD_WHY } from '../src/shapebuild.js';
+import { rubricVocabulary } from 'bareguard';
 import { SHAPE_KINDS, shapeAvailable, nameWhy, shapeNameRules } from '../src/shapemenu.js';
 import { shapeMenuLines } from '../src/shapelook.js';
 
@@ -23,7 +24,11 @@ test('the kind menu is named in one place and carries boolean with equals', () =
   assert.deepEqual([...SHAPE_KINDS.boolean], ['equals']);
   assert.ok(shapeMenuLines().includes('  boolean: bounds equals'));
   assert.ok(!('object' in SHAPE_KINDS), 'object is not offered');
-  assert.equal(shapeAvailable(), false, 'the pinned bareguard has no itemShape: the whole path is off');
+  assert.equal(shapeAvailable(), true, 'bareguard 0.37 carries itemShape');
+  // the table is bareguard's own, not a copy: every kind and option is read from its vocabulary
+  const k = /** @type {any} */ (rubricVocabulary).rules.itemShape.fields.fields.kinds;
+  for (const [kind, opts] of Object.entries(SHAPE_KINDS)) assert.deepEqual([...opts], Object.keys(k[kind]), kind);
+  assert.deepEqual(Object.keys(SHAPE_KINDS), Object.keys(k).filter((x) => x !== 'object'));
 });
 
 test('every ~ rule maps to one field of the right kind and a grounded bound; a suggested extra field is held out', () => {
@@ -132,12 +137,17 @@ test('the name check: no . : [ ], at most 128 characters, not a reserved reason 
   assert.equal(twice.fields.length, 1);
 });
 
-test('the reserved words come from bareguard at runtime; a bareguard that lists none says so (reservedChecked false), never a hardcoded copy', () => {
+test('the name rules are bareguard\'s own and the reserved-word refusal is ON (wrong-value included)', () => {
   const live = shapeNameRules();
-  assert.equal(live.reserved, null, 'the pinned bareguard (0.36) exposes no reserved list: the refusal is off and says so');
-  const r = buildShapeLine({ line: TRACKER, labels: [], suggestion: TRACKER_ANS });
-  assert.equal(r.reservedChecked, false);
-  assert.equal(buildShapeLine({ line: TRACKER, labels: [], suggestion: TRACKER_ANS, nameRules: NR }).reservedChecked, true);
+  const IS = /** @type {any} */ (rubricVocabulary).rules.itemShape.fields.fields;
+  assert.deepEqual(live.reserved, IS.reservedNames);
+  assert.ok(live.reserved?.includes('wrong-value'));
+  assert.deepEqual(live.forbidden, IS.nameForbiddenChars);
+  assert.equal(live.max, IS.nameMaxLength);
+  for (const bad of ['wrong-value', 'missing', 'count-under', 'duplicate']) assert.match(String(nameWhy(bad)), /the checker uses for its own gaps/);
+  const r = buildShapeLine({ line: TRACKER, labels: [], suggestion: { fields: [f({ name: 'wrong-value', kind: 'text', fromRule: 1 })] } });
+  assert.equal(r.fields.length, 0);
+  assert.equal(r.reservedChecked, true);
 });
 
 test('a rule no field holds is Not checked with the no-pick sentence; two fields for one rule keep the first', () => {

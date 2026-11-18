@@ -1,25 +1,16 @@
-// SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs (itemShape)": THE ONE PLACE the kind menu is named. The offer (src/shapeoffer.js), the builder (src/shapebuild.js)
-// and the tests read this table, never a copy of it.
-// Where it comes from: bareguard's `itemShape` (ruling #83) kinds and the options each kind lists. The pinned bareguard (^0.36.0) does not carry `itemShape` yet, so the table is bareloop's own for now and
-// `shapeAvailable()` is false: the offer, the builder's wiring and every row stay OFF, and a job drafts byte-identically to a job without this addendum. TODO(clause 5, the pin bump): read the kinds and the
-// name rules from `rubricVocabulary.rules.itemShape.fields.fields` (it carries `reservedNames`, `nameForbiddenChars`, `nameMaxLength` once released) and delete this table.
+// SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs (itemShape)": THE ONE PLACE the kind menu is named. The offer (src/shapelook.js), the builder (src/shapebuild.js) and the tests read this table, never a copy of it.
+// It is bareguard's own: `rubricVocabulary.rules.itemShape.fields.fields` (ruling #83; bareguard ^0.37.0) lists the kinds, the options each kind accepts, and the name rules (`reservedNames`, `nameForbiddenChars`, `nameMaxLength`).
+// What stays bareloop's: which options are BOUNDS the person must have written (GROUNDED_BOUNDS and its kin below), and which kind is not offered.
 // Not offered: the `object` kind (nested field specs, depth 2). The builder refuses it in plain words; a shape job with a nested object is not built yet.
 import { rubricVocabulary } from 'bareguard';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** kind -> the options (bounds and modifiers) the kind accepts. `of` and `minEntries`/`maxEntries`/`unique` are the list's; `equals` is the boolean's (bareguard f712769). */
-export const SHAPE_KINDS = Object.freeze({
-  text: Object.freeze(['minChars', 'maxChars', 'minWords', 'maxWords']),
-  number: Object.freeze(['min', 'max', 'gt', 'lt', 'fromText']),
-  oneOf: Object.freeze(['values', 'ignoreCase']),
-  money: Object.freeze(['currency', 'unit', 'decimal', 'min', 'max', 'gt', 'lt']),
-  date: Object.freeze(['lang', 'months', 'min', 'max', 'gt', 'lt']),
-  time: Object.freeze(['min', 'max', 'gt', 'lt']),
-  url: Object.freeze([]),
-  boolean: Object.freeze(['equals']),
-  list: Object.freeze(['of', 'minEntries', 'maxEntries', 'unique']),
-});
+/** bareguard's field-spec descriptor of `itemShape` @type {any} */
+const IS = /** @type {any} */ (rubricVocabulary).rules.itemShape.fields.fields;
+
+/** kind -> the options (bounds and modifiers) the kind accepts, as bareguard lists them (`object` is not offered). `of` and `minEntries`/`maxEntries`/`unique` are the list's; `equals` is the boolean's. @type {Readonly<Record<string, readonly string[]>>} */
+export const SHAPE_KINDS = Object.freeze(Object.fromEntries(Object.entries(IS.kinds).filter(([k]) => k !== 'object').map(([k, opts]) => [k, Object.freeze(Object.keys(/** @type {any} */ (opts)))])));
 
 /** the kinds a list entry (`of`) may be: every scalar kind (never `list`, never `object`) */
 export const ENTRY_KINDS = Object.freeze(Object.keys(SHAPE_KINDS).filter((k) => k !== 'list'));
@@ -34,31 +25,24 @@ export const UPPER_BOUNDS = Object.freeze(['max', 'maxChars', 'maxWords', 'maxEn
 export const COUNT_BOUNDS = Object.freeze(['minChars', 'maxChars', 'minWords', 'maxWords', 'minEntries', 'maxEntries']);
 
 /** a field name is at most this long (bareguard's `nameMaxLength`) */
-export const NAME_MAX_CHARS = 128;
+export const NAME_MAX_CHARS = Number(IS.nameMaxLength);
 /** a field name holds none of these (they separate the path in a red item: bareguard's `nameForbiddenChars`) */
-export const NAME_FORBIDDEN = Object.freeze(['.', ':', '[', ']']);
+export const NAME_FORBIDDEN = Object.freeze(IS.nameForbiddenChars.map(String));
 
 /**
- * Does the bareguard this package runs carry `itemShape`? Until the release that does is pinned this is false, and the whole shape path stays off. Read from the vocabulary at call time, never assumed.
+ * Does the bareguard this package runs carry `itemShape`? Read from the vocabulary at call time (true from bareguard 0.37); the shape look and everything after it is OFF where it is false.
  * @returns {boolean}
  */
 export function shapeAvailable() {
-  const V = /** @type {any} */ (rubricVocabulary);
-  return isRec(V?.rules?.itemShape);
+  return isRec(/** @type {any} */ (rubricVocabulary)?.rules?.itemShape);
 }
 
 /**
- * The name rules of a signed field: the characters and the length bareguard enforces, and (when this bareguard carries them) its own reserved reason words, read at runtime. A bareguard without the
- * reserved list gives `reserved: null`: the reserved-word refusal is then OFF and the builder says so in its result (`reservedChecked`), never silently. TODO(clause 5): the release carries them.
- * @returns {{max: number, forbidden: string[], reserved: string[]|null}}
+ * The name rules of a signed field, all bareguard's own: the characters, the length and its reserved reason words (a field named `wrong-value` would read as a gap).
+ * @returns {{max: number, forbidden: string[], reserved: string[]}}
  */
 export function shapeNameRules() {
-  const f = /** @type {any} */ (rubricVocabulary)?.rules?.itemShape?.fields?.fields;
-  return {
-    max: Number.isInteger(f?.nameMaxLength) ? f.nameMaxLength : NAME_MAX_CHARS,
-    forbidden: Array.isArray(f?.nameForbiddenChars) ? f.nameForbiddenChars.map(String) : [...NAME_FORBIDDEN],
-    reserved: Array.isArray(f?.reservedNames) ? f.reservedNames.map(String) : null,
-  };
+  return { max: NAME_MAX_CHARS, forbidden: [...NAME_FORBIDDEN], reserved: IS.reservedNames.map(String) };
 }
 
 /**

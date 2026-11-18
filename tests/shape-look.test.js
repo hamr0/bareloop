@@ -65,10 +65,10 @@ test('one call for the job: booked as shape-map with its cost; an unreadable ans
   assert.equal(seen.length, 0);
 });
 
-test('the look door: OFF (the pinned bareguard has no itemShape) is runLook\'s own answer and makes no shape call; forced on, the shapes ride the look and the spend adds up', async () => {
+test('the look door: OFF (`shape: false`) is runLook\'s own answer and makes no shape call; ON by default now (bareguard 0.37 carries itemShape); forced on, the shapes ride the look and the spend adds up', async () => {
   const seen = /** @type {any[]} */ ([]);
   const args = { texts: { Flights: 'SFO to LAX 07:30 $199 nonstop' }, inputs: [{ n: 1, label: 'Flights' }], jobLines: JOB, sleep: async () => {} };
-  const off = await runLookWithShape({ ...args, provider: prov([reply({ text: JSON.stringify({ facts: [] }), costUsd: 0.003 })], seen) });
+  const off = await runLookWithShape({ ...args, shape: false, provider: prov([reply({ text: JSON.stringify({ facts: [] }), costUsd: 0.003 })], seen) });
   assert.equal(Object.hasOwn(off.facts.look, 'shapes'), false);
   assert.equal(seen.length, 1, 'the page map only');
   const on = await runLookWithShape({ ...args, shape: true, provider: prov([reply({ text: JSON.stringify({ facts: [] }), costUsd: 0.003 }), good()]) });
