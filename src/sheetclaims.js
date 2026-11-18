@@ -201,6 +201,8 @@ export function sheetNumberedView(text, rowStarts) {
 // ── (iii) code does the math ─────────────────────────────────────────────────────────────────────────────────────────
 
 /** @param {number} n @param {number} d @returns {string} n with `d` decimals and thousands marks */
+/** A strict plain number: optional sign, digits (commas only as thousands groups of three), optional decimals. `12,50`, `1e3`, `0x10` are not numbers (F356). */
+const PLAIN_CELL_NUMBER = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
 const fmt = (n, d) => Number(n.toFixed(d)).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 /**
@@ -230,8 +232,8 @@ export function sheetTotalLines(checks, claims, tables) {
     for (const n of rows) {
       const cell = String(byRow.get(n)?.cells[col] ?? '').trim();
       if (cell === '') continue;
+      if (!PLAIN_CELL_NUMBER.test(cell)) { bad = n; break; }
       const v = Number(cell.replaceAll(',', ''));
-      if (!Number.isFinite(v)) { bad = n; break; }
       sum += v;
       decimals = Math.max(decimals, (cell.split('.')[1] ?? '').length);
     }
