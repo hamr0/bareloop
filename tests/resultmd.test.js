@@ -110,3 +110,14 @@ test('every value is present, in order, none changed (fwd am2 (5), ported)', () 
   const lines = renderStepMd(content).split('\n').filter((l) => !l.startsWith('## ') && !l.startsWith('from the page'));
   assert.deepEqual(lines.map((l) => l.replace(/^[^:]*: ?/, '')), ['5', 'a, b', '1, 2', '']);
 });
+
+test('a claim only a sumIf / countIf check carries is NOT written: code computes that number and never reads the worker\'s, so the .md must not print it', () => {
+  const closeDecl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [{ class: 'sheet', checks: [
+    { id: 'a', rule: 'cells', table: 't', op: 'rows', claim: 'a', where: [{ column: 'Amount', cmp: 'gt', value: 500 }] },
+    { id: 'b', rule: 'cells', table: 't', op: 'sumIf', column: 'Amount', claim: 'a', where: [{ column: 'Amount', cmp: 'gt', value: 500 }] },
+    { id: 'c', rule: 'cells', table: 't', op: 'sumIf', column: 'Amount', claim: 'c', where: [{ column: 'Amount', cmp: 'gt', value: 9 }] },
+  ] }] } }] };
+  const w = stepClaimWords(closeDecl, 1);
+  assert.deepEqual(w, { a: 'rows where Amount > 500', c: null });
+  assert.equal(renderStepMd({ text: 'T', claims: { a: { rows: [2, 3] }, c: { value: 99999.99 } } }, w), 'T\n\nRows where Amount > 500: 2, 3');
+});
