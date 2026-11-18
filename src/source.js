@@ -1224,7 +1224,7 @@ export function frontDoorFromManifest(read) {
  * @returns {string}
  */
 export function nonRepoSourceMessage(kind) {
-  if (kind === 'file') return 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
+  if (kind === 'file') return 'This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.';
   if (kind === 'folder') return "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
   return "Source is not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
 }

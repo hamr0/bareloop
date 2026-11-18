@@ -120,7 +120,7 @@ test('Reuse card: an absolute Destination on a REPO source is refused with the s
   assert.notEqual(ok.state.error, MSG, String(ok.state.error));
 });
 
-const FILE_MSG = 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
+const FILE_MSG = 'This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.';
 const FOLDER_MSG = "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
 
 test('non-repo source: a single FILE is refused at $0 with the file message (not "Plain folder"); no model call', async () => {
