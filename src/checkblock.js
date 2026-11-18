@@ -553,7 +553,8 @@ export class CheckBlock {
         const row = prose ?? this.addRow({ key: `L${l.n}.$prose`, line: l.n, kind: 'prose', by: 'default', from: 'default' });
         row.state = 'not-checked'; row.reason = lineParts.some((p) => p.class === 'shape') ? SHAPE_TRUTH_WORDS : PROSE_WORDS;
       } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
-      for (const f of this.rowsOn(l.n, 'floor')) f.listLine = lineParts.some((p) => p.class === 'shape');
+      // only a shape line's floor row carries the flag: every other row stays byte-identical to what it was
+      for (const f of this.rowsOn(l.n, 'floor')) { if (lineParts.some((p) => p.class === 'shape')) f.listLine = true; else delete f.listLine; }
       for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'shape') && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
