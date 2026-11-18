@@ -4842,7 +4842,7 @@ Round 2 (n=50 per job, deepseek-flash direct, $0.601, 0 casualties): shape 50/50
 - Two jobs, expenses (`expenses.csv`: rows over 500, their count and sum) and aging (`ar-aging.csv` / aging.csv: days past due as of the job date, each invoice in its bucket, every invoice once).
 - Provider deepseek (DeepSeek direct), model deepseek-flash. Cap $0.30 per job drafting + run, $0.60 total. Real panel on a port other than 4700, scratch HOME.
 - Check before spending, at $0: close fails on seed, no refused tracked files, key readable, job direction/values match the saved sheet.
-- Done when: both draft, sign, run green (or a clean red caught); each card shows each `~` rule once; `sheet-recheck.mjs` says ok; a one-cell edit of the frozen copy stops at $0; a claim of 18 instead of 17 is red naming the row. A Revise after the column answer is walked once (fwd never did).
+- Done when: both draft, sign, run green (or a clean red caught); each card shows each `~` rule once; `sheet-recheck.mjs` says ok; a one-cell edit of the frozen copy stops at $0; a claim of 17 instead of 18 is red naming the row (corrected 2026-11-18: 18 rows, 13206.91; F354; was "18 instead of 17"). A Revise after the column answer is walked once (fwd never did).
 - hamr clicks through the panel himself before any done claim.
 
 ### Out of scope
