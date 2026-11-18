@@ -73,9 +73,10 @@ test('SHEET line, maps and values: a days / bands map writes one line per row, a
   assert.match(lines[16], /, row 9: 31-60$/);
 });
 
-test('a claim id no check carries keeps fwd\'s friendlyName of the key', () => {
-  assert.equal(renderStepMd({ text: 'T', claims: { expenseTotal: { value: 5 }, odd_rows: { rows: [1, 2] } } }, {}), 'T\n\nExpense total: 5\nOdd rows: 1, 2');
-  assert.equal(renderStepMd({ text: 'T', claims: { expenseTotal: { value: 5 } } }), 'T\n\nExpense total: 5');
+test('a claim id no check carries is left out of the text (hamr 2026-11-18: "leave it out")', () => {
+  assert.equal(renderStepMd({ text: 'T', claims: { expenseTotal: { value: 5 }, odd_rows: { rows: [1, 2] } } }, {}), 'T');
+  assert.equal(renderStepMd({ text: 'T', claims: { expenseTotal: { value: 5 } } }), 'T');
+  assert.equal(renderStepMd({ text: 'T', claims: { l1r1: { rows: [1, 2] }, l1a1: { value: 99999.99 } } }, { l1r1: 'rows where Amount > 500' }), 'T\n\nRows where Amount > 500: 1, 2');
 });
 
 test('stepClaimWords: the FIRST check of the step that carries a claim id names it; other steps do not leak in', () => {

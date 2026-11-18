@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makePart5World } from './part5-world.mjs';
-import { createPanelServer, RESULT_FILE_GONE, RESULT_FILE_CHANGED } from '../src/panel/server.js';
+import { createPanelServer, RESULT_FILE_GONE, RESULT_FILE_CHANGED, RESULT_MD_RENAMED } from '../src/panel/server.js';
 import { renderStepMd } from '../src/resultmd.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -16,7 +16,7 @@ const sha = (b) => createHash('sha256').update(b).digest('hex');
 const PAGE = readFileSync(join(HERE, '..', 'src', 'panel', 'index.html'), 'utf8');
 
 /** the part5 world, the delivered json and (unless `md` is false) its .md written and recorded */
-async function world({ md = true } = {}) {
+async function world({ md = true, pairedTaken = null } = {}) {
   const w = makePart5World();
   const dir = join(dirname(w.out('mve5y8fa')), 'delivered', 'steps');
   mkdirSync(dir, { recursive: true });
@@ -30,7 +30,7 @@ async function world({ md = true } = {}) {
   const body = renderStepMd(JSON.parse(readFileSync(STEP, 'utf8')));
   if (md) {
     writeFileSync(mdPath, body);
-    out += `${JSON.stringify({ type: 'destination-written', path: mdPath, declared: dir, bytes: Buffer.byteLength(body), sha256: sha(Buffer.from(body)), seq: 98 })}\n`;
+    out += `${JSON.stringify({ type: 'destination-written', path: mdPath, declared: dir, bytes: Buffer.byteLength(body), sha256: sha(Buffer.from(body)), seq: 98, ...(pairedTaken ? { pairedTaken } : {}) })}\n`;
   }
   writeFileSync(spine, out);
   const old = new Date(Date.now() - 3 * 3600 * 1000);
@@ -48,6 +48,17 @@ test('payload: the delivered .md is listed with its index into the delivered lis
   assert.deepEqual(r.md, [{ i: 1, name: '1-2026-10-18.md', state: 'ok', words: null }]);
   assert.equal(r.delivered.length, 2);
   assert.deepEqual(r.delivered.map((d) => d.name), ['1-2026-10-18.json', '1-2026-10-18.md']);
+});
+
+test('payload: a .md saved under a new name carries code\'s note naming the paired name it could not take; one that got its own name carries none; the page types no words', async () => {
+  const w = await world({ pairedTaken: '1-2026-10-18.md' });
+  const r = (await w.get('/api/runs/mve5y8fa/result')).body;
+  assert.equal(r.md[0].note, RESULT_MD_RENAMED('1-2026-10-18.md'));
+  assert.equal(r.md[0].note, 'saved under a new name because 1-2026-10-18.md was already taken');
+  const plain = (await (await world()).get('/api/runs/mve5y8fa/result')).body;
+  assert.equal('note' in plain.md[0], false);
+  assert.match(PAGE, /m\.note/);
+  assert.doesNotMatch(PAGE, /already taken/);
 });
 
 test('payload: a deleted .md reads gone and an edited one reads changed, with code\'s own words', async () => {

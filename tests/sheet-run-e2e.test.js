@@ -82,8 +82,8 @@ test('run start records the tableSha and writes the numbered view; the close gra
   assert.ok(jsonName && mdName);
   const obj = JSON.parse(readFileSync(join(r.dest, 'steps', jsonName), 'utf8'));
   const md = readFileSync(join(r.dest, 'steps', mdName), 'utf8');
-  // `l1a1` is a box the worker invented (no check of the signed close reads it: the sum's claim is the rows box): an id no check carries keeps fwd's friendlyName, so it is shown as the worker wrote it
-  assert.equal(md, `${obj.text}\n\nRows where Amount > 500: ${OVER.join(', ')}\nL1a1: 99999.99\nL1a2: 7`, 'the .md is renderStepMd of the DELIVERED json bytes: the text with code\'s lines, then the claim named by its check sentence');
+  // `l1a1` is a box the worker invented (no check of the signed close reads it: the sum's claim is the rows box): an id no check carries is left out of the .md (hamr 2026-11-18)
+  assert.equal(md, `${obj.text}\n\nRows where Amount > 500: ${OVER.join(', ')}`, 'the .md is renderStepMd of the DELIVERED json bytes: the text with code\'s lines, then the claim named by its check sentence');
   // both files are recorded on the spine, each with the sha256 of what was written
   const spineDir = readdirSync(r.into).map((d) => join(r.into, d)).find((d) => readdirSync(d).some((f) => /^u-[a-z0-9]+\.jsonl$/.test(f)));
   assert.ok(spineDir, 'the run\'s spine folder');

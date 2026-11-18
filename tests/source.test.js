@@ -1413,15 +1413,23 @@ test('copyOut alsoText: a second same-day delivery lands as -2 for BOTH files; t
   assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first');
 });
 
-test('copyOut alsoText: an existing text file at the sibling name is never overwritten: destination-exists', async () => {
+test('copyOut alsoText: a taken sibling name is never overwritten; the text lands under the next free name, is recorded, and names the paired name it could not take (hamr 2026-11-18)', async () => {
   const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
   const destination = tmp('bareloop-dest-md-');
   const r1 = await copyOut({ tree, destination, alsoText: () => 'first' });
   rmSync(r1.files[0].path); // the json is gone, the .md stays: the next json name is free again, its sibling is not
   const r2 = await copyOut({ tree, destination, alsoText: () => 'second' });
-  assert.equal(r2.stop === null, false);
-  assert.equal(r2.code, 'destination-exists');
+  assert.equal(r2.stop, null, r2.stop ?? undefined);
   assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first', 'never overwritten');
+  assert.equal(r2.files.length, 2);
+  const md = r2.files[1];
+  assert.equal(readFileSync(md.path, 'utf8'), 'second');
+  assert.notEqual(md.path, r1.files[1].path);
+  assert.match(md.path.split('/').at(-1), /^1-\d{4}-\d{2}-\d{2}-2\.md$/, 'the next free same-day name');
+  assert.equal(md.pairedTaken, r1.files[1].path.split('/').at(-1), 'it says which name it wanted');
+  assert.equal(md.sha256, sha256(readFileSync(md.path)));
+  assert.equal('pairedTaken' in r2.files[0], false, 'the json carries no note');
+  assert.equal('pairedTaken' in r1.files[1], false, 'a text file that got its paired name carries no note');
 });
 
 test('copyOut without alsoText: the delivery is exactly as before (one file per output file)', async () => {
