@@ -10,7 +10,7 @@ import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFact
 import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
 import { sheetRowsOf } from './sheetrows.js';
 import { plainShapeGap, shapeGapCount } from './shapewords.js';
-import { shapeRowsOf, shapePartOf } from './shaperows.js';
+import { shapeRowsOf, shapePartOf, shapeShapeReds, shapeItemCheck, shapeFieldSentence, shapeExampleItem } from './shaperows.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -113,6 +113,23 @@ export function lineBriefs(closeDecl) {
       });
       continue;
     }
+    // shape jobs (clause 6): a LIST line. The worker is told the file contract `{"results": [{...fields}]}`, each field in plain words (the signed bounds, in the person's own form) and ONE worked example item, all written by code from the signed shape.
+    const sp = shapePartOf(st.params);
+    if (sp) {
+      const fields = sp.fields.filter(isRec);
+      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : 'one item for every one you find';
+      out.push({
+        line: n,
+        text: [
+          `Job line ${n} is a LIST line. Write ${stepFileRel(n)} as {"results": [{...}, {...}]} and nothing else — no "text", no "cites". One object per item: ${count}.`,
+          '  Every item has these fields, named exactly as written (a field marked optional may be left out when it does not apply):',
+          ...fields.map((/** @type {any} */ f) => `    - ${f.name}: ${shapeFieldSentence(f.spec)}${f.spec.required === true ? '' : ' (optional)'}`),
+          `  One example item: ${JSON.stringify(shapeExampleItem(fields))}`,
+          '  Write each value as plain text or a plain number or yes/no (true or false) as the field says, never as a sentence about the value.',
+        ].join('\n'),
+      });
+      continue;
+    }
     // S3: a SHEET line. The worker is told the BOX of each claim (bareguard's own worked example) and where to read row numbers, never the check: no op, condition, bound or column.
     if (sheetPartOf(st.params)) {
       const brief = sheetBrief(sheetChecksOf(st.params));
@@ -196,7 +213,7 @@ export function confirmedGoalOf(goal) {
 // (src/authoring.js `checkRubricParts`) so no signed stage ever carries one.
 
 /** the closed set of classes a part is sorted into; `none` = "I could not sort this one" (a red, in plain words, never a guess) */
-export const PART_CLASSES = Object.freeze(['countable', 'fact', 'sheet', 'judged', 'guard', 'none']);
+export const PART_CLASSES = Object.freeze(['countable', 'fact', 'sheet', 'shape', 'judged', 'guard', 'none']);
 /**
  * The counted/quoted checks a `countable` part may name, with the fields each needs — read off bareguard's own rule table
  * (`rubricVocabulary`): the names are bareguard's, so a check this build cannot run is inexpressible, not rejected late.
@@ -226,7 +243,7 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen', 'checks']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen', 'checks', 'fields', 'minItems', 'maxItems']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -273,6 +290,8 @@ export function rubricStepShapeReds(p, at) {
     }
     if (Object.hasOwn(part, 'asSeen') && part.class !== 'fact') red('invalid-value', `${w}.asSeen`, 'only a fact part carries the as-seen example');
     if (Object.hasOwn(part, 'checks') && part.class !== 'sheet') red('invalid-value', `${w}.checks`, 'only a sheet part carries sheet checks');
+    for (const k of ['fields', 'minItems', 'maxItems']) if (Object.hasOwn(part, k) && part.class !== 'shape') red('invalid-value', `${w}.${k}`, 'only a shape part carries the fields and the item count of a list of items');
+    if (part.class === 'shape') { shapeShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'sheet') { sheetShapeReds(part, Number.isInteger(p.step) ? p.step : 0, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'guard') {
@@ -296,6 +315,10 @@ export function rubricStepShapeReds(p, at) {
     }
   });
   // S3: a step reads one sheet part; a line is a sheet line or a facts line (the step file holds `claims` or `results`), and a sheet input is not also quoted on the same step (one input, one fingerprint)
+  // shape jobs: a line is a shape line, a sheet line or a facts line, never two of them, and a shape line holds its shape part alone (its step file holds `results`, a list of items, and nothing else)
+  const shapeParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'shape');
+  if (shapeParts.length > 1) red('invalid-value', `${at}.parts`, 'one shape part per step: the fields of a list of items all go in one');
+  if (shapeParts.length > 0 && p.parts.length > shapeParts.length) red('invalid-value', `${at}.parts`, 'a line is a shape line, a sheet line or a facts line, not both: a shape line\'s step file holds "results", a list of items, and its shape part is its only part');
   const sheetParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'sheet');
   if (sheetParts.length > 1) red('invalid-value', `${at}.parts`, 'one sheet part per step: the checks of a sheet line all go in one');
   if (sheetParts.length > 0 && p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact')) red('invalid-value', `${at}.parts`, 'a line is a sheet line or a facts line, not both: its step file holds "claims" or "results"');
@@ -324,13 +347,18 @@ export function citedLabels(params) {
 export function buildStepSpec(params, inputShas) {
   /** @type {Record<string, any>[]} */
   // a fact step has no text to floor, unless the person's picks put text checks on its line (keep-both): then "text" must be there, or an upper bound alone (maxWords) would pass an empty file
-  const checks = factPartOf(params) && !params.parts.some((x) => x.class === 'countable') ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
+  const checks = (factPartOf(params) || shapePartOf(params)) && !params.parts.some((x) => x.class === 'countable') ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
   params.parts.forEach((part, i) => {
     if (part.class === 'fact') {
       // ONE bareguard `cited` check per fact part: the quote is in the frozen input, every value is in the quote and meets its rule
       checks.push({ id: `p${i + 1}-facts`, rule: 'cited', claims: `cites:${part.source}`, source: part.source, decides: factDecides(part) });
       if (part.count?.min !== undefined) checks.push({ id: `p${i + 1}-count-min`, rule: 'min', field: `claims:${part.source}`, value: part.count.min });
       if (part.count?.max !== undefined) checks.push({ id: `p${i + 1}-count-max`, rule: 'max', field: `claims:${part.source}`, value: part.count.max });
+      return;
+    }
+    if (part.class === 'shape') {
+      // shape jobs (clause 6): ONE bareguard `itemShape` check over the answer's `results` list: the item count and every signed field
+      checks.push(shapeItemCheck(part, `p${i + 1}-shape`));
       return;
     }
     if (part.class === 'sheet') {
@@ -1065,7 +1093,7 @@ const isDefaultNote = (/** @type {any} */ p, /** @type {number} */ n) => isRec(p
 export function lineCarriesText(closeDecl, n) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)
-    && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
+    && !(shapePartOf(st.params) !== null) && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
 }
 
 /**

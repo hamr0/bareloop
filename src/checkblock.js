@@ -669,8 +669,7 @@ export class CheckBlock {
   /**
    * Shape jobs: ONE shape part per shape line, from the fields that stand (a `[you]` rule row's field, then the `[agent]` fields the person has not dropped and that are not Suggested) and the item count the person's words gave. Every
    * row it carries points at it. A line left with no field has no part and no `[default]` row.
-   * TODO(clause 5, needs the bareguard release + pin bump): validate the part with `rubricStepShapeReds(.., 'trial')` once `PART_CLASSES` knows `shape` (a part code cannot legally build leaves its rows Not checked in that red's own
-   * words, as `buildSheetPartOf` does), and sign it (`SIGNED_KINDS`, `buildStepSpec`). Until then the part is built from the pure fields only and is never signed: `shapeAvailable()` keeps this path off in a release.
+   * The part is validated by `rubricStepShapeReds` (names, kinds, count, and bareguard's own `createRubric` over the `itemShape` check): a part code cannot legally build leaves its rows Not checked in that red's own words, as `buildSheetPartOf` does.
    * @param {{n: number, text: string}} l @param {Row[]} shapeRows @param {any[]} lineParts @param {string[][]} lineRows
    */
   buildShapePartOf(l, shapeRows, lineParts, lineRows) {
@@ -678,6 +677,8 @@ export class CheckBlock {
     const fields = (b?.fields ?? []).filter((f) => shapeRows.some((r) => (f.by === 'you' && r.kind === 'rule' && r.rule === f.rule) || (f.by === 'agent' && r.key === shapeRowKey(l.n, f.name))));
     if (!b || !fields.some((f) => f.by === 'you')) { for (const r of shapeRows) { r.state = 'dropped'; r.reason = null; } return; }
     const part = buildShapePart({ text: `the items of line ${l.n}`, fields: fields.map((f) => ({ name: f.name, spec: fieldSpec(f), rule: f.rule, by: f.by })), itemCount: b.itemCount });
+    const reds = rubricStepShapeReds({ step: l.n, parts: [part] }, 'trial');
+    if (reds.length) { for (const r of shapeRows) { r.state = 'not-checked'; r.reason = `code could not build the line's shape part: ${reds[0]?.detail}`; } return; }
     lineParts.push(part);
     lineRows.push(shapeRows.map((r) => r.key));
     for (const r of shapeRows) { r.state = 'built'; r.reason = null; }

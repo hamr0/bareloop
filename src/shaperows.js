@@ -1,11 +1,13 @@
 // SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs", clause 8 "Views" (and the rows' words of clause 4): the WORDS of the shape rows of the one list and the pure readers of a signed close's shape part.
 // Modelled on src/sheetrows.js. The ROWS themselves live in the one owner, src/checkblock.js (`setShape`, `rowChoice`); this file only names them and reads them back, so the confirm card, the signed card, the Job tab, the
 // Result tab and the report say the same thing.
-// THE PART (what the views read; clause 5 builds the real, bareguard-validated one from the same fields, TODO(clause 5): `rubricStepShapeReds`, `PART_CLASSES`, `buildStepSpec`):
+// THE PART (what the views read and what `rubricStepShapeReds`, `buildStepSpec` and `lineBriefs` sign, check and brief):
 //   { class: 'shape', text, fields: [{ name, spec: {kind, required?, ...bounds}, rule?: <the ~ rule number it comes from>, row?: 'agent' }], minItems?, maxItems?, rules?: [<rule numbers>] }
 // Rows of one shape line: a `[you]` row per `~` rule that has a field (the rule's own row, kind `rule`), an `[agent]` row per extra field (kind `shape`, key `L<n>.shape.<name>`), and the line's `[default]` row (key
 // `L<n>.$shape`): the answer is a list of items, with the item count when the person's words gave one.
+import { createRubric } from 'bareguard';
 import { lineRules } from './rubricstep.js';
+import { nameWhy, shapeNameRules, SHAPE_KINDS } from './shapemenu.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -140,3 +142,77 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
 
 /** the fields that say what a shape field IS: all but the names code gives it (the row's own key) — two drafts spell the same field alike @param {{name: string, kind: string, required?: boolean, bounds?: Record<string, any>}} f @returns {Record<string, any>} */
 export const shapeFieldBody = (f) => ({ name: f.name, kind: f.kind, required: f.required === true, bounds: f.bounds ?? {} });
+
+/** the answer field the `itemShape` check reads: the shape answer's one list (the step file is `{"results": [...]}`) */
+export const SHAPE_FIELD = 'results';
+
+/**
+ * The bareguard `itemShape` check of a signed shape part (clause 6, `buildStepSpec`): the answer field `results`, the item count the person's words gave, and one field spec per signed field.
+ * @param {any} part a `shape` part @param {string} id @returns {Record<string, any>}
+ */
+export function shapeItemCheck(part, id) {
+  return {
+    id, rule: 'itemShape', field: SHAPE_FIELD,
+    ...(Number.isInteger(part.minItems) ? { minItems: part.minItems } : {}), ...(Number.isInteger(part.maxItems) ? { maxItems: part.maxItems } : {}),
+    fields: Object.fromEntries((Array.isArray(part.fields) ? part.fields : []).filter(isRec).map((f) => [String(f.name), f.spec])),
+  };
+}
+
+/**
+ * The SHAPE of a `shape` part (clause 5, called by `rubricStepShapeReds`): its fields are named legally and once, each spec has a kind on the menu, the count is whole numbers, a rule number is a whole number, and bareguard itself
+ * accepts the check (`createRubric`, which refuses an impossible bound or a field spec it does not know, naming the path). Pure, never throws.
+ * @param {any} part @param {string} w the path of the part @param {(code: string, path: string, detail: string) => void} red
+ */
+export function shapeShapeReds(part, w, red) {
+  const fs = part.fields;
+  if (!Array.isArray(fs) || fs.length === 0) { red('invalid-value', `${w}.fields`, 'a non-empty list of fields: {name, spec, rule?, row?}'); return; }
+  const rules = shapeNameRules();
+  const seen = new Set();
+  fs.forEach((/** @type {any} */ f, /** @type {number} */ i) => {
+    const fw = `${w}.fields[${i}]`;
+    if (!isRec(f)) { red('invalid-value', fw, '{name, spec, rule?, row?}'); return; }
+    const bad = nameWhy(f.name, rules);
+    if (bad !== null) red('invalid-value', `${fw}.name`, bad);
+    else if (seen.has(f.name)) red('invalid-value', `${fw}.name`, `the field name "${f.name}" is used twice`);
+    else seen.add(f.name);
+    if (!isRec(f.spec) || !Object.hasOwn(SHAPE_KINDS, String(f.spec.kind))) red('invalid-value', `${fw}.spec.kind`, `one of ${Object.keys(SHAPE_KINDS).join(' | ')}`);
+    if (Object.hasOwn(f, 'rule') && !(Number.isInteger(f.rule) && f.rule >= 1)) red('invalid-value', `${fw}.rule`, 'the number of the ~ rule the field comes from (an integer, 1 or more)');
+    if (Object.hasOwn(f, 'row') && f.row !== 'agent') red('invalid-value', `${fw}.row`, '"agent" (the tag of a field code made its own row) or absent');
+  });
+  for (const k of ['minItems', 'maxItems']) if (Object.hasOwn(part, k) && !(Number.isInteger(part[k]) && part[k] >= (k === 'maxItems' ? 1 : 0))) red('invalid-value', `${w}.${k}`, 'a whole number of items');
+  if (Number.isInteger(part.minItems) && Number.isInteger(part.maxItems) && part.minItems > part.maxItems) red('invalid-value', `${w}.maxItems`, 'maxItems is below minItems');
+  if (!isRec(part) || fs.some((/** @type {any} */ f) => !isRec(f) || !isRec(f.spec))) return;
+  // bareguard is the judge of whether the shape is SIGNABLE: ask it here, at $0
+  try {
+    createRubric({ schema: 1, goal: 'shape', inputs: [], checkpoints: { shape: { gating: false, checks: [shapeItemCheck(part, 'shape')] } } });
+  } catch (e) {
+    red('invalid-value', `${w}.fields`, `bareguard refuses this shape: ${String(/** @type {any} */ (e)?.message ?? e)}`);
+  }
+}
+
+/**
+ * One worked example item of a shape, written by code from the signed fields (never by a model): a value of each field's kind that the field's own bounds accept.
+ * @param {{name: string, spec: Record<string, any>}[]} fields @returns {Record<string, any>}
+ */
+export function shapeExampleItem(fields) {
+  const one = (/** @type {Record<string, any>} */ s) => {
+    switch (s.kind) {
+      case 'text': {
+        if (Number.isInteger(s.minWords) && s.minWords > 0) return Array.from({ length: s.minWords }, () => 'word').join(' ');
+        const lo = Math.max(Number.isInteger(s.minChars) ? s.minChars : 1, 1);
+        const len = Math.min(Math.max(12, lo), Number.isInteger(s.maxChars) ? s.maxChars : Infinity);
+        return 'Example text'.padEnd(len, '.').slice(0, len);
+      }
+      case 'number': return s.min ?? (s.gt !== undefined ? s.gt + 1 : s.max ?? (s.lt !== undefined ? s.lt - 1 : 1));
+      case 'oneOf': return Array.isArray(s.values) ? s.values[0] : 'value';
+      case 'money': { const c = Array.isArray(s.currency) ? s.currency[0] : s.currency; const u = Array.isArray(s.unit) ? s.unit[0] : s.unit; const a = s.min ?? (s.gt !== undefined ? s.gt + 1 : s.max ?? (s.lt !== undefined ? s.lt - 1 : 10)); return typeof c === 'string' && c.length === 1 ? `${c}${a}` : `${a} ${u ?? c ?? ''}`.trim(); }
+      case 'date': return s.min ?? '2026-01-15';
+      case 'time': return s.min ?? '09:30';
+      case 'url': return 'https://example.com/page';
+      case 'boolean': return s.equals ?? true;
+      case 'list': return isRec(s.of) ? [one(s.of)] : [];
+      default: return 'value';
+    }
+  };
+  return Object.fromEntries(fields.map((f) => [f.name, one(f.spec)]));
+}

@@ -22,7 +22,7 @@ const tmp = (p = 'shape-look-') => { const d = mkdtempSync(join(tmpdir(), p)); m
 
 const JOB = [{ n: 1, text: 'List the flights', rule: 'each flight has a price under 450; the flight is nonstop', rules: ['each flight has a price under 450', 'the flight is nonstop'] }];
 const f = (/** @type {any} */ o) => ({ required: true, bounds: {}, fromRule: null, ...o });
-const SHAPES = [{ line: 1, fields: [f({ name: 'price', kind: 'money', bounds: { lt: 450 }, fromRule: 1 }), f({ name: 'nonstop', kind: 'boolean', bounds: { equals: true }, fromRule: 2 })], extraFields: [], itemCountFrom: [], alsoFitsRules: false }];
+const SHAPES = [{ line: 1, fields: [f({ name: 'price', kind: 'number', bounds: { lt: 450 }, fromRule: 1 }), f({ name: 'nonstop', kind: 'boolean', bounds: { equals: true }, fromRule: 2 })], extraFields: [], itemCountFrom: [], alsoFitsRules: false }];
 const ans = (/** @type {any} */ shapes) => JSON.stringify({ shapes });
 const prov = (/** @type {any[]} */ script, /** @type {any[]} */ seen = []) => { let i = 0; return { async generate(/** @type {any} */ m) { seen.push(m); const e = script[Math.min(i, script.length - 1)]; i += 1; if (e instanceof Error) throw e; return e; } }; };
 const good = () => reply({ text: ans(SHAPES), costUsd: 0.002 });
