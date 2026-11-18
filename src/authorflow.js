@@ -94,6 +94,9 @@ import { sheetTable, parseCsv } from './csv.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords } from './sheetoffer.js';
 import { buildSheetChecks } from './sheetbuild.js';
+import { shapeSuggestProp, shapeOfferRules } from './shapeoffer.js';
+import { buildShapes } from './shapebuild.js';
+import { shapeAvailable } from './shapemenu.js';
 import { recordSheetShas } from './sheetrun.js';
 import { sheetRolesOf } from './sheetclaims.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
@@ -2421,7 +2424,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null, carriedSheetDropped?: any[]|null,
+ *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null, carriedSheetDropped?: any[]|null, carriedShapeDropped?: any[]|null, shape?: boolean|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2472,6 +2475,10 @@ export async function authorClose({
   editGenerate = null,
   // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`); a Revise keeps a Drop of the very same check
   carriedSheetDropped = null,
+  // shape jobs (clause 1/4): the shape fields the person dropped in the draft this one follows (the record's `shapeDropped`); a Revise keeps a Drop of the very same field
+  carriedShapeDropped = null,
+  // shape jobs: null = offer the shape when the bareguard this package runs carries `itemShape` (src/shapemenu.js `shapeAvailable`: false on the pinned 0.36, so every job drafts byte-identically); true/false = a test's override
+  shape = null,
 }) {
   // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
   // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
@@ -2676,11 +2683,17 @@ export async function authorClose({
   const sheetProp = sheetLines.length > 0 ? sheetSuggestProp(sheetTables, sheetLines.map((l) => l.n)) : null;
   // S4: the rules of a sheet line belong to the sheet checks alone (the one list settles it: a rule has never two rows)
   if (block !== null && sheetLines.length > 0) block.setSheetLines(sheetLines.map((l) => l.n));
+  // SHAPE JOBS (clause 1): a job line with a `~` rule that is no sheet line may be answered as a list of items with named fields; the row-edit turn is then also offered the optional `itemShape` (src/shapeoffer.js). Code builds or
+  // refuses each field (src/shapebuild.js). Off (no property, no words, the prompt and the schema byte-identical to every other job) unless this bareguard carries `itemShape` or the caller forces it.
+  const shapeLines = rowEdits && (shape ?? shapeAvailable()) ? (jobLines ?? []).filter((l) => lineRules(l).length > 0 && !sheetLines.some((s) => s.n === l.n)) : [];
+  const shapeLabels = (inputs ?? []).map((/** @type {any} */ i) => String(i.label));
+  const shapeProp = shapeLines.length > 0 ? shapeSuggestProp(shapeLines.map((l) => l.n), shapeLabels) : null;
+  const shapeBlock = shapeProp === null ? '' : `\n\nTHE ITEM SHAPE\n${shapeOfferRules(shapeLines.map((l) => l.n), shapeLabels).join('\n')}`;
   /** the agreed-column rules of the sheet lines, as the AI is told them again (their own words: src/sheetoffer.js `columnChoiceParts`) */
   const agreedColumns = sheetLines.flatMap((l) => lineRules(l).flatMap((r) => { const p = columnChoiceParts(r); return p === null ? [] : [{ line: l.n, ...p }]; }));
   const sheetBlock = sheetProp === null ? '' : `\n\nTHE SHEET CHECKS\n${sheetOfferRules(Object.keys(sheetTables), sheetLines.map((l) => l.n)).join('\n')}${agreedColumns.length ? `\n${agreedColumns.map((c) => agreedColumnWords(c)).join('\n')}` : ''}`;
   const prompt = rowEdits
-    ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '') + sheetBlock
+    ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '') + sheetBlock + shapeBlock
     : authorPrompt({
       answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
       lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
@@ -2704,6 +2717,10 @@ export async function authorClose({
   let sheetSuggested = [];
   /** @type {any[]|null} */
   let acceptedSheet = null;
+  /** shape jobs: the shapes the AI last suggested (the reply's `itemShape`, the latest list that came) and those of the accepted try @type {any[]} */
+  let shapeSuggested = [];
+  /** @type {any[]|null} */
+  let acceptedShape = null;
   /** @type {any[]} */
   const iterations = [];
   /** @type {any} */
@@ -2788,7 +2805,7 @@ export async function authorClose({
       // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
       const ask = rowEdits
-        ? { ...(await askStructured({ messages, generate: draftGenerate, mode: structuredMode, retries: retryCap, label, book, channel: rowEditChannel(ticket, sheetProp) })), declaration: null }
+        ? { ...(await askStructured({ messages, generate: draftGenerate, mode: structuredMode, retries: retryCap, label, book, channel: rowEditChannel(ticket, sheetProp, shapeProp) })), declaration: null }
         : await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen, ticket });
       if (rowEdits) ask.declaration = ask.artifact;
       messages = ask.convo;
@@ -2804,6 +2821,12 @@ export async function authorClose({
       if (sheetProp !== null && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'sheetChecks')) {
         const { sheetChecks: sc, ...restDecl } = ask.declaration;
         if (Array.isArray(sc)) sheetSuggested = sc;
+        ask.declaration = restDecl;
+      }
+      // shape jobs: `itemShape` is never part of the declaration either: taken out before validation, built or refused by src/shapebuild.js, and kept beside it
+      if (shapeProp !== null && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'itemShape')) {
+        const { itemShape: is, ...restDecl } = ask.declaration;
+        if (Array.isArray(is)) shapeSuggested = is;
         ask.declaration = restDecl;
       }
       /** @type {{reason: string, raw: any}[]} */
@@ -2887,13 +2910,13 @@ export async function authorClose({
       // early stop: an unchanged declaration has the previous iteration's
       // measurements by definition — re-executing it buys nothing and costs a
       // full close
-      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) }) === canonical(previous)) {
+      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}), ...(shapeProp !== null ? { h: shapeSuggested } : {}) }) === canonical(previous)) {
         iter.validation = '(identical declaration — see the previous iteration)';
         iter.seedRead = '(identical declaration — see the previous iteration)';
         stop = 'unchanged';
         break;
       }
-      previous = { d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) };
+      previous = { d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}), ...(shapeProp !== null ? { h: shapeSuggested } : {}) };
 
       // a rubric job: ONE reply of row edits, each judged alone by the block; the declaration is assembled from the rows (a refused edit costs the others nothing)
       let pre = ask.declaration;
@@ -2906,6 +2929,13 @@ export async function authorClose({
         if (sheetProp !== null) {
           /** @type {CheckBlock} */ (block).setSheet(await buildSheetChecks({ lines: sheetLines, tables: sheetTables, suggestions: sheetSuggested }));
           if (Array.isArray(carriedSheetDropped)) /** @type {CheckBlock} */ (block).carrySheetDropped(carriedSheetDropped);
+        }
+        // shape jobs (clause 4, call site of the shape rows): the shapes code builds from this try's suggestions become rows of the one list; the assembled declaration then carries the shape part.
+        // TODO(clause 3 wiring): the AI's `alsoFitsRules` yes/no becomes the ONE counted ask only when the shape is known BEFORE `askRounds` (src/authorjob.js): the row-edit turn runs after it, so `asks: false` here
+        // (the ask would hang the rule as "waiting for your answer" with nobody to ask). Escalated to hamr.
+        if (shapeProp !== null) {
+          /** @type {CheckBlock} */ (block).setShape(buildShapes({ lines: shapeLines, labels: shapeLabels, suggestions: shapeSuggested }), { asks: false });
+          if (Array.isArray(carriedShapeDropped)) /** @type {CheckBlock} */ (block).carryShapeDropped(carriedShapeDropped);
         }
         pre = assemble();
         iter.edits = rec.edits.map((/** @type {any} */ e) => ({ op: e?.op, accepted: e.accepted === true, ...(e.accepted === true ? {} : { refusedBecause: e.refusedBecause }) }));
@@ -2979,6 +3009,7 @@ export async function authorClose({
         accepted = injected.declaration;
         acceptedTicketFilter = proposedFilter;
         acceptedSheet = sheetSuggested;
+        acceptedShape = shapeSuggested;
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
@@ -3088,6 +3119,15 @@ export async function authorClose({
     if (at && sheetBuilt.refused.length > 0) at.sheetRefused = sheetBuilt.refused;
   }
 
+  // shape jobs: every shape line's build from the accepted try's suggestions (src/shapebuild.js); the refusals ride the iteration that carried the reply. `null` for a job with no shape turn: the result is then unchanged.
+  /** @type {ReturnType<typeof buildShapes>|null} */
+  let shapeBuilt = null;
+  if (shapeProp !== null && accepted !== null) {
+    shapeBuilt = buildShapes({ lines: shapeLines, labels: shapeLabels, suggestions: acceptedShape ?? [] });
+    const at = iterations.find((it) => it.call === finalFrom) ?? iterations[iterations.length - 1];
+    if (at && shapeBuilt.refused.length > 0) at.shapeRefused = shapeBuilt.refused;
+  }
+
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {
     // `ok` means A SIGNABLE CLOSE EXISTS, and nothing more. A dead socket on a
@@ -3099,6 +3139,7 @@ export async function authorClose({
     declaration: accepted,
     ...(ticket && acceptedTicketFilter !== undefined ? { ticketFilter: acceptedTicketFilter } : {}),
     ...(sheetBuilt !== null ? { sheetBuilt } : {}),
+    ...(shapeBuilt !== null ? { shapeBuilt } : {}),
     seedRead: acceptedSeedRead,
     iterations,
     reds,

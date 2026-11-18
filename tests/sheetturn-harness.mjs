@@ -16,10 +16,10 @@ export const cleanup = () => { for (const d of made) rmSync(d, { recursive: true
 export const tmp = (p = 'sheetturn-') => { const d = mkdtempSync(join(tmpdir(), p)); made.push(d); return d; };
 
 /**
- * @param {{input: {value: string, label: string}, jobLines: any[], replies: any[], ticket?: boolean, csv?: string, jobText?: string}} o
+ * @param {{input: {value: string, label: string}, jobLines: any[], replies: any[], ticket?: boolean, csv?: string, jobText?: string, shape?: boolean|null}} o
  * `csv` is a fixture name under tests/fixtures/sheets (copied to a temp file, so the input is a real `.csv` file)
  */
-export async function turnOver({ input, jobLines, replies, ticket = false, csv, jobText }) {
+export async function turnOver({ input, jobLines, replies, ticket = false, csv, jobText, shape = null }) {
   let value = input.value;
   if (csv) { value = join(tmp(), csv); copyFileSync(join(HERE, 'fixtures', 'sheets', csv), value); }
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: input.label, value }], into: join(tmp(), 'seed'), fetchUrl: async (url) => ({ ok: true, text: readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8'), url }) });
@@ -42,7 +42,7 @@ export async function turnOver({ input, jobLines, replies, ticket = false, csv, 
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: jobText ?? '1. job' }, questions: { 1: GREEN_QUESTIONS[1] },
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: input.label }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: input.label, value }], ticket,
+    listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: input.label, value }], ticket, ...(shape === null ? {} : { shape }),
   });
   return { r, sent, tools, calls: n };
 }

@@ -65,6 +65,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/sheetoffer.js', name: 'sheetSuggestProp() (property descriptions)' }),
   Object.freeze({ file: 'src/sheetoffer.js', name: 'agreedColumnWords()' }),
 
+  // src/shapeoffer.js - what the row-edit turn is offered for a list-of-items answer (shape jobs): the rules the build enforces, the menu lines (src/shapemenu.js) and the schema words
+  Object.freeze({ file: 'src/shapeoffer.js', name: 'shapeOfferRules(), shapeMenuLines()' }),
+  Object.freeze({ file: 'src/shapeoffer.js', name: 'fieldProp(), shapeSuggestProp() (property descriptions)' }),
+
   // src/readshim.js — the capped/deduplicating read shim's worker-facing strategy
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_STRATEGY' }),
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_DIFF_STRATEGY' }),
