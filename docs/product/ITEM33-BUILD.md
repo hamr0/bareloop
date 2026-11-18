@@ -4955,20 +4955,24 @@ R4. **[DROPPED 2026-11-18: never built.]** Add on a Suggested row writes a `~` l
 
 ## Addendum 2026-11-18 (c): plain .md result (fwd M15 + am2)
 
-Status: spec, build NOT approved. Drafted 2026-11-18 on hamr's order ("port fwd's .md result for every job"); written from source, no code changed, no AI or provider call. Read before writing: fwdloop at its newest tag `v0.35.1` (`docs/wiki/the-module-ladder.md` "M15" and "M15 am1/am2", commits `1dda2c6b`, `0874b058`, `38ad25da`, `src/send.js`, `src/panel/result.js`, `src/panel/server.js`), and bareloop's own delivery and Result tab (below, with lines). fwdloop is never edited.
+Status: build APPROVED (hamr 2026-11-18: "picks go", answers below). Drafted 2026-11-18 on hamr's order ("port fwd's .md result for every job"); written from source, no code changed, no AI or provider call. Read before writing: fwdloop at its newest tag `v0.35.1` (`docs/wiki/the-module-ladder.md` "M15" and "M15 am1/am2", commits `1dda2c6b`, `0874b058`, `38ad25da`, `src/send.js`, `src/panel/result.js`, `src/panel/server.js`), and bareloop's own delivery and Result tab (below, with lines). fwdloop is never edited.
 
 ### What the person sees
 
 Today a green rubric job writes one JSON file per job line into the Destination folder, e.g. `steps/1-2026-11-18.json` (`{"text": ..., "claims": {...}}`). That is a machine file: hamr's own words on fwd's walk were that a JSON answer "is not friendly". New: beside each delivered step file, bareloop writes a plain text file with the same dated name and `.md`: `steps/1-2026-11-18.md`. The JSON stays (the Result tab and the Audit read it; see the questions). The .md is the text the person would paste or send on.
 
-Preview 1, the expenses live-proof run (job line 1 is a SHEET line; real worker output from `.claude/scratch/live-proof/out/steps/1-2026-11-18.json`, run `mwltot43`). A sheet line writes its `text` only; the claim boxes (`l1r1` is a rule id, not words) are not written:
+Preview 1, the expenses live-proof run (job line 1 is a SHEET line; real worker output from `.claude/scratch/live-proof/out/steps/1-2026-11-18.json`, run `mwltot43`). A sheet line writes its `text` AND its claims, each claim named with code's own check sentence (hamr's answer 7, 2026-11-18; `sheetCheckSentence`, src/sheetchecks.js:67, the words the Result tab and Audit use), never the rule id `l1r1`:
 
 ```
 18 expenses have an Amount over 500; their row numbers are listed in claims.
 
 Count of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 18 (computed by code from the rows named)
 Total of rows 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41: 13,206.91 (computed by code from the rows named)
+
+Rows where Amount > 500: 7, 9, 10, 14, 15, 19, 21, 22, 24, 26, 28, 30, 32, 33, 34, 37, 40, 41
 ```
+
+(The claim line's name is the sentence of the FIRST check of the signed close that carries that claim id: here `l1r1` is shared by a rows, a countIf and a sumIf check, and the rows check comes first. A claim id no check carries keeps fwd's `friendlyName` of the key. A claim that is a map of rows, such as `days` or `bands`, writes one line per row: `<sentence>, row 2: 269`.)
 
 (Those last two lines are code's own report lines, already added to the delivered copy by `deliveredAmender`; the .md is made from those same delivered bytes, so they are in it.)
 
@@ -5019,7 +5023,7 @@ Copied (rewrite into one new bareloop file, `src/resultmd.js`, with fwd's tests 
 - fwd's tests `test/m15-send-md.test.js` (the cases, re-pointed at bareloop's step-file shapes).
 
 Adapted:
-- fwd renders ONE accepted answer; bareloop has one step file per job line, shaped by line kind (src/rubricstep.js:103-133): FACTS `{results:[{quote, values}]}` (optionally `+ text`), SHEET `{text, claims}`, TEXT `{text, cites}`. So the renderer reads a step file, not an answer: `text` first, then the `results` blocks. `claims` is never written (its names are rule ids like `l1r1`, not words; its meaning is already in code's report lines at the end of `text`). `cites` are not written (question 4).
+- fwd renders ONE accepted answer; bareloop has one step file per job line, shaped by line kind (src/rubricstep.js:103-133): FACTS `{results:[{quote, values}]}` (optionally `+ text`), SHEET `{text, claims}`, TEXT `{text, cites}`. So the renderer reads a step file, not an answer: `text` first, then the `results` blocks. `claims` are written after the text, named by code's check sentence (answer 7), not by the rule id. `cites` are not written (answer 4).
 - fwd records the .md's sha256 as `sentSha256` on its audit row. bareloop needs no new field: the .md is delivered through the same path as the JSON, and `destination-written` already records `{path, declared, bytes, sha256}` of what was written (src/userrun.js:2329). The Result tab's existing `readDelivered` (src/panel/server.js:1287) already checks that sha256 and says gone / changed.
 - fwd's `hasResultCards` decider (every job but Tickets) is not needed: bareloop's Result tab already shows for every ended run.
 
@@ -5031,7 +5035,7 @@ A second difference: fwd's send writes the .md only (the JSON stays in the run f
 
 ### Pieces (each with its call site)
 
-- **MD1 the renderer.** `src/resultmd.js`: `renderStepMd(obj)` (pure, no I/O, returns a string or null when nothing is writable: not a JSON object, no `text` and no `results`). Call site: MD2. Fail-first tests (`tests/resultmd.test.js`): text-only is the text exactly; a facts file gives `## Result k` blocks with names as words and the last `from the page:` line, quotes byte-exact; `expenseTotal.value` gives `Expense total: ...`; two lines with the same words keep `a.b`; a sheet file writes text and no `claims`; a file with `text` and `results` writes text, a blank line, the blocks; replayed at $0 over every real archived step file the repo holds (`.claude/scratch/live-proof/out/steps/*.json`, the fixture files under tests/fixtures that are step files) with no value lost or changed. Done when: those pass, red before the file exists. Must fail when: a value is dropped, changed or reordered; a quote differs by one character; JSON braces or check marks appear.
+- **MD1 the renderer.** `src/resultmd.js`: `renderStepMd(obj)` (pure, no I/O, returns a string or null when nothing is writable: not a JSON object, no `text` and no `results`). Call site: MD2. Fail-first tests (`tests/resultmd.test.js`): text-only is the text exactly; a facts file gives `## Result k` blocks with names as words and the last `from the page:` line, quotes byte-exact; `expenseTotal.value` gives `Expense total: ...`; two lines with the same words keep `a.b`; a sheet file writes the text, a blank line, then one line per claim named with the check's own sentence (`Rows where Amount > 500: 7, 9, ...`), never `l1r1`, never JSON braces; a claim id no check carries keeps fwd's `friendlyName`; a file with `text` and `results` writes text, a blank line, the blocks; replayed at $0 over every real archived step file the repo holds (`.claude/scratch/live-proof/out/steps/*.json`, the fixture files under tests/fixtures that are step files) with no value lost or changed. Done when: those pass, red before the file exists. Must fail when: a value is dropped, changed or reordered; a quote differs by one character; JSON braces or check marks appear.
 - **MD2 the delivery.** `copyOut` (src/source.js:1097) gets one optional hook `alsoText: (rel, buf) => string|null` (beside the existing `amend`, same shape, called with the AMENDED bytes so code's report lines are in the .md). For each delivered file whose `rel` matches `steps/<n>.json` and whose hook result is non-null, it writes the sibling through `pickDelivery` (never overwrites, `wx`), and adds `{path, bytes, sha256}` to the returned `files` (so the one `destination-written` loop at src/userrun.js:2327-2330 records it with no change). The caller src/userrun.js:2322 passes the hook for rubric jobs only. Fail-first tests (in `tests/source.test.js`'s copyOut block and a userrun-level test): a green run with a step file delivers the JSON and the .md, both recorded; the .md is never written on a red; a second same-day run gets `-2`; an existing `.md` is never overwritten (`destination-exists`); a hook returning null writes nothing; the delivered .md's sha256 equals the record's. Done when: a $0 scripted green run (no provider) leaves both files and two `destination-written` records. Must fail when: a red run leaves a .md; a file is overwritten; the .md differs from `renderStepMd` of the delivered JSON bytes; the graded tree file is touched.
 - **MD3 the Result tab.** `getRunResult` (src/panel/server.js:1784) adds to the rubric payload `md: [{i, name, state, words}]`, the delivered files whose name ends `.md`, read with the existing `readDelivered` states (no new state logic). `renderResult` (src/panel/index.html:4659) draws the top-card `Saved` row from `data.md`: a link to `/api/runs/<id>/download?i=<n>&view=1` (opens the text in the tab), or `<name> - the saved file is gone` / `... changed after the run` from the payload's words (the page types none). `getRunDownload` (src/panel/server.js:1927 and its route ~4391) gets `view=1`: `Content-Disposition: inline`, `text/plain`, `nosniff`, for `.md`/`.txt` only; without it the download is an attachment as today. The bottom `Saved` card is unchanged and lists both files. Fail-first tests (`tests/panel*.test.js`): payload carries the .md with `ok`; a deleted .md reads `gone`; an edited .md reads `changed`; a red run has no `md`; `view=1` serves `text/plain` + nosniff and never a path from the request; an old run (no .md delivered) shows no top-card row and no error. Done when: the orchestrator's own screenshot of a real green Result tab shows the row, in context beside the neighbouring cards, link opening the text. Must fail when: the page builds any words of its own for gone/changed; a request names a path; an old run's tab breaks. Phone width is hamr's own DevTools check, named as unchecked until he does it.
 - **MD4 docs.** `bareloop.context.md` (adopter contract: the delivered files now include a `.md` per step file, what it holds, what it leaves out), CHANGELOG line, PRD one-liner tick with a pointer here (no numbers in the tick). Done when: the contract names the file and its shape without the integrator opening source.
@@ -5042,7 +5046,18 @@ Not a piece: anything on the Audit or the spine beyond the extra `destination-wr
 
 fwd's scope is every job but a Tickets MCP one (its grid is kept). bareloop's repo jobs deliver no files at all: `frontDoorFromManifest` returns null for `kind: 'repo'` (src/source.js, the D3 note), so `copyOut` never runs for them, their work lands on a branch, and their Result tab is the generic one (diff, work box). On that reading a repo job has no step file to turn into text, so it gets no .md under this spec. Question 5 asks hamr; I have not decided. Ticket jobs: a ticket job is a rubric job (PRD item 33 tickets rung); whether it delivers a step file today is not established here, so I do not claim it. Question 6.
 
-### Open questions for hamr (plain list; nothing decided)
+### hamr's answers, 2026-11-18 ("picks go")
+
+1. Keep the .json and add the .md beside it.
+2. One .md per job line (per delivered step file).
+3. Facts lines write `from the page: "<quote>"` under each result (fwd am2).
+4. Text-line `cites` are not written.
+5. Repo jobs: no .md (they deliver no file).
+6. Ticket jobs: checked from source whether they deliver step files via copyOut; if yes they get the .md like any rubric job (finding recorded in the build log below).
+7. CHANGED from the draft: sheet lines write the text AND the claims, every claim named with code's own plain check sentence (the Result-tab/Audit words), never the rule id; fwd's `friendlyName` of the key when no check carries the id.
+8. Old runs are not rewritten.
+
+### Open questions for hamr (plain list; ANSWERED above, kept as the record)
 
 1. Keep the JSON and add the .md beside it (my pick, because the Result tab reads the delivered JSON for rows and facts), or write only the .md as fwd does (then the Result tab would have to read the tree copy instead, a bigger change)?
 2. One .md per job line (my pick, same dated name as its JSON), or one combined file for the whole job as fwd's M13 am9 does for its last Ask (`## Line <n>: <your line words>` sections)? Combined needs one more piece.
