@@ -5161,3 +5161,25 @@ PDF/DOCX reading; per-item cite (bareguard part 2); conditional required (ticket
 - src/resultmd.js `stepSection` would not throw on a shape answer: `isResultList` (line 42) needs every item to carry a `values` record, so an item without `values` makes `hasResults` false and the section is silently dropped (null when there is no `text`). Worse, a shape field that is itself named `values` and is an object would be rendered as a facts result. Either way it needs the explicit shape branch (clause 8).
 - `results` is already the facts-line file key (`{"results":[{"quote","values"}]}`, src/rubricstep.js 45-48, 103-107). A shape line reuses the name; that is safe only because a line is one class, so the brief, `flattenStep` and `stepSection` must pick by the line's signed class, never by the key.
 - `buildSheetChecks` is called at src/authorflow.js 2907 and 3086 (3083 is its typedef line).
+
+### POC results and code rules (2026-11-18)
+
+Primary files are under `.claude/scratch/shape-poc/` (scratch, not committed). Provider for every paid round: DeepSeek direct, deepseek-flash, cap $0.10. n=5 jobs, one call each: UNDERPOWERED. A PASS shows the mapping can work, not its rate.
+
+- Round 1 (prereg sha 34d2b951a7e0...): FAIL. Mapping was 5/5 and the resume item count was right. One invented bound survived code: the flights extra field `duration` kept minChars 3 and maxChars 20. The 3 was grounded by luck ("3" in "List 3 flights") and the 20 through the under-N candidate 21 from "21:59". Also seen: the nonstop values were dropped whole, and the tracker job's AI said one item per input. Cost $0.00795.
+- Round 2 (prereg sha 6d86772f1848...): code-only change, the prompt and call parameters byte-identical. A $0 replay of the round-1 answers gave PASS, which is a reading and not evidence (the answers were seen before the rules were written). The fresh paid run gave PASS. Bar line: "mapping 5/5 jobs (need >=4): ok; invented bounds surviving code: 0 (need 0; caught: 5): ok; resume item count exactly resume-1, resume-2: ok; no other job signs an item count: ok". Cost $0.00794.
+
+The four code rules from round 2 become rules of clause 2 ("Build or refuse") of the build:
+
+- R1. A bound is grounded only in that field's own `~` rule. A field with no rule gets no grounded bounds.
+- R2. An AI-added field whose name has no word in the job line or its `~` rules is Suggested: held out of the signed shape, off until the person's Add, no bounds. Same law as src/checkblock.js:286.
+- R3. oneOf keeps each grounded value and drops only the ungrounded ones.
+- R4. An item count is signed only when the person's words say "per <label stem>" or "each <label stem>".
+
+Gap found in round 2: the AI wrote nonstop as oneOf [true]. No yes/no kind existed, so the box checked presence only. bareguard added `kind: "boolean"` with `equals: true|false` (JSON true/false only; reds `#i:path:wrong-type` and `#i:path:wrong-value`; `wrong-value` is a reserved word). This is bareguard f712769 on feat/item-shape, unreleased. A $0 check, d3, passed 10/10 on crafted data, so it proves spelling and behaviour only.
+
+Our grounding for it, new rule R5: `equals` is allowed only on a field that has its own `~` rule (fromRule set). An AI-added field never gets `equals`. The card shows it, so the person sees it.
+
+Known loose spot, not fixed: the R2 word match is literal. `arrivalTime` counted as from the job through "time" in "departure time". It carries no bounds, so it cannot red by luck.
+
+Still open: round 3, which asks whether the AI picks boolean for "the flight is nonstop" once the menu has it. The build needs hamr's go, plus the bareguard release and a pin bump from ^0.36.0.
