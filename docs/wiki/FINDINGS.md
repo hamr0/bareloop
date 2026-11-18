@@ -16528,3 +16528,13 @@ Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`,
 - Not seen live here: a red run (both ran green first try; n=1 each, an anecdote that the wiring runs end to end, not a rate); the panel click-through, which is hamr's; phone width.
 - A tampered-copy test shows the script stops; it does not show the engine's own run-start path stops on a changed sheet (that is test-proven in S3/S5, not re-run live).
 - Panel recipe: `HOME=/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-proof/home node /home/hamr/PycharmProjects/bareloop/bin/bareloop.mjs panel --port 4792`; its runs list shows live-expenses and live-aging (checked through `runsListPayload`, both "passed", "Needs you: Accept"). Stop by PID.
+
+### F355: Reuse of a sheet job refused at signing (live, hamr's walk, 2026-11-18, $0)
+
+**What was seen.** "Reuse workflow" on a green sheet rubric job refused at the signing gates: `broken-close-rubric`, `input "expenses": this run recorded no table fingerprint for it at its start` (`src/sheetrun.js` `readStageSheets`). Session `smwm1446s2vx9`, $0.
+
+**Cause (verified in source and by a red test).** A fresh draft records the sheet's `tableSha` (`recordSheetShas`) inside the author loop (`src/authorflow.js`) before the seed read and the signing gates. The Reuse branch in `src/panel/authorsession.js` skips the author loop and went straight to `finish(reused, null)` and the signing gates, so the reuse session's own `source.json` carried no fingerprint. The run start (`freezeSheets`) records it unconditionally, so only the signing gates were affected.
+
+**Fix.** The Reuse branch now calls `recordSheetShas` for a spec whose close carries a sheet part, before `finish`; an unreadable sheet refuses in the run start's words. The check in `src/sheetrun.js` and `prepareSigning` are untouched. Commit fc07add1; test `tests/sheet-reuse-sign.test.js` (real `prepareSigning`, real expenses.csv; red before with the same refusal, green after; the fresh draft's fingerprint equals the reuse's).
+
+**Why no earlier test saw it.** No earlier test or POC reused a sheet job: the Reuse tests (p5-startfrom, reuse-fence, reuse-imported) use repo specs, and the sheet tests only drafted. Found by hamr's walk, not by the suite.
