@@ -2329,7 +2329,9 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 Approved by hamr 2026-11-17 ("go, poc first"). Branch `chore/fix-ledger`. Replaces the S4 prose-word patches (F350) and the parked AI job rewrite (F349).
 
-**The rule.** Only lines starting with `~` are captured and checked. A line without `~` says what to do and is never checked. No AI rewrite, no guessing the person's intent from step prose.
+**Ruling 2026-11-18 (hamr: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"): the rule below "Only ~ lines are checked" is WITHDRAWN. `!` rows keep building checks from a line's words as before; the person can Drop/Add them on the plan card. R2 (job box hint, no-~ card wording) built then UNDONE; R4 (Add writes a `~` line) DROPPED, never built; R3 pin tests kept. Flow is back to before the S4 prose-word trial (R1) plus the sheet port. Next: S5, POC C, /branch-review, /release.**
+
+**The rule (withdrawn, kept as record).** Only lines starting with `~` are captured and checked. A line without `~` says what to do and is never checked. No AI rewrite, no guessing the person's intent from step prose.
 
 **What the person sees**
 - [ ] Job box hint, one line under the box, always shown: "Only lines starting with ~ are checked. Other lines say what to do."

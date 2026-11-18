@@ -16394,3 +16394,13 @@ So: one parser and one existing write door (`syncJobLines`), not one stored copy
 Per the pre-registered rule, bar 1 failed strictly: result to hamr before R1.
 
 **Reading (hamr 2026-11-17).** hamr: "yes, our focus is only get code check for ~ and ! stays as it worked before, same flow no changes, we are just removing the forceful attempt to rewrite the job". So the six prose paths in (ii) are the working `!` flow from before the patches, not defects; F350's three problems all came from the two patches (3463d6bb, 6e303060); bar 1's single failure is a worktree artefact (`.git` is a file there), not a code defect. R3 becomes pinning tests only; R1 (revert) and R4 (Add writes a `~` line, reaching the signed spec jobLines) go ahead.
+
+
+### F352: R2 built, gated, then reverted on ruling; R4 dropped (2026-11-18)
+
+R2 (job box hint "Only lines starting with ~ are checked" and the card line "Line N: no ~ rule here") was built and gated (88b8a975, 89bb7b0c, e285026b), then reverted on hamr's ruling: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"
+
+- Why: the hint is false once `!` rows stay, since they still build checks from plain lines; the card line also showed on lines that do have a `~` rule. The old wording ("what the text says, you judge it at Accept") was always right.
+- R4 (Add writes a `~` line into the job text) is DROPPED, never built; it came from the cancelled job-rewrite idea. F351 (iii) drift notes stay as record.
+- Record: the Drop/Add flow for `!` rows is unchanged since v0.59.0; only sheet `[agent]` rows gained the same Drop/Add in S4.
+- R3 pin tests (`tests/pin-tilde-flow.test.js`) stay; none pinned R2 wording.

@@ -4870,7 +4870,8 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 ### Where we are (for a fresh session)
 - Branch `chore/fix-ledger` (check `git branch --show-current`).
 - Pieces 0, S1, S2, S3, S4 are built and gated. Last full gate: 6031 pass / 0 fail on b3b24cfc (== 6e303060 + a4f76cdd, byte-identical tree).
-- S5 (surfaces and the $0 re-check) and POC C are NOT started. This addendum (b) is next, then S5.
+- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). Next: S5, then POC C, then /branch-review, then /release.
+- S5 (surfaces and the $0 re-check) and POC C are NOT started.
 - Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
 - fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
 - Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
@@ -4888,12 +4889,16 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 - ~~`[agent]` extra checks only when they belong to a `~` rule (e.g. "count rows over 500" for `~ Amount over 500`); never from step prose.~~ **[WITHDRAWN 2026-11-17 (later): `!` agent rows built from a line's text stay exactly as they worked before the two patches; see the ruling below.]**
 - **Ruling 2026-11-17 (later)** — hamr: "yes, our focus is only get code check for ~ and ! stays as it worked before, same flow no changes, we are just removing the forceful attempt to rewrite the job"
   Meaning: `~` gets a code check; `!` stays as it worked before, same flow, no changes; the only change is removing the forceful rewrite attempt (the two S4 patches). The six prose paths in F351 (ii) are the working `!` flow, not defects.
+- **Ruling 2026-11-18** — hamr: "yes, undo R2. back to normal. ! gets checked with code and added, user can drop/add isn't that how it used to be?"
+  - R2 UNDONE: built (88b8a975, 89bb7b0c, e285026b), then reverted on this ruling. Reason: the hint "Only lines starting with ~ are checked. Other lines say what to do." is false now that `!` rows still build checks from plain lines; the card line "Line N: no ~ rule here..." also showed wrongly on lines that do have a `~` rule. The old wording ("what the text says, you judge it at Accept") was always right.
+  - R4 DROPPED, never built: it came from the cancelled job-rewrite idea. The F351 (iii) drift notes stay as record.
+  - The job-box hint and the "no ~ rule here" card wording are WITHDRAWN.
 - The S4 prose-word patches come out, in revertable commits: 3463d6bb (item 5: a word of a line's own prose is asked like a rule word and its answer swaps the word in the line) and 6e303060 (ruling A: every line of a sheet-only job is a sheet line; it ALSO added Drop it to the prose tie box, which goes away with item 5). The `~` rule column ask (S1, with the tie picker and its Drop it) STAYS.
 - Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
 
 ### What the person sees
-- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)
-- Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)
+- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
+- ~~Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new) **[WITHDRAWN 2026-11-18]**
 - Suggested row: unchanged look. Add now also shows the new `~` line in the job box under its step; Drop of that row removes the line again.
 
 ### Pieces
@@ -4914,7 +4919,7 @@ R1. Revert 3463d6bb and 6e303060
 - Fail-first: after the revert, the named tests must pass at the old expectations; one test of the S1 ask must still pass unchanged (proves S1 stayed).
 - Done when: full `npm test` exit 0, last line quoted; CHANGELOG lines of the two commits are gone; nothing else from S4 lost (builder lists the S4 commits and shows each still present).
 
-R2. Job box hint and prompt text that implies step prose is checked
+R2. **[UNDONE 2026-11-18: built and gated, then reverted on ruling; see Ruling 2026-11-18.]** Job box hint and prompt text that implies step prose is checked
 - Files: `src/panel/index.html` (hint under `#jf-job`, line ~952), the drafter/look prompts (`src/promptregisters.js`, `src/pagemap.js`, `src/sheetlook.js`, `src/authorflow.js`) — builder greps for wording that tells the AI or the person a step line is checked.
 - Call site: the hint is static markup in the job form; prompt text is read by the existing prompt builders. Conditional injection only; no blanket "what if" text.
 - Tests fail-first: a panel markup test that the hint text is on the page; a prompt test that the old wording is gone (grep the neighbour tests for the old wording first).
@@ -4926,7 +4931,7 @@ R3. Pinning tests only, NO code change (ruling 2026-11-17 later)
 - Files: tests only. Call site: the existing draft flow (`CheckBlock` reconcile), nothing new wired.
 - Done when: tests green, full gate exit 0.
 
-R4. Add on a Suggested row writes a `~` line (one owner: the job lines)
+R4. **[DROPPED 2026-11-18: never built.]** Add on a Suggested row writes a `~` line (one owner: the job lines)
 - Files: `src/checkblock.js` (`rowChoice`, `choicesRecord`), `src/panel/authorsession.js` (the Drop/Add door ~1407-1430 and the final-card Suggested view ~1377), `src/panel/index.html` (job box follows the session job text, ~6349).
 - Behaviour: Add on a `suggested` row inserts a `~` line directly under its step in the job text; the card, job box, signed lines and Job tab all read that one text. Drop of an added suggestion removes that `~` line again. Revise keeps it (a `~` line is the person's own text from then on). $0, no AI call. A refused Add (code cannot build a legal check) changes nothing and says why in plain words, as today.
 - Call site: the panel Add/Drop action (`authorsession.js` ~1418) calls `rowChoice`; the job text edit happens in that one door and the row becomes a `~` (you) row, so `choice 'add'` is no longer a separate state.
