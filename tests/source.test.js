@@ -1355,3 +1355,77 @@ test('missingDependencies: subfolder job — node_modules already at the subfold
   writeFileSync(join(tree, 'packages', 'api', 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
   assert.equal(missingDependencies(tree, 'packages/api'), null);
 });
+
+// ── copyOut `alsoText` (MD2, docs/product/ITEM33-BUILD.md "Addendum 2026-11-18 (c)") ──────────────────────────────
+
+/** a tree whose output/ holds the given files */
+function treeWith(/** @type {Record<string, string>} */ files) {
+  const tree = tmp('bareloop-tree-md-');
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(tree, 'output', rel)), { recursive: true });
+    writeFileSync(join(tree, 'output', rel), body);
+  }
+  return tree;
+}
+
+test('copyOut alsoText: a step file is delivered with its text sibling under the same dated name, both recorded with their own bytes and sha256', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"hello"}' });
+  const destination = tmp('bareloop-dest-md-');
+  /** @type {[string, string][]} */ const calls = [];
+  const r = await copyOut({ tree, destination, alsoText: (rel, buf) => { calls.push([rel, buf.toString()]); return 'plain hello'; } });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.deepEqual(calls, [['steps/1.json', '{"text":"hello"}']]);
+  const day = datedDestination(join(destination, 'steps', 'x.json'), new Date(), 1).split('x-')[1].replace('.json', '');
+  assert.deepEqual(r.files.map((f) => f.path.split('/').at(-1)), [`1-${day}.json`, `1-${day}.md`]);
+  const md = r.files[1];
+  assert.equal(readFileSync(md.path, 'utf8'), 'plain hello');
+  assert.equal(md.bytes, Buffer.byteLength('plain hello'));
+  assert.equal(md.sha256, sha256(readFileSync(md.path)), 'the recorded sha256 is of the written .md');
+});
+
+test('copyOut alsoText: the hook is given the AMENDED bytes (code\'s report lines are in the text file)', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const destination = tmp('bareloop-dest-md-');
+  const r = await copyOut({ tree, destination, amend: () => Buffer.from('{"text":"a + code lines"}'), alsoText: (_rel, buf) => buf.toString() });
+  assert.equal(r.stop, null);
+  assert.equal(readFileSync(r.files[1].path, 'utf8'), '{"text":"a + code lines"}');
+});
+
+test('copyOut alsoText: a null hook result writes nothing; only steps/<n>.json files are offered to the hook', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}', 'steps/2.json': '{"text":"b"}', 'notes.json': '{}', 'steps/3.md': 'x', 'steps/x.json': '{}' });
+  const destination = tmp('bareloop-dest-md-');
+  /** @type {string[]} */ const asked = [];
+  const r = await copyOut({ tree, destination, alsoText: (rel) => { asked.push(rel); return rel === 'steps/1.json' ? 'one' : null; } });
+  assert.equal(r.stop, null);
+  assert.deepEqual(asked.sort(), ['steps/1.json', 'steps/2.json']);
+  assert.equal(r.files.filter((f) => f.path.endsWith('.md')).length, 2, 'steps/1 text + the worker\'s own steps/3.md; nothing for steps/2');
+  assert.equal(r.files.filter((f) => /\/1-.*\.md$/.test(f.path)).length, 1);
+  assert.equal(r.files.filter((f) => /\/2-.*\.md$/.test(f.path)).length, 0);
+});
+
+test('copyOut alsoText: a second same-day delivery lands as -2 for BOTH files; the first pair is untouched', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const destination = tmp('bareloop-dest-md-');
+  const r1 = await copyOut({ tree, destination, alsoText: () => 'first' });
+  const r2 = await copyOut({ tree, destination, alsoText: () => 'second' });
+  assert.equal(r2.stop, null);
+  assert.deepEqual(r2.files.map((f) => f.path.split('/').at(-1).replace(/^1-\d{4}-\d{2}-\d{2}/, '')), ['-2.json', '-2.md']);
+  assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first');
+});
+
+test('copyOut alsoText: an existing text file at the sibling name is never overwritten: destination-exists', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const destination = tmp('bareloop-dest-md-');
+  const r1 = await copyOut({ tree, destination, alsoText: () => 'first' });
+  rmSync(r1.files[0].path); // the json is gone, the .md stays: the next json name is free again, its sibling is not
+  const r2 = await copyOut({ tree, destination, alsoText: () => 'second' });
+  assert.equal(r2.stop === null, false);
+  assert.equal(r2.code, 'destination-exists');
+  assert.equal(readFileSync(r1.files[1].path, 'utf8'), 'first', 'never overwritten');
+});
+
+test('copyOut without alsoText: the delivery is exactly as before (one file per output file)', async () => {
+  const tree = treeWith({ 'steps/1.json': '{"text":"a"}' });
+  const r = await copyOut({ tree, destination: tmp('bareloop-dest-md-') });
+  assert.equal(r.files.length, 1);
+});
