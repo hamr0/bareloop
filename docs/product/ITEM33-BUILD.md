@@ -5183,3 +5183,5 @@ Our grounding for it, new rule R5: `equals` is allowed only on a field that has 
 Known loose spot, not fixed: the R2 word match is literal. `arrivalTime` counted as from the job through "time" in "departure time". It carries no bounds, so it cannot red by luck.
 
 Still open: round 3, which asks whether the AI picks boolean for "the flight is nonstop" once the menu has it. The build needs hamr's go, plus the bareguard release and a pin bump from ^0.36.0.
+
+- Round 3 (prereg sha 9a04e3ee7ad6...): the kind menu gained `boolean` (bound `equals`, true or false) and the code gained R5 (above). The prompt differs from round 2 by that one menu line; the call parameters, inputs and jobs are unchanged. Fresh paid run (DeepSeek direct, deepseek-flash): PASS on every bar item, including "flights rule 5 is boolean with equals true surviving code". Mapping 5/5, invented bounds surviving code 0 (caught 4), resume item count exactly resume-1, resume-2. Cost $0.00793. n=5, UNDERPOWERED: a PASS shows the AI can pick boolean, not its rate. Files: `.claude/scratch/shape-poc/PREREG-r3.md`, `SHAS-r3.txt`, `results-r3.md`.
