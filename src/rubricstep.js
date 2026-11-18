@@ -9,6 +9,7 @@ import { stageQuestionsByName, guardQuestionText, fenceQuestionText, fencePlace 
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
 import { sheetRowsOf } from './sheetrows.js';
+import { plainShapeGap, shapeGapCount } from './shapewords.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -473,6 +474,8 @@ export function plainStepGap(step, why, g, params = null) {
   if (fact && (g.check === 'min' || g.check === 'max') && String(g.field ?? '').startsWith('claims:')) {
     return g.check === 'min' ? `${at}: ${g.measured ?? 0} result(s) are listed, at least ${g.limit} are required` : `${at}: ${g.measured} results are listed, at most ${g.limit} are allowed`;
   }
+  // shape jobs (clause 7): a bareguard `itemShape` gap says which item and which field, in plain words (the items are `results`, the shape answer's one list)
+  if (g.check === 'itemShape') return plainShapeGap({ at, file }, g);
   if (g.check === 'happened' || g.id === 'happened') {
     const reason = why === 'missing' ? 'does not exist' : why === 'not-json' ? 'is not valid JSON (was it cut off?)' : why === 'not-object' ? 'is not a JSON object' : 'is empty';
     return `${at}: ${file} ${reason}`;
@@ -571,7 +574,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     extra.push(`line ${params.step}: answer the claim boxes - ${stepFileRel(params.step)} has no "claims" object; add one box for each name the brief for this line lists under "fields"`);
     r = { ...r, gaps: r.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)), full: { ...r.full, gaps: r.full.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)) } };
   }
-  const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
+  const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : g.check === 'itemShape' ? shapeGapCount(g) : 1), 0);
   const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
   if (r.verdict === 'stopped') {
     // S3: a sheet that no longer gives the table the run recorded at its start is named by its input, before any other word
