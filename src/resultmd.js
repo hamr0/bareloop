@@ -49,8 +49,7 @@ const ROW_MAPS = ['days', 'bands'];
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 /**
- * The claim lines of a SHEET step file. A claim id a check carries is named with that check's own plain sentence (`claimWords`, from {@link stepClaimWords}); an id no check carries keeps
- * fwd's `friendlyName` of the key. A map of rows (`days`, `bands`) writes one line per row.
+ * The claim lines of a SHEET step file. A claim id a check carries is named with that check's own plain sentence (`claimWords`, from {@link stepClaimWords}); an id no check carries is left out. A map of rows (`days`, `bands`) writes one line per row.
  * @param {Record<string, any>} claims @param {Record<string, string|null>} claimWords @returns {string[]}
  */
 function claimLines(claims, claimWords) {
@@ -60,7 +59,7 @@ function claimLines(claims, claimWords) {
     if (Object.hasOwn(claimWords, id) && claimWords[id] === null) continue; // a number code computes itself: the worker's is never read, so never printed
     const label = Object.hasOwn(claimWords, id) ? cap(/** @type {string} */ (claimWords[id])) : null;
     const ls = leaves([], box);
-    if (label === null) { out.push(...blockLines(leaves([id], box))); continue; }
+    if (label === null) continue; // a claim box no check carries is left out (hamr 2026-11-18)
     for (const l of ls) {
       let p = l.parts;
       if (p.length === 2 && ROW_MAPS.includes(p[0])) { out.push(`${label}, row ${p[1]}: ${l.text}`); continue; }

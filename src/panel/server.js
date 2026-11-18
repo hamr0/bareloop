@@ -1223,14 +1223,14 @@ export function getAcceptContext(runid, opts = {}) {
  * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
  * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
  * @param {any[]} records
- * @returns {{path: string, bytes: number|null, sha256: string|null}[]}
+ * @returns {{path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}[]}
  */
 export function deliveredOf(records) {
-  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null}>} */
+  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}>} */
   const byPath = new Map();
   for (const r of records) {
     if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
-    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null });
+    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null, ...(typeof r.pairedTaken === 'string' && r.pairedTaken ? { pairedTaken: r.pairedTaken } : {}) });
   }
   return [...byPath.values()];
 }
@@ -1272,6 +1272,8 @@ export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
 /** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
 export const RESULT_FILE_GONE = 'the saved file is gone';
 export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
+/** the note for a plain .md saved under a new name because the name paired with its JSON was already taken (code-owned; the page types no words) @param {string} taken */
+export const RESULT_MD_RENAMED = (taken) => `saved under a new name because ${taken} was already taken`;
 /** the same two states for a red run's file, which is the last one the check read (not a delivered file) */
 export const RESULT_JUDGED_GONE = 'the file is gone';
 export const RESULT_JUDGED_CHANGED = 'the file changed after the check';
@@ -1793,7 +1795,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
   const mdFiles = delivered.flatMap((d, i) => (d.path.toLowerCase().endsWith('.md')
-    ? [{ i, name: basename(d.path), state: read[i].state, words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null) }] : []));
+    ? [{ i, name: basename(d.path), state: read[i].state, words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null), ...(d.pairedTaken ? { note: RESULT_MD_RENAMED(basename(d.pairedTaken)) } : {}) }] : []));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
   // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are

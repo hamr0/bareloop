@@ -2327,7 +2327,7 @@ async function execute(ctx) {
       // day), so the declared directory is not the path anything actually
       // wrote. The spine records what happened, not what was asked for.
       for (const f of co.files) {
-        emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256 });
+        emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256, ...(f.pairedTaken ? { pairedTaken: f.pairedTaken } : {}) });
         out(`\nDESTINATION  written — ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}…)`);
       }
     } else {

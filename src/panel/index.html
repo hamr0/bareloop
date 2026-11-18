@@ -4678,7 +4678,7 @@
       ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") +
       (data.md || []).map(function(m){
         return resultField("Saved", m.words ? '<div class="ro-value" data-testid="result-md-gone">' + escapeXml(m.name) + ' \u2014 ' + escapeXml(m.words) + '</div>'
-          : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a></div>');
+          : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a>' + (m.note ? ' \u2014 <span data-testid="result-md-note">' + escapeXml(m.note) + '</span>' : '') + '</div>');
       }).join("") + '</div>';
     var ownPages = (data.pages || []).length >= 2;
     (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
