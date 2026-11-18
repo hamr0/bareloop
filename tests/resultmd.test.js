@@ -51,6 +51,15 @@ test('the walk run: the real step file renders EXACTLY to the layout hamr approv
   assert.ok(!/l1a\d|l1r\d/.test(got), 'no rule id');
 });
 
+test('Count is always listed before Total, whatever order code\'s report lines (the signed checks) come in', () => {
+  const { spec, delivered, orig } = walk();
+  const [count, total] = delivered.text.slice(orig.text.length + 2).split('\n');
+  assert.ok(count.startsWith('Count of rows') && total.startsWith('Total of rows'));
+  const swapped = { ...delivered, text: `${orig.text}\n\n${total}\n${count}` };
+  const got = run(spec.closeDecl, spec.jobLines, [[1, orig, swapped]], 'walk-md', 1);
+  assert.ok(got.indexOf('- Count: 18') > 0 && got.indexOf('- Count: 18') < got.indexOf('- Total: 13,206.91'), got);
+});
+
 test('LABEL BUG: a claim shared by a countIf, a sumIf and a rows check is named by the rows check, whatever order the checks are in', () => {
   const { spec } = walk();
   assert.equal(spec.closeDecl.stages[1].params.parts[0].checks[0].op, 'countIf', 'the fixture has the count check FIRST (the walk\'s real order)');
