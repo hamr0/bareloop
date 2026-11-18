@@ -16497,3 +16497,34 @@ Frozen before any paid call. hamr 2026-11-18 ("A"): after POC C passed (F353), r
 **WATCH.** In F353 aging1 the look asked "use Amount?" on the `~` rule containing "90+" (a band word read as a column word). Record whether it recurs in these two drafts. If it does, answer it as a person would (Drop it, or own words keeping the rule text), never Agree to a wrong column, and log it.
 
 **Power.** n = 1 per job: an anecdote that the wiring runs end to end live, not a rate.
+
+### F354 results: S5 live proof, both jobs green, 2026-11-18
+
+Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`, real panel server code in-process on port 0, scratch HOME `.claude/scratch/live-proof/home` (driver `live.mjs`, scratch, not committed). Casualties: 0. `~/.config/bareloop/runs.jsonl`: 167 before, 167 after. No panel left running (a `panel --port 4792` was started once to check it answers HTTP 200, then stopped by PID).
+
+**$0 checks (before spend).** Key readable (35 chars, no newline); provider probe with the product's client `node https`: 200, 200. Sheets match the jobs (see the correction below). No secret shape in either sheet. Close fails on seed: the sign-prepared close run with `sheet-recheck.mjs` before sign says NOT OK ("no step file for job line 1" on every sheet check, exit 1), and each run's spine carries `close-precheck` verdict `needs_revision` before any worker token. No refused tracked files: both inputs are plain CSV files (no repo).
+
+**Per job.**
+- expenses: draft `smwltomciwtd4`, run `mwltot43`, verdict green (soft-green, door open: "Needs you: Accept", goal met), spend $0.0139 total from the spine (`job-end` $0.01207 + drafting $0.00181; the ledger `settled` row says 0.0138804, spendComplete true), about 33 s. Cap $0.30 never near.
+- aging: draft `smwltpmn30ryq`, run `mwltpuy8`, verdict green (same door), spend $0.0229 total (job-end $0.01787 + drafting $0.00506; `settled` 0.02293284, spendComplete true), about 66 s.
+- Total $0.0368 of $0.60.
+
+**L2 each `~` rule once.** Both final cards: `L1.~1`, `L1.~2`, `L1.~3` appear exactly once each in `checkItems` (by `you`), none in Not checked (the only Not checked line is "line 1: what the text says — you judge it at Accept"). Aging also carried 3 built `[agent]` sheet checks (no duplicate / no empty Invoice #, all Due dates dates) and the `$` defaults; expenses none.
+
+**L3 recheck (run folders = the panel session folders).** `node scripts/sheet-recheck.mjs <folder>`: expenses `ok table expenses 2e9b53969bea`, `ok l1r1`, `ok l1r2`, `ok l1r3`, `ok`, exit 0. Aging `ok table aging ef5d7f4cacae`, `ok l1r1 l1r3 l1r2 l1a1 l1a2 l1a3`, `ok`, exit 0.
+
+**L4 one-cell edit of the frozen sheet, on COPIES of the run folders (recheck only: no provider, $0).** expenses (row 2 Amount 336.19 to 536.19): `mismatch table expenses: the saved sheet is not the bytes frozen at the source door`, every sheet check `RED ... stopped: input "expenses" - the saved sheet no longer gives the table this run recorded at its start`, exit 1. aging (INV-100 Amount 200.00 to 201.00): same words for input "aging", 6 RED, exit 1. I did not re-run the engine (`run-u`) on a tampered copy; only the recheck script was shown to stop.
+
+**L5 claim one row too many, on COPIES.** expenses: the worker's claim listed 18 rows; I added row 2 (an amount of 336.19) so the claim names 19: `RED l1r1 line 1: l1r1: claim names rows that do not qualify: 2`, exit 1. aging (analogue): the band claim for row 8 (INV-106, 61-90) changed to 90+: `RED l1r3 line 1: l1r3: claimed band is wrong: 8`, exit 1. (The "18 instead of 17" in the spec is wrong, see the correction.)
+
+**CORRECTION (my prereg and F353 numbers were wrong).** The expenses sheet has 18 amounts over 500, summing 13206.91 (python `csv`: 40 rows, 18, 13206.91), not 17 / 12406.51. My earlier hand parse split a quoted description ("Office supplies, bulk") on its comma and dropped row 19 (800.40); F353 and the F354 prereg copied that. The worker's 18 rows are right, and the recheck agrees. The sum is computed by code from the claimed rows (the worker's text does not state it). F353's "17" is a wrong fixture note, not a result that changes.
+
+**WATCH.** The "90+" band word read as a column word did NOT recur: no code question was asked in either draft (0 asks, so nothing to Drop or Agree). One draft each, so this says only it did not happen in 2 of 2 here (F353: 1 of 10).
+
+**Revise walk.** Not walked: no column question came up, so there was no column answer to Revise after; I did not manufacture one by changing the job. The Revise-after-a-column-answer item of the spec stays open.
+
+**Surprises / not done.**
+- The `panel --port N` banner still says "read-only", while the launcher's own `start` spawns that same command as the full panel (answers HTTP 200); stale wording, not touched.
+- Not seen live here: a red run (both ran green first try; n=1 each, an anecdote that the wiring runs end to end, not a rate); the panel click-through, which is hamr's; phone width.
+- A tampered-copy test shows the script stops; it does not show the engine's own run-start path stops on a changed sheet (that is test-proven in S3/S5, not re-run live).
+- Panel recipe: `HOME=/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-proof/home node /home/hamr/PycharmProjects/bareloop/bin/bareloop.mjs panel --port 4792`; its runs list shows live-expenses and live-aging (checked through `runsListPayload`, both "passed", "Needs you: Accept"). Stop by PID.
