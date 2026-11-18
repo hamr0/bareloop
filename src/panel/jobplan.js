@@ -15,14 +15,14 @@ import { NOT_REACHED } from './status.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { stageQuestionsByName } from '../stagewords.js';
-import { SHAPE_HEAD } from '../shaperows.js';
+import { SHAPE_HEAD, SHAPE_TRUTH_WORDS } from '../shaperows.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
-/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string}} AuditRow */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string, shape?: true}} AuditRow */
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
@@ -142,11 +142,17 @@ export function planFromSpec(spec, ledger = null) {
     if (line) line.refused.push(`${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`);
   }
   const notCheckedBy = { ...refusedBy };
+  // a shape field the person did not add (Suggested: not in the signed shape) is still on the signed list: it is told under Suggested, by its name (the spec holds no sentence for a field that was held out)
+  /** @type {{key: string, line: number, text: string}[]} */
+  const suggested = [];
+  for (const r of Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : []) {
+    if (r && r.kind === 'shape' && r.by === 'agent' && r.state === 'dropped' && typeof r.key === 'string' && Number.isInteger(r.line)) suggested.push({ key: r.key, line: r.line, text: r.key.replace(/^L\d+\.shape\./, '') });
+  }
   for (const i of ruleNotCheckedItems(spec?.closeDecl, spec?.jobLines, ledger)) if (i.by) notCheckedBy[i.text] = i.by;
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...filterPart(spec?.ticketFilter) };
+  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) };
 }
 
 /**
@@ -203,15 +209,16 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked] @param {boolean} [closeRan] the results are a CLOSE's (the latest), so a declared stage missing from them was not reached (the close stops at its first red); else a stage no verdict was recorded for reads none
  * @param {{results: Map<string, {result: string, why?: string}>, unclaimed: Map<number, string[]>}|null} [rowRes]
  * `loose` = the job-level rows with their `other · ` words, for the Result tab's reader only (not drawn on the Audit)
- * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[]}}
+ * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[], shapeHead?: string, suggested?: {key: string, line: number, text: string}[]}}
  */
 export function auditChecksOf(plan, guards, results, blocked = null, closeRan = false, rowRes = null) {
   /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'|'not-reached'} */
   const verdict = (stage) => (!stage || !results ? 'none' : (!results.has(stage) ? (closeRan ? 'not-reached' : 'none') : (results.get(stage) ? 'passed' : 'failed')));
   /** @type {AuditRow[]} */
   const checks = [];
-  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true}} c @param {string} text @returns {AuditRow} */
+  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true, shape?: true}} c @param {string} text @returns {AuditRow} */
   const rowOf = (c, text) => {
+    const shape = c.shape === true ? { shape: /** @type {const} */ (true) } : {};
     // the fence row reads the gate's own record of THIS run (never a stage verdict): held · N writes blocked, or the record is missing
     if (c.key === FENCE_KEY || c.fence === true) {
       const by = c.fence === true ? /** @type {'you'} */ ('you') : /** @type {'default'} */ ('default');
@@ -220,12 +227,13 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
         : { text, by, result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked`, key: String(c.key) };
     }
     const own = c.key ? rowRes?.results.get(c.key) : undefined;
-    if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}) };
+    if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}), ...shape };
     // `unread`: the line's file could not be read, so this row was not looked at: never passed, never failed
-    return { text, by: c.by ?? null, result: own.result === 'passed' ? 'passed' : own.result === 'failed' ? 'failed' : 'none', ...(own.result === 'failed' && own.why ? { why: own.why } : {}), key: String(c.key) };
+    return { text, by: c.by ?? null, result: own.result === 'passed' ? 'passed' : own.result === 'failed' ? 'failed' : 'none', ...(own.result === 'failed' && own.why ? { why: own.why } : {}), key: String(c.key), ...shape };
   };
   for (const l of plan.lines) {
-    for (const c of l.checks) checks.push(rowOf(c, `line ${l.n} · ${c.name}`));
+    // a shape row reads `name · sentence` as the card does (signed mock C): no `line N ·` prefix, the heading above says what is checked
+    for (const c of l.checks) checks.push(rowOf(c, c.shape === true ? c.name : `line ${l.n} · ${c.name}`));
     for (const u of rowRes?.unclaimed.get(l.n) ?? []) checks.push({ text: `line ${l.n} · ${u}`, by: null, result: 'failed' });
   }
   // the job-level rows no line owns (the `$` defaults, the write fence) are the Audit's "Always checked" (fwdloop); `loose` keeps them with their old `other · ` words for the Result tab's one reader
@@ -234,7 +242,8 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
   /** @type {AuditRow[]} */
   const notChecked = [];
   const by = plan.notCheckedBy ?? {};
-  for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: `line ${l.n} · ${r}`, by: by[r] ?? null, result: 'not-checked' });
+  // the truth of a shape line's items is told in its own words (signed mock C: no `line N ·` prefix)
+  for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: r.includes(SHAPE_TRUTH_WORDS) ? SHAPE_TRUTH_WORDS : `line ${l.n} · ${r}`, by: by[r] ?? (r.includes(SHAPE_TRUTH_WORDS) ? 'default' : null), result: 'not-checked' });
   for (const r of plan.notChecked) notChecked.push({ text: r, by: by[r] ?? null, result: 'not-checked' });
   const names = guards.length > 0 ? guards : plan.alwaysOn;
   // a guard/fence row the loose rows already show (same signed row: the fence key, the guard's stage or key) is shown once, as the loose row
@@ -252,5 +261,5 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
   })];
   for (const r of [...checks, ...loose, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
-  return { checks, notChecked, always, loose };
+  return { checks, notChecked, always, loose, ...(plan.shapeHead ? { shapeHead: plan.shapeHead } : {}), ...(Array.isArray(plan.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}) };
 }

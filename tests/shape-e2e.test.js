@@ -72,7 +72,8 @@ async function run(/** @type {any} */ r, /** @type {string} */ file, /** @type {
   const rc = await main(['--spec', specPath, '--approve', jobSpecHash(spec)], { provider, env: {}, out: (s) => out.push(String(s)), err: (s) => err.push(String(s)), runlistHome: home });
   const text = `${err.join('\n')}\n${out.join('\n')}`;
   const spine = /spine\s+(\S+\.jsonl)/.exec(text)?.[1];
-  return { rc, text, provider, spine: spine ? readFileSync(spine, 'utf8') : '', dest: join(dir, 'out'), closeDecl };
+  const runid = /u-([a-z0-9]+)\.jsonl/.exec(spine ?? '')?.[1] ?? '';
+  return { rc, text, provider, spine: spine ? readFileSync(spine, 'utf8') : '', dest: join(dir, 'out'), closeDecl, runid, home };
 }
 
 test('DRAFT: the shape look\'s shape builds, the gates accept the shape part (it SIGNS), and the list matches the close', async () => {
@@ -115,4 +116,22 @@ test('RUN: item 3 status "done" and item 4 summary of 236 characters: the close 
   const good = await run(r, file, ITEMS());
   assert.equal(good.rc, 0, good.text);
   assert.match(good.text, /outcome\s+green/);
+});
+
+test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with the two failed cells and the two plain errors; the green run\'s is all passed; Not checked says the truth is the person\'s', async () => {
+  const { r, file } = await draft();
+  const { getRunResult } = await import('../src/panel/server.js');
+  const bad = await run(r, file, ITEMS([undefined, undefined, { status: 'done' }, { summary: 's'.repeat(236) }]));
+  const res = /** @type {any} */ (getRunResult(bad.runid, { home: bad.home }));
+  const line = res.lines[0];
+  assert.equal(line.kind, 'shape');
+  assert.deepEqual(line.shape.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'at most 200' }], 'the AI signed 200 for "under 200": the hint does not claim "under"');
+  assert.deepEqual([line.shape.total, line.shape.passed, line.shape.failed], [4, 2, 2]);
+  assert.deepEqual(line.shape.rows[2].cells.map((/** @type {any} */ c) => c.mark + c.text), ['g', 'rdone', 'g11 chars']);
+  assert.deepEqual(line.shape.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, at most 200)']);
+  assert.deepEqual(line.notChecked, ['whether each one is true \u2014 you judge it at Accept']);
+  assert.equal(line.notCheckedBy['whether each one is true \u2014 you judge it at Accept'], 'default');
+  const good = await run(r, file, ITEMS());
+  const gres = /** @type {any} */ (getRunResult(good.runid, { home: good.home }));
+  assert.deepEqual([gres.lines[0].shape.total, gres.lines[0].shape.passed, gres.lines[0].shape.failed, gres.lines[0].shape.errors], [4, 4, 0, []]);
 });

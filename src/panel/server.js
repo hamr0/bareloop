@@ -80,6 +80,9 @@ import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { filterUnsure } from '../ticketlabels.js';
 import { sheetRowsOf, sheetFoundLine } from '../sheetrows.js';
+import { shapePartOf, SHAPE_TRUTH_WORDS } from '../shaperows.js';
+import { shapeResultModel } from '../shaperesult.js';
+import { shapeItemOfPlain } from '../shapewords.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -1242,6 +1245,20 @@ function rubricStagesOf(spec) {
 }
 
 /**
+ * Shape jobs: the raw item reds (`#<i>:<path>:<reason>`, names and counts only) the run's FINAL close recorded for one stage, `[]` when it recorded none.
+ * @param {any[]} records @param {string} stageName @param {number|null} [line] the job line (to read a red run's plain gap lines) @returns {string[]}
+ */
+export function shapeRedsFromRecords(records, stageName, line = null) {
+  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  const st = oc ? oc.stages.find((/** @type {any} */ x) => x && x.name === stageName) : null;
+  if (st && Array.isArray(st.items)) return st.items.filter((/** @type {unknown} */ x) => typeof x === 'string');
+  // a red run records the close's plain gap lines only (the per-row record is the final close's): read our own sentences back (src/shapewords.js `shapeItemOfPlain`)
+  const gapRec = records.findLast((r) => r && r.type === 'close-verdict' && typeof r.gap === 'string' && r.gap.includes(': item '));
+  if (!gapRec || line === null) return [];
+  return [...new Set(String(gapRec.gap).split('\n').flatMap((l) => { const m = new RegExp(`line ${line}: (item \\d+.*)$`).exec(l); const red = m ? shapeItemOfPlain(m[1]) : null; return red ? [red] : []; }))];
+}
+
+/**
  * The per-row results of the run's FINAL close (Addendum 2026-11-14 (c) piece 4): what its stage entries recorded in `rows` (`{key, result, why?}`) and `unclaimed` (words of a gap no row owns), keyed by
  * the signed list's row key / by job line. A close recorded before rows existed (an older run) yields empty maps: every reader then keeps the stage verdict. Read, never re-derived.
  * @param {any[]} records @param {any} spec
@@ -1854,7 +1871,15 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
         return check ? { ...r, found: sheetFoundLine(check, obj.claims) } : r;
       });
     }
-    if (fp) {
+    // shape jobs (signed mock A): a shape line's answer is a GRID (items as rows, the signed fields as columns); the model is src/shaperesult.js's, read from the file the check judged and the close's recorded item reds
+    const shapePart = shapePartOf(st.params);
+    if (shapePart) {
+      out.kind = 'shape';
+      const results = obj && typeof obj === 'object' && Array.isArray(obj.results) ? obj.results : null;
+      out.shape = results === null ? null : shapeResultModel({ part: shapePart, results, reds: shapeRedsFromRecords(records, st.name, n), rules: jl ? lineRules(jl) : [] });
+      out.notChecked = out.notChecked.map((/** @type {string} */ t) => (t.includes(SHAPE_TRUTH_WORDS) ? SHAPE_TRUTH_WORDS : t));
+      out.notCheckedBy = { ...(plan.notCheckedBy ?? {}), [SHAPE_TRUTH_WORDS]: 'default' };
+    } else if (fp) {
       out.source = fp.source;
       out.page = pageUrls.get(fp.source) ?? null;
       const confirmed = confirmedFactNames(row, jl, fp, opts);

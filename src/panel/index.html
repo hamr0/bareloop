@@ -505,6 +505,8 @@
   .tg-rowname{display:flex;align-items:center;max-width:min(300px,60vw);}
   table.grid.tg button.tg-name{flex:0 1 auto;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:none;padding:0;min-height:32px;font:inherit;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;}
   table.grid.tg button.tg-name:hover{text-decoration:underline;}
+  /* a shape grid's item name is plain text, not a button (hamr 2026-11-18, signed mock fix 2) */
+  table.grid.tg span.tg-name-plain{flex:0 1 auto;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-size:12px;font-weight:700;color:var(--text);}
   table.grid.tg button.tg-name:focus-visible,table.grid.tg button.tg-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   table.grid.tg button.tg-arrow{flex:0 0 auto;width:auto;color:var(--accent);font-weight:700;}
   .tg-unsure{flex:0 0 auto;margin-left:6px;}
@@ -3851,6 +3853,11 @@
   // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
   function auditCheckRowHtml(r){
     var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : r.result === "not-reached" ? ["grey", r.word || "not reached"] : ["grey", "no result recorded"];
+    // a shape row (signed mock C, fix 1): `\u203A name \u00B7 sentence`, and its red reason sits on its OWN line under the row (every other job's rows keep the reason beside the state)
+    if(r.shape){
+      return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">\u203A ' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") +
+        (r.result === "failed" && r.why ? '<div class="hint" data-testid="audit-check-why" style="margin-left:14px">\u2014 ' + escapeXml(r.why) + "</div>" : "") + "</div>";
+    }
     return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + (r.result === "failed" && r.why ? ' <span class="hint" data-testid="audit-check-why">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
   }
   // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
@@ -3881,9 +3888,14 @@
     body.setAttribute("data-testid", "audit-checks-body");
     var sec = function(title, rows, tid){
       if(!rows || !rows.length) return "";
-      return '<div data-testid="' + tid + '" style="margin:6px 0"><div><b>' + escapeXml(title) + "</b></div>" + rows.map(auditCheckRowHtml).join("") + "</div>";
+      var head = tid === "audit-checks-checks" && ac.shapeHead ? '<div class="fold" data-testid="audit-shape-head"><b>' + escapeXml(ac.shapeHead) + "</b></div>" : "";
+      return '<div data-testid="' + tid + '" style="margin:6px 0"><div><b>' + escapeXml(title) + "</b></div>" + head + rows.map(auditCheckRowHtml).join("") + "</div>";
     };
-    body.innerHTML = '<div class="jp">' + sec("Checks", ac.checks, "audit-checks-checks") + sec("Not checked", ac.notChecked, "audit-checks-notchecked") + sec("Always checked", ac.always, "audit-checks-always") + "</div>";
+    // shape fields the person did not add: told under Suggested with the card's own markup; an Add on a finished run's Audit does nothing, so the button is there but off (add it from a new draft)
+    var sugg = (ac.suggested || []).length ? '<div class="jl jp-sug" data-testid="audit-suggested"><span class="lbl">Suggested \u00B7 not in your job, not checked unless you add it</span>' + ac.suggested.map(function(x){
+      return '<div class="fold" data-testid="audit-suggest-row"><span class="mk">\u203A</span> ' + escapeXml(x.text) + byTagOf("agent") + ' <button type="button" class="btn jp-btn" disabled title="add it from a new draft: Reuse workflow, then Revise">Add</button></div>';
+    }).join("") + "</div>" : "";
+    body.innerHTML = '<div class="jp">' + sec("Checks", ac.checks, "audit-checks-checks") + sugg + sec("Not checked", ac.notChecked, "audit-checks-notchecked") + sec("Always checked", ac.always, "audit-checks-always") + "</div>";
     btn.addEventListener("click", function(){
       var open = btn.getAttribute("aria-expanded") === "true";
       btn.setAttribute("aria-expanded", open ? "false" : "true");
@@ -4387,7 +4399,26 @@
       '" target="_blank" rel="noopener noreferrer">' + escapeXml(url) + '</a><div class="hint" data-testid="result-page-note">' + escapeXml(note || "") + '</div></div>');
   }
   // `own` = the Result tab read 2+ pages, so this line's box shows its own page
-  function resultLineCard(line, own, note){
+  // ---- SHAPE JOBS (signed mock design/shape-views-mock.html, panel A): a shape line's answer is a GRID: items as rows, the signed fields as columns (the rule's short words under each name), a mark and the short value
+  // in each cell, the stats line, the errors in the server's plain words and the Not checked line. The server decides every mark and word (`line.shape`, src/shaperesult.js); the page only draws. An item's name is plain text.
+  function shapeResultCard(line, detail, many){
+    var m = line.shape;
+    var runName = typeof detail.runNo === "number" ? "run-" + detail.runNo : String(detail.runid || "");
+    var h = '<div class="job-card" data-testid="result-shape"><h4>Result' + (many ? " \u00B7 line " + escapeXml(String(line.n)) : "") + '</h4>';
+    if(!m){
+      h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
+    } else {
+      h += '<p class="tg-stats" data-testid="shape-stats"><b>' + escapeXml(String(detail.job || "")) + '</b> \u00B7 ' + escapeXml(runName) + ' \u00B7 <b>' + m.total + '</b> items \u00B7 <b>' + m.passed + '</b> passed \u00B7 <b>' + m.failed + '</b> failed</p>';
+      h += '<div class="grid-wrap"><table class="grid tg" data-testid="shape-grid"><thead><tr><th class="r">item</th>' + m.columns.map(function(c){ return '<th class="t">' + escapeXml(c.name) + '<span class="hint">' + escapeXml(c.hint) + '</span></th>'; }).join("") + '</tr></thead><tbody>' +
+        m.rows.map(function(r){
+          return '<tr data-testid="shape-row"><td class="r"><div class="tg-rowname"><span class="tg-name tg-name-plain" data-testid="shape-name" title="' + escapeXml(r.name) + '">' + escapeXml(r.name) + '</span></div></td>' + r.cells.map(function(c){ return tgCell(c); }).join("") + '</tr>';
+        }).join("") + '</tbody></table></div>';
+      if(m.errors.length) h += '<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors</div><div class="fx-lines">' + m.errors.map(function(e){ return '<div>' + gridGlyph("\u2717") + " " + escapeXml(e) + "</div>"; }).join("") + '</div></div>';
+    }
+    return h + resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
+  }
+  function resultLineCard(line, own, note, detail, many){
+    if(line.kind === "shape") return shapeResultCard(line, detail || {}, !!many);
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
       (own ? resultPageLink(line.page, note, "result-page-line") : "") +
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) + resultCheckRowsHtml(line) +
@@ -4687,7 +4718,7 @@
           : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a>' + (m.note ? ' \u2014 <span data-testid="result-md-note">' + escapeXml(m.note) + '</span>' : '') + '</div>');
       }).join("") + '</div>';
     var ownPages = (data.pages || []).length >= 2;
-    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
+    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote, detail, (data.lines || []).length > 1); });
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }

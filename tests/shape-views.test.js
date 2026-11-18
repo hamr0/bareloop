@@ -182,3 +182,44 @@ test('the page draws a shape card: the heading once, rows as `› name · senten
   assert.match(html, /Suggested ·[^<]*<\/span><div class="fold" data-testid="plan-suggest-row"><span class="mk">›<\/span> line 2 · owner · text <span class="by"[^>]*>! \[agent\]<\/span><button data-op="add" data-key="L2.shape.owner"/);
   assert.match(html, /<summary>Not checked · \d/);
 });
+
+test('the page draws the Result grid and the Audit shape rows as the signed mock (A and C): plain-text item names, marks and values, errors, Not checked; the reason on its own line under an Audit shape row only', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
+  const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
+  const { shapeResultCard, auditCheckRowHtml } = new Function('escapeXml', `var RESULT_NONE = "no saved result to show";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard, auditCheckRowHtml };`)(escapeXml);
+  const { shapeResultModel } = await import('../src/shaperesult.js');
+  const part = buildShapePart({ text: 't', fields: [{ name: 'title', spec: { kind: 'text', minChars: 1 }, rule: 1, by: 'you' }, { name: 'status', spec: { kind: 'oneOf', values: ['a', 'b'] }, rule: 2, by: 'you' }] });
+  const model = shapeResultModel({ part, results: [{ title: 'One', status: 'a' }, { title: 'Two', status: 'done' }], reds: ['#1:status:not-one-of'], rules: ['t', 's'] });
+  const html = shapeResultCard({ n: 1, kind: 'shape', shape: model, notChecked: ['whether each one is true — you judge it at Accept'], notCheckedBy: { 'whether each one is true — you judge it at Accept': 'default' } }, { job: 'research-1', runNo: 3, runid: 'x' }, false);
+  assert.match(html, /<h4>Result<\/h4>/);
+  assert.match(html, /<p class="tg-stats" data-testid="shape-stats"><b>research-1<\/b> · run-3 · <b>2<\/b> items · <b>1<\/b> passed · <b>1<\/b> failed<\/p>/);
+  assert.match(html, /<th class="r">item<\/th><th class="t">title<span class="hint">not empty<\/span><\/th><th class="t">status<span class="hint">one of 2<\/span><\/th>/);
+  assert.match(html, /<span class="tg-name tg-name-plain" data-testid="shape-name" title="2 · Two">2 · Two<\/span>/);
+  assert.doesNotMatch(html, /<button[^>]*tg-name/, 'item names are plain text, not buttons');
+  assert.match(html, /<span class="glyph-red">✗<\/span><span class="tg-val">done<\/span>/);
+  assert.match(html, /<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors<\/div><div class="fx-lines"><div><span class="glyph-red">✗<\/span> item 2: status is &quot;done&quot;, not one of: a, b<\/div>/);
+  assert.match(html, /<label>Not checked<\/label>.*whether each one is true — you judge it at Accept .*\$ \[default\]/);
+  assert.match(shapeResultCard({ n: 1, kind: 'shape', shape: null, notChecked: [] }, {}, true), /<h4>Result · line 1<\/h4><div class="hint" data-testid="result-nofile">no saved result to show<\/div>/);
+  // Audit C: the shape row's reason is on its own line; any other row keeps the reason beside the state
+  const shapeRow = auditCheckRowHtml({ text: 'status · one of: a, b', by: 'you', result: 'failed', why: 'item 2: "status" is not one of the allowed values', shape: true });
+  assert.match(shapeRow, /^<div class="audit-check-row"[^>]*>› status · one of: a, b .*failed<\/b><\/span><div class="hint" data-testid="audit-check-why" style="margin-left:14px">— item 2: &quot;status&quot; is not one of the allowed values<\/div><\/div>$/);
+  const other = auditCheckRowHtml({ text: 'line 1 · fact · price', by: 'you', result: 'failed', why: 'x' });
+  assert.match(other, /failed<\/b><\/span> <span class="hint" data-testid="audit-check-why">— x<\/span><\/div>$/, 'other jobs\' rows are unchanged');
+});
+
+test('the Audit model: shape rows without the `line N` prefix, the heading and the Suggested names, the truth row with no prefix and its $ tag', async () => {
+  const { planFromSpec, auditChecksOf } = await import('../src/panel/jobplan.js');
+  const { SHAPE_TRUTH_WORDS } = await import('../src/shaperows.js');
+  const spec = { jobLines: JOB, closeDecl: { ...CLOSE, list: [...CLOSE.list, { key: 'L2.$prose', line: 2, kind: 'prose', by: 'default', from: 'default', state: 'not-checked', reason: SHAPE_TRUTH_WORDS }, { key: 'L2.shape.owner', line: 2, kind: 'shape', by: 'agent', from: 'agent', state: 'dropped', reason: 'Suggested' }] } };
+  const plan = planFromSpec(spec);
+  const ac = auditChecksOf(plan, [], null);
+  assert.equal(ac.shapeHead, "Shape checks · code checks each item's form, not whether it is true");
+  assert.deepEqual(ac.checks.filter((r) => r.shape).map((r) => r.text).slice(0, 2), ['name · not empty', 'blurb · under 60 words']);
+  assert.deepEqual(ac.suggested, [{ key: 'L2.shape.owner', line: 2, text: 'owner' }]);
+  const truth = ac.notChecked.find((r) => r.text === SHAPE_TRUTH_WORDS);
+  assert.deepEqual([truth?.by, truth?.result], ['default', 'not-checked']);
+});

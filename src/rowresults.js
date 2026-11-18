@@ -22,7 +22,7 @@ const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note
  * @typedef {{key: string, result: 'passed'|'failed'|'unread', why?: string}} RowResult
  * @param {any[]|null|undefined} list the signed list (`closeDecl.list`) @param {{step: number, parts: any[]}} params the rubric-step stage's params
  * @param {{verdict?: string, rawGaps?: any[], extraGaps?: string[], detail?: Record<string, any>}} graded `gradeStep`'s answer
- * @returns {{rows: RowResult[], unclaimed: string[]}}
+ * @returns {{rows: RowResult[], unclaimed: string[], items?: string[]}}
  */
 export function rowResultsOf(list, params, graded) {
   const n = params.step;
@@ -35,6 +35,8 @@ export function rowResultsOf(list, params, graded) {
   const why0 = typeof graded.detail?.why === 'string' ? graded.detail.why : 'empty';
   /** the rows that carry part `pi`: a row points at its part, or a `~` rule row is named in the part's own `rules` */
   const rowsOfPart = (/** @type {number} */ pi) => rows.filter((r) => r.kind !== 'floor' && ((isRec(r.part) && r.part.part === pi) || (r.kind === 'rule' && Array.isArray(params.parts[pi]?.rules) && params.parts[pi].rules.includes(r.rule))));
+  /** shape jobs: the raw item reds (`#<i>:<path>:<reason>`, names and counts only) of the line's `itemShape` gaps: what the Result tab's grid reads to mark a cell @type {string[]} */
+  const items = [];
   for (const g of graded.rawGaps ?? []) {
     const id = String(g.id ?? g.check);
     const plain = () => plainStepGap(n, why0, g, params).split('\n').join(' ');
@@ -52,9 +54,10 @@ export function rowResultsOf(list, params, graded) {
     if (g.check === 'itemShape') {
       const shape = shapePartOf(params);
       const defaults = rows.filter((r) => r.kind === 'shape' && r.key === shapeDefaultKey(n));
-      const items = g.kind === 'item-shape' && Array.isArray(g.items) ? g.items : null;
-      if (items === null) { if (defaults.length === 0) unclaimed.push(plain()); else for (const r of defaults) hit(r, plain()); continue; }
-      for (const it of items) {
+      const raw = g.kind === 'item-shape' && Array.isArray(g.items) ? g.items : null;
+      if (raw === null) { if (defaults.length === 0) unclaimed.push(plain()); else for (const r of defaults) hit(r, plain()); continue; }
+      for (const it of raw) {
+        items.push(String(it));
         const name = itemFieldOf(it);
         const field = name === null ? null : (shape?.fields ?? []).find((/** @type {any} */ f) => isRec(f) && f.name === name);
         const owners = field ? rows.filter((r) => (r.kind === 'shape' && r.key === shapeRowKey(n, name ?? '')) || (r.kind === 'rule' && field.row !== 'agent' && r.rule === field.rule)) : defaults;
@@ -91,5 +94,6 @@ export function rowResultsOf(list, params, graded) {
   return {
     rows: rows.map((r) => (red.has(r.key) ? { key: r.key, result: /** @type {const} */ ('failed'), why: /** @type {string[]} */ (red.get(r.key)).join(' ') } : { key: r.key, result: unreadable && r.kind !== 'floor' ? /** @type {const} */ ('unread') : /** @type {const} */ ('passed') })),
     unclaimed,
+    ...(items.length ? { items } : {}),
   };
 }

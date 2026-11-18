@@ -68,3 +68,14 @@ test('itemFieldOf: the signed field a red names (a list entry and a nested path 
 test('a non-itemShape gap keeps the sentence it always had', () => {
   assert.equal(plainStepGap(1, 'empty', { check: 'nonEmpty' }, null), 'line 1: "text" is missing or empty in output/steps/1.json');
 });
+
+test('shapeItemOfPlain reads our own sentences back: every reason goes both ways', async () => {
+  const { shapeItemOfPlain } = await import('../src/shapewords.js');
+  const reds = [
+    '#1:summary:too-long:chars:201>200', '#0:blurb:too-long:words:75>60', '#0:title:too-short:chars:0<1', '#0:title:too-short:words:1<3', '#2:status:not-one-of', '#0:price:bad-money', '#0:price:bad-number', '#0:d:bad-date',
+    '#0:t:bad-time', '#0:u:bad-url', '#0:nonstop:wrong-value', '#0:nonstop:wrong-type', '#4:link:missing', '#0:price:over', '#0:price:under', '#1:tags[2]:too-long:chars:52>40', '#1:tags[0]:duplicate',
+    '#0:tags:count-over:7>5', '#0:tags:count-under:0<1', '#0:tags:too-many:10001>10000', '#0:tags:not-a-list', '#0:tags:unreadable', '#0:unknown-field:color', '#3:item-not-object', '#3:unreadable', '#0:address.city:missing',
+  ];
+  for (const r of reds) assert.equal(shapeItemOfPlain(plainShapeItem(r)), r, r);
+  assert.equal(shapeItemOfPlain('line 1: something else'), null);
+});

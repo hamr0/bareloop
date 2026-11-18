@@ -98,3 +98,32 @@ export function plainShapeGap({ at, file, field = 'results' }, g) {
 
 /** the number of reds a gap counts for the stage's trend number: each item red is one, a whole-field gap is one @param {any} g @returns {number} */
 export const shapeGapCount = (g) => (g.kind === 'item-shape' ? (typeof g.itemsTotal === 'number' ? g.itemsTotal : Array.isArray(g.items) ? g.items.length : 1) : 1);
+
+/**
+ * The inverse of {@link plainShapeItem}: the item red (`#<i>:<path>:<reason>`) a plain sentence of ours says, or null when the text is none of ours. A red run records only the close's plain gap lines (the per-row record
+ * is the final close's), so the Result tab's grid reads them back through this; a test walks every reason through both directions.
+ * @param {string} text `item 3: "status" is not one of the allowed values` @returns {string|null}
+ */
+export function shapeItemOfPlain(text) {
+  const t = String(text).trim();
+  let m = /^item (\d+) (?:is not an object with named fields|could not be read|has a field "(.*)" that the job does not ask for)$/s.exec(t);
+  if (m) { const i = Number(m[1]) - 1; return t.endsWith('named fields') ? `#${i}:item-not-object` : t.endsWith('be read') ? `#${i}:unreadable` : `#${i}:unknown-field:${m[2]}`; }
+  m = /^item (\d+): "(.*?)" (.*)$/s.exec(t);
+  if (!m) return null;
+  const i = Number(m[1]) - 1;
+  const path = m[2].replace(/, entry (\d+)/g, (_x, j) => `[${Number(j) - 1}]`);
+  const r = m[3];
+  const at = (/** @type {string} */ reason) => `#${i}:${path}:${reason}`;
+  let w = /^is too (long|short) \((\d+) (characters|words), (?:at most|at least) (\d+)\)$/.exec(r);
+  if (w) return at(`too-${w[1]}:${w[3] === 'characters' ? 'chars' : 'words'}:${w[2]}${w[1] === 'long' ? '>' : '<'}${w[4]}`);
+  w = /^has (\d+) entries, (at most|at least) (\d+) (?:are allowed|are required)$/.exec(r);
+  if (w) return at(`count-${w[2] === 'at most' ? 'over' : 'under'}:${w[1]}${w[2] === 'at most' ? '>' : '<'}${w[3]}`);
+  w = /^has too many entries to check \((\d+) against a limit of (\d+)\)$/.exec(r);
+  if (w) return at(`too-many:${w[1]}>${w[2]}`);
+  const table = /** @type {Record<string, string>} */ ({
+    'is missing': 'missing', 'is not the kind of value the job asks for': 'wrong-type', 'is not one of the allowed values': 'not-one-of', 'does not have the value the job asks for': 'wrong-value',
+    'is below the lowest value allowed': 'under', 'is above the highest value allowed': 'over', 'is not a list': 'not-a-list', 'could not be read': 'unreadable', 'repeats an earlier entry': 'duplicate',
+    'is not a number as written': 'bad-number', 'is not a money amount as written': 'bad-money', 'is not a date as written': 'bad-date', 'is not a time as written': 'bad-time', 'is not a web address as written': 'bad-url',
+  });
+  return Object.hasOwn(table, r) ? at(table[r]) : null;
+}
