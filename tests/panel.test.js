@@ -2349,3 +2349,19 @@ test('the topbar version FOLLOWS package.json: a different package.json gives a 
   const gone = await startServer(t, { home: tmp(), packageJsonPath: join(dir, 'missing.json') });
   assert.ok((await (await fetch(`${gone.base}/`)).text()).includes('id="panel-version">vunknown</span>'));
 });
+
+test('panelMain: the start banner names the url and does NOT call the panel read-only (it drafts, runs, Accepts)', async (t) => {
+  const home = tmp();
+  const port = 61000 + Math.floor(Math.random() * 4000);
+  const child = spawn(process.execPath, [join(import.meta.dirname, '..', 'bin', 'bareloop.mjs'), 'panel', '--port', String(port)], {
+    env: { ...process.env, HOME: home, XDG_CONFIG_HOME: '' }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { child.kill('SIGKILL'); });
+  const line = await new Promise((resolve, reject) => {
+    let buf = '';
+    const timer = setTimeout(() => reject(new Error(`no banner in 15 s: ${buf}`)), 15000);
+    child.stdout.on('data', (d) => { buf += d; if (buf.includes('\n')) { clearTimeout(timer); resolve(buf.split('\n')[0]); } });
+    child.on('exit', () => { clearTimeout(timer); reject(new Error(`exited before banner: ${buf}`)); });
+  });
+  assert.equal(line, `bareloop panel — http://127.0.0.1:${port} (Ctrl-C to stop)`);
+});
