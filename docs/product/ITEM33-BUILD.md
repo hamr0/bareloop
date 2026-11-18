@@ -4897,8 +4897,8 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 - Process as the 2026-11-17 addendum: each piece names its call site, a fail-first test, one or more commits, the orchestrator runs the full gate, builders are sonnet and run tests only via `npm test`.
 
 ### What the person sees
-- Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
-- ~~Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new) **[WITHDRAWN 2026-11-18]**
+- ~~Job box hint (one line under the box, always shown): "Only lines starting with ~ are checked. Other lines say what to do." (wording APPROVED by hamr 2026-11-17, use as written)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
+- ~~Card, for a step with no `~` rule, under Not checked: "Line 2: no ~ rule here. What the text says, you judge it at Accept." (wording APPROVED by hamr 2026-11-17, use as written; same family as today's "what the text says — you judge it at Accept"; builder reuses the existing line, only the wording about `~` is new)~~ **[WITHDRAWN 2026-11-18: see Ruling 2026-11-18.]**
 - Suggested row: unchanged look. Add now also shows the new `~` line in the job box under its step; Drop of that row removes the line again.
 
 ### Pieces
