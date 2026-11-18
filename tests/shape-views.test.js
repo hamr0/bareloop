@@ -95,18 +95,44 @@ test('per-row results: a whole-field gap and a field-less item red land on the [
   assert.equal(b.rows.filter((x) => x.result === 'failed').length, 1);
 });
 
-test('the report: one #### Item N block per item, fields in the signed order, a list field as a list; no AI-answer heading', () => {
+test('the report (signed mock D): the shape-checks line, a table of items x fields with marks and short values, the Not checked line; no AI-answer heading, no Failed list on a green run', () => {
   const file = { results: [
     { remote: true, matching: ['python', 'sql'], blurb: 'Strong fit.', name: 'Ada Lovelace', extra: 'never printed' },
     { name: 'Alan Turing', blurb: 'Good.', matching: [], remote: false },
   ] };
   const buf = Buffer.from(JSON.stringify(file));
   const md = /** @type {string} */ (renderRunMd({ job: 'Resumes', runNo: 3, now: new Date(2026, 10, 18), closeDecl: CLOSE, jobLines: JOB, steps: [{ n: 2, orig: buf, delivered: buf }] }));
-  assert.match(md, /^# Resumes — run-3\nPassed · 18 Nov 2026/);
-  assert.match(md, /## 2\. Read each resume\nRule: each blurb is under 60 words\nRule: matching words is a list of at most 5 words\nRule: the candidate has a name/);
-  assert.match(md, /### Checked by code\n#### Item 1\n- Name: Ada Lovelace\n- Blurb: Strong fit\.\n- Matching:\n {2}- python\n {2}- sql\n- Remote: true\n\n#### Item 2\n- Name: Alan Turing\n- Blurb: Good\.\n- Matching: \(none\)\n- Remote: false\n/);
-  assert.ok(!md.includes('never printed'));
-  assert.ok(!md.includes("The AI's answer"));
+  assert.match(md, /^# Resumes \u2014 run-3\nPassed \u00b7 18 Nov 2026/);
+  assert.match(md, /## 2\. Read each resume\nRule: each blurb is under 60 words\nRule: matching words is a list of at most 5 words\nRule: the candidate has a name\n\nShape checks \(code checks each item's form, not whether it is true\)\n\n/);
+  assert.match(md, /\| item \| name \| blurb \| matching \| remote \|\n\| --- \| --- \| --- \| --- \| --- \|\n\| 1 \u00b7 Ada Lovelace \| \u2713 \| \u2713 2 words \| \u2713 2 entries \| \u2713 true \|\n\| 2 \u00b7 Alan Turing \| \u2713 \| \u2713 1 word \| \u2713 0 entries \| \u2713 false \|\n/);
+  assert.match(md, /\nNot checked: whether each one is true \(you judge it at Accept\)\n$/);
+  assert.ok(!md.includes('never printed') && !md.includes("The AI's answer") && !md.includes('Failed') && !md.includes('#### Item'));
+});
+
+test('the view model (signed mock A and D): marks per cell from the item reds, short values, the red words name the worker\'s own value, the Failed list', async () => {
+  const { shapeResultModel, shapeMarkdown, shapeHint } = await import('../src/shaperesult.js');
+  const part = buildShapePart({ text: 't', fields: [
+    { name: 'title', spec: { kind: 'text', required: true, minChars: 1 }, rule: 1, by: 'you' },
+    { name: 'status', spec: { kind: 'oneOf', values: ['in progress', 'closed', 'finished'] }, rule: 2, by: 'you' },
+    { name: 'summary', spec: { kind: 'text', maxChars: 199 }, rule: 3, by: 'you' },
+  ] });
+  const rules = ['each item has a title', 'status is in progress, closed or finished', 'the summary is under 200 characters'];
+  const results = [
+    { title: 'Cell culture notes', status: 'in progress', summary: 'x'.repeat(142) }, { title: 'Soil sample log', status: 'closed', summary: 'x'.repeat(88) },
+    { title: 'Field survey', status: 'done', summary: 'x'.repeat(120) }, { title: 'Water quality review', status: 'finished', summary: 'x'.repeat(236) },
+  ];
+  const m = shapeResultModel({ part, results, rules, reds: ['#2:status:not-one-of', '#3:summary:too-long:chars:236>199'] });
+  assert.deepEqual(m.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
+  assert.deepEqual([m.total, m.passed, m.failed], [4, 2, 2]);
+  assert.equal(m.rows[2].name, '3 \u00B7 Field survey');
+  assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: '' }, { mark: 'r', text: 'done' }, { mark: 'g', text: '120 chars' }]);
+  assert.deepEqual(m.rows[3].cells.map((c) => c.mark + c.text), ['g', 'gfinished', 'r236 chars']);
+  assert.deepEqual(m.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);
+  assert.match(shapeMarkdown(m), /\| 3 \u00b7 Field survey \| \u2713 \| \u2717 done \| \u2713 120 chars \|\n/);
+  assert.match(shapeMarkdown(m), /\n### Failed\n\n- item 3: status is "done", not one of: in progress, closed, finished\n- item 4: summary is too long \(236 characters, under 200\)$/);
+  assert.equal(shapeHint({ kind: 'text', minChars: 5 }), 'at least 5 characters'.replace(' characters', ''));
+  const whole = shapeResultModel({ part, results: [null], rules, reds: ['#0:item-not-object'] });
+  assert.deepEqual(whole.rows[0].cells.map((c) => c.mark), ['r', 'r', 'r']);
 });
 
 test('a facts line whose answer also has `results` is still rendered as facts (picked by class, not by key)', () => {

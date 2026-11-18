@@ -5,6 +5,7 @@ import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { lineRules, proseNotCheckedItems, refusedOf } from './rubricstep.js';
 import { shapePartOfLine } from './shaperows.js';
+import { shapeResultModel, shapeMarkdown } from './shaperesult.js';
 
 const SCALAR = ['string', 'number', 'boolean'];
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -110,34 +111,13 @@ export function plainDate(d) {
 }
 
 /**
- * One item of a shape answer as a block: `#### Item N`, then a bullet per signed field in the signed order (a field the worker left out is skipped, a field the job does not sign is never printed); a list of plain values is a nested list, an empty one `(none)`.
- * @param {any} item @param {number} i @param {{fields: any[]}} part @returns {string}
- */
-function shapeItemBlock(item, i, part) {
-  /** @type {string[]} */
-  const out = [`#### Item ${i + 1}`];
-  if (!isRec(item)) return out.concat('- (not an object)').join('\n');
-  for (const f of part.fields) {
-    if (!isRec(f) || typeof f.name !== 'string' || !Object.hasOwn(item, f.name)) continue;
-    const v = item[f.name];
-    const label = friendlyName([f.name]);
-    if (Array.isArray(v) && v.every((x) => x === null || SCALAR.includes(typeof x))) out.push(v.length === 0 ? `- ${label}: (none)` : [`- ${label}:`, ...v.map((x) => `  - ${x === null ? '' : x}`)].join('\n'));
-    else out.push(...blockLines(leaves([f.name], v)));
-  }
-  return out.join('\n');
-}
-
-
-/**
  * One job line's section. `checked` = the bullets code stands behind (fact results, claim rows, code's count and total), `answer` = the worker's own text (report lines stripped) or null. Null when the file holds neither text nor results.
- * @param {unknown} obj the original step file @param {Record<string, string|null>} claimWords @param {string[]} reportLines code's report lines of this file @param {any} [shapePart] the line's signed shape part, when it has one
+ * @param {unknown} obj the original step file @param {Record<string, string|null>} claimWords @param {string[]} reportLines code's report lines of this file
  * @returns {{checked: string[], answer: string|null}|null}
  */
-function stepSection(obj, claimWords, reportLines, shapePart = null) {
+function stepSection(obj, claimWords, reportLines) {
   if (!isRec(obj)) return null;
   const o = /** @type {Record<string, any>} */ (obj);
-  // a shape line (picked by the line's signed class, never by the key `results`, which a facts line also uses): one `#### Item N` block per item, its fields in the signed order, a list field as a list
-  if (shapePart !== null) return Array.isArray(o.results) && o.results.length > 0 ? { checked: o.results.map((/** @type {any} */ it, /** @type {number} */ i) => shapeItemBlock(it, i, shapePart)), answer: null } : null;
   const hasText = typeof o.text === 'string';
   const hasResults = isResultList(o.results);
   if (!hasText && !hasResults) return null;
@@ -179,9 +159,19 @@ export function renderRunMd({ job, runNo, now, closeDecl, jobLines, steps }) {
     const origText = textOf(obj);
     const sentText = textOf(sent);
     const report = sentText.startsWith(origText) ? sentText.slice(origText.length).split('\n').map((l) => l.trim()).filter(Boolean) : [];
-    const sec = stepSection(obj, stepClaimWords(closeDecl, s.n), report, shapePartOfLine(closeDecl, s.n));
-    if (sec === null || (sec.checked.length === 0 && sec.answer === null)) continue;
     const jl = jobLines.find((/** @type {any} */ l) => isRec(l) && l.n === s.n);
+    // a shape line (picked by the line's signed class, never by the key `results`, which a facts line also uses): the signed mock's section (src/shaperesult.js): the shape-checks line, the table, the Not checked line, the Failed list.
+    // A report is written for a green run only, so no item is red here; the model takes the reds a caller has.
+    const shape = shapePartOfLine(closeDecl, s.n);
+    if (shape !== null) {
+      const results = isRec(obj) ? /** @type {Record<string, any>} */ (obj).results : null;
+      if (!Array.isArray(results) || results.length === 0) continue;
+      const head = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`, ...(jl ? lineRules(jl) : []).map((r) => `Rule: ${r}`)].join('\n');
+      sections.push([head, shapeMarkdown(shapeResultModel({ part: shape, results, rules: jl ? lineRules(jl) : [] }))].join('\n\n'));
+      continue;
+    }
+    const sec = stepSection(obj, stepClaimWords(closeDecl, s.n), report);
+    if (sec === null || (sec.checked.length === 0 && sec.answer === null)) continue;
     const lines = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`];
     for (const r of jl ? lineRules(jl) : []) lines.push(`Rule: ${r}`);
     const parts = [lines.join('\n')];

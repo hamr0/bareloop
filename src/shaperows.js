@@ -23,16 +23,18 @@ export function shapeDefaultWords(count = null) {
 }
 
 /** why the truth of a shape line's items is not checked: the person judges it at Accept (the Not checked row of every shape line) */
-export const SHAPE_TRUTH_WORDS = 'whether each one is true \u2014 you judge it at Accept';
+export const SHAPE_TRUTH_PARTS = Object.freeze(['whether each one is true', 'you judge it at Accept']);
+export const SHAPE_TRUTH_WORDS = SHAPE_TRUTH_PARTS.join(' \u2014 ');
 
 /** @param {unknown} v @returns {string} */
 const q = (v) => (typeof v === 'string' ? `"${v}"` : String(v));
 
 /** the words of a shape card's heading, once above a shape line's rows (code's, never the model's) */
-export const SHAPE_HEAD = "Shape checks \u00B7 code checks each item's form, not whether it is true";
+export const SHAPE_HEAD_PARTS = Object.freeze(['Shape checks', "code checks each item's form, not whether it is true"]);
+export const SHAPE_HEAD = SHAPE_HEAD_PARTS.join(' \u00B7 ');
 
 /** an upper bound `n` as the person's own form: "under N unit" when their words say under/fewer than/less than/below N+1 (so the signed N is "under N+1"), else "at most N unit" @param {number} n @param {string} unit @param {string} said */
-function upper(n, unit, said) {
+export function upper(n, unit, said) {
   const u = unit ? ` ${unit}` : '';
   return new RegExp(`(?:under|fewer than|less than|below)\\s+${n + 1}\\b`, 'i').test(said) ? `under ${n + 1}${u}` : `at most ${n}${u}`;
 }
