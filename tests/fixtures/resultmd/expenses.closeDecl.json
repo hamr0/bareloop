@@ -1,0 +1,177 @@
+{
+ "genre": "TEXT",
+ "lang": "text",
+ "stages": [
+  {
+   "name": "changed-from-seed",
+   "kind": "files-changed",
+   "params": {
+    "requireNonEmpty": true,
+    "allowPrefixes": [
+     "output/"
+    ]
+   }
+  },
+  {
+   "name": "line-1",
+   "kind": "rubric-step",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "step": 1,
+    "parts": [
+     {
+      "text": "the checks of line 1 on the sheet",
+      "class": "sheet",
+      "checks": [
+       {
+        "id": "l1r1",
+        "rule": "cells",
+        "table": "expenses",
+        "op": "rows",
+        "where": [
+         {
+          "column": "Amount",
+          "cmp": "gt",
+          "value": 500
+         }
+        ],
+        "claim": "l1r1",
+        "covers": [
+         1
+        ]
+       },
+       {
+        "id": "l1r2",
+        "rule": "cells",
+        "table": "expenses",
+        "op": "countIf",
+        "where": [
+         {
+          "column": "Amount",
+          "cmp": "gt",
+          "value": 500
+         }
+        ],
+        "claim": "l1r1",
+        "covers": [
+         2
+        ]
+       },
+       {
+        "id": "l1r3",
+        "rule": "cells",
+        "table": "expenses",
+        "op": "sumIf",
+        "column": "Amount",
+        "where": [
+         {
+          "column": "Amount",
+          "cmp": "gt",
+          "value": 500
+         }
+        ],
+        "claim": "l1r1",
+        "covers": [
+         3
+        ]
+       }
+      ],
+      "rules": [
+       1,
+       2,
+       3
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "list": [
+  {
+   "line": 1,
+   "key": "L1.~1",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 1,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.~2",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 2,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.~3",
+   "from": "rule",
+   "by": "you",
+   "kind": "rule",
+   "state": "built",
+   "rule": 3,
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.$floor",
+   "from": "default",
+   "by": "default",
+   "kind": "floor",
+   "state": "built"
+  },
+  {
+   "line": 1,
+   "key": "L1.$sheet",
+   "from": "default",
+   "by": "default",
+   "kind": "sheet",
+   "state": "built",
+   "part": {
+    "line": 1,
+    "part": 0
+   }
+  },
+  {
+   "line": 1,
+   "key": "L1.$prose",
+   "from": "default",
+   "by": "default",
+   "kind": "prose",
+   "state": "not-checked",
+   "reason": "what the text says — you judge it at Accept"
+  },
+  {
+   "line": 0,
+   "key": "J.$guard.changed-from-seed",
+   "from": "default",
+   "by": "default",
+   "kind": "guard",
+   "state": "built"
+  },
+  {
+   "line": 0,
+   "key": "J.$fence",
+   "from": "default",
+   "by": "default",
+   "kind": "fence",
+   "state": "built"
+  }
+ ]
+}
