@@ -963,8 +963,8 @@ export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
     const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
-    // a `prose` row is said by its own reason alone ("Line N: no ~ rule here. What the text says, you judge it at Accept.")
-    if (r.kind === 'prose' || (r.kind === 'stage' && !Number.isInteger(r.rule))) return { text: r.kind === 'prose' ? proseLine(r.line) : `line ${r.line}: ${r.reason}`, ...by };
+    // a `prose` row is said by its own reason alone ("line N: what the text says — you judge it at Accept")
+    if (r.kind === 'prose' || (r.kind === 'stage' && !Number.isInteger(r.rule))) return { text: `line ${r.line}: ${r.reason}`, ...by };
     if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
     return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
@@ -1008,7 +1008,7 @@ export function proseNotCheckedItems(closeDecl) {
   if (carriesOneList(closeDecl)) return [];
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
-    .map((/** @type {any} */ st) => ({ line: st.params.step, text: proseLine(st.params.step) }));
+    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: ${PROSE_WORDS}` }));
 }
 
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────
@@ -1076,9 +1076,7 @@ export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWit
 export const stageKeyOf = (/** @type {string} */ name) => `S.${name}`;
 export const stageNameOfKey = (/** @type {unknown} */ key) => (typeof key === 'string' && key.startsWith('S.') ? key.slice(2) : '');
 /** the words of a text line's `prose` row: the person judges what the text says at Accept (the same words the stage-derived line always used) */
-export const PROSE_WORDS = 'No ~ rule here. What the text says, you judge it at Accept.';
-/** the card's Not checked line of a text line with no `~` rule, with its real number @param {number} n @returns {string} */
-export const proseLine = (n) => `Line ${n}: ${PROSE_WORDS.charAt(0).toLowerCase()}${PROSE_WORDS.slice(1)}`;
+export const PROSE_WORDS = 'what the text says — you judge it at Accept';
 /** the key of the job-level write fence row (the one list, hamr 2026-11-15: the fence is a `$` row like every other rule) */
 export const FENCE_KEY = 'J.$fence';
 /** the words of the fence row: its plain question (src/stagewords.js, the one owner) @param {string[]} scope @returns {string} */

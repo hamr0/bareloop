@@ -23,7 +23,7 @@ import { signRun } from '../src/panel/authorroutes.js';
 import { ANTH_CFG } from './helpers.js';
 
 // PART 1b (RF5): every prose step says what is not checked — its text
-const TEXT_NOT_CHECKED = ['Line 1: no ~ rule here. What the text says, you judge it at Accept.', 'Line 2: no ~ rule here. What the text says, you judge it at Accept.'];
+const TEXT_NOT_CHECKED = ['line 1: what the text says — you judge it at Accept', 'line 2: what the text says — you judge it at Accept'];
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
 const made = [];

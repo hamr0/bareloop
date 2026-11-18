@@ -47,13 +47,13 @@ test('the Job tab reads the same rows: a rubric-step stage is shown as the check
   assert.deepEqual(plan.lines[1].checks.map((c) => c.name), ['the text is at most 100 words', 'every number in the text is in a quote checked on line 1']);
   assert.deepEqual(plan.lines[0].refused, ['"the cheapest one" — a "cheapest" cannot be told from one release']);
   assert.deepEqual(plan.alwaysOn, ['changed-from-seed']);
-  assert.deepEqual(plan.notChecked, ['Line 2: no ~ rule here. What the text says, you judge it at Accept.']);
+  assert.deepEqual(plan.notChecked, ['line 2: what the text says — you judge it at Accept']);
 });
 
 test('the card after drafting: checks are the close\'s own rows, Not checked holds the prose line and the rule the drafter listed, in the person\'s words; sign == run', () => {
   const rec = cardOfClose({ closeDecl: closeDecl(), jobLines: JOB_LINES });
   assert.deepEqual(rec.notChecked, [
-    'Line 2: no ~ rule here. What the text says, you judge it at Accept.',
+    'line 2: what the text says — you judge it at Accept',
     'line 1: "the cheapest one" — a "cheapest" cannot be told from one release',
   ]);
   assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl()), { ok: true });

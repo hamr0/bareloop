@@ -10,7 +10,7 @@ import { planFromSpec } from '../src/panel/jobplan.js';
 import { validateCloseDecl } from '../src/declaredclose.js';
 
 const OLD = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/mv5bk400-resolved-spec.json', import.meta.url)), 'utf8'));
-const WORDS = 'No ~ rule here. What the text says, you judge it at Accept.';
+const WORDS = 'what the text says — you judge it at Accept';
 const JOB = [{ n: 1, text: 'Summarise the page', rules: ['at most 80 words'] }];
 function made() {
   const b = new CheckBlock({ texts: { a: 'x', b: 'y' }, labels: ['a', 'b'], asks: false });
@@ -45,7 +45,7 @@ test('every view draws the line from the row only: once, same words, tagged defa
   const { closeDecl } = made();
   assert.deepEqual(proseNotCheckedItems(closeDecl), []);
   const card = cardOfClose({ closeDecl, jobLines: JOB });
-  assert.equal(card.notChecked.filter((t) => t === "Line 1: no ~ rule here. What the text says, you judge it at Accept.").length, 1, JSON.stringify(card.notChecked));
+  assert.equal(card.notChecked.filter((t) => t === `line 1: ${WORDS}`).length, 1, JSON.stringify(card.notChecked));
   const plan = planFromSpec({ jobLines: JOB, closeDecl, goal: '' });
   assert.deepEqual(plan.lines[0].refused.filter((t) => t.includes(WORDS)), [WORDS]);
   assert.equal(plan.notCheckedBy?.[WORDS], 'default');
@@ -54,5 +54,5 @@ test('every view draws the line from the row only: once, same words, tagged defa
 
 test('an OLD signed spec (no prose row) keeps today\'s display: the stage-derived prose lines', () => {
   assert.equal(proseNotCheckedItems(OLD.closeDecl).length, 2);
-  assert.ok(cardOfClose({ closeDecl: OLD.closeDecl, jobLines: OLD.jobLines }).notChecked.includes("Line 1: no ~ rule here. What the text says, you judge it at Accept."));
+  assert.ok(cardOfClose({ closeDecl: OLD.closeDecl, jobLines: OLD.jobLines }).notChecked.includes(`line 1: ${WORDS}`));
 });
