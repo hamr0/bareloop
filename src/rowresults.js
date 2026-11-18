@@ -5,15 +5,18 @@
 //   p<part>-<countable check>                     ->  the row(s) that point at that part (a pick, the cited default, the numbers default, the note)
 //   text-present / happened                       ->  the line's floor row
 //   the numbers tie (gradeStep's extra lines)     ->  the line's `$ numbers` row
+//   itemShape, item `#<i>:<field>:<reason>`        ->  the row of that field (a `~` rule row, or an `!` extra field's row); a whole-field gap, or an item with no field, the line's `$ shape` row
 // A gap that names no single row (a quote-level gap of a fact part: the quote carries no fact index; a part with no results at all) is NEVER spread over rows: it is returned in `unclaimed`, in plain words,
 // and the line shows it as its own item. When the file itself could not be read (the floor is red), the line's other rows were not looked at: they read `unread`, never passed.
 import { plainFactItem } from './facts.js';
 import { plainStepGap } from './rubricstep.js';
+import { plainShapeItem, itemFieldOf } from './shapewords.js';
+import { shapePartOf, shapeRowKey, shapeDefaultKey } from './shaperows.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** the check kinds a row may be, for the rows a step file is judged by */
-const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note', 'floor', 'sheet'];
+const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note', 'floor', 'sheet', 'shape'];
 
 /**
  * @typedef {{key: string, result: 'passed'|'failed'|'unread', why?: string}} RowResult
@@ -42,6 +45,21 @@ export function rowResultsOf(list, params, graded) {
       const covers = Array.isArray(sheetCheck.covers) ? sheetCheck.covers : [];
       const owners = rows.filter((r) => (r.kind === 'sheet' && r.key === `L${n}.sheet.${id}`) || (r.kind === 'rule' && covers.includes(r.rule)));
       if (owners.length === 0) unclaimed.push(plain()); else for (const r of owners) hit(r, plain());
+      continue;
+    }
+    // shape jobs (clause 8): an `itemShape` gap names an item and a field (`#<i>:<path>:<reason>`): the `[you]` rule row whose rule made that field, or the `[agent]` row of an extra field; a whole-field gap (no list, the
+    // count) or an item red with no field lands on the line's `[default]` row, the one that says "the answer is a list of items"
+    if (g.check === 'itemShape') {
+      const shape = shapePartOf(params);
+      const defaults = rows.filter((r) => r.kind === 'shape' && r.key === shapeDefaultKey(n));
+      const items = g.kind === 'item-shape' && Array.isArray(g.items) ? g.items : null;
+      if (items === null) { if (defaults.length === 0) unclaimed.push(plain()); else for (const r of defaults) hit(r, plain()); continue; }
+      for (const it of items) {
+        const name = itemFieldOf(it);
+        const field = name === null ? null : (shape?.fields ?? []).find((/** @type {any} */ f) => isRec(f) && f.name === name);
+        const owners = field ? rows.filter((r) => (r.kind === 'shape' && r.key === shapeRowKey(n, name ?? '')) || (r.kind === 'rule' && field.row !== 'agent' && r.rule === field.rule)) : defaults;
+        if (owners.length === 0) unclaimed.push(plainShapeItem(it)); else for (const r of owners) hit(r, plainShapeItem(it));
+      }
       continue;
     }
     const m = /^p(\d+)-(.+)$/.exec(id);

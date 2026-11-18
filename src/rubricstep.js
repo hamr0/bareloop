@@ -10,6 +10,7 @@ import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFact
 import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
 import { sheetRowsOf } from './sheetrows.js';
 import { plainShapeGap, shapeGapCount } from './shapewords.js';
+import { shapeRowsOf, shapePartOf } from './shaperows.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -429,9 +430,10 @@ export function parseStepFile(bytes) {
  * @param {any} [factPart] the step's `fact` part: its `results` become claims (text built by code) under `cites:<source>`
  * @param {(Record<number, string>|undefined)[]} [asWritten] per result, the value spans a page-form fact's claim text is written with (see factClaims)
  * @param {string[]} [sheetClaimNames] S3: the claim names a sheet part reads; each becomes the field of that name, taken from the file's `claims` object
+ * @param {any} [shapePart] shape jobs: the line's signed `shape` part; its answer's `results` (the list of items) is passed through as the field `results` an `itemShape` check reads. Picked by the line's CLASS, never by the key: a facts line's `results` stays what it was
  * @returns {Record<string, any>}
  */
-export function flattenStep(obj, countLabels = [], factPart = null, asWritten = [], sheetClaimNames = []) {
+export function flattenStep(obj, countLabels = [], factPart = null, asWritten = [], sheetClaimNames = [], shapePart = null) {
   /** @type {Record<string, any>} */
   const fields = {};
   // the number of claims listed under each label a claim-count check names (0 when the label is absent): counted HERE, by
@@ -449,6 +451,7 @@ export function flattenStep(obj, countLabels = [], factPart = null, asWritten = 
   fields.text = typeof obj.text === 'string' ? obj.text : '';
   if (isRec(obj.cites) && !factPart) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
   if (isRec(obj.claims)) for (const name of sheetClaimNames) if (Object.hasOwn(obj.claims, name)) fields[name] = obj.claims[name];
+  if (shapePart && !factPart && Object.hasOwn(obj, 'results')) fields.results = obj.results;
   return fields;
 }
 
@@ -530,12 +533,13 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   const parsed = parseStepFile(bytes);
   const countLabels = [...new Set(params.parts.filter((/** @type {any} */ x) => x.class === 'countable' && (x.check === 'minClaims' || x.check === 'maxClaims')).map((/** @type {any} */ x) => String(x.source)))];
   const factPart = factPartOf(params);
+  const shapePart = shapePartOf(params);
   // S3: the claim names a sheet part reads, and the sheet's tables (passed to bareguard only when the step has a sheet part, so an old spec's call is the call it always was)
   const sheetChecks = gradedChecks(sheetChecksOf(params));
   const claimNames = [...new Set(sheetChecks.filter((c) => c.rule === 'cells' && typeof c.claim === 'string').map((c) => c.claim))];
   const sheetIds = new Set(sheetChecks.map((c) => c.id));
   const claimsMissing = sheetChecks.length > 0 && parsed.obj !== null && !isRec(parsed.obj.claims);
-  const check = (/** @type {(Record<number, string>|undefined)[]} */ asWritten = []) => checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPart, asWritten, claimNames), {
+  const check = (/** @type {(Record<number, string>|undefined)[]} */ asWritten = []) => checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPart, asWritten, claimNames, shapePart), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }), ...(sheetChecks.length > 0 ? { tables } : {}),
   });
   let r = await check();
@@ -1152,9 +1156,13 @@ export function checksOfClose(closeDecl, jobLines = null) {
   // S4: a sheet line's part is one plan row per check (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/sheetrows.js `sheetRowsOf`); the `[default]` row needs its signed row, as the floor does
   const sheetItems = (/** @type {number} */ line) => sheetRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
     .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
+  // shape jobs (clause 8): a shape line's part is one plan row per field (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/shaperows.js `shapeRowsOf`)
+  const shapeItems = (/** @type {number} */ line) => shapeRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
+    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (isRec(p) && p.class === 'sheet') return sheetItems(st.params.step);
+      if (isRec(p) && p.class === 'shape') return shapeItems(st.params.step);
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
