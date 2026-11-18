@@ -2317,7 +2317,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - Backlog (not built, unproven): sheet as output (a new worksheet beside the person's own).
 - fwd takes code-does-math and the am7 words from bareloop's release later (not urgent).
 - [x] Launcher fast menu dropped (hamr 2026-11-17, F340).
-- [ ] S5 surfaces (card, Job tab, Result) and the $0 sheet re-check script — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17, S5.
+- [x] S5 surfaces (card, Job tab, Result) and the $0 sheet re-check script built (2026-11-18); owed: the re-check on a live run, phone width, hamr's click-through; the `stagewords.js` question text is dropped — `docs/product/ITEM33-BUILD.md` Addendum 2026-11-17, S5.
 - [ ] POC C (drafts per job, base rate for `sheetChecks`) — same addendum.
 - fwd F194 ("first suggestion on a rule wins" can keep a weaker check) is open; reported, not fixed here — same addendum, known risks.
 

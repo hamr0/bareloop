@@ -4779,7 +4779,7 @@ Done when: on the aging fixture each `~` rule is one row or one Not checked line
 
 What the person sees: Job tab and plan card show the sheet rows with tags; Result tab shows each check with check/cross and what was found ("17 rows checked", "rows 2, 3 repeat"), and Not checked again; Audit shows the checks of the latest close only (existing rule).
 
-Files (changed): `src/panel/jobplan.js` (renderer; one renderer drives the plan card and Job tab), `src/rowresults.js` (per-row result words), `src/stagewords.js` (plain question text for a sheet check, owned by code), the Result/Audit routes in `src/panel/runroutes.js`, the card HTML in `src/panel/index.html`.
+Files (changed): `src/panel/jobplan.js` (renderer; one renderer drives the plan card and Job tab), `src/rowresults.js` (per-row result words), ~~`src/stagewords.js` (plain question text for a sheet check, owned by code)~~ DROPPED (hamr 2026-11-18: no call site; Audit and Result already use the code-owned `sheetPlainText` words, and the rubric-step stage question covers sheet lines), the Result/Audit routes in `src/panel/runroutes.js`, the card HTML in `src/panel/index.html`.
 Files (new): `scripts/sheet-recheck.mjs` adapted from fwd `scripts/m10b-recheck.mjs` (89): re-runs a run's signed checks on its saved frozen sheet and says ok.
 
 Call site: panel routes already call the plan renderer and `rowresults`; sheet rows ride them. The script is run by hand.
@@ -4790,6 +4790,8 @@ SKIP: `askSheetCard:178`, `claimLines:154`, Ask views in `panel/data.js:2892-291
 Tests (fail-first): browser-free renderer tests for each surface; the Result block shows ✓/✗ with found-words and never cell text (assert on the aging fixture with a planted cell string that must not appear). UI: orchestrator takes OWN screenshots of the card, Job tab and Result tab in context beside neighbours (hamr's rule); phone width cannot be checked by barebrowse; name that gap, hamr checks it in DevTools.
 
 Done when: a run's Result tab shows the checks with found-words; `sheet-recheck.mjs` says ok on the live-walk runs.
+
+Status 2026-11-18: BUILT e46d3925, a9ec25ad, e95bf580, dcdc896b. Gate exit 0, 6035 pass / 0 fail on dcdc896b. The orchestrator took screenshots of the Job and Result tabs on a $0 demo run. OWED: `sheet-recheck.mjs` on a live run, phone width (barebrowse cannot check it), hamr's click-through.
 
 ### POCs
 All pre-registered: bars written to FINDINGS and committed (sha-frozen) BEFORE any data. A failed round is reported FAIL, then a second round is registered, never re-tuned. Probe the provider with 2 consecutive 200s before firing. Scratch HOME; keys by env prefix only (`$(pass show amr/deepseek_api | head -1)`); builders count `~/.config/bareloop/runs.jsonl` lines before/after.
@@ -4870,8 +4872,8 @@ Status: rulings given by hamr 2026-11-17; build APPROVED (hamr: "go, poc first")
 ### Where we are (for a fresh session)
 - Branch `chore/fix-ledger` (check `git branch --show-current`).
 - Pieces 0, S1, S2, S3, S4 are built and gated. Last full gate: 6031 pass / 0 fail on b3b24cfc (== 6e303060 + a4f76cdd, byte-identical tree).
-- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). Next: S5, then POC C, then /branch-review, then /release.
-- S5 (surfaces and the $0 re-check) and POC C are NOT started.
+- UPDATE 2026-11-18: the flow is back to how it was before the S4 prose-word trial (R1), plus the sheet port (S1-S4). R2 was built then UNDONE; R4 DROPPED; R3 pinning tests kept (`tests/pin-tilde-flow.test.js`). Next: POC C, then the live proof, then /branch-review, then /release.
+- S5 (surfaces and the $0 re-check) is BUILT (2026-11-18, see S5 status above). POC C is next (hamr 2026-11-18: "A, push, drop the question wording"), then the live proof.
 - Pushed up to 09e88845; later commits are local. Check `git log origin/chore/fix-ledger..HEAD`.
 - fwd waits for the release tag to take the tie-ask fixes (ee2d3955, 18b5a1c0); fwd must be told the tag.
 - Why this addendum: S4 prose-word patches failed live (F350); AI rewrite parked (F349). PRD v1.141 holds the contract.
