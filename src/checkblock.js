@@ -74,7 +74,7 @@ export const REASON = Object.freeze({
 export function renderCard(rows) {
   return rows.filter((r) => r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
     let body;
-    if (r.kind === 'floor') body = floorWords(r.line, r.carriesText !== false);
+    if (r.kind === 'floor') body = floorWords(r.line, r.carriesText !== false, r.listLine === true);
     else if (r.kind === 'prose') body = PROSE_WORDS;
     else if (r.kind === 'rule') body = `"${r.text}"${r.pick && !sameRuleWords(r.text, plainWords(r.pick)) ? ` -> ${plainWords(r.pick)}` : ''}`;
     else if (r.kind === 'count') body = `${CARD_T.count} ${r.min ?? ''}-${r.max ?? ''}`;
@@ -553,6 +553,7 @@ export class CheckBlock {
         const row = prose ?? this.addRow({ key: `L${l.n}.$prose`, line: l.n, kind: 'prose', by: 'default', from: 'default' });
         row.state = 'not-checked'; row.reason = lineParts.some((p) => p.class === 'shape') ? SHAPE_TRUTH_WORDS : PROSE_WORDS;
       } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
+      for (const f of this.rowsOn(l.n, 'floor')) f.listLine = lineParts.some((p) => p.class === 'shape');
       for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'shape') && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }

@@ -134,4 +134,13 @@ test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with
   const good = await run(r, file, ITEMS());
   const gres = /** @type {any} */ (getRunResult(good.runid, { home: good.home }));
   assert.deepEqual([gres.lines[0].shape.total, gres.lines[0].shape.passed, gres.lines[0].shape.failed, gres.lines[0].shape.errors], [4, 4, 0, []]);
+  // the Audit (signed mock C): per-field rows from the plain gap lines of the red run, the heading, the floor in list words
+  const { getRunDetail } = await import('../src/panel/server.js');
+  const ac = /** @type {any} */ (getRunDetail(bad.runid, { home: bad.home })).auditChecks;
+  assert.equal(ac.shapeHead, "Shape checks \u00B7 code checks each item's form, not whether it is true");
+  const rows = ac.checks.filter((/** @type {any} */ r) => r.shape);
+  assert.deepEqual(rows.map((/** @type {any} */ r) => [r.text, r.result]), [['title \u00B7 not empty', 'passed'], ['status \u00B7 one of: in progress, closed, finished', 'failed'], ['summary \u00B7 at most 200 characters', 'failed']]);
+  assert.equal(rows[1].why, 'item 3: "status" is not one of the allowed values');
+  assert.ok(ac.checks.some((/** @type {any} */ r) => /this line lists items, so it has no text check/.test(r.text)), 'the floor row says lists items, not finds facts');
+  assert.deepEqual(ac.notChecked.map((/** @type {any} */ r) => [r.text, r.by]), [['whether each one is true \u2014 you judge it at Accept', 'default']]);
 });

@@ -10,7 +10,7 @@ import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFact
 import { sheetPartOf, sheetChecksOf, sheetRolesOfParams, sheetShapeReds, sheetBrief, sheetViewRel, gradedChecks } from './sheetclaims.js';
 import { sheetRowsOf } from './sheetrows.js';
 import { plainShapeGap, shapeGapCount } from './shapewords.js';
-import { shapeRowsOf, shapePartOf, shapeShapeReds, shapeItemCheck, shapeFieldSentence, shapeExampleItem } from './shaperows.js';
+import { shapeRowsOf, shapePartOf, shapePartOfLine, shapeShapeReds, shapeItemCheck, shapeFieldSentence, shapeExampleItem } from './shaperows.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -1131,11 +1131,11 @@ export const guardRowText = (name) => guardQuestionText(name) ?? `${name} — ${
  * really puts a text check on it ({@link lineCarriesText}); a facts-only line says it has none. ONE owner: the card, the Job tab and the Audit read it.
  * @param {any} closeDecl @param {number} n @returns {string}
  */
-export function floorText(closeDecl, n) { return floorWords(n, lineCarriesText(closeDecl, n)); }
+export function floorText(closeDecl, n) { return floorWords(n, lineCarriesText(closeDecl, n), shapePartOfLine(closeDecl, n) !== null); }
 
-/** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @returns {string} */
-export function floorWords(n, carriesText) {
-  return `its file ${stepFileRel(n)} must exist, be complete JSON${carriesText ? ', and carry text' : '; this line finds facts, so it has no text check'}`;
+/** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @param {boolean} [listLine] a shape line: it lists items (shape jobs) @returns {string} */
+export function floorWords(n, carriesText, listLine = false) {
+  return `its file ${stepFileRel(n)} must exist, be complete JSON${carriesText ? ', and carry text' : `; this line ${listLine ? 'lists items' : 'finds facts'}, so it has no text check`}`;
 }
 
 /**

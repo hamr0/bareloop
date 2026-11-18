@@ -83,6 +83,7 @@ import { sheetRowsOf, sheetFoundLine } from '../sheetrows.js';
 import { shapePartOf, SHAPE_TRUTH_WORDS } from '../shaperows.js';
 import { shapeResultModel } from '../shaperesult.js';
 import { shapeItemOfPlain } from '../shapewords.js';
+import { rowResultsOf } from '../rowresults.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -1270,8 +1271,19 @@ export function rowResultsFromRecords(records, spec) {
   /** @type {Map<number, string[]>} */
   const unclaimed = new Map();
   const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
-  if (!oc) return { results, unclaimed };
   const lineOf = new Map(rubricStagesOf(spec).map((/** @type {any} */ s) => [s.name, s.params.step]));
+  // shape jobs: a red run recorded no per-row results (the final close's), only the close's plain gap lines; the rows of a shape line are read from them, through the same mapper the close uses (src/rowresults.js)
+  const list = Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : null;
+  for (const st of rubricStagesOf(spec)) {
+    const recorded = oc?.stages.find((/** @type {any} */ x) => x && x.name === st.name);
+    if (list === null || !shapePartOf(st.params) || (recorded && Array.isArray(recorded.rows) && recorded.rows.length)) continue;
+    const items = shapeRedsFromRecords(records, st.name, st.params.step);
+    if (items.length === 0) continue;
+    const per = rowResultsOf(list, st.params, { rawGaps: [{ id: 'p1-shape', check: 'itemShape', kind: 'item-shape', items }], detail: {} });
+    for (const r of per.rows) results.set(r.key, { result: r.result, ...(typeof r.why === 'string' ? { why: r.why } : {}) });
+    if (per.unclaimed.length) unclaimed.set(st.params.step, per.unclaimed);
+  }
+  if (!oc) return { results, unclaimed };
   for (const st of oc.stages) {
     if (!st || typeof st.name !== 'string') continue;
     for (const r of Array.isArray(st.rows) ? st.rows : []) {
@@ -2225,7 +2237,7 @@ function getRunDetailBody(runid, opts) {
   }
   // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
   const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
-  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always };
+  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never
