@@ -69,13 +69,18 @@ test('the prompt names the rules still without a check ONLY when there are some,
   const plain = shapeLookPrompt({ jobLines: JOB, lineNums: [1], texts: { Flights: 'x' } });
   assert.equal(plain.includes('Only these ~ rules'), false);
   const left = shapeLookPrompt({ jobLines: JOB, lineNums: [1], texts: { Flights: 'x' }, left: [{ line: 1, rules: [2] }] });
-  assert.match(left, /Only these ~ rules have no check yet: line 1 rule 2\. For each, give a field ONLY if that rule's own words give it a limit code can check/);
+  assert.match(left, /Only these ~ rules have no check yet: line 1 rule 2\. Give a field for no other rule\. For each of these, give a field ONLY if that rule's own words give it a limit code can check/);
   assert.ok(left.includes('"Each item has a title" counts: required, with minChars 1.'));
   assert.ok(left.includes('A rule whose words give no limit gets no field; it stays with the person.'));
   assert.ok(left.includes('"equals": true.'));
   assert.equal(left.includes('or false'), false);
   assert.equal(left.includes('one field for each ~ rule'), false);
   assert.match(left, /  money: bounds currency \(one of "\$", "€", "£"\), unit, decimal \(one of "\.", ","\), min, max, gt, lt/);
+});
+
+test('the prompt tells the AI to give a field for no rule outside the left list', () => {
+  const left = shapeLookPrompt({ jobLines: JOB, lineNums: [1], texts: { Flights: 'x' }, left: [{ line: 1, rules: [2] }] });
+  assert.ok(left.includes('Give a field for no other rule. For each of these, give a field ONLY if'));
 });
 
 test('the row-edit turn proposes no shape (one path only), and the look\'s words are a registered prompt register', () => {
