@@ -18,6 +18,8 @@
 
 **"Automate this job — I don't know the best workflow."**
 
+Hire an agent for a job, not a task. You sign the scope, it works inside a hard budget and time, and code checks the result before you accept it.
+
 The best workflow is the shortest proven path that gets the job done, and that heals itself when a different model works a different way.
 
 bareloop finds that path for you. Write your problem in plain language, as steps. Under each step, say what counts as success and what it must never do. The agent builds the bridge it will walk on, and the run is green only when the output passes checks the agent never touches.
@@ -36,30 +38,30 @@ Like a CNC machine, bareloop builds the thing that does the work, then lets a ga
 
 **Guide rails, not just guardrails.** Guardrails stop the agent going off the road: a money cap, a time cap, and a read/write fence it can't move. Guide rails keep it on the road: each new worker hears what earlier tries read, searched and changed, diffs included; two misses redraw the plan; past lessons go to the planner; an unclear job gets up to 3 questions, not a guess.
 
-**Verification.** The check sits outside the agent's loop: code decides. Anything code can't check is listed as Not checked, and you judge it at Accept. A red goes back with the real error to be fixed, until it's green or out of budget.
+**Verification.** The check sits outside the agent's loop: code decides, not an AI judge. Anything code can't check is listed as Not checked, and you judge it at Accept. A red goes back with the real error to be fixed, until it's green or out of budget.
 
 **Evidence.** Every call, every allowed or blocked read and write, every check result and every cent is recorded. You can audit it in the panel and replay it at $0. Research facts are quoted from saved sources.
 
 ## Two kinds of jobs
 
-**Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. If no check exists yet, say what you need and the agent builds that check first.
+**Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. The agent picks its checks from a fixed set of check types it can't extend; whatever none of them can check is listed as Not checked.
 > *"Fix the lint errors."* · *"Add doc comments to every function."* · *"Split this 3,000-line file without breaking a test."*
 
-**Rubric (research)**: it searches, collects, compares and hands you a report where every fact is quoted from a saved copy of its source. An AI only points at the page's own words, and fixed rules in code decide.
-> *"Find flights LAX→SFO under $400, nonstop, no red-eye."* · *"Compare these 5 laptops on price, weight and warranty."*
+**Rubric (research, sheets and lists)**: it reads the pages, files and sheets you give it and hands you a report. Every fact is quoted from its saved source, and code works out sheet totals and checks each list item's form. An AI only points; code decides. What code can't check is listed as Not checked, for you at Accept.
+> *"Find flights LAX→SFO under $400, nonstop, no red-eye."* · *"Total the expenses over $500 in this sheet."* · *"List every item in this tracker: a title, a status, a summary under 200 characters."*
 
 ## What it won't do
 
-bareloop reads, searches and writes. It never acts on the world: no paying, booking, sending forms or posting. When a job needs a person partway through, or needs to *do* something, like book the flight bareloop found, that's **[fwdloop](https://npmjs.com/package/fwdloop)**.
+bareloop reads and writes. It never acts on the world: no paying, booking, sending forms or posting. When a job needs a person partway through, or needs to *do* something, like book the flight bareloop found, that's **[fwdloop](https://npmjs.com/package/fwdloop)**.
 
-**Small tools, all local.** Built on the bare suite (bareagent, bareguard, litectx), always LLM-agnostic, always on your machine, with a simple panel UI.
+**Small tools, all local.** Built on the bare suite (bareagent, bareguard, litectx, barebrowse), always LLM-agnostic, always on your machine, with a simple panel UI.
 
 ## You have the last word
 
 Every judged run ends at a **review door** (a purely mechanical green finishes on its own —
 ask for the door with `--review-door`): here is what changed, here is what every check said,
 here is what I'm asking you. **Accept** it, **rerun** it — what you type is the feedback the next
-attempt works from, funded fresh — or **pause** it and decide another day. A pause costs
+attempt works from (the money already spent still counts against your cap; the time is fresh) — or **pause** it and decide another day. A pause costs
 nothing, keeps everything, and picks up from the start of the last step whenever you come back.
 Never come back, and it quietly expires on its own.
 
@@ -141,7 +143,7 @@ constraints. The README is the pitch. (Suite-wide pattern: every bare package sh
 A simple localhost UI lets you build a job by talking about it and watch it run. When it
 works, **export the whole workflow** — with its self-healing harness — and run it again
 anywhere. The point is to stop trial-and-erroring your way to the workflow that fits a job.
-Find it once, keep it, reuse it. It is a seed of something bigger over time.
+Find it once, keep it, reuse it. A green job can also be scheduled to run again on a clock, from a folder or on new tickets. It is a seed of something bigger over time.
 
 ### Export a job
 
