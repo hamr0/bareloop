@@ -4443,9 +4443,8 @@
       '" target="_blank" rel="noopener noreferrer">' + escapeXml(url) + '</a><div class="hint" data-testid="result-page-note">' + escapeXml(note || "") + '</div></div>');
   }
   // `own` = the Result tab read 2+ pages, so this line's box shows its own page
-  // ---- SHAPE JOBS (signed mock design/shape-views-mock.html, panel A): a shape line's answer is a GRID: items as rows, the signed fields as columns (the rule's short words under each name), a mark and the short value
-  // in each cell, the stats line, the errors in the server's plain words and the Not checked line. The server decides every mark and word (`line.shape`, src/shaperesult.js); the page only draws. An item's name is plain text.
-  // a shape line with many fields (m.fold, the server's one threshold): one row per item `N \u00B7 name  \u2713 k of n  \u25B8`, a native <details> opening to one line per field; a failed item starts open (signed mock A2)
+  // ---- SHAPE JOBS (signed mock design/shape-views-mock.html, panel A): a shape line's answer is a FOLD (every shape line, any field count): one row per item, opening to its fields, the stats line and the Not checked line. The server decides every mark and word (`line.shape`, src/shaperesult.js); the page only draws. An item's name is plain text.
+  // one row per item `N \u00B7 name  \u2713 k of n  \u25B8`, a native <details> opening to one line per field; a failed item starts open (signed mock A2)
   function shapeFoldHtml(m){
     var n = m.columns.length;
     return '<div class="sf-list" data-testid="shape-fold">' + m.rows.map(function(r){
@@ -4462,11 +4461,7 @@
       h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
     } else {
       h += '<p class="tg-stats" data-testid="shape-stats"><b>' + escapeXml(String(detail.job || "")) + '</b> \u00B7 ' + escapeXml(runName) + ' \u00B7 <b>' + m.total + '</b> items \u00B7 <b>' + m.passed + '</b> passed \u00B7 <b>' + m.failed + '</b> failed</p>';
-      h += m.fold ? shapeFoldHtml(m) : ('<div class="grid-wrap"><table class="grid tg" data-testid="shape-grid"><thead><tr><th class="r">item</th>' + m.columns.map(function(c){ return '<th class="t">' + escapeXml(c.name) + '<span class="hint">' + escapeXml(c.hint) + '</span></th>'; }).join("") + '</tr></thead><tbody>' +
-        m.rows.map(function(r){
-          return '<tr data-testid="shape-row"><td class="r"><div class="tg-rowname"><span class="tg-name tg-name-plain" data-testid="shape-name" title="' + escapeXml(r.name) + '">' + escapeXml(r.name) + '</span></div></td>' + r.cells.map(function(c){ return tgCell(c); }).join("") + '</tr>';
-        }).join("") + '</tbody></table></div>');
-      if(m.errors.length && !m.fold) h += '<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors</div><div class="fx-lines">' + m.errors.map(function(e){ return '<div>' + gridGlyph("\u2717") + " " + escapeXml(e) + "</div>"; }).join("") + '</div></div>';
+      h += shapeFoldHtml(m);
     }
     return h + resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }

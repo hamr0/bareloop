@@ -110,7 +110,7 @@ test('the report (signed mock D): the shape-checks line, a table of items x fiel
 });
 
 test('the view model (signed mock A and D): marks per cell from the item reds, short values, the red words name the worker\'s own value, the Failed list', async () => {
-  const { shapeResultModel, shapeMarkdown, shapeHint } = await import('../src/shaperesult.js');
+  const { shapeResultModel, shapeMarkdown } = await import('../src/shaperesult.js');
   const part = buildShapePart({ text: 't', fields: [
     { name: 'title', spec: { kind: 'text', required: true, minChars: 1 }, rule: 1, by: 'you' },
     { name: 'status', spec: { kind: 'oneOf', values: ['in progress', 'closed', 'finished'] }, rule: 2, by: 'you' },
@@ -122,7 +122,7 @@ test('the view model (signed mock A and D): marks per cell from the item reds, s
     { title: 'Field survey', status: 'done', summary: 'x'.repeat(120) }, { title: 'Water quality review', status: 'finished', summary: 'x'.repeat(236) },
   ];
   const m = shapeResultModel({ part, results, rules, reds: ['#2:status:not-one-of', '#3:summary:too-long:chars:236>199'] });
-  assert.deepEqual(m.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
+  assert.deepEqual(m.columns, [{ name: 'title' }, { name: 'status' }, { name: 'summary' }]);
   assert.deepEqual([m.total, m.passed, m.failed], [4, 2, 2]);
   assert.equal(m.rows[2].name, '3 \u00B7 Field survey');
   assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: 'Field survey' }, { mark: 'r', text: 'done', why: 'is "done", not one of: in progress, closed, finished' }, { mark: 'g', text: `${'x'.repeat(39)}… (120 chars)` }]);
@@ -130,7 +130,6 @@ test('the view model (signed mock A and D): marks per cell from the item reds, s
   assert.deepEqual(m.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);
   assert.match(shapeMarkdown(m), /\| 3 \u00b7 Field survey \| \u2713 Field survey \| \u2717 done \| \u2713 x{39}… \(120 chars\) \|\n/);
   assert.match(shapeMarkdown(m), /\n### Failed\n\n- item 3: status is "done", not one of: in progress, closed, finished\n- item 4: summary is too long \(236 characters, under 200\)$/);
-  assert.equal(shapeHint({ kind: 'text', minChars: 5 }), 'at least 5 characters'.replace(' characters', ''));
   const whole = shapeResultModel({ part, results: [null], rules, reds: ['#0:item-not-object'] });
   assert.deepEqual(whole.rows[0].cells.map((c) => c.mark), ['r', 'r', 'r']);
 });
@@ -197,11 +196,11 @@ test('the page draws the Result grid and the Audit shape rows as the signed mock
   const html = shapeResultCard({ n: 1, kind: 'shape', shape: model, notChecked: ['whether each one is true — you judge it at Accept'], notCheckedBy: { 'whether each one is true — you judge it at Accept': 'default' } }, { job: 'research-1', runNo: 3, runid: 'x' }, false);
   assert.match(html, /<h4>Result<\/h4>/);
   assert.match(html, /<p class="tg-stats" data-testid="shape-stats"><b>research-1<\/b> · run-3 · <b>2<\/b> items · <b>1<\/b> passed · <b>1<\/b> failed<\/p>/);
-  assert.match(html, /<th class="r">item<\/th><th class="t">title<span class="hint">not empty<\/span><\/th><th class="t">status<span class="hint">one of 2<\/span><\/th>/);
-  assert.match(html, /<span class="tg-name tg-name-plain" data-testid="shape-name" title="2 · Two">2 · Two<\/span>/);
-  assert.doesNotMatch(html, /<button[^>]*tg-name/, 'item names are plain text, not buttons');
-  assert.match(html, /<span class="glyph-red">✗<\/span><span class="tg-val">done<\/span>/);
-  assert.match(html, /<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors<\/div><div class="fx-lines"><div><span class="glyph-red">✗<\/span> item 2: status is &quot;done&quot;, not one of: a, b<\/div>/);
+  assert.match(html, /data-testid="shape-fold"/);
+  assert.match(html, /<span class="sf-nm" data-testid="shape-name" title="2 · Two">2 · Two<\/span>/);
+  assert.doesNotMatch(html, /<button[^>]*sf-nm/, 'item names are plain text, not buttons');
+  assert.match(html, /<span class="k">status<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">done /);
+  assert.doesNotMatch(html, /shape-errors|shape-grid/);
   assert.match(html, /<label>Not checked<\/label>.*whether each one is true — you judge it at Accept .*\$ \[default\]/);
   assert.match(shapeResultCard({ n: 1, kind: 'shape', shape: null, notChecked: [] }, {}, true), /<h4>Result · line 1<\/h4><div class="hint" data-testid="result-nofile">no saved result to show<\/div>/);
   // the signed look: `[tag] shape words ... result`, the red reason on its own indented line under the row; every kind of row reads the same
@@ -232,8 +231,7 @@ test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a fa
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
   const { shapeResultCard } = new Function('escapeXml', `var RESULT_NONE = "x";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard };`)(escapeXml);
-  const { shapeResultModel, SHAPE_FOLD_MIN } = await import('../src/shaperesult.js');
-  assert.equal(SHAPE_FOLD_MIN, 5);
+  const { shapeResultModel } = await import('../src/shaperesult.js');
   const mk = (/** @type {number} */ n) => {
     const fields = Array.from({ length: n }, (_v, k) => ({ name: k === 0 ? 'title' : `f${k}`, spec: k === 0 ? { kind: 'text', minChars: 1 } : { kind: 'text', maxChars: 9 }, rule: 1, by: 'you' }));
     const ok = Object.fromEntries(fields.map((f) => [f.name, 'abc']));
@@ -248,9 +246,11 @@ test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a fa
   assert.match(five, /<details class="sf-item" data-testid="shape-item"><summary>.*?1 · abc.*?5 of 5/);
   assert.match(five, /<details class="sf-item bad" data-testid="shape-item" open><summary>.*?4 of 5/);
   assert.match(five, /data-result="failed"><span class="k">f1<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \(30 chars\) <span class="why">· is too long/);
-  const four = draw(mk(4));
-  assert.match(four, /data-testid="shape-grid"/);
-  assert.doesNotMatch(four, /shape-fold|<details/);
+  for (const n of [1, 3, 4]) {
+    const few = draw(mk(n));
+    assert.match(few, /data-testid="shape-fold"/, `${n} fields draw the fold`);
+    assert.doesNotMatch(few, /shape-grid|<table/);
+  }
 });
 
 test('every cell shows the item\'s own value (clipped, escaped): a free title, a list joined, yes/no, a number; a bounded field adds its words in brackets', async () => {
@@ -271,7 +271,7 @@ test('every cell shows the item\'s own value (clipped, escaped): a free title, a
   assert.equal(t[4], `${'y'.repeat(39)}…`);
 });
 
-test('the fold view draws no separate errors list (its reasons sit on the opened items\' red lines); the grid keeps it', async () => {
+test('the fold draws no separate errors list for any field count (its reasons sit on the opened items\' red lines)', async () => {
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
@@ -288,5 +288,6 @@ test('the fold view draws no separate errors list (its reasons sit on the opened
   const draw = (/** @type {any} */ m) => shapeResultCard({ n: 1, kind: 'shape', shape: m, notChecked: [] }, { job: 'j', runNo: 1, runid: 'x' }, false);
   assert.doesNotMatch(draw(mk(5)), /shape-errors/);
   assert.match(draw(mk(5)), /class="why">· is too long/);
-  assert.match(draw(mk(4)), /shape-errors/);
+  assert.doesNotMatch(draw(mk(3)), /shape-errors/);
+  assert.match(draw(mk(3)), /class="why">· is too long/);
 });

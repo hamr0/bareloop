@@ -129,7 +129,7 @@ test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with
   const res = /** @type {any} */ (getRunResult(bad.runid, { home: bad.home }));
   const line = res.lines[0];
   assert.equal(line.kind, 'shape');
-  assert.deepEqual(line.shape.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
+  assert.deepEqual(line.shape.columns, [{ name: 'title' }, { name: 'status' }, { name: 'summary' }]);
   assert.deepEqual([line.shape.total, line.shape.passed, line.shape.failed], [4, 2, 2]);
   assert.deepEqual(line.shape.rows[2].cells.map((/** @type {any} */ c) => c.mark + c.text), ['gHeat pumps', 'rdone', 'gField data. (11 chars)']);
   assert.deepEqual(line.shape.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);

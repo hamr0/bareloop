@@ -2,20 +2,11 @@
 // .md report (src/resultmd.js), so the grid and the report say the same thing. Items are rows, the signed fields are columns; a cell is a mark and a short value; the errors are the plain item reds. Pure.
 //   cell value: the item's own value (clipped, yes/no for a boolean, a list's entries joined), then the bound's words in brackets when the person bounded the field (`Ada (2 words)`, `a, b (2 entries)`). A red `#<i>:<path>:<reason>` (bareguard's, names and counts only) marks the cell of its field; a red with no field (`item-not-object`) marks the whole row.
 //   The words of a red here name the worker's own value where the reason is a wrong value (`status is "done", not one of: ...`): the value comes from the delivered file, never from bareguard's gap.
-import { shapeFieldSentence, upper, SHAPE_HEAD_PARTS, SHAPE_TRUTH_PARTS } from './shaperows.js';
+import { upper, SHAPE_HEAD_PARTS, SHAPE_TRUTH_PARTS } from './shaperows.js';
 import { parseShapeItem, itemFieldOf, plainShapeItem } from './shapewords.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-/** a shape line with this many fields or more reads as one folded row per item (the Result tab's A2), fewer stay the grid (A1) */
-export const SHAPE_FOLD_MIN = 5;
 const clip = (/** @type {string} */ t, n = 40) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
-
-/** the column's short sub-label (the mock): `not empty`, `one of 3`, `under 200`, else the field's sentence @param {Record<string, any>} spec @param {string} said the person's rule for the field @returns {string} */
-export function shapeHint(spec, said = '') {
-  if (spec.kind === 'text' && spec.minChars === 1 && spec.maxChars === undefined && spec.minWords === undefined && spec.maxWords === undefined) return 'not empty';
-  if (spec.kind === 'oneOf') return `one of ${Array.isArray(spec.values) ? spec.values.length : 0}`;
-  return shapeFieldSentence(spec, said).replace(/ (characters|words|entries)$/, '');
-}
 
 /** one scalar as written, whitespace folded @param {unknown} v @returns {string} */
 const scalar = (v) => (typeof v === 'boolean' ? (v ? 'yes' : 'no') : typeof v === 'string' || typeof v === 'number' ? String(v).replace(/\s+/g, ' ').trim() : '');
@@ -61,7 +52,7 @@ export function shapeViewRed(red, field, value, said) {
 /**
  * The model of a shape line's answer.
  * @param {{part: any, results: unknown, reds?: string[], rules?: string[]}} o `part` the signed shape part; `results` the answer's `results` list; `reds` the item reds the close recorded (`#<i>:<path>:<reason>`, none for a green run); `rules` the line's `~` rules
- * @returns {{columns: {name: string, hint: string}[], rows: {name: string, cells: {mark: 'g'|'r', text: string, why?: string}[]}[], fold: boolean, total: number, passed: number, failed: number, errors: string[], notChecked: string, head: string}}
+ * @returns {{columns: {name: string}[], rows: {name: string, cells: {mark: 'g'|'r', text: string, why?: string}[]}[], total: number, passed: number, failed: number, errors: string[], notChecked: string, head: string}}
  */
 export function shapeResultModel({ part, results, reds = [], rules = [] }) {
   const fields = (Array.isArray(part?.fields) ? part.fields : []).filter(isRec);
@@ -87,7 +78,7 @@ export function shapeResultModel({ part, results, reds = [], rules = [] }) {
   });
   const failed = rows.filter((r) => r.cells.some((c) => c.mark === 'r')).length;
   return {
-    columns: fields.map((f) => ({ name: String(f.name), hint: shapeHint(f.spec, said(f)) })), fold: fields.length >= SHAPE_FOLD_MIN, rows, total: rows.length, passed: rows.length - failed, failed, errors,
+    columns: fields.map((f) => ({ name: String(f.name) })), rows, total: rows.length, passed: rows.length - failed, failed, errors,
     notChecked: SHAPE_TRUTH_PARTS.join(' — '), head: SHAPE_HEAD_PARTS.join(' · '),
   };
 }
