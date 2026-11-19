@@ -1,0 +1,20 @@
+{
+ "source": "shape-scope round 3, research-tracker control (the AI shape answer, verbatim)",
+ "jobLines": [
+  {
+   "n": 1,
+   "text": "List every research item in the tracker, one entry each",
+   "rules": [
+    "each item has a title",
+    "status is one of in progress, closed, finished",
+    "summary is under 200 characters"
+   ]
+  }
+ ],
+ "rawShape": "{\"shapes\":[{\"line\":1,\"fields\":[{\"name\":\"title\",\"kind\":\"text\",\"required\":true,\"bounds\":{},\"fromRule\":1},{\"name\":\"summary\",\"kind\":\"text\",\"required\":true,\"bounds\":{\"maxChars\":199},\"fromRule\":3}],\"extraFields\":[{\"name\":\"owner\",\"kind\":\"text\",\"required\":false,\"bounds\":{},\"fromRule\":null},{\"name\":\"status\",\"kind\":\"oneOf\",\"required\":false,\"bounds\":{\"values\":[\"in progress\",\"closed\",\"finished\"]},\"fromRule\":null}],\"itemCountFrom\":[]}]}",
+ "roundThreeRuleWhy": [
+  "L1.~1: No rule can check this, so you judge it at Accept.",
+  "L1.~2: fact",
+  "L1.~3: shape"
+ ]
+}
