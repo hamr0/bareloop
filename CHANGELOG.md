@@ -20,7 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-- Shape jobs: a `~` rule whose truth check code picked but REFUSED when it built the line (live run mwnbs3np: the look tied "each item has a title" and the status rule to page words, the job's 4-result count made code refuse them) is now a shape candidate like any rule left Not checked, so it takes its shape field instead of ending Not checked (`src/checkblock.js` `truthRefused`; the shape look still runs once per draft; the refused check is tried again on every reconcile of the same block, so a rule whose truth check builds later goes back to it, truth first).
+- Shape jobs: a `~` rule whose truth check code picked but REFUSED when it built the line (live run mwnbs3np: the look tied "each item has a title" and the status rule to page words, the job's 4-result count made code refuse them) is now a shape candidate like any rule left Not checked, so it takes its shape field instead of ending Not checked (`src/checkblock.js` `truthRefused`; the shape look still runs once per draft).
 
 ### Changed
 
