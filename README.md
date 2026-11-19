@@ -30,9 +30,9 @@ The harness (budget, time, what it may touch) and the judge both sit **outside**
   <img src="https://raw.githubusercontent.com/hamr0/bareloop/main/docs/media/panel-walkthrough.gif" alt="The bareloop panel: write a job, the runs list, a rubric run with a fixed try, its Result, the Audit checks fold and the signed Job with its check rows, then a repo run ready to merge" width="900">
 </p>
 
-## The machine that makes machines
+## The factory that builds the factory
 
-Like a CNC machine, bareloop builds the thing that does the work, then lets a gauge it can't touch decide if the work is good. Trust needs four things. Miss one and trust is zero. bareloop has all four.
+Software factories run a flow someone wrote in advance. bareloop builds the flow for each job, then lets a gauge it can't touch decide if the work is good. Trust needs four things. Miss one and trust is zero. bareloop has all four.
 
 **Intent.** You write the job as plain numbered steps, and a `~` line under each says what success means and what it must never do. Every step gets a check or a written reason why not. You sign before a dollar is spent.
 
