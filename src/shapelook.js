@@ -1,15 +1,10 @@
-// SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs", clause 1 "Offer", as rulings of hamr 2026-11-18 (2a) made it: the shape is proposed EARLIER, in a pre-call look before the asks, the same way the
-// sheet look is (src/sheetlook.js): ONE AI call for the whole job (not one per input) answers "which job lines are a list of items with named fields, and what are the fields". The AI only SUGGESTS: it returns the shapes
-// (fields, kinds, bounds, `fromRule`, extra fields, `itemCountFrom`) and CODE builds or refuses every field (src/shapebuild.js, R1-R5) before `askRounds`, so the "rules or shape could both fit" ask joins the counted asks.
-// There is no second place that proposes a shape: the row-edit turn (src/rowedit.js) is not offered one.
-//   `shapeLookPrompt`   the call's user text (the job, the inputs bounded, the menu of src/shapemenu.js, the answer form); `SHAPE_SYSTEM` its system text (both are prompt registers, src/promptregisters.js);
+// SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs" and the rules-first rulings of 2026-11-19: the shape look is ONE AI call for the whole job that proposes, for the `~` rules still left Not checked,
+// the fields of a list of items (fields, kinds, bounds, `fromRule`, extra fields, `itemCountFrom`). It runs only when code left at least one `~` rule without a check after today's truth checks and the person's answers
+// (`CheckBlock.shapeCandidates`, src/authorjob.js): a job whose rules are all checkable makes no call. The AI only SUGGESTS; CODE builds or refuses every field (src/shapebuild.js, R1-R5, a real bound from the rule, bareguard's own refusal).
+//   `shapeLookPrompt`   the call's user text (the job, the inputs bounded, which rules still need a field, the menu of src/shapemenu.js with each closed option's values, the answer form); `SHAPE_SYSTEM` its system text (both are prompt registers);
 //   `parseShapeAnswer`  strict: one JSON object `{"shapes":[...]}`, nothing else, no repair;
 //   `runShapeLook`      the sibling of `runSheetLook`: the same call, book, retry and spend plumbing (the cap is checked BEFORE the call, a 429 waits the vendor's stated time once, a transport failure is retried once and the failed
-//                       attempt is booked UNPRICED, each call's scrubbed answer rides `onCall`); an unreadable answer twice is ABSENT in plain words, as the sheet look's is (the door below does not let that stop the draft);
-//   `runLookWithShape`  the look door's default (src/authorjob.js `lookFn`): `runLook` (page map / sheet look) first, then the shape look when the bareguard this package runs carries `itemShape` (`shapeAvailable()`), the job has a line with a
-//                       `~` rule that is no sheet line, and no input is a CSV. Its spend counts the earlier look's. OFF otherwise: the result is `runLook`'s, untouched.
-// Not settled by the sheet look it mirrors (named): which lines are offered when a job has both a CSV and page lines (here none: a job with a CSV input is a sheet job, as the sheet turn already says). A failed shape look
-// does not stop the draft (hamr 2026-11-18): it goes on without a shape, its spend booked, the reason in the draft log.
+//                       attempt is booked UNPRICED, each call's scrubbed answer rides `onCall`); an unreadable answer twice is ABSENT in plain words (the caller does not let that stop the draft: it goes on without a shape).
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 import { isTransportFailure } from './transport.js';
@@ -17,9 +12,8 @@ import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { MAP_UNREADABLE, defaultLoop } from './pagemap.js';
-import { runLook } from './sheetlook.js';
 import { lineRules } from './rubricstep.js';
-import { SHAPE_KINDS, NAME_MAX_CHARS, shapeAvailable } from './shapemenu.js';
+import { SHAPE_KINDS, SHAPE_OPTION_VALUES, NAME_MAX_CHARS } from './shapemenu.js';
 
 /** the label of the one paid call about a shape, as the drafting book and the progress line see it (the sibling of `SHEET_CALL_LABEL`) */
 export const SHAPE_CALL_LABEL = 'shape-map';
@@ -32,19 +26,22 @@ export const SHAPE_SYSTEM = 'You map a person\'s job to the SHAPE of an answer: 
 
 /** the menu as the drafter reads it, one line per kind of src/shapemenu.js (the one place it is named): `  boolean: bounds equals` @returns {string[]} */
 export function shapeMenuLines() {
-  return Object.entries(SHAPE_KINDS).map(([k, b]) => `  ${k}: bounds ${b.length ? b.join(', ') : '(none)'}`);
+  return Object.entries(SHAPE_KINDS).map(([k, b]) => `  ${k}: bounds ${b.length ? b.map((o) => (SHAPE_OPTION_VALUES[k]?.[o] ? `${o} (one of ${SHAPE_OPTION_VALUES[k][o].map((v) => `"${v}"`).join(', ')})` : o)).join(', ') : '(none)'}`);
 }
 
 /**
  * What the AI is told: the job (its `~` rules numbered per line), the inputs (bounded), the kind menu and the answer form.
- * @param {{jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], texts: Record<string, string>}} o `lineNums` the lines a shape can be offered for
+ * @param {{jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], texts: Record<string, string>, left?: {line: number, rules: number[]}[]}} o `lineNums` the lines a shape can be offered for, `left` the rules still without a check
  * @returns {string}
  */
-export function shapeLookPrompt({ jobLines, lineNums, texts }) {
+export function shapeLookPrompt({ jobLines, lineNums, texts, left = [] }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}${lineRules(l).map((r, i) => `\n~ rule ${i + 1}: ${r}`).join('')}`).join('\n');
   const inputs = Object.entries(texts).map(([label, t]) => `Input "${label}"${t.length > SHAPE_SHOWN_CHARS ? ` (first ${SHAPE_SHOWN_CHARS} of ${t.length} characters)` : ''}:\n<<<\n${t.slice(0, SHAPE_SHOWN_CHARS)}\n>>>`).join('\n\n');
+  // only when code left some `~` rules without a check: say which, so the AI gives a field for those and no other (injected only IF the case happens)
+  const needs = left.length ? `Only these ~ rules have no check yet: ${left.map((x) => `line ${x.line} rule${x.rules.length === 1 ? '' : 's'} ${x.rules.join(', ')}`).join('; ')}. Give a field for each of them and for no other rule (extra fields are fine).\n` : '';
   return `THE JOB (each ~ rule applies to the line above it):\n${job}\n\nTHE INPUTS:\n${inputs}\n\n`
     + `A job line whose answer is a LIST OF ITEMS with named fields (for example one item per flight, per resume or per research topic) gets a shape. The lines a shape can be offered for: ${lineNums.join(', ')}. A line whose answer is not such a list gets none.\n`
+    + needs
     + '- "fields": one field for each ~ rule of the line that names something an item has; "fromRule" is that rule\'s number on the line (1 is its first rule).\n'
     + '- "extraFields": any other field you think would help (none is fine); its "fromRule" is null and code shows it to the person as a suggestion.\n'
     + '- "kind" is one of the kinds below and "bounds" holds only the bounds that kind accepts. Put in "bounds" only what the person wrote in that field\'s own rule; code drops every bound the person did not write. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true or false.\n'
@@ -73,7 +70,7 @@ export function parseShapeAnswer(text) {
 
 /**
  * Run the shape look: ONE call for the job. The same call / book / retry / spend plumbing as `runSheetLook` (src/sheetlook.js).
- * @param {{texts: Record<string, string>, inputs: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[],
+ * @param {{texts: Record<string, string>, inputs?: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], left?: {line: number, rules: number[]}[],
  *   provider?: any, maxTokens?: number, ceilingUsd?: number|null, callTimeoutMs?: number, priorCalls?: {costUsd: number|null, unpricedRounds: number}[],
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: (o: {system: string, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
@@ -81,7 +78,7 @@ export function parseShapeAnswer(text) {
  * @returns {Promise<{state: 'PRESENT'|'ABSENT', shapes: Record<string, any>[], reason: string|null, cause: string|null, raws: ReturnType<typeof scrubRaw>[], calls: {label: string, costUsd: number|null, unpricedRounds: number}[], budgetStop: 'cap-halt'|'pricing-red'|null}>}
  */
 export async function runShapeLook({
-  texts, jobLines, lineNums, provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS, priorCalls = [],
+  texts, jobLines, lineNums, left = [], provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS, priorCalls = [],
   onCall = () => {}, createLoop = defaultLoop, rates = null, callOptions = {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
   const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0 ? Math.min(Math.trunc(Number(callTimeoutMs)), AUTHOR_CALL_TIMEOUT_MS) : AUTHOR_CALL_TIMEOUT_MS;
@@ -98,7 +95,7 @@ export async function runShapeLook({
     onCall({ ...call, raw: raw.text, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
   };
   const absent = (/** @type {string} */ reason, /** @type {string} */ cause, /** @type {'cap-halt'|'pricing-red'|null} */ budgetStop = null) => ({ state: /** @type {'ABSENT'} */ ('ABSENT'), shapes: [], reason, cause, raws, calls, budgetStop });
-  const content = shapeLookPrompt({ jobLines, lineNums, texts });
+  const content = shapeLookPrompt({ jobLines, lineNums, texts, left });
   let transportRetried = false;
   let rateRetried = false;
   let attempts = 0;
@@ -130,24 +127,4 @@ export async function runShapeLook({
     if (parsed.ok) return { state: 'PRESENT', shapes: /** @type {any} */ (parsed).shapes, reason: null, cause: null, raws, calls, budgetStop: null };
     if (attempts >= 2) return absent(MAP_UNREADABLE.replace('about the page', 'about the shape of the answer'), SURVEY_CAUSES.UNPARSEABLE);
   }
-}
-
-/**
- * The look door's default (src/authorjob.js `lookFn`): `runLook` (the page map, or the sheet look for a CSV), then the shape look. Off (`runLook`'s own answer, untouched) unless this bareguard carries `itemShape`, no input is a CSV
- * (`sheets` empty), and a line has a `~` rule. The proposed shapes ride the look as `facts.look.shapes`; code builds them (src/authorjob.js, before the asks).
- * @param {any} o the arguments of `runLook`, plus `shape` (a test's override of `shapeAvailable()`) @returns {ReturnType<typeof runLook>}
- */
-export async function runLookWithShape(o) {
-  const base = await runLook(o);
-  const on = o.shape ?? shapeAvailable();
-  const sheets = Array.isArray(o.sheets) ? o.sheets : [];
-  const lineNums = (Array.isArray(o.jobLines) ? o.jobLines : []).filter((/** @type {any} */ l) => lineRules(l).length > 0).map((/** @type {any} */ l) => l.n);
-  if (!on || sheets.length > 0 || lineNums.length === 0 || base.state !== 'PRESENT' || typeof o.texts !== 'object' || o.texts === null) return base;
-  const got = await runShapeLook({ ...o, lineNums, priorCalls: base.calls ?? [] });
-  const calls = [...(base.calls ?? []), ...got.calls];
-  const raws = [...(base.raws ?? []), ...got.raws];
-  // hamr's ruling (2a, soft fail): a shape look that fails, is unreadable twice or is capped does NOT stop the draft. The look stays PRESENT with no shapes (the rules take today's path exactly), the look's spend stays booked
-  // (`calls` carries every attempt, never forgiven) and the reason rides the look as `shapeSkipped` for the draft log. The sheet look is unchanged (it still stops).
-  if (got.state !== 'PRESENT') return { ...base, calls, raws, facts: { ...base.facts, look: { ...base.facts.look, shapeSkipped: String(got.reason ?? 'unknown') } } };
-  return { ...base, calls, raws, facts: { ...base.facts, look: { ...base.facts.look, shapes: got.shapes } } };
 }

@@ -41,11 +41,13 @@ async function draft() {
   writeFileSync(file, NOTES);
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Tracker', value: file }], into: join(tmp(), 'seed') });
   if (!proved.ok) throw new Error('unreachable');
-  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Tracker' }], look: { facts: [], prose: [], notFound: [], dropped: [], shapes: SHAPES } } };
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Tracker' }], look: { facts: [], prose: [], notFound: [], dropped: [] } } };
   const r = await authorCloseForJob({
     answers: { 1: '1. List my research items' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
     jobLines: JSON.parse(JSON.stringify(LINES)), inputs: [{ n: 1, label: 'Tracker', value: file }], writeScope: ['output/'], provider: { fake: true }, ceilingUsd: 1,
     lookFn: async () => survey,
+    // rules first: the shape look is asked only about the ~ rules no truth check took (here all three), through its own seam
+    shapeFn: async () => ({ state: 'PRESENT', shapes: SHAPES, reason: null, cause: null, raws: [], calls: [] }),
     generate: async () => { throw new Error('no drafting-model call'); },
     editGenerate: async (/** @type {any} */ _m, /** @type {any[]} */ tools) => { await tools.find((t) => t.name === 'row_edits' || t.name.includes('edit')).execute({ edits: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
   });
