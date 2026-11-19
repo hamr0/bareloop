@@ -176,8 +176,10 @@ test('the page draws a shape card: the heading once, rows as `› name · senten
   const html = renderJobPlan(plan, (/** @type {string} */ op, /** @type {string} */ key) => `<button data-op="${op}" data-key="${key}">${op}</button>`);
   assert.equal((html.match(/data-testid="plan-shape-head"/g) ?? []).length, 1);
   assert.match(html, /<b>Shape checks · code checks each item's form, not whether it is true<\/b>/);
-  assert.match(html, /<span class="mk">›<\/span> name · not empty <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span>/);
-  assert.match(html, /<span class="mk">›<\/span> remote · yes <span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span><button data-op="drop"/);
+  const TAG = '<span class="by" data-testid="plan-form" data-form="shape">\\[shape\\]<\\/span>';
+  assert.match(html, new RegExp(`name · not empty <span class="by" data-testid="plan-by" data-by="you">~ \\[you\\]<\\/span> ${TAG}<button data-op="drop" data-key="L2\\.~3">`), 'every shape row says [shape]; the person\'s own ~ row can be dropped');
+  assert.match(html, new RegExp(`remote · yes <span class="by" data-testid="plan-by" data-by="agent">! \\[agent\\]<\\/span> ${TAG}<button data-op="drop"`));
+  assert.match(html, new RegExp(`the answer lists exactly 2 items <span class="by" data-testid="plan-by" data-by="default">\\$ \\[default\\]<\\/span> ${TAG}<\\/div>`), 'code\'s own $ row has no Drop');
   assert.doesNotMatch(html, /check · name · not empty/);
   assert.match(html, /Suggested ·[^<]*<\/span><div class="fold" data-testid="plan-suggest-row"><span class="mk">›<\/span> line 2 · owner · text <span class="by"[^>]*>! \[agent\]<\/span><button data-op="add" data-key="L2.shape.owner"/);
   assert.match(html, /<summary>Not checked · \d/);

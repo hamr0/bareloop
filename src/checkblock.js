@@ -66,8 +66,6 @@ export const REASON = Object.freeze({
   sheetLine: 'this line reads a sheet and its rules are checked by the sheet checks, so a row edit about it is not used',
   sheetFacts: 'this line reads a sheet, so it is checked by its sheet checks and not by page facts',
   columnRule: "this rule only names a column; the agent's checks on this line use it",
-  shapeLine: 'this line is checked as a list of items with fields, so a row edit about it is not used',
-  shapeFacts: 'this line is checked as a list of items with fields, so it is not checked by page facts',
 });
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
@@ -155,6 +153,8 @@ export class CheckBlock {
     this.sheetBuilt = null;
     /** shape jobs (clause 4): what code built from the AI's `itemShape` (src/shapebuild.js `buildShapes`), null until the row-edit turn has answered. A line in `built` is a SHAPE line: a line is exactly one class, facts, sheet or shape @type {ReturnType<typeof import('./shapebuild.js').buildShapes>|null} */
     this.shapeBuilt = null;
+    /** shape jobs: the Drops the person made, kept beside the rows (`agent` = `<line>:<field name>`, `rules` = `<line>:<rule number>`) @type {{agent: Set<string>, rules: Set<string>}} */
+    this.shapeDrops = { agent: new Set(), rules: new Set() };
   }
 
   /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names @param {string[]|null} [fence] the signed write fence, when the job has one */
@@ -186,55 +186,83 @@ export class CheckBlock {
     this.reconcile();
   }
 
-  /** shape jobs (clause 4): is job line `n` a shape line (code built a shape for it)? A shape line's rules are decided by the shape alone (no page path, no pick question, no row edit) @param {number} n */
-  isShapeLine(n) { return this.shapeBuilt?.built[n] !== undefined && !this.isSheetLine(n); }
+  /** shape jobs, rules first: does job line `n` hold a rule that took its shape field (no truth check could take it)? Only such a line carries shape rows and a shape part @param {number} n */
+  isShapeLine(n) { return !this.isSheetLine(n) && this.rows.some((r) => r.kind === 'rule' && r.line === n && r.can?.how === 'shape'); }
 
   /**
-   * Shape jobs, clause 4 (call site of the shape rows): the shape code built from the AI's `itemShape` (src/shapebuild.js `buildShapes`) becomes rows of the one list: the `~` rule's own `[you]` row carries its field (its state comes
-   * from the shape, `matchShapeRule`); each extra field is an `[agent]` row (job-derived: on, Drop; no word of the job: Suggested, Add); one `[default]` row per shape line says the answer is a list of items. When the AI said the rules and
-   * the shape could both fit (`alsoFitsRules`), ONE counted reading-style ask is put on the line's first rule row (Agree keeps the shape; Drop it leaves that rule, and its field, Not checked). A Drop the person made on an `[agent]`
-   * field is kept for the same field (same line, same name) when the shape is built again. Every row is reconciled.
-   * @param {ReturnType<typeof import('./shapebuild.js').buildShapes>} built @param {{asks?: boolean}} [o] `asks: false` = the AI's `alsoFitsRules` puts no ask on the line (a caller with nobody to ask); default: this block's own `asks`
+   * Shape jobs, rules first (hamr 2026-11-19): remember the shape code built from the shape look (src/shapebuild.js `buildShapes`). It decides nothing by itself: `matchRule` tries every rule's truth check (fact, cite, count, phrase, pick) FIRST,
+   * and a rule that ends with none and no open ask may take its shape field (`takesShape`). A line where no rule did has no shape rows at all (`syncShapeRows`), so a page job's rows stay as they were. A Drop the person made
+   * (an `[agent]` field, or a rule's own shape field) is kept for the same field when the shape is built again. Every row is reconciled.
+   * @param {ReturnType<typeof import('./shapebuild.js').buildShapes>} built
    */
-  setShape(built, { asks = this.asks } = {}) {
-    const dropped = this.rows.filter((r) => r.kind === 'shape' && r.by === 'agent' && r.choice === 'drop').map((r) => ({ line: r.line, name: r.field?.name }));
+  setShape(built) {
+    this.keepShapeDrops();
     this.shapeBuilt = built;
-    // the `$` defaults a facts line carries (quote, numbers tie, note) were made before the line was known to be a shape line: a shape line has none, so they go (buildDefaults makes them again if the line stops being one)
-    const shapeLines = new Set(Object.keys(built.built).map(Number).filter((n) => !this.isSheetLine(n)));
-    this.rows = this.rows.filter((r) => r.kind !== 'shape' && !(shapeLines.has(r.line) && ['cited', 'numbers', 'note'].includes(r.kind)));
-    for (const [k, b] of Object.entries(built.built)) {
-      const n = Number(k);
-      if (this.isSheetLine(n)) continue;
-      for (const f of b.fields.filter((x) => x.by === 'agent')) {
-        const row = this.addRow({ key: shapeRowKey(n, f.name), line: n, kind: 'shape', by: 'agent', from: 'agent', field: f });
-        if (dropped.some((d) => d.line === n && d.name === f.name)) row.choice = 'drop';
-      }
-      this.addRow({ key: shapeDefaultKey(n), line: n, kind: 'shape', by: 'default', from: 'default' });
-      if (b.alsoFitsRules && asks) {
-        const first = this.ruleRows(n).find((r) => b.rows.some((x) => x.rule === r.rule && x.text === r.text && x.state === 'built'));
-        if (first) {
-          const names = b.fields.filter((f) => f.by === 'you').map((f) => f.name).join(', ');
-          first.shapeAsk = { ruleText: first.text, proposal: first.text, question: `Line ${n}: your rules could be checked as a list of items with the fields ${names}, or one rule at a time. Is the answer a list of items with those fields?` };
-        }
-      }
-    }
     this.reconcile();
   }
 
-  /** the dropped shape fields the record keeps: tied to the line's words (not its number) and the field's name @returns {{lineWords: string, occurrence: number, name: string}[]} */
-  shapeDroppedRecord() {
-    const keys = this.lineWordKeys();
-    return this.rows.filter((r) => r.kind === 'shape' && r.by === 'agent' && r.choice === 'drop').map((r) => ({ ...(keys.get(r.line) ?? { lineWords: '', occurrence: 0 }), name: String(r.field?.name ?? '') }));
+  /** the Drops the shape rows carry now, remembered beside the rows (a row can leave the list and come back) */
+  keepShapeDrops() {
+    for (const r of this.rows) {
+      if (r.kind === 'shape' && r.by === 'agent' && r.choice === 'drop' && r.field?.name !== undefined) this.shapeDrops.agent.add(`${r.line}:${r.field.name}`);
+    }
   }
 
-  /** a Revise keeps a Drop of the very same field (same line words, same name); a field this draft did not build is not dropped @param {{lineWords: string, occurrence: number, name: string}[]} rec */
+  /**
+   * Rules first: may this rule, which no truth check could take, take the shape field the shape look proposed for it? Its own `[you]` row then carries the field. Null when it may not (no shape, a sheet or repo job, no field for the rule).
+   * @param {Row} r @returns {{name: string}|null}
+   */
+  takesShape(r) {
+    if (this.repo !== null || r.kind !== 'rule' || this.isSheetLine(r.line)) return null;
+    const rs = this.shapeBuilt?.built[r.line]?.rows.find((x) => x.rule === r.rule && x.text === r.text);
+    return rs && rs.state === 'built' && typeof rs.name === 'string' ? { name: rs.name } : null;
+  }
+
+  /**
+   * Shape rows live only on a line where a rule took its shape field: its `[agent]` extra fields (job-derived on, no-word Suggested) and its `$` count row are added there, and removed from any line where none did.
+   * Called after the rules are matched.
+   */
+  syncShapeRows() {
+    const built = this.shapeBuilt?.built ?? {};
+    for (const [k, b] of Object.entries(built)) {
+      const n = Number(k);
+      const live = this.isShapeLine(n);
+      const have = this.rows.filter((r) => r.kind === 'shape' && r.line === n);
+      if (!live) { if (have.length) { this.keepShapeDrops(); this.rows = this.rows.filter((r) => !(r.kind === 'shape' && r.line === n)); } continue; }
+      for (const f of b.fields.filter((x) => x.by === 'agent')) {
+        if (have.some((r) => r.key === shapeRowKey(n, f.name))) continue;
+        const row = this.addRow({ key: shapeRowKey(n, f.name), line: n, kind: 'shape', by: 'agent', from: 'agent', field: f, state: 'not-checked', reason: 'not yet matched' });
+        if (this.shapeDrops.agent.has(`${n}:${f.name}`)) row.choice = 'drop';
+      }
+      if (b.itemCount && !have.some((r) => r.key === shapeDefaultKey(n))) this.addRow({ key: shapeDefaultKey(n), line: n, kind: 'shape', by: 'default', from: 'default', state: 'not-checked', reason: 'not yet matched' });
+    }
+    // a line the shape look built nothing for keeps no shape rows
+    this.rows = this.rows.filter((r) => !(r.kind === 'shape' && built[r.line] === undefined));
+  }
+
+  /** the dropped shape fields the record keeps, tied to the line's words (not its number): an `[agent]` field by its name, a rule's own shape field by its rule number @returns {{lineWords: string, occurrence: number, name?: string, rule?: number}[]} */
+  shapeDroppedRecord() {
+    this.keepShapeDrops();
+    const keys = this.lineWordKeys();
+    const at = (/** @type {number} */ n) => keys.get(n) ?? { lineWords: '', occurrence: 0 };
+    return [
+      ...[...this.shapeDrops.agent].map((x) => { const i = x.indexOf(':'); return { n: Number(x.slice(0, i)), name: x.slice(i + 1) }; }).filter((d) => this.lines.some((l) => l.n === d.n)).map((d) => ({ ...at(d.n), name: d.name })),
+      ...[...this.shapeDrops.rules].map((x) => { const [n, rule] = x.split(':').map(Number); return { ...at(n), rule }; }).filter((d) => d.lineWords !== ''),
+    ];
+  }
+
+  /** a Revise keeps a Drop of the very same field (same line words, same name or rule number); a field this draft did not build is not dropped @param {{lineWords: string, occurrence: number, name?: string, rule?: number}[]} rec */
   carryShapeDropped(rec) {
     const keys = this.lineWordKeys();
     for (const d of Array.isArray(rec) ? rec : []) {
-      if (!d || typeof d.lineWords !== 'string' || !Number.isInteger(d.occurrence) || typeof d.name !== 'string') continue;
+      if (!d || typeof d.lineWords !== 'string' || !Number.isInteger(d.occurrence)) continue;
       const n = [...keys].find(([, k]) => k.lineWords === d.lineWords && k.occurrence === d.occurrence)?.[0];
-      const row = n === undefined ? undefined : this.rows.find((r) => r.kind === 'shape' && r.by === 'agent' && r.line === n && r.field?.name === d.name);
-      if (row) { row.choice = 'drop'; row.keptFromLast = true; }
+      if (n === undefined) continue;
+      if (typeof d.name === 'string') {
+        this.shapeDrops.agent.add(`${n}:${d.name}`);
+        const row = this.rows.find((r) => r.kind === 'shape' && r.by === 'agent' && r.line === n && r.field?.name === d.name);
+        if (row) { row.choice = 'drop'; row.keptFromLast = true; }
+      } else if (Number.isInteger(d.rule)) this.shapeDrops.rules.add(`${n}:${d.rule}`);
     }
     this.reconcile();
   }
@@ -342,7 +370,6 @@ export class CheckBlock {
       else if (r.kind === 'fact' || r.kind === 'phrase') this.matchBang(r);
       else if (r.kind === 'count') this.matchCount(r);
       else if (r.kind === 'sheet') r.can = { ok: true, how: 'sheet' };
-      else if (r.kind === 'shape') r.can = { ok: true, how: 'shape' };
     }
     // N-1 (hamr 2026-11-13): code splits the `!` rows. Words (or the count number) in the job line or its ~ rules = JOB-DERIVED (built, Drop). Not in the job = SUGGESTED: held out of the close, offered
     // only when code has already proved it can build it (build() trials it), and switched on by the person's Add. The person's Drop removes a row for good. Never the AI.
@@ -353,6 +380,9 @@ export class CheckBlock {
       // a Drop is undone through Suggested (live draft 3): the row was proved buildable, so it is offered again with Add; only a row code can still build is offered
       if (r.can?.ok && r.choice !== 'add' && (!r.derived || r.choice === 'drop')) r.held = true;
     }
+    // shape rows live only on a line where a rule took its shape field (rules first): added or removed now that the rules are matched; their own state is set below
+    this.syncShapeRows();
+    for (const r of this.rows) if (r.kind === 'shape') r.can = { ok: true, how: 'shape' };
     // S4: an `[agent]` sheet row the person dropped is held out of the close and offered again under Suggested (Add); it is code's own check, already built, so no trial is needed
     // shape jobs: an `[agent]` field the person dropped, or one with no word of the job (R2), is held out of the close and offered under Suggested (Add); it is code's own field, already built, so no trial is needed
     for (const r of this.rows) if (r.kind === 'shape' && r.by === 'agent') { r.held = r.choice === 'drop' || (r.field?.held === true && r.choice !== 'add'); r.offer = { text: shapeFieldText({ name: r.field.name, spec: fieldSpec(r.field), rule: null }, []) }; }
@@ -397,17 +427,20 @@ export class CheckBlock {
     r.can = said ? { ok: false, why: `a ~ rule already says it: line ${r.line} rule ${said.rule} names the number` } : { ok: true, how: 'count' };
   }
 
-  matchRule(/** @type {Row} */ r) {
+  /** RULES FIRST (hamr 2026-11-19): today's truth check for the rule; only a rule that ends with none and no open ask takes the shape field proposed for it (the strongest check wins, no ask) @param {Row} r */
+  matchRule(r) {
+    this.matchTruthRule(r);
+    if (r.can?.ok || r.can?.ask) return;
+    const sh = this.takesShape(r);
+    if (sh === null) return;
+    r.can = this.shapeDrops.rules.has(`${r.line}:${r.rule}`) ? { ok: false, why: REASON.dropped } : { ok: true, how: 'shape', name: sh.name };
+  }
+
+  matchTruthRule(/** @type {Row} */ r) {
     if (this.repo !== null) { this.matchRepoRule(r); return; }
     // S1: the sheet look's column question, while the rule still says the words it was asked about (an answered, dropped or retyped rule is not asked again)
     if (r.sheetAsk && this.asks && !r.agreed && !r.left && !r.corrected && r.text === r.sheetAsk.ruleText) { r.can = { ok: false, ask: 'reading', proposal: r.sheetAsk.proposal, question: r.sheetAsk.question, ...(r.sheetAsk.columns ? { columns: r.sheetAsk.columns, readings: r.sheetAsk.readings } : {}), why: REASON.waitingReading }; return; }
     if (this.isSheetLine(r.line)) { this.matchSheetRule(r); return; }
-    // shape jobs: the one counted ask (the AI said the rules and a shape could both fit), then the shape decides the rule
-    if (this.isShapeLine(r.line)) {
-      if (r.shapeAsk && this.asks && !r.agreed && !r.left && r.text === r.shapeAsk.ruleText) { r.can = { ok: false, ask: 'reading', proposal: r.shapeAsk.proposal, question: r.shapeAsk.question, why: REASON.waitingReading }; return; }
-      this.matchShapeRule(r);
-      return;
-    }
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
     // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
     const negated = NEGATING_RE.test(r.text);
@@ -479,18 +512,6 @@ export class CheckBlock {
     else r.can = { ok: false, why: rs.reason === REASON.noPick ? (r.lookWhy ?? REASON.noPick) : String(rs.reason) };
   }
 
-  /**
-   * Shape jobs: a `~` rule of a shape line. The shape code built decides it, and nothing else does (ONE owner: a rule has never two rows): built = this rule's own `[you]` row carries its field; a rule no field holds, or whose
-   * field was refused, is Not checked with that plain reason.
-   * @param {Row} r
-   */
-  matchShapeRule(r) {
-    const b = this.shapeBuilt?.built[r.line];
-    const rs = b?.rows.find((x) => x.rule === r.rule && x.text === r.text);
-    if (!rs) { r.can = { ok: false, why: r.lookWhy ?? REASON.noPick }; return; }
-    r.can = rs.state === 'built' ? { ok: true, how: 'shape', name: rs.name } : { ok: false, why: String(rs.reason) };
-  }
-
   /** a `~` rule that counts words, bullets, lines or sections: a settled pick builds it; else code proposes the check and asks */
   matchCountRule(/** @type {Row} */ r) {
     if (!r.pick && (r.cantAsked || !this.countScope(r.text))) { r.can = { ok: false, why: r.aiReason ?? REASON.noRule }; return; }
@@ -547,14 +568,15 @@ export class CheckBlock {
       if (lineParts.length) stages.push({ name: `line-${l.n}`, kind: 'rubric-step', fromLine: [l.n], params: { step: l.n, parts: lineParts } });
       // the line's `$` floor row says whether its file carries text (a facts-only line has no text check): code's own reading of the parts just built
       // a line that writes text (a stage with no fact part) gets its `$` prose row: Not checked, the person judges what the text says at Accept (one owner; never a check, so hasBuiltCheck skips it)
-      const writesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'fact');
+      const hasShape = lineParts.some((p) => p.class === 'shape');
+      const writesText = (lineParts.length > 0 && !lineParts.some((p) => p.class === 'fact')) || hasShape;
       const prose = this.rowsOn(l.n, 'prose')[0];
       if (writesText) {
         const row = prose ?? this.addRow({ key: `L${l.n}.$prose`, line: l.n, kind: 'prose', by: 'default', from: 'default' });
-        row.state = 'not-checked'; row.reason = lineParts.some((p) => p.class === 'shape') ? SHAPE_TRUTH_WORDS : PROSE_WORDS;
+        row.state = 'not-checked'; row.reason = hasShape ? SHAPE_TRUTH_WORDS : PROSE_WORDS;
       } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
       // only a shape line's floor row carries the flag: every other row stays byte-identical to what it was
-      for (const f of this.rowsOn(l.n, 'floor')) { if (lineParts.some((p) => p.class === 'shape')) f.listLine = true; else delete f.listLine; }
+      for (const f of this.rowsOn(l.n, 'floor')) { if (hasShape && !lineParts.some((p) => p.class === 'fact')) f.listLine = true; else delete f.listLine; }
       for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'shape') && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
@@ -610,8 +632,6 @@ export class CheckBlock {
       if (r.held) { r.state = 'suggested'; r.reason = r.choice === 'drop' ? REASON.dropped : REASON.suggested; continue; }
       if (r.can.how === 'sheet') { sheetRows.push(r); continue; }
       if (r.can.how === 'shape') { shapeRows.push(r); continue; }
-      // a line is a shape line or a facts line, never both: a page fact on a shape line is Not checked in plain words
-      if (this.isShapeLine(l.n) && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count')) { r.state = 'not-checked'; r.reason = REASON.shapeFacts; continue; }
       // a line is a sheet line or a facts line, never both (a stage-shape red): a page fact on a sheet line is Not checked in plain words
       if (this.isSheetLine(l.n) && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count')) { r.state = 'not-checked'; r.reason = REASON.sheetFacts; continue; }
       if (r.can.how === 'pick') {
@@ -631,7 +651,6 @@ export class CheckBlock {
       r.state = 'built'; r.reason = null;
     }
     if (sheetRows.length > 0) this.buildSheetPartOf(l, sheetRows, lineParts, lineRows);
-    if (shapeRows.length > 0) this.buildShapePartOf(l, shapeRows, lineParts, lineRows);
     if (facts.length) {
       // F337: the planner's example when a label sits off the result's first line; from the drafting copy, only here at signing
       const asSeen = asSeenOf(this.textOf(factRows[0]?.src), facts, factRows[0]?.src ?? '');
@@ -645,6 +664,8 @@ export class CheckBlock {
       if (reds.length) for (const x of [...factRows.map((f) => f.r), ...(countRow ? [countRow] : [])]) { x.state = 'not-checked'; x.reason = `code could not build the line's fact part: ${reds[0]?.detail}`; x.part = null; }
       else { lineParts.push(part); lineRows.push([...factRows.map((f) => f.r.key), ...(countRow ? [countRow.key] : [])]); factLines.add(l.n); if (countRow) { countRow.state = 'built'; countRow.reason = null; } }
     } else if (countRow) { countRow.state = 'not-checked'; countRow.reason = this.rowsOn(l.n).some((x) => x.held && (x.kind === 'fact' || x.kind === 'phrase')) ? REASON.countNeedsSuggested : REASON.countNeedsFact; }
+    // facts+shape: the shape part follows the fact part (the same `results` list); its fields are the rules no truth check could take
+    if (shapeRows.length > 0) this.buildShapePartOf(l, shapeRows, lineParts, lineRows);
     for (const { p, key } of pickParts) { lineParts.push(p); lineRows.push([key]); }
     this.buildDefaults(l, lineParts, lineRows, factLines);
   }
@@ -679,7 +700,7 @@ export class CheckBlock {
     const fields = (b?.fields ?? []).filter((f) => shapeRows.some((r) => (f.by === 'you' && r.kind === 'rule' && r.rule === f.rule) || (f.by === 'agent' && r.key === shapeRowKey(l.n, f.name))));
     if (!b || !fields.some((f) => f.by === 'you')) { for (const r of shapeRows) { r.state = 'dropped'; r.reason = null; } return; }
     const part = buildShapePart({ text: `the items of line ${l.n}`, fields: fields.map((f) => ({ name: f.name, spec: fieldSpec(f), rule: f.rule, by: f.by })), itemCount: b.itemCount });
-    const reds = rubricStepShapeReds({ step: l.n, parts: [part] }, 'trial');
+    const reds = rubricStepShapeReds({ step: l.n, parts: [...lineParts.filter((p) => p.class === 'fact'), part] }, 'trial');
     if (reds.length) { for (const r of shapeRows) { r.state = 'not-checked'; r.reason = `code could not build the line's shape part: ${reds[0]?.detail}`; } return; }
     lineParts.push(part);
     lineRows.push(shapeRows.map((r) => r.key));
@@ -729,8 +750,8 @@ export class CheckBlock {
   buildDefaults(/** @type {{n: number}} */ l, /** @type {any[]} */ lineParts, /** @type {string[][]} */ lineRows, /** @type {Set<number>} */ factLines) {
     // S4: a sheet line quotes nothing and ties no number to a quote: its `$cited` default is never added (a cited part beside a sheet part is a stage-shape red)
     if (this.isSheetLine(l.n)) return;
-    // shape jobs: a shape line's answer is a list of items, not a text: its `$cited` default is never added either
-    if (this.isShapeLine(l.n)) return;
+    // shape jobs: a line that holds a shape part and no fact part answers with a list of items, not a text: it has no `$cited` default either (a facts+shape line keeps today's)
+    if (lineParts.some((p) => p.class === 'shape') && !factLines.has(l.n)) return;
     const cited = this.rowsOn(l.n, 'cited')[0] ?? this.addRow({ key: `L${l.n}.$cited`, line: l.n, kind: 'cited', by: 'default', from: 'default', source: this.labels[0] });
     const numbers = this.rowsOn(l.n, 'numbers')[0] ?? null;
     cited.part = null;
@@ -909,7 +930,7 @@ export class CheckBlock {
   }
 
   /** a row the person can Drop (and Add back): a `!` fact, phrase or count; in a repo job also a work stage the drafter wrote @param {Row} r */
-  droppable(r) { return this.isBang(r) || (this.repo !== null && r.kind === 'stage' && r.refusal !== true) || (r.kind === 'sheet' && r.by === 'agent') || (r.kind === 'shape' && r.by === 'agent'); }
+  droppable(r) { return this.isBang(r) || (this.repo !== null && r.kind === 'stage' && r.refusal !== true) || (r.kind === 'sheet' && r.by === 'agent') || (r.kind === 'shape' && r.by === 'agent') || (r.kind === 'rule' && r.can?.how === 'shape'); }
 
   // 5. the code-forced questions for rows code cannot settle (a person answers; the CHOICE decides, never the words). Cap 3 is the caller's (MAX_QUESTIONS).
   ask() {
@@ -1009,7 +1030,6 @@ export class CheckBlock {
     if (!Number.isInteger(e.line) || !this.lines.some((l) => l.n === e.line)) return { refusedBecause: 'names a job line that does not exist' };
     // S4: a rule has never two rows: the rules of a sheet line belong to the sheet checks, so a row edit about the line cannot add a second check or a second reason
     if (this.isSheetLine(e.line)) return { refusedBecause: REASON.sheetLine };
-    if (this.isShapeLine(e.line)) return { refusedBecause: REASON.shapeLine };
     if (e.op === 'add') {
       if (kept.adds >= MAX_BANG) return { refusedBecause: `more than ${MAX_BANG} checks proposed` };
       const res = this.editAdd(e);
@@ -1203,6 +1223,14 @@ export class CheckBlock {
   rowChoice(key, choice) {
     const r = this.rows.find((x) => x.key === key);
     if (!r) return { ok: false, why: 'there is no such check on the list' };
+    // a rule's own shape field (rules first: the rule had no truth check) can be dropped: that rule goes Not checked; to get it back, Revise
+    if (r.kind === 'rule' && r.can?.how === 'shape') {
+      if (choice !== 'drop') return { ok: false, why: 'a dropped shape check is brought back by Revise' };
+      this.shapeDrops.rules.add(`${r.line}:${r.rule}`);
+      this.reconcile();
+      return { ok: true };
+    }
+    if (r.kind === 'rule' && this.shapeDrops.rules.has(`${r.line}:${r.rule}`)) return { ok: false, why: 'a dropped shape check is brought back by Revise' };
     if (r.by === 'you') return { ok: false, why: 'that check comes from a rule you wrote; edit the job to change it' };
     if (r.by !== 'agent' || !this.droppable(r)) return { ok: false, why: 'that check is code\'s own and stays' };
     if (choice !== 'drop' && choice !== 'add') return { ok: false, why: 'not one of the choices' };

@@ -3855,7 +3855,7 @@
     var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : r.result === "not-reached" ? ["grey", r.word || "not reached"] : ["grey", "no result recorded"];
     // a shape row (signed mock C, fix 1): `\u203A name \u00B7 sentence`, and its red reason sits on its OWN line under the row (every other job's rows keep the reason beside the state)
     if(r.shape){
-      return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">\u203A ' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") +
+      return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">\u203A ' + escapeXml(r.text) + byTagOf(r.by, "shape") + " " + stateDotHTML(res[0], res[1], "audit-check-state") +
         (r.result === "failed" && r.why ? '<div class="hint" data-testid="audit-check-why" style="margin-left:14px">\u2014 ' + escapeXml(r.why) + "</div>" : "") + "</div>";
     }
     return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + (r.result === "failed" && r.why ? ' <span class="hint" data-testid="audit-check-why">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
@@ -4171,7 +4171,7 @@
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
   // the tag of a row by its kind (F-c, code-owned): `~` rows [you], `!` rows [agent], `$` rows [default]; one spelling for the confirm card, the signed card, the Job tab and the Result tab
-  function byTagOf(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">~ [you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">! [agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">$ [default]</span>' : ""; }
+  function byTagOf(by, form){ return (by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">~ [you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">! [agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">$ [default]</span>' : "") + (form === "shape" ? ' <span class="by" data-testid="plan-form" data-form="shape">[shape]</span>' : ""); }
   function renderJobPlan(plan, ctl){
     // the legend promises \u203A checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
     var hasCheck = (plan.loose || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
@@ -4181,7 +4181,8 @@
     // `ctl` (the confirm card only): draws a Drop button after an [agent] check that has a row key; a [you] or [default] row has none
     var checkLine = function(c){
       // a shape line's field rows (hamr 2026-11-18): `\u203A name \u00B7 sentence`, words from code (src/shaperows.js), with the line's one heading above the first (the same markup, no "check \u00B7" prefix)
-      if(c.shape){ return '<div class="fold" data-testid="plan-check" data-shape="1"><span class="mk">\u203A</span> ' + escapeXml(c.name) + byTag(c.by) + (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "") + "</div>"; }
+      // every shape row says it is form only (`[shape]`) and, but for code's own `$` row, can be dropped (a dropped `~` shape row leaves that rule Not checked; Revise brings it back)
+      if(c.shape){ return '<div class="fold" data-testid="plan-check" data-shape="1"><span class="mk">\u203A</span> ' + escapeXml(c.name) + byTag(c.by, "shape") + (ctl && c.by !== "default" && c.key ? ctl("drop", c.key) : "") + "</div>"; }
       return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "") + "</div>";
     };
     (plan.lines || []).forEach(function(l){

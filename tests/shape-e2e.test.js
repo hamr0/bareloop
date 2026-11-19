@@ -28,7 +28,7 @@ const SHAPES = [{ line: 1, fields: [
   f({ name: 'title', kind: 'text', bounds: { minChars: 1 }, fromRule: 1 }),
   f({ name: 'status', kind: 'oneOf', bounds: { values: ['in progress', 'closed', 'finished'] }, fromRule: 2 }),
   f({ name: 'summary', kind: 'text', bounds: { maxChars: 200 }, fromRule: 3 }),
-], extraFields: [], itemCountFrom: [], alsoFitsRules: false }];
+], extraFields: [], itemCountFrom: [] }];
 const ITEMS = (/** @type {any[]} */ over = []) => [
   { title: 'Battery chemistry', status: 'in progress', summary: 'Compares chemistries.' },
   { title: 'Grid storage', status: 'closed', summary: 'Costs per kWh.' },

@@ -153,14 +153,22 @@ export const SHAPE_FIELD = 'results';
 
 /**
  * The bareguard `itemShape` check of a signed shape part (clause 6, `buildStepSpec`): the answer field `results`, the item count the person's words gave, and one field spec per signed field.
- * @param {any} part a `shape` part @param {string} id @returns {Record<string, any>}
+ * @param {any} part a `shape` part @param {string} id @param {any} [factPart] the step's fact part, when the line is facts+shape @returns {Record<string, any>}
  */
-export function shapeItemCheck(part, id) {
-  return {
-    id, rule: 'itemShape', field: SHAPE_FIELD,
-    ...(Number.isInteger(part.minItems) ? { minItems: part.minItems } : {}), ...(Number.isInteger(part.maxItems) ? { maxItems: part.maxItems } : {}),
-    fields: Object.fromEntries((Array.isArray(part.fields) ? part.fields : []).filter(isRec).map((f) => [String(f.name), f.spec])),
+export function shapeItemCheck(part, id, factPart = null) {
+  const own = Object.fromEntries((Array.isArray(part.fields) ? part.fields : []).filter(isRec).map((f) => [String(f.name), f.spec]));
+  // FACTS + SHAPE (the rules-first spec, verified on real data in .claude/scratch/shape-combined/round2): the one list is also read by `cited`, and the itemShape is CLOSED, so it lists the keys the fact result carries:
+  // `quote` (text, required) and `values` (an object, one OPTIONAL field per signed fact: a number read from text for a money or number fact, text for every other shape). No `claim` key: `cited` reads claims
+  // that `flattenStep` builds from the signed fact names. The item COUNT stays with the fact part's own count checks (one fault, one report); the shape part's count is used only when the fact part has none.
+  const facts = isRec(factPart) && Array.isArray(factPart.facts) ? factPart.facts.filter(isRec) : null;
+  const factCounted = isRec(factPart) && isRec(factPart.count) && (Number.isInteger(factPart.count.min) || Number.isInteger(factPart.count.max));
+  const count = facts !== null && factCounted ? {} : { ...(Number.isInteger(part.minItems) ? { minItems: part.minItems } : {}), ...(Number.isInteger(part.maxItems) ? { maxItems: part.maxItems } : {}) };
+  const fields = facts === null ? own : {
+    quote: { kind: 'text', required: true },
+    values: { kind: 'object', fields: Object.fromEntries(facts.map((f) => [String(f.name), f.shape === 'money' || f.shape === 'number' ? { kind: 'number', fromText: true } : { kind: 'text' }])) },
+    ...own,
   };
+  return { id, rule: 'itemShape', field: SHAPE_FIELD, ...count, fields };
 }
 
 /**
@@ -168,7 +176,7 @@ export function shapeItemCheck(part, id) {
  * accepts the check (`createRubric`, which refuses an impossible bound or a field spec it does not know, naming the path). Pure, never throws.
  * @param {any} part @param {string} w the path of the part @param {(code: string, path: string, detail: string) => void} red
  */
-export function shapeShapeReds(part, w, red) {
+export function shapeShapeReds(part, w, red, factPart = null) {
   const fs = part.fields;
   if (!Array.isArray(fs) || fs.length === 0) { red('invalid-value', `${w}.fields`, 'a non-empty list of fields: {name, spec, rule?, row?}'); return; }
   const rules = shapeNameRules();
@@ -180,6 +188,7 @@ export function shapeShapeReds(part, w, red) {
     if (bad !== null) red('invalid-value', `${fw}.name`, bad);
     else if (seen.has(f.name)) red('invalid-value', `${fw}.name`, `the field name "${f.name}" is used twice`);
     else seen.add(f.name);
+    if (factPart && (f.name === 'quote' || f.name === 'values')) red('invalid-value', `${fw}.name`, `"${f.name}" is a key of the fact results on this line, so it cannot name a shape field`);
     if (!isRec(f.spec) || !Object.hasOwn(SHAPE_KINDS, String(f.spec.kind))) red('invalid-value', `${fw}.spec.kind`, `one of ${Object.keys(SHAPE_KINDS).join(' | ')}`);
     if (Object.hasOwn(f, 'rule') && !(Number.isInteger(f.rule) && f.rule >= 1)) red('invalid-value', `${fw}.rule`, 'the number of the ~ rule the field comes from (an integer, 1 or more)');
     if (Object.hasOwn(f, 'row') && f.row !== 'agent') red('invalid-value', `${fw}.row`, '"agent" (the tag of a field code made its own row) or absent');
@@ -189,7 +198,7 @@ export function shapeShapeReds(part, w, red) {
   if (!isRec(part) || fs.some((/** @type {any} */ f) => !isRec(f) || !isRec(f.spec))) return;
   // bareguard is the judge of whether the shape is SIGNABLE: ask it here, at $0
   try {
-    createRubric({ schema: 1, goal: 'shape', inputs: [], checkpoints: { shape: { gating: false, checks: [shapeItemCheck(part, 'shape')] } } });
+    createRubric({ schema: 1, goal: 'shape', inputs: [], checkpoints: { shape: { gating: false, checks: [shapeItemCheck(part, 'shape', factPart)] } } });
   } catch (e) {
     red('invalid-value', `${w}.fields`, `bareguard refuses this shape: ${String(/** @type {any} */ (e)?.message ?? e)}`);
   }

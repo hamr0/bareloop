@@ -75,6 +75,24 @@ export function toldPicks(picked) {
 }
 
 /**
+ * FACTS + SHAPE: the extra lines of a fact line's brief when its step also carries a shape part (code-written, never model-written): each result also carries the shape fields, in plain words, with ONE example
+ * result built by code (the quote and values placeholders, then a legal value for each shape field). Nothing is added for a line with no shape part.
+ * @param {any} params @param {any} fp the fact part @returns {string[]}
+ */
+function shapeBriefOf(params, fp) {
+  const sp = shapePartOf(params);
+  if (!sp) return [];
+  const fields = sp.fields.filter(isRec);
+  const values = Object.fromEntries(fp.facts.map((/** @type {any} */ f) => [f.name, '<as the quote writes it>']));
+  return [
+    '  Each result ALSO carries these fields (named exactly as written; a field marked optional may be left out when it does not apply):',
+    ...fields.map((/** @type {any} */ f) => `    - ${f.name}: ${shapeFieldSentence(f.spec)}${f.spec.required === true ? '' : ' (optional)'}`),
+    `  One example result: ${JSON.stringify({ quote: '<words copied from the page>', values, ...shapeExampleItem(fields) })}`,
+  ];
+}
+
+
+/**
  * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its
  * facts and its count; a TEXT line that follows a facts line is told its numbers come from that line's quotes. Written by code from
  * the signed parts, never by a model. A line with no rubric-step stage gets nothing here.
@@ -109,6 +127,7 @@ export function lineBriefs(closeDecl) {
           '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
           ...fp.facts.map((/** @type {any} */ f) => `    - ${factBrief(f)}`),
+          ...shapeBriefOf(st.params, fp),
         ].join('\n'),
       });
       continue;
@@ -291,7 +310,7 @@ export function rubricStepShapeReds(p, at) {
     if (Object.hasOwn(part, 'asSeen') && part.class !== 'fact') red('invalid-value', `${w}.asSeen`, 'only a fact part carries the as-seen example');
     if (Object.hasOwn(part, 'checks') && part.class !== 'sheet') red('invalid-value', `${w}.checks`, 'only a sheet part carries sheet checks');
     for (const k of ['fields', 'minItems', 'maxItems']) if (Object.hasOwn(part, k) && part.class !== 'shape') red('invalid-value', `${w}.${k}`, 'only a shape part carries the fields and the item count of a list of items');
-    if (part.class === 'shape') { shapeShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
+    if (part.class === 'shape') { shapeShapeReds(part, w, (c, path, d) => red(c, path, d), p.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'fact') ?? null); return; }
     if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'sheet') { sheetShapeReds(part, Number.isInteger(p.step) ? p.step : 0, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'guard') {
@@ -318,9 +337,12 @@ export function rubricStepShapeReds(p, at) {
   // shape jobs: a line is a shape line, a sheet line or a facts line, never two of them, and a shape line holds its shape part alone (its step file holds `results`, a list of items, and nothing else)
   const shapeParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'shape');
   if (shapeParts.length > 1) red('invalid-value', `${at}.parts`, 'one shape part per step: the fields of a list of items all go in one');
-  if (shapeParts.length > 0 && p.parts.length > shapeParts.length) red('invalid-value', `${at}.parts`, 'a line is a shape line, a sheet line or a facts line, not both: a shape line\'s step file holds "results", a list of items, and its shape part is its only part');
+  const hasFact = p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
+  // a shape part may sit beside the line's fact part (facts+shape: one `results` list read by `cited` and `itemShape`) and its picks, never beside a sheet part; alone it is the line's only part (its file has no `text` or `cites`)
+  if (shapeParts.length > 0 && !hasFact && p.parts.length > shapeParts.length) red('invalid-value', `${at}.parts`, 'a shape line with no facts holds its shape part alone: its step file is "results", a list of items, with no "text" or "cites"');
   const sheetParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'sheet');
   if (sheetParts.length > 1) red('invalid-value', `${at}.parts`, 'one sheet part per step: the checks of a sheet line all go in one');
+  if (sheetParts.length > 0 && shapeParts.length > 0) red('invalid-value', `${at}.parts`, 'a sheet line holds sheet checks: a shape part is not allowed beside them');
   if (sheetParts.length > 0 && p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact')) red('invalid-value', `${at}.parts`, 'a line is a sheet line or a facts line, not both: its step file holds "claims" or "results"');
   if (sheetParts.length > 0) {
     const quoted = citedLabels(p).filter((l) => sheetRolesOfParams(p).includes(l));
@@ -358,7 +380,7 @@ export function buildStepSpec(params, inputShas) {
     }
     if (part.class === 'shape') {
       // shape jobs (clause 6): ONE bareguard `itemShape` check over the answer's `results` list: the item count and every signed field
-      checks.push(shapeItemCheck(part, `p${i + 1}-shape`));
+      checks.push(shapeItemCheck(part, `p${i + 1}-shape`, factPartOf(params)));
       return;
     }
     if (part.class === 'sheet') {
@@ -479,7 +501,7 @@ export function flattenStep(obj, countLabels = [], factPart = null, asWritten = 
   fields.text = typeof obj.text === 'string' ? obj.text : '';
   if (isRec(obj.cites) && !factPart) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
   if (isRec(obj.claims)) for (const name of sheetClaimNames) if (Object.hasOwn(obj.claims, name)) fields[name] = obj.claims[name];
-  if (shapePart && !factPart && Object.hasOwn(obj, 'results')) fields.results = obj.results;
+  if (shapePart && Object.hasOwn(obj, 'results')) fields.results = obj.results;
   return fields;
 }
 
@@ -1131,7 +1153,10 @@ export const guardRowText = (name) => guardQuestionText(name) ?? `${name} — ${
  * really puts a text check on it ({@link lineCarriesText}); a facts-only line says it has none. ONE owner: the card, the Job tab and the Audit read it.
  * @param {any} closeDecl @param {number} n @returns {string}
  */
-export function floorText(closeDecl, n) { return floorWords(n, lineCarriesText(closeDecl, n), shapePartOfLine(closeDecl, n) !== null); }
+export function floorText(closeDecl, n) {
+  const st = (isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : []).find((/** @type {any} */ x) => isRec(x) && x.kind === 'rubric-step' && isRec(x.params) && x.params.step === n);
+  return floorWords(n, lineCarriesText(closeDecl, n), shapePartOfLine(closeDecl, n) !== null && !(st && factPartOf(st.params)));
+}
 
 /** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @param {boolean} [listLine] a shape line: it lists items (shape jobs) @returns {string} */
 export function floorWords(n, carriesText, listLine = false) {

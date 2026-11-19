@@ -1384,7 +1384,7 @@ export function createSession(card, deps = {}) {
   };
   /** S4: the sheet rows the person has dropped, waiting under Suggested (Add); only a sheet job's final card has any */
   const sheetSuggested = () => (finalCtx?.block ? finalCtx.block.suggestedView().filter((/** @type {any} */ x) => /^L\d+\.(sheet|shape)\./.test(x.key)) : []);
-  const sheetEditable = () => finalCtx?.block != null && finalCtx.block.rows.some((/** @type {any} */ r) => (r.kind === 'sheet' || r.kind === 'shape') && r.by === 'agent');
+  const sheetEditable = () => finalCtx?.block != null && finalCtx.block.rows.some((/** @type {any} */ r) => ((r.kind === 'sheet' || r.kind === 'shape') && r.by === 'agent') || r.can?.how === 'shape');
   const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : sheetEditable() ? { editable: true, suggested: sheetSuggested() } : {}) }, jobLines);
   /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean, block?: import('../checkblock.js').CheckBlock|null}|null} the spec the final card shows and the seed it was gated against */
   let finalCtx = null;
@@ -1420,7 +1420,7 @@ export function createSession(card, deps = {}) {
    */
   const sheetFinalEdit = async (op, key) => {
     const block = finalCtx?.block;
-    if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' || r.kind === 'shape') || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
+    if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' || r.kind === 'shape' || r.can?.how === 'shape') || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
     if (op !== 'drop' && op !== 'add') return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
     dropping = true;
     try {

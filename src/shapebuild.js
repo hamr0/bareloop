@@ -28,7 +28,7 @@ const words = (/** @type {unknown} */ s) => String(s).replace(/([a-z0-9])([A-Z])
 /**
  * @typedef {{name: string, kind: string, required: boolean, bounds: Record<string, any>, rule: number|null, by: 'you'|'agent', held: boolean, why?: string}} ShapeField
  * @typedef {{rule: number, text: string, state: 'built'|'not-checked', reason: string|null, name: string|null}} ShapeRule
- * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number}|null, alsoFitsRules: boolean, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
+ * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number}|null, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
  */
 
 /**
@@ -199,7 +199,7 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
   });
   const ok = ordered.some((x) => x.by === 'you');
   if (!ok && fields.length === 0 && refused.length === 0 && !isRec(suggestion)) refused.push({ helper: 'schema', why: 'no shape was suggested for the line' });
-  return { line: line.n, ok, fields: ordered, itemCount, alsoFitsRules: s.alsoFitsRules === true, rows, refused, reservedChecked: nameRules.reserved !== null };
+  return { line: line.n, ok, fields: ordered, itemCount, rows, refused, reservedChecked: nameRules.reserved !== null };
 }
 
 /**
