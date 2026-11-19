@@ -119,3 +119,14 @@ test('the Audit page (signed mock): Line N and its text, CHECKED then NOT CHECKE
   assert.match(html, /each item has a title <details class="ck-why"/);
   assert.doesNotMatch(html, /Always checked|Shape checks/);
 });
+
+test('a Not checked row drawn inside Line 1\'s block does not repeat "line 1: "; a many-line job keeps it on a row outside any line block', () => {
+  const note = 'line 1: whether each one is true — you judge it at Accept';
+  const one = planFromSpec({ jobLines: [{ n: 1, text: 'a', rules: [] }], closeDecl: { stages: [], notes: [note] } });
+  assert.deepEqual(one.ncRows?.map((r) => r.text), ['whether each one is true']);
+  const html = page.renderJobPlan(one, ctl);
+  assert.doesNotMatch(html, /line 1: whether/);
+  assert.match(html, /whether each one is true/);
+  const two = planFromSpec({ jobLines: [{ n: 1, text: 'a', rules: [] }, { n: 2, text: 'b', rules: [] }], closeDecl: { stages: [], notes: [note] } });
+  assert.deepEqual(two.ncRows?.map((r) => r.text), ['line 1: whether each one is true']);
+});

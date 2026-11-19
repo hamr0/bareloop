@@ -54,7 +54,12 @@ function finishPlan(plan) {
   /** @param {number} line @param {string} raw */
   const add = (line, raw) => ncRows.push({ line, ...splitNotChecked(raw), ...(by[raw] ? { by: by[raw] } : {}) });
   for (const l of plan.lines) for (const r of l.refused) add(l.n, r);
-  for (const r of plan.notChecked) add(0, r);
+  // a one-line job draws its no-line rows inside Line 1's block, where "line 1: " says nothing; a many-line job keeps the prefix (the row sits outside any line block)
+  for (const r of plan.notChecked) {
+    const own = plan.lines.length === 1 ? /^line (\d+): ([\s\S]*)$/.exec(r) : null;
+    if (own && Number(own[1]) === plan.lines[0].n) { ncRows.push({ line: 0, ...splitNotChecked(own[2]), ...(by[r] ? { by: by[r] } : {}) }); continue; }
+    add(0, r);
+  }
   const withKind = (/** @type {PlanCheck} */ c) => ({ ...c, kind: kindOfCheck(c) });
   return { ...plan, lines: plan.lines.map((l) => ({ ...l, checks: l.checks.map(withKind) })), loose: plan.loose.map(withKind), ncRows };
 }
