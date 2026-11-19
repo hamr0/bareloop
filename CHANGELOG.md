@@ -35,7 +35,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - The single-file Source refusal now says which check type caused it: `This file is inside a git repo, and Deterministic is picked: that needs the repo folder as Source. If you meant Rubric, pick Rubric and Revise. Nothing spent.` (`nonRepoSourceMessage`, `src/source.js`; with Rubric picked the same file goes on to drafting, proven by a test).
-- The refusal for a single-file Source now reads `This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.`
 
 ## [0.60.0] - 2026-11-18
 
