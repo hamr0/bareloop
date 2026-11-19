@@ -2396,7 +2396,7 @@ Ruled by hamr 2026-11-18.
 Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "shape jobs (itemShape)", through "Scope round 2 PASS and the gains rulings"); evidence F357-F365 in `docs/wiki/FINDINGS.md`.
 
 - [ ] Shape jobs (itemShape): `~` rules get today's truth check first; only a rule that would end Not checked takes a shape field. Strongest wins, no ask (the "rules or shape could both fit" ask is removed). F359, F360.
-- [ ] Every shape row carries a `[shape]` tag (form only, not truth) and a Drop, the person's own `~` rows included; a dropped rule goes Not checked, undo by Revise.
+- [ ] Every shape row carries a `[shape]` tag (form only, not truth) and a Drop, the person's own `~` rows included; a dropped rule goes Not checked, and the card's "Add back" button undoes it (Revise keeps a Drop) (2ff04218, live walk research-5).
 - [ ] Boolean kind for yes/no fields (bareguard 0.37.0, `equals` true/false). F358.
 - [ ] The cite default always stays on a shape line; facts and shape ride one `results` answer (cited + closed itemShape). F361.
 - [ ] The shape look runs only when a rule is left Not checked, so page jobs stay byte-identical to today.
@@ -2407,3 +2407,8 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 - [x] Number-then-marker prices ("€216 total", "1.299,00 €") are already read (F251); POC 1 ran, premise stale, nothing to build. Why block A of the scope harness left those rules Not checked is unexplained, under investigation. F365.
 - [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
 - Status: rulings given, being built.
+- [ ] Bold item rows on the Result fold are normal weight (a9b62515, live walk).
+
+### Next after feat/shape-jobs ships: barebrowse bump (2026-11-19)
+
+- [ ] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse").
