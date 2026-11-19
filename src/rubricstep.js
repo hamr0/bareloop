@@ -136,11 +136,14 @@ export function lineBriefs(closeDecl) {
     const sp = shapePartOf(st.params);
     if (sp) {
       const fields = sp.fields.filter(isRec);
+      const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
       const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : 'one item for every one you find';
       out.push({
         line: n,
         text: [
-          `Job line ${n} is a LIST line. Write ${stepFileRel(n)} as {"results": [{...}, {...}]} and nothing else — no "text", no "cites". One object per item: ${count}.`,
+          alsoText
+            ? `Job line ${n} is a TEXT line AND a LIST line. Write ${stepFileRel(n)} as {"text": "...", "cites": {...}, "results": [{...}, {...}]}: "text" and "cites" as for any text line (the contract above), and "results" is the list of items. One object per item: ${count}.`
+            : `Job line ${n} is a LIST line. Write ${stepFileRel(n)} as {"results": [{...}, {...}]} and nothing else — no "text", no "cites". One object per item: ${count}.`,
           '  Every item has these fields, named exactly as written (a field marked optional may be left out when it does not apply):',
           ...fields.map((/** @type {any} */ f) => `    - ${f.name}: ${shapeFieldSentence(f.spec)}${f.spec.required === true ? '' : ' (optional)'}`),
           `  One example item: ${JSON.stringify(shapeExampleItem(fields))}`,
@@ -339,7 +342,6 @@ export function rubricStepShapeReds(p, at) {
   if (shapeParts.length > 1) red('invalid-value', `${at}.parts`, 'one shape part per step: the fields of a list of items all go in one');
   const hasFact = p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
   // a shape part may sit beside the line's fact part (facts+shape: one `results` list read by `cited` and `itemShape`) and its picks, never beside a sheet part; alone it is the line's only part (its file has no `text` or `cites`)
-  if (shapeParts.length > 0 && !hasFact && p.parts.length > shapeParts.length) red('invalid-value', `${at}.parts`, 'a shape line with no facts holds its shape part alone: its step file is "results", a list of items, with no "text" or "cites"');
   const sheetParts = p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'sheet');
   if (sheetParts.length > 1) red('invalid-value', `${at}.parts`, 'one sheet part per step: the checks of a sheet line all go in one');
   if (sheetParts.length > 0 && shapeParts.length > 0) red('invalid-value', `${at}.parts`, 'a sheet line holds sheet checks: a shape part is not allowed beside them');
@@ -1115,7 +1117,7 @@ const isDefaultNote = (/** @type {any} */ p, /** @type {number} */ n) => isRec(p
 export function lineCarriesText(closeDecl, n) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)
-    && !(shapePartOf(st.params) !== null) && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
+    && !((factPartOf(st.params) || shapePartOf(st.params)) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
 }
 
 /**
@@ -1155,7 +1157,7 @@ export const guardRowText = (name) => guardQuestionText(name) ?? `${name} — ${
  */
 export function floorText(closeDecl, n) {
   const st = (isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : []).find((/** @type {any} */ x) => isRec(x) && x.kind === 'rubric-step' && isRec(x.params) && x.params.step === n);
-  return floorWords(n, lineCarriesText(closeDecl, n), shapePartOfLine(closeDecl, n) !== null && !(st && factPartOf(st.params)));
+  return floorWords(n, lineCarriesText(closeDecl, n), shapePartOfLine(closeDecl, n) !== null && !(st && factPartOf(st.params)) && !(st && st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
 }
 
 /** the one spelling of the floor row's words (the check block's own card view reads it with the line's `carriesText`) @param {number} n @param {boolean} carriesText @param {boolean} [listLine] a shape line: it lists items (shape jobs) @returns {string} */

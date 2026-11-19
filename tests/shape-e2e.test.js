@@ -64,7 +64,7 @@ async function run(/** @type {any} */ r, /** @type {string} */ file, /** @type {
   writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`);
   const stage = closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step');
   const plan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'line-1', action: 'Write output/steps/1.json', tools: ['write'], rounds: 6, target: 'output/steps/1.json', exit: [{ type: 'tree-changed', scope: 'output/**' }, { type: 'check-passes', name: stage.name }] }] });
-  const step = JSON.stringify({ results: items });
+  const step = JSON.stringify({ text: 'The four research items.', cites: { Tracker: [{ claim: 'The first item is a battery chemistry survey that is in progress', quote: '1. Battery chemistry survey - in progress' }] }, results: items });
   const provider = scriptedProvider([{ text: 'input/tracker.txt holds the notes' }, { text: plan }, { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(prep.prep.tree, 'output', 'steps', '1.json'), content: step } }] }, { text: 'wrote' }]);
   const home = tmp('shape-e2e-home-');
   /** @type {string[]} */ const out = [];
@@ -80,7 +80,8 @@ test('DRAFT: the shape look\'s shape builds, the gates accept the shape part (it
   const { r } = await draft();
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal ?? r.authoring?.iterations?.map((/** @type {any} */ i) => i.validation)));
   const stage = r.closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step');
-  assert.deepEqual(stage.params.parts.map((/** @type {any} */ p) => p.class), ['shape'], 'a shape line holds its shape part alone');
+  assert.deepEqual(stage.params.parts.map((/** @type {any} */ p) => p.class), ['shape', 'countable'], 'the shape part, and the `$cited` default that always stays');
+  assert.equal(stage.params.parts[1].check, 'cited');
   const part = stage.params.parts[0];
   assert.deepEqual(part.fields.map((/** @type {any} */ x) => x.name), ['title', 'status', 'summary']);
   assert.deepEqual(part.rules, [1, 2, 3]);
@@ -93,7 +94,7 @@ test('DRAFT: the shape look\'s shape builds, the gates accept the shape part (it
 test('the worker\'s brief for a shape line: the file contract, each field in plain words and one code-built example item that bareguard accepts', async () => {
   const { r } = await draft();
   const brief = lineBriefs(r.closeDecl).find((b) => b.line === 1)?.text ?? '';
-  assert.match(brief, /^Job line 1 is a LIST line\. Write output\/steps\/1\.json as \{"results": \[\{\.\.\.\}, \{\.\.\.\}\]\} and nothing else/);
+  assert.match(brief, /^Job line 1 is a TEXT line AND a LIST line\. Write output\/steps\/1\.json as \{"text": "\.\.\.", "cites": \{\.\.\.\}, "results": \[\{\.\.\.\}, \{\.\.\.\}\]\}/);
   assert.match(brief, /- title: not empty\n/);
   assert.match(brief, /- status: one of: in progress, closed, finished\n/);
   assert.match(brief, /- summary: at most 199 characters\n/);
@@ -102,8 +103,9 @@ test('the worker\'s brief for a shape line: the file contract, each field in pla
   const { createRubric, checkStep } = await import('bareguard');
   const stage = r.closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step');
   const { buildStepSpec } = await import('../src/rubricstep.js');
-  const rubric = createRubric(buildStepSpec(stage.params, {}));
-  assert.equal((await checkStep(rubric, '1', { results: [example] }, { inputs: {} })).verdict, 'green', 'the example is a legal item');
+  const rubric = createRubric(buildStepSpec(stage.params, { Tracker: '0'.repeat(64) }));
+  const res = await checkStep(rubric, '1', { results: [example], text: 'x' }, { inputs: { Tracker: 'x' } });
+  assert.equal(res.full.gaps.some((/** @type {any} */ g) => g.check === 'itemShape'), false, 'the example is a legal item');
 });
 
 test('RUN: item 3 status "done" and item 4 summary of 236 characters: the close reds exactly those two, in plain words; the right answer is green', async () => {
@@ -141,7 +143,7 @@ test('RESULT TAB model (signed mock A): the red run\'s line is a shape grid with
   const rows = ac.checks.filter((/** @type {any} */ r) => r.shape);
   assert.deepEqual(rows.map((/** @type {any} */ r) => [r.text, r.result]), [['title \u00B7 not empty', 'passed'], ['status \u00B7 one of: in progress, closed, finished', 'failed'], ['summary \u00B7 under 200 characters', 'failed']]);
   assert.equal(rows[1].why, 'item 3: "status" is not one of the allowed values');
-  assert.ok(ac.checks.some((/** @type {any} */ r) => /this line lists items, so it has no text check/.test(r.text)), 'the floor row says lists items, not finds facts');
+  assert.ok(ac.checks.some((/** @type {any} */ r) => /must exist, be complete JSON, and carry text/.test(r.text)), 'the line also carries text (the cite default stays)');
   assert.deepEqual(ac.notChecked.map((/** @type {any} */ r) => [r.text, r.by]), [['whether each one is true \u2014 you judge it at Accept', 'default']]);
 });
 

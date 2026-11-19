@@ -576,8 +576,8 @@ export class CheckBlock {
         row.state = 'not-checked'; row.reason = hasShape ? SHAPE_TRUTH_WORDS : PROSE_WORDS;
       } else if (prose) { prose.state = 'dropped'; prose.reason = null; }
       // only a shape line's floor row carries the flag: every other row stays byte-identical to what it was
-      for (const f of this.rowsOn(l.n, 'floor')) { if (hasShape && !lineParts.some((p) => p.class === 'fact')) f.listLine = true; else delete f.listLine; }
-      for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !lineParts.some((p) => p.class === 'shape') && !(lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
+      for (const f of this.rowsOn(l.n, 'floor')) { if (hasShape && !lineParts.some((p) => p.class === 'fact') && !lineParts.some((p) => p.class === 'countable')) f.listLine = true; else delete f.listLine; }
+      for (const f of this.rowsOn(l.n, 'floor')) f.carriesText = lineParts.length > 0 && !(lineParts.some((p) => p.class === 'shape' || p.class === 'fact') && !lineParts.some((p) => p.class === 'countable'));
       lineParts.forEach((p, i) => {
         for (const k of lineRows[i] ?? []) { const row = this.rows.find((x) => x.key === k); if (row) row.part = { line: l.n, part: i }; }
         map.push({ part: parts.length, line: l.n, rows: lineRows[i] ?? [], origin: 'code' });
@@ -750,8 +750,6 @@ export class CheckBlock {
   buildDefaults(/** @type {{n: number}} */ l, /** @type {any[]} */ lineParts, /** @type {string[][]} */ lineRows, /** @type {Set<number>} */ factLines) {
     // S4: a sheet line quotes nothing and ties no number to a quote: its `$cited` default is never added (a cited part beside a sheet part is a stage-shape red)
     if (this.isSheetLine(l.n)) return;
-    // shape jobs: a line that holds a shape part and no fact part answers with a list of items, not a text: it has no `$cited` default either (a facts+shape line keeps today's)
-    if (lineParts.some((p) => p.class === 'shape') && !factLines.has(l.n)) return;
     const cited = this.rowsOn(l.n, 'cited')[0] ?? this.addRow({ key: `L${l.n}.$cited`, line: l.n, kind: 'cited', by: 'default', from: 'default', source: this.labels[0] });
     const numbers = this.rowsOn(l.n, 'numbers')[0] ?? null;
     cited.part = null;
