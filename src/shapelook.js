@@ -1,6 +1,6 @@
 // SHAPE JOBS (itemShape), docs/product/ITEM33-BUILD.md "Addendum 2026-11-18: shape jobs", clause 1 "Offer", as rulings of hamr 2026-11-18 (2a) made it: the shape is proposed EARLIER, in a pre-call look before the asks, the same way the
 // sheet look is (src/sheetlook.js): ONE AI call for the whole job (not one per input) answers "which job lines are a list of items with named fields, and what are the fields". The AI only SUGGESTS: it returns the shapes
-// (fields, kinds, bounds, `fromRule`, extra fields, `itemCountFrom`, `alsoFitsRules`) and CODE builds or refuses every field (src/shapebuild.js, R1-R5) before `askRounds`, so the "rules or shape could both fit" ask joins the counted asks.
+// (fields, kinds, bounds, `fromRule`, extra fields, `itemCountFrom`) and CODE builds or refuses every field (src/shapebuild.js, R1-R5) before `askRounds`, so the "rules or shape could both fit" ask joins the counted asks.
 // There is no second place that proposes a shape: the row-edit turn (src/rowedit.js) is not offered one.
 //   `shapeLookPrompt`   the call's user text (the job, the inputs bounded, the menu of src/shapemenu.js, the answer form); `SHAPE_SYSTEM` its system text (both are prompt registers, src/promptregisters.js);
 //   `parseShapeAnswer`  strict: one JSON object `{"shapes":[...]}`, nothing else, no repair;
@@ -49,11 +49,10 @@ export function shapeLookPrompt({ jobLines, lineNums, texts }) {
     + '- "extraFields": any other field you think would help (none is fine); its "fromRule" is null and code shows it to the person as a suggestion.\n'
     + '- "kind" is one of the kinds below and "bounds" holds only the bounds that kind accepts. Put in "bounds" only what the person wrote in that field\'s own rule; code drops every bound the person did not write. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true or false.\n'
     + '- "itemCountFrom": the labels of the inputs that give exactly one item each, only when the person wrote it ("one blurb per resume"); otherwise [].\n'
-    + '- "alsoFitsRules": true only if the person\'s rules could just as well be checked as separate facts instead of as fields of a list of items.\n'
     + `- A field name is at most ${NAME_MAX_CHARS} characters and holds none of . : [ ] ; a list field writes its entries as "of": {"kind": "text", ...bounds}.\n\n`
     + `The field kinds (and the bounds each kind accepts):\n${shapeMenuLines().join('\n')}\n\n`
     + 'Return ONLY a JSON object, no prose, no code fence, with "shapes" empty when no line is a list of items:\n'
-    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[],"alsoFitsRules":false}]}';
+    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[]}]}';
 }
 
 /**

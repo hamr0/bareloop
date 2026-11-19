@@ -22,7 +22,7 @@ const tmp = (p = 'shape-look-') => { const d = mkdtempSync(join(tmpdir(), p)); m
 
 const JOB = [{ n: 1, text: 'List the flights', rule: 'each flight has a price under 450; the flight is nonstop', rules: ['each flight has a price under 450', 'the flight is nonstop'] }];
 const f = (/** @type {any} */ o) => ({ required: true, bounds: {}, fromRule: null, ...o });
-const SHAPES = [{ line: 1, fields: [f({ name: 'price', kind: 'number', bounds: { lt: 450 }, fromRule: 1 }), f({ name: 'nonstop', kind: 'boolean', bounds: { equals: true }, fromRule: 2 })], extraFields: [], itemCountFrom: [], alsoFitsRules: false }];
+const SHAPES = [{ line: 1, fields: [f({ name: 'price', kind: 'number', bounds: { lt: 450 }, fromRule: 1 }), f({ name: 'nonstop', kind: 'boolean', bounds: { equals: true }, fromRule: 2 })], extraFields: [], itemCountFrom: [] }];
 const ans = (/** @type {any} */ shapes) => JSON.stringify({ shapes });
 const prov = (/** @type {any[]} */ script, /** @type {any[]} */ seen = []) => { let i = 0; return { async generate(/** @type {any} */ m) { seen.push(m); const e = script[Math.min(i, script.length - 1)]; i += 1; if (e instanceof Error) throw e; return e; } }; };
 const good = () => reply({ text: ans(SHAPES), costUsd: 0.002 });
@@ -100,7 +100,7 @@ test('the row-edit turn proposes no shape (one path only), and the look\'s words
   assert.ok(!PROMPT_REGISTERS.some((e) => e.file === 'src/shapeoffer.js'));
 });
 
-test('authorCloseForJob: the shape is built BEFORE the asks; "rules or shape could both fit" is ONE counted ask; Agree keeps the shape; the draft gets a block that holds the shape rows', async () => {
+test('authorCloseForJob: the shape is built before the asks; the rules take their truth checks first (an open check is asked), only the rest take shape fields; there is NO rules-or-shape ask; the draft gets a block that holds them', async () => {
   const file = join(tmp(), 'flights.txt');
   copyFileSync(join(HERE, 'fixtures', 'page-partial.txt'), file);
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: file }], into: join(tmp(), 'seed') });
@@ -109,7 +109,7 @@ test('authorCloseForJob: the shape is built BEFORE the asks; "rules or shape cou
   /** @type {string[]} */ const order = [];
   /** @type {any} */ let asked = null;
   /** @type {any} */ let seen = null;
-  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }], look: { facts: [], prose: [], notFound: [], dropped: [], shapes: [{ ...SHAPES[0], alsoFitsRules: true }] } } };
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }], look: { facts: [], prose: [], notFound: [], dropped: [], shapes: SHAPES } } };
   const r = await authorCloseForJob({
     answers: { 1: '1. List the flights' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
     jobLines: JSON.parse(JSON.stringify(JOB)), inputs: [{ n: 1, label: 'Flights', value: file }], writeScope: ['output/'], provider: { fake: true }, ceilingUsd: 1, onPhase: (p) => order.push(p),
@@ -119,13 +119,13 @@ test('authorCloseForJob: the shape is built BEFORE the asks; "rules or shape cou
     authorFn: async (o) => { order.push('authorFn'); seen = o; return { ok: true, declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }] }, seedRead: [], iterations: [], reds: [], cost: { calls: [] }, raws: [], stop: 'accepted' }; },
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
-  assert.deepEqual(order.filter((x) => ['shape-built', 'ask', 'authorFn'].includes(x)), ['shape-built', 'ask', 'authorFn']);
-  assert.equal(asked.questions.length, 1);
-  assert.equal(asked.questions[0].counted, true, 'costs one of the 3');
-  assert.match(asked.questions[0].question, /list of items with the fields price, nonstop/);
+  assert.ok(order.indexOf('shape-built') < order.indexOf('authorFn'));
+  // the rules are checked first: no ask is a shape ask (every ask, if any, is a truth-check ask and none is counted for the shape)
+  assert.ok((asked?.questions ?? []).every((/** @type {any} */ q) => q.ask === 'check' || q.ask === 'reading'));
+  assert.equal(JSON.stringify(asked ?? {}).includes('list of items with the fields'), false, 'no "rules or shape" question');
   const block = seen.block;
-  assert.equal(block.isShapeLine(1), true);
-  assert.deepEqual(block.rows.filter((/** @type {any} */ x) => x.kind === 'rule').map((/** @type {any} */ x) => x.state), ['built', 'built']);
+  assert.equal(block.isShapeLine(1), true, 'a rule no truth check took took its shape field');
+  assert.ok(block.rows.filter((/** @type {any} */ x) => x.kind === 'rule' && x.can?.how === 'shape').length >= 1);
   assert.equal(Object.hasOwn(seen, 'carriedShapeDropped'), false, 'the draft is not told about shapes: the block already holds them');
 });
 
