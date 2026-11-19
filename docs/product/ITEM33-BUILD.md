@@ -5260,3 +5260,32 @@ Round 4 FAIL ($0.00756). Every product bar was met. The FAIL came from the score
 Round 5 PASS ($0.00847). 0 losses of 3 patients, 0 bound-less, 0 negated, both controls shaped, tracker 3 of 3 checked, 0 wrong why. Dell and Airbnb now carry a real euro price shape. n=5 is UNDERPOWERED.
 
 Order kept (hamr 2026-11-19): the code truth check first, the shape look only for rules code left Not checked, Not checked only after the shape also fails; one list.
+
+## Addendum 2026-11-19: shape on Deterministic (repo) jobs — agreed, next
+
+Status: agreed (hamr, 2026-11-19), next item, not built, POC first.
+
+Title: Shape on Deterministic (repo) jobs — report jobs (assess, review, speed/refactor ideas, no code changes).
+
+Why: a job like "look at this code and tell me what could make it faster, no changes" answers with a LIST OF ITEMS. Shape (bareguard itemShape) checks that form. hamr: "follow the same rules we have and extend it to D, or adjust the injected text to match D; not much carve-out, not so many changes, simpler."
+
+What (agreed):
+1. No new job kind and no "rubric on a repo" unlock. D jobs already run the one check-list flow; the same order applies: code's own check first (the D checks), then shape for any ~ rule code could not check, then Not checked for the person at Accept.
+2. Lift the one block that keeps shape off repo jobs today (CheckBlock: `takesShape` and `shapeCandidates` return nothing when `this.repo !== null`, src/checkblock.js — re-verify lines at build time).
+3. Adjust the shape look's injected text for D: today it shows "THE INPUTS" (page/file text); on a D job it shows the input files the person listed (input lines 2+), or none. No new step, no new form question.
+4. The report goes to the job's Destination inside the repo (existing ruling: repo Destination is a path inside the repo); the write fence keeps code unchanged.
+5. Accepted loss (hamr agreed): no "the quoted code really sits in that file" truth check on D (that cite check is a page/file-job feature). Shape checks the form (each idea has file, function, why; "at least N" counts items); whether a quote is real and whether the idea is good or faster stay Not checked, judged at Accept.
+
+Example job (for the POC):
+
+    Look at src/ and list what could make the draft step faster, no code changes
+    ~ each idea names a file and a function
+    ~ each idea quotes the slow code
+    ~ each idea says why it would be faster
+    ~ at least 3 ideas
+
+(Source: a COPY of a real repo; Destination: reports/ inside it.)
+
+Risk to prove first (POC before any build): a D job's worker normally edits code; here it must write one clean list-of-items answer file into the Destination that itemShape can check. POC on a copy of a real repo, real code, frozen bar before data.
+
+Order: after feat/shape-jobs ships (heading rule, full suite, /code-review, release). Next branch: POC, then the two small changes, then one live run.

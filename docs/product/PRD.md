@@ -2403,6 +2403,7 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 - [ ] A shape field covers a `~` rule only with at least one real bound grounded in it (required + minChars 1 for "has a title"-style rules stays). F360.
 - [ ] Negating rules ("no nonstop") never take a shape; negations stay with the human. F360.
 - [ ] Scope rounds 3-5: the shape look prompt names the limit a field needs; round 5 PASS, UNDERPOWERED. Detail in `docs/product/ITEM33-BUILD.md` ("Scope rounds 3-5"). F366-F368.
+- [ ] Shape on D (repo) report jobs: same flow, lift the repo block, D-shaped look text; POC first; next after feat/shape-jobs. Pointer: ITEM33-BUILD Addendum 2026-11-19 (shape on D).
 - [x] Number-then-marker prices ("€216 total", "1.299,00 €") are already read (F251); POC 1 ran, premise stale, nothing to build. Why block A of the scope harness left those rules Not checked is unexplained, under investigation. F365.
 - [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
 - Status: rulings given, being built.
