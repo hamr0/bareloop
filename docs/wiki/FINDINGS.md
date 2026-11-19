@@ -16627,3 +16627,21 @@ Scope round 4 (`.claude/scratch/shape-scope/round4/results.md`): every product b
 
 ### F368: A whole-text rewrite can silently drop a needed limit; re-read the whole text after one (2026-11-19)
 The round 3 rewrite of the shape look prompt dropped "for no other rule", which round 4 exposed (`.claude/scratch/shape-scope/round4/results.md`). Restored in 0e1ae774. After any whole-text rewrite, diff old against new for each limit sentence.
+
+### F369: A truth check refused at build left its rule Not checked even though a shape could check it (live run mwnbs3np, 2026-11-19, $0.029)
+**Failure.** Live run `mwnbs3np` (research-2): the title and status `~` rules got fact checks that the build refused ("words in input only 1 time but 4 results"), after the shape look had already run, so the rules ended Not checked while a shape field could have checked them. Evidence: that run's draft log and card. **Fix.** 2a4c8d0d: a rule whose truth check is refused at build becomes a shape candidate (order of the day's ruling: code truth check, then shape, then Not checked). **Status.** Live-proven on the later runs mwndngl5 and mwngwznk (both green); the refusal path itself is test-covered.
+
+### F370: A rule named in both a fact `from` and a `cannot` entry got a fact check it could not honour (live run mwndngl5, 2026-11-19, $0.0106)
+**Failure.** The page-map look named the rule "summary notes" in a fact's `from` and also in a `cannot` entry ("Notes:"); the fact check was built anyway. **Fix.** 7c9c19c2 (`src/pagerules.js` applyPageRules): such a rule is contested, gets no fact check, and stays a shape candidate or Not checked for the human at Accept (ruling: contested goes to the human, no extra machinery). **Status.** Test-proven only; the run that showed it was green and the fix firing on a real draft has NOT been seen live.
+
+### F371: The Audit lost its Line blocks (2026-11-19)
+**Failure.** `getRunDetail` in `src/panel/server.js` (about L2240) dropped `lines` and `jobNotChecked` from what it sent, so the Audit showed no per-line check blocks. Found while building the check-list look on the Audit (ce7ec99c) and checking the real screen. **Fix.** 7165ad29 ships both fields; a line's output-file floor check (`L<n>.$floor`) is now kind `file`. 7a530b1e drops the redundant "line 1: " prefix inside a one-line job's Line 1 block (card and Audit, one owner in `finishPlan`). **Status.** Seen in the orchestrator's own screenshot; phone width NOT checked.
+
+### F372: Two try-it fixes were withdrawn because they did not earn their place (2026-11-19)
+**fe41ed14 NO_BOUND_WHY** (reason text on a rule row whose picked field has no limit): reverted by 369815d9. Round 5 passed with the prompt fix alone (F366), so the extra reason path had no real case behind it. **7a4f6057 switch-back** (a shaped rule goes back to its truth check once that check builds): reverted by 511fb9b5. No real run reached that path, and it added a second flow beside the one list, against the "no machinery for cases no real run showed" ruling. Both reverts leave the tree as before the commits (not byte-diffed in this entry).
+
+### F373: Report heading said "The answer" for lines code had not checked; rule copied from fwd v0.36.0 proseCheckedOf (2026-11-19)
+**Failure.** The report's `### The answer` heading could sit over text no code check covered. **Fix.** 521e2ed4 (`src/resultmd.js` proseNotChecked): "The answer" only when code checked the line's own text; a note-only, quote-only or Not-checked-`~`-rule line reads "The AI's answer (not checked, you judge it at Accept)". 022c5f02 follow-up: the `$` prose meaning row alone no longer makes a line not checked, matching fwd. **Status.** Test-proven; open differences are recorded in the build addendum.
+
+### F374: The draft readout in the check-list look drops the fence row for pre-check-list fixture specs (2026-11-19)
+**Observation.** cadb268b rewrote `src/authorreadout.js` to read `planFromSpec` and `kindOfCheck`; the always:/WRITE FENCE/REFUSED sections are gone. Side effect: fixture specs authored before the check list existed show no fence row in the readout. **Status.** Accepted; not a defect for new drafts; to be seen only if a real draft shows it.

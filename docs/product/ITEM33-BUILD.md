@@ -5289,3 +5289,36 @@ Example job (for the POC):
 Risk to prove first (POC before any build): a D job's worker normally edits code; here it must write one clean list-of-items answer file into the Destination that itemShape can check. POC on a copy of a real repo, real code, frozen bar before data.
 
 Order: after feat/shape-jobs ships (heading rule, full suite, /code-review, release). Next branch: POC, then the two small changes, then one live run.
+
+## Addendum 2026-11-19 (b): shape jobs — live fixes, check-list look, Result fold
+
+Branch feat/shape-jobs, not pushed. Findings F369-F374 in `docs/wiki/FINDINGS.md`; earlier scope rounds are F366-F368.
+
+**Rulings today (hamr).**
+- Order: code truth check first, then shape for rules code could not check, then Not checked (human at Accept) only after the shape fails too. One flow, one list.
+- Do not over-engineer; more passes than not, a human still reads at Accept. A contested rule goes Not checked/human. No machinery for cases no real run showed. A wording fix gets one live run, not prereg rounds.
+- Check-list look A (signed mock): tags first `[you]`/`[agent]`/`[default]`, kind word truth/shape/file, groups CHECKED / NOT CHECKED / SUGGESTED, reasons behind "why"; same on card, Audit (result at right, failed reason indented) and the text readout. To go to fwd after release.
+- Result: every shape line draws the fold (one row per item, opens to its fields, failed items open, values shown, no separate errors list).
+- Report heading: match fwd v0.36.0 proseCheckedOf.
+- Shape on Deterministic (repo) jobs: same flow, POC first, next branch after this ships (see the earlier 2026-11-19 addendum).
+- "in progress" in the Status column is the item's own tracker value, not a bug. Bold rule names: leave.
+
+**Built.**
+- Truth check refused at build becomes a shape candidate: 2a4c8d0d (F369).
+- Contested rule (fact `from` plus `cannot`): 7c9c19c2 (F370).
+- Source error text for a git repo with Deterministic picked: bb362bd2 ("Nothing spent").
+- Check-list look: card 66ddc9ed, Audit ce7ec99c, CHANGELOG and CSS 50679ef5, readout cadb268b (F374).
+- Audit Line blocks: 7165ad29 (F371); "line 1:" prefix dropped in a one-line job: 7a530b1e.
+- Report heading rule: 521e2ed4, 022c5f02 (F373).
+- Result fold: 1a1ce277 (5+ fields), f36c6778 (values on every cell, errors list dropped), 322850aa (every shape line; grid, SHAPE_FOLD_MIN, fold flag and column hints removed).
+
+**Reverted (F372).** fe41ed14 NO_BOUND_WHY reverted by 369815d9; 7a4f6057 switch-back reverted by 511fb9b5.
+
+**Live evidence.** Runs mwnbs3np, mwndngl5, mwngwznk on DeepSeek flash (job research tracker), the last two green. Scope round 5 PASS is n=5, UNDERPOWERED.
+
+**Open / not seen live.**
+- Contested fix firing on a real draft; Drop on a `[you]` shape row; Add of an `[agent]` field; the new source error text; phone width on card, Audit, readout and Result (needs hamr's DevTools).
+- The card shows no Not checked note for a facts+text line while the report heading says not checked (leave unless seen).
+- A text-only line with a built maxWords keeps the `$` prose row Not checked on the card while the report heading reads "The answer".
+- A facts+shape line may show 2 cards in Result (mock had 1); not re-checked after the fold change.
+- Full suite not run since the morning; not pushed; flights-page job (no shape call) still to be walked.
