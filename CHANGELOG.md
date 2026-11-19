@@ -22,6 +22,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- Result tab, shape item rows are normal weight, not bold.
 - The .md report writes `### The answer` over a line's text only when code checked that line's own text (rule copied from fwdloop v0.36.0 `proseCheckedOf`, `src/whole-job.js`): a facts line whose text has only the default note (non-empty), a quote check or no check, or a Not checked `~` rule on the line (the `$` prose meaning row alone does not count, as fwd: a text line with a built words/lines/sections check still reads `### The answer`), now reads `### The AI's answer (not checked — you judge it at Accept)`. Read from the signed close in `src/resultmd.js` (`proseNotChecked`); fwd's sheet and `wordsPerSection` parts are not ours.
 - A `~` rule the page look names BOTH in a fact's `from` and in a `cannot` entry (the same line and rule, exact; a `cannot` naming only a whole line contests nothing) is contested: no fact counts as checking it, so the rule stays a shape candidate and, if the shape also fails, Not checked (live run mwndngl5: a "Notes:" fact took "summary is under 200 characters" while the look said the page cannot show it). One owner: `applyPageRules` (src/pagerules.js). Test: `tests/shape-contested.test.js` on the session's real answers.
 

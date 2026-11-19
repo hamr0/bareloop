@@ -245,6 +245,7 @@ test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a fa
   assert.match(five, /<b>2<\/b> items · <b>1<\/b> passed · <b>1<\/b> failed/);
   assert.match(five, /<details class="sf-item" data-testid="shape-item"><summary>.*?1 · abc.*?5 of 5/);
   assert.match(five, /<details class="sf-item bad" data-testid="shape-item" open><summary>.*?4 of 5/);
+  assert.doesNotMatch(PAGE.match(/\.sf-nm\{[^}]*\}/)?.[0] ?? 'font-weight', /font-weight/, 'item row name is normal weight');
   assert.match(five, /data-result="failed"><span class="k">f1<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \(30 chars\) <span class="why">· is too long/);
   for (const n of [1, 3, 4]) {
     const few = draw(mk(n));
