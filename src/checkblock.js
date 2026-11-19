@@ -153,6 +153,8 @@ export class CheckBlock {
     this.sheetBuilt = null;
     /** shape jobs (clause 4): what code built from the AI's `itemShape` (src/shapebuild.js `buildShapes`), null until the row-edit turn has answered. A line in `built` is a SHAPE line: a line is exactly one class, facts, sheet or shape @type {ReturnType<typeof import('./shapebuild.js').buildShapes>|null} */
     this.shapeBuilt = null;
+    /** a rule on its shape field whose refused truth check builds now: reconcile matches once more */
+    this.rematch = false;
     /** shape jobs: the Drops the person made, kept beside the rows (`agent` = `<line>:<field name>`, `rules` = `<line>:<rule number>`) @type {{agent: Set<string>, rules: Set<string>}} */
     this.shapeDrops = { agent: new Set(), rules: new Set() };
   }
@@ -379,7 +381,7 @@ export class CheckBlock {
     // Airport" for the job's "Boston") says the JOB's word; the row is then job-derived (inJob below, the one owner) and its phrase check uses that word
     if (this.split) for (const r of this.rows) if (this.isBang(r) && (r.kind === 'fact' || r.kind === 'phrase')) this.takeJobWord(r);
     for (const r of this.rows) {
-      r.can = null;
+      r.can = null; r.truthCan = undefined;
       if (r.kind === 'floor') continue;
       if (r.left) r.can = { ok: false, why: REASON.left };
       else if (r.lookWhy && r.kind === 'fact' && !r.words.length) r.can = { ok: false, why: r.lookWhy };
@@ -457,6 +459,7 @@ export class CheckBlock {
       if (refused !== null) r.can = { ok: false, why: refused };
       return;
     }
+    if (r.can?.ok) r.truthCan = r.can;
     r.can = this.shapeDrops.rules.has(`${r.line}:${r.rule}`) ? { ok: false, why: REASON.dropped } : { ok: true, how: 'shape', name: sh.name };
   }
 
@@ -655,7 +658,11 @@ export class CheckBlock {
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
       if (r.held) { r.state = 'suggested'; r.reason = r.choice === 'drop' ? REASON.dropped : REASON.suggested; continue; }
       if (r.can.how === 'sheet') { sheetRows.push(r); continue; }
-      if (r.can.how === 'shape') { shapeRows.push(r); continue; }
+      if (r.can.how === 'shape') {
+        // the row took its shape field because its truth check was refused at build: try that truth check again on THIS build; one that now builds clears the flag and reconcile matches the row again (truth first)
+        if (r.truthCan && !('why' in this.factsOf({ ...r, can: r.truthCan }, facts))) { r.truthRefused = false; this.rematch = true; }
+        shapeRows.push(r); continue;
+      }
       // a line is a sheet line or a facts line, never both (a stage-shape red): a page fact on a sheet line is Not checked in plain words
       if (this.isSheetLine(l.n) && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count')) { r.state = 'not-checked'; r.reason = REASON.sheetFacts; continue; }
       if (r.can.how === 'pick') {
@@ -668,6 +675,7 @@ export class CheckBlock {
       if (r.can.how === 'count') { countRow = r; continue; }
       const built = this.factsOf(r, facts);
       if ('why' in built) { r.state = 'not-checked'; r.reason = `code could not build a legal check from it: ${built.why}`; if (r.kind === 'rule') r.truthRefused = true; continue; }
+      if (r.kind === 'rule') r.truthRefused = false;
       facts.push(...built.fresh);
       r.factNames = built.names;
       factRows.push({ r, src: built.src });
@@ -1160,7 +1168,14 @@ export class CheckBlock {
   }
 
   // 8. whole-list reconcile, every time
-  reconcile() { this.match(); const c = this.build(); this.ask(); return c; }
+  reconcile() {
+    this.match();
+    let c = this.build();
+    // a rule on its shape field whose refused truth check builds now goes back to the truth check (one more pass)
+    if (this.rematch) { this.rematch = false; this.match(); c = this.build(); }
+    this.ask();
+    return c;
+  }
 
   /** the loop: while a question is open or a reply waits, apply it and reconcile the WHOLE list again. `answer(q)` gives {choice, text?} or null (a person who did not answer) */
   drive({ answer }) {

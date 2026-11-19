@@ -261,3 +261,26 @@ test('LIVE mwnbs3np: a rule whose truth check is refused when BUILT is a shape c
   assert.equal(row(b, 'L1.~2')?.can?.how, 'shape');
   assert.equal(row(b, 'L1.~3')?.state, 'built');
 });
+
+// the same block is reconciled again after a row edit or the person's answers: a rule that took its shape field because its truth check was refused must go back to the truth check once that check builds (truth first).
+test('LIVE mwnbs3np: a shaped rule whose refused truth check builds on a later reconcile goes back to the truth check', () => {
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/shape-scope/live-mwnbs3np-tracker.json', import.meta.url), 'utf8'));
+  const lines = fx.jobLines;
+  const facts = JSON.parse(fx.pageMapRaw).facts.map((/** @type {any} */ x) => ({ line: 1, name: x.name, shape: x.shape, source: 'tracker', words: x.words, forRule: Number(/rule (\d+)/.exec(x.from)?.[1]) }));
+  const b = new CheckBlock({ texts: { tracker: fx.tracker }, labels: ['tracker'], asks: false, split: true });
+  b.fromJob(lines);
+  b.setGuards(['changed-from-seed'], ['output/']);
+  b.addLook(facts, []);
+  b.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: [{ op: 'add', kind: 'count', line: 1, min: 4, max: 4 }] });
+  b.reconcile();
+  b.setShape(buildShapes({ lines, labels: ['tracker'], suggestions: JSON.parse(fx.shapeMapRaw).shapes, nameRules: NR }));
+  b.reconcile();
+  assert.equal(row(b, 'L1.~1')?.can?.how, 'shape', 'precondition: the refused truth check gave way to the shape field');
+  // the 4-results count no longer stands (state simulated on the row; the realistic edit path is not proven): the truth checks build
+  const count = /** @type {any} */ (b.rows.find((r) => r.kind === 'count'));
+  count.left = true;
+  b.reconcile();
+  assert.notEqual(row(b, 'L1.~1')?.can?.how, 'shape', 'truth first: the rule returns to its truth check');
+  assert.equal(row(b, 'L1.~1')?.state, 'built');
+  assert.equal(row(b, 'L1.~3')?.can?.how, 'shape', 'the rule no truth check took keeps its shape field');
+});
