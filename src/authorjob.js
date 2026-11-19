@@ -116,7 +116,9 @@ import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { tooManyAsksText } from './pagemap.js';
+import { runShapeLook } from './shapelook.js';
 import { runLook } from './sheetlook.js';
+import { buildShapes } from './shapebuild.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
@@ -443,7 +445,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, onJobLines?: ((jobLines: any[]) => void)|null, editGenerate?: Function|null, shapeFn?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, carriedSheetDropped?: any[]|null, carriedShapeDropped?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -478,6 +480,9 @@ export async function authorCloseForJob({
   // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`). S1: the default is `runLook` (src/sheetlook.js), which hands every input
   // that is not a CSV with a `~` rule to `runPageMap` unchanged, and reads such a CSV with the sheet look instead (one call per CSV).
   lookFn = runLook,
+  // SHAPE JOBS (rules first): the shape look, asked ONLY about the `~` rules still Not checked once the truth checks and the person's answers are settled. The default is the product's `runShapeLook` when the look is the product's
+  // (`lookFn` is `runLook`); a caller that brought its own look (a test seam) gets no shape call unless it brings this one too. `null` = never.
+  shapeFn = lookFn === runLook ? runShapeLook : null,
   authorFn = authorClose, authorOpts = {},
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
@@ -499,6 +504,8 @@ export async function authorCloseForJob({
   carriedChoices = null, onChoices = () => {},
   // S4: the sheet checks the person dropped in the draft this one follows (the picks record's `sheetDropped`): a Revise keeps a Drop of the very same check
   carriedSheetDropped = null,
+  // shape jobs (clause 4): the shape fields the person dropped in the draft this one follows (the record's `shapeDropped`)
+  carriedShapeDropped = null,
   // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
   // every existing caller runs byte-identical: `ask` absent means no confirm
   // turn runs at all, exactly as before this piece existed.
@@ -781,6 +788,28 @@ export async function authorCloseForJob({
         });
       }
     } else block.reconcile();
+    // SHAPE JOBS (rules first, hamr 2026-11-19, pick B): ask the shape look ONLY about the `~` rules still Not checked now that every truth check, the person's answers and the open asks are settled (`shapeCandidates`: code decides
+    // by checkability, no word lists). A job whose rules are all checkable makes no shape call and its rows, card and prompts stay byte-identical. The AI only suggests; code builds or refuses each field (src/shapebuild.js) and
+    // `matchRule` gives a field only to a rule no truth check took. A shape look that fails never stops the draft (its spend stays booked): it goes on without a shape.
+    const left = block.shapeCandidates();
+    if (left.length > 0 && typeof shapeFn === 'function') {
+      const lineNums = [...new Set(left.map((x) => x.line))].sort((a, b) => a - b);
+      const shapeCallOptions = provider ? thinkingCallOptions(provider, draftThinking) : {};
+      const got = await shapeFn({
+        texts: ledgerTexts, jobLines, lineNums, left: lineNums.map((n) => ({ line: n, rules: left.filter((x) => x.line === n).map((x) => x.rule) })), provider, ceilingUsd, onCall, priorCalls: survey?.calls ?? [],
+        ...(rates ? { rates } : {}), ...(Object.keys(shapeCallOptions).length ? { callOptions: shapeCallOptions } : {}),
+      });
+      survey.calls = [...(survey.calls ?? []), ...got.calls];
+      survey.raws = [...(survey.raws ?? []), ...got.raws];
+      if (got.state !== 'PRESENT') onPhase('shape-skipped', { reason: got.reason });
+      else if (got.shapes.length > 0) {
+        const shapes = buildShapes({ lines: jobLines.filter((l) => lineRules(l).length > 0 && !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: got.shapes });
+        block.setShape(shapes);
+        if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
+        onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
+      }
+      block.reconcile();
+    }
   }
 
   // A repo job runs through the SAME check block (hamr 2026-11-15: "same flow as rubric, no exceptions; only the TYPE of checks varies"): its `$` rows are known now (the confirm card draws them); its `~` rule rows
@@ -942,7 +971,7 @@ export async function authorCloseForJob({
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
-      ...(block ? { block, editGenerate, carriedSheetDropped } : {}),
+      ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
     });

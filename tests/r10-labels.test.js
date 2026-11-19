@@ -44,12 +44,12 @@ test('Job tab (planFromSpec): each check under its line says who added it', () =
   assert.ok(checks.every((c) => c.by === 'agent' || c.by === 'you'));
   // a code job's stage is the drafter's too
   const code = planFromSpec({ goal: 'g', jobLines: [{ n: 1, text: 'x', rule: '' }], closeDecl: { genre: 'types', lang: 'js', stages: [{ name: 'tests-pass', fromLine: [1], kind: 'command-exit', params: {} }] } });
-  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent', stage: 'tests-pass' }]);
+  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent', stage: 'tests-pass', kind: 'truth' }]);
 });
 
 test('plan card (planFromConfirm): the drafter\'s checks are [agent]; the picks keep their own "You picked" rows; a prepared card marks the close\'s pick rows', () => {
   const p = planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] });
-  assert.deepEqual(p.lines[0].checks, [{ name: 'the heading is quoted', cls: null, by: 'agent' }]);
+  assert.deepEqual(p.lines[0].checks, [{ name: 'the heading is quoted', cls: null, by: 'agent', kind: 'truth' }]);
   assert.deepEqual(p.lines[0].picked, ['at most 80 words']);
   const rec = cardOfClose({ closeDecl, jobLines });
   const prepared = planFromConfirm(jobLines, { checkItems: rec.checkItems, picked: [{ line: 1, text: 'at most 80 words' }] });
@@ -70,23 +70,23 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
+const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
 
 test('renderJobPlan draws the mark on a check row, one markup for the plan card and the Job tab', () => {
   const { renderJobPlan } = page();
   const html = renderJobPlan(planFromSpec(spec));
-  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/div>/);
-  assert.match(html, /data-by="agent">! \[agent\]<\/span>/);
+  assert.match(html, /<div class="ck-row" data-testid="plan-check" title="machine check"><span class="by tagcol" data-testid="plan-by" data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">the text is at most 80 words<\/span><\/div>/);
+  assert.match(html, /data-by="agent">\[agent\]<\/span>/);
   assert.equal((html.match(/\[you\]/g) ?? []).length, 2);
   // the confirm turn: [agent] on the drafter's check, the pick's own row unchanged
   const conf = renderJobPlan(planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] }));
-  assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span>/);
-  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/div>/);
+  assert.match(conf, /data-by="agent">\[agent\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">the heading is quoted/);
+  assert.match(conf, /data-testid="plan-picked"><span class="by tagcol" data-testid="plan-by" data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">at most 80 words/);
   assert.doesNotMatch(conf, /You picked/);
   // a not-known check carries no mark; an always-on guard is `[default]` (live draft 3, hamr 2026-11-13)
   const g = renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false });
-  assert.doesNotMatch(g, /plan-check"><span class="mk">›<\/span> check · c <span class="by"/);
-  assert.match(g, /always-on: g <span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span>/);
+  assert.doesNotMatch(g, /data-by="(you|agent)">\[[a-z]+\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">c</);
+  assert.match(g, /data-by="default">\[default\]<\/span><span class="kind" data-testid="ck-kind">file<\/span><span class="ck-t">always-on: g/);
   assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by,\.job-card \.by\{color:var\(--text-dim\)/);
 });
 

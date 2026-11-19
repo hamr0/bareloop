@@ -720,7 +720,7 @@ test('C1: a single-FILE source gets the file wording on the CLI (the one message
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 1, text);
-  assert.match(text, /Source is a single file\. Source must be the repo folder — put the file in Destination, like src\/digest\.js\. Nothing spent\./);
+  assert.match(text, /This file is inside a git repo, and Deterministic is picked: that needs the repo folder as Source\. If you meant Rubric, pick Rubric and Revise\. Nothing spent\./);
   assert.doesNotMatch(text, /plain folder/);
 });
 

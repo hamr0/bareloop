@@ -17,7 +17,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const { renderJobPlan, resultNotChecked } = new Function('escapeXml', 'resultField', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\n${fnSrc('resultNotChecked')}\nreturn { renderJobPlan, resultNotChecked };`)(escapeXml, (l, h) => h);
+const { renderJobPlan, resultNotChecked } = new Function('escapeXml', 'resultField', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('resultNotChecked')}\nreturn { renderJobPlan, resultNotChecked };`)(escapeXml, (l, h) => h);
 
 const byOf = (/** @type {any[]} */ items, /** @type {RegExp} */ re) => items.find((c) => re.test(c.text))?.by;
 const ledgerOf = (/** @type {any} */ block) => block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) }));
@@ -32,10 +32,10 @@ for (const which of /** @type {const} */ (['A', 'B'])) {
     assert.equal(byOf(card.checkItems, /^fact · destination /), 'agent');
     assert.equal(byOf(card.checkItems, /^fact · results — /), 'agent');
     const html = renderJobPlan(planFromConfirm(d.jobLines, { ...card, checks: card.checkItems.map((c) => c.text), protections: [] }));
-    assert.match(html, /check · fact · price [^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span>/);
-    assert.match(html, /check · fact · origin [^<]*<span class="by" data-testid="plan-by" data-by="agent">! \[agent\]<\/span>/);
+    assert.match(html, /<span class="by tagcol" data-testid="plan-by" data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">fact · price /);
+    assert.match(html, /<span class="by tagcol" data-testid="plan-by" data-by="agent">\[agent\]<\/span><span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">fact · origin /);
     assert.doesNotMatch(html, /the AI's own reading|you picked/);
-    assert.match(html, /<summary>Not checked · \d/);
+    assert.match(html, /NOT CHECKED · \d+ · you judge these at Accept/);
   });
 }
 
@@ -49,8 +49,8 @@ test('draft B: Not checked rows carry their tag: the rule the person wrote [you]
   const cited = card.notChecked.find((t) => /every claim quotes its input/.test(t));
   assert.equal(card.notCheckedBy[cited], 'default');
   const html = renderJobPlan(planFromConfirm(d.jobLines, { ...card, checks: [], protections: [] }));
-  assert.match(html, /nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]<\/span><\/li>/);
-  assert.match(html, /every claim quotes its input[^<]*<span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span><\/li>/);
+  assert.match(html, /data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind"><\/span><span class="ck-t">[^<]*nonstop is not mandatory/);
+  assert.match(html, /data-by="default">\[default\]<\/span><span class="kind" data-testid="ck-kind"><\/span><span class="ck-t">[^<]*every claim quotes its input/);
 });
 
 test('the signed card and the Job tab (planFromSpec over the signed close) tag the same way, and the Result tab tags its Not checked list', async () => {
@@ -64,7 +64,7 @@ test('the signed card and the Job tab (planFromSpec over the signed close) tag t
   const refused = plan.lines[0].refused.find((t) => /nonstop is not mandatory/.test(t));
   assert.ok(refused, JSON.stringify(plan.lines[0].refused));
   assert.equal(plan.notCheckedBy?.[refused], 'you');
-  assert.match(renderJobPlan(plan), /not checked · [^<]*nonstop is not mandatory[^<]*<span class="by" data-testid="plan-by" data-by="you">~ \[you\]/);
+  assert.match(renderJobPlan(plan), /data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind"><\/span><span class="ck-t">[^<]*nonstop is not mandatory/);
   assert.match(resultNotChecked('Not checked', [refused], 't', plan.notCheckedBy), /\[you\]/);
   assert.doesNotMatch(resultNotChecked('Not checked', [refused], 't'), /\[you\]/, 'no map, no tag (an older run)');
 });

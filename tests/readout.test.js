@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildReadout, readoutHeadIndexes, READOUT_HEADS } from '../src/authorreadout.js';
-import { cardOfClose, fenceOfClose, fenceRowText, FENCE_KEY } from '../src/rubricstep.js';
+import { fenceOfClose, fenceRowText, FENCE_KEY } from '../src/rubricstep.js';
+import { planFromSpec, kindOfCheck } from '../src/panel/jobplan.js';
 import { jobSpecHash } from '../src/job.js';
 import { ticketFilterWords } from '../src/ticketfilter.js';
 
@@ -31,23 +32,24 @@ for (const [kind, get] of /** @type {[string, () => any][]} */ ([['repo', REPO],
     assert.equal(readoutHeadIndexes(t)[0], 0, 'the header line is drawn bold');
   });
 
-  test(`readout (${kind}): check lines and tags are exactly the card's rows for the same signed close`, () => {
+  test(`readout (${kind}): check rows are exactly the card's rows (planFromSpec) in the signed look, tags first, kind second`, () => {
     const spec = get();
-    const card = cardOfClose({ closeDecl: spec.closeDecl, jobLines: spec.jobLines });
-    assert.ok(card.checkItems.length > 0);
+    const plan = planFromSpec(spec);
+    const want = [...plan.lines.flatMap((l) => l.checks), ...plan.loose].map((c) => `[${c.by ?? 'default'}]`.padEnd(9) + `  ${kindOfCheck(c).padEnd(5)}  ${c.name}`).sort();
+    assert.ok(want.length > 0);
     const t = base(spec);
-    const got = [...linesOf(t, 'check: '), ...linesOf(t, 'always: ')].sort();
-    const want = card.checkItems.filter((c) => c.key !== FENCE_KEY).map((c) => `${c.text} [${c.by}]`).sort();
+    const got = t.split('\n').filter((l) => /^ {7}\[(you|agent|default)\] +(truth|shape|file) /.test(l)).map((l) => l.trim()).sort();
     assert.deepEqual(got, want);
-    for (const n of card.notChecked) assert.ok(t.includes(n), `Not checked: ${n}`);
+    for (const n of plan.ncRows ?? []) assert.ok(t.includes(n.text), `Not checked: ${n.text}`);
   });
 
-  test(`readout (${kind}): the fence line is the one owner's words`, () => {
+  test(`readout (${kind}): the old always:, WRITE FENCE and REFUSED sections are gone; the fence row is the one owner's words inside CHECKED`, () => {
     const spec = get();
+    const t = base(spec);
+    for (const gone of ['always:', 'WRITE FENCE', 'REFUSED / NOT CHECKED', '     check: ']) assert.ok(!t.includes(gone), gone);
     const fence = fenceOfClose(spec.closeDecl);
-    assert.ok(fence);
-    const lines = base(spec).split('\n');
-    assert.equal(lines[lines.indexOf(READOUT_HEADS.fence) + 1], `  ${fenceRowText(fence)}`);
+    // a fixture that predates the signed list has no fence row on the card either, so the readout (the card's model) tells none
+    if (fence && planFromSpec(spec).loose.some((c) => c.key === FENCE_KEY)) assert.match(t, new RegExp(`\\[default\\] +file +${fenceRowText(fence).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
   test(`readout (${kind}): it is display only, the spec and its hash do not move`, () => {
@@ -108,4 +110,15 @@ test('readout: a replaced rule is shown by what was decided, never by the questi
   assert.match(t, /^ {2}line 3: dropped — Not checked$/m);
   assert.match(t, /^ {2}line 4: Which file\? — src\/sum\.js$/m);
   assert.doesNotMatch(t, /red-eye|Agree\?/);
+});
+
+test('readout: the signed look on a one-line plan (groups inside the line, line-less rows joined) and a two-line plan (EVERY LINE block)', () => {
+  const one = base(REPO()).split('STEPS\n')[1].split('\nJOB LINES')[0];
+  assert.match(one, /^ {2}\(line 1\) .+\n {5}CHECKED · 7\n {7}\[agent\] +truth /);
+  assert.match(one, /\n {5}NOT CHECKED · 2 · you judge these at Accept\n {7}\[you\] {13}no new dependencies/);
+  assert.ok(!one.includes('EVERY LINE'));
+  const two = base(RUBRIC()).split('STEPS\n')[1].split('\nJOB LINES')[0];
+  const at = (/** @type {string} */ x) => two.indexOf(x);
+  assert.ok(at('(line 1)') < at('CHECKED \u00B7 2') && at('CHECKED \u00B7 2') < at('(line 2)') && at('(line 2)') < at('  EVERY LINE\n') && at('  EVERY LINE\n') < at('NOT CHECKED \u00B7 6'));
+  assert.match(two, /\n {7}\[default\] {9}line 1: what the text says/);
 });

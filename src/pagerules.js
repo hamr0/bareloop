@@ -11,7 +11,7 @@ import { normLabel } from './labelscan.js';
 /**
  * @typedef {{op: string, value?: string|number, lo?: string|number, hi?: string|number}} Reading what a `~` rule means as a limit (PRD v1.107 Part 5b): the same shape as a signed fact rule
  * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[], reading?: Reading, lang?: string, decimal?: string}} MapFact the AI's map, one fact
- * @typedef {{facts: MapFact[]}} PageMap
+ * @typedef {{facts: MapFact[], cannot?: {from?: string, why?: string}[]}} PageMap
  * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading, lang?: string, decimal?: string}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
  * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the box a sign listed twice was kept in (sign-twice: unit or currency), the fact it would have repeated (S1), the phrase it looked for (phrase-no-result)
@@ -316,8 +316,15 @@ export function applyPageRules(text, mapping, jobLines) {
   /** @type {Dropped[]} */
   const dropped = [];
   const all = Array.isArray(mapping?.facts) ? mapping.facts.filter(isRec) : [];
+  // a rule the look ALSO lists under "cannot" (the same line and rule, exact) is CONTESTED (hamr 2026-11-19, live mwndngl5: a "Notes:" fact tied to "summary is under 200 characters" while the look said the page cannot show it):
+  // no fact counts as checking it, so the fact keeps its line only and the rule stays Not checked for the shape look. A "cannot" naming a whole line contests no rule.
+  const contested = new Set((Array.isArray(mapping?.cannot) ? mapping.cannot : []).filter(isRec).map((c) => tieOf(c.from, jobLines)).filter((t) => t.rule !== undefined).map((t) => `${t.line}:${t.rule}`));
+  const tieOfFact = (/** @type {MapFact} */ f) => {
+    const t = tieOf(f.from, jobLines);
+    return t.rule !== undefined && contested.has(`${t.line}:${t.rule}`) ? { line: t.line } : t;
+  };
   /** @type {Map<MapFact, {line: number, rule?: number}>} */
-  const ties = new Map(all.map((f) => [f, tieOf(f.from, jobLines)]));
+  const ties = new Map(all.map((f) => [f, tieOfFact(f)]));
   const drop = (/** @type {MapFact} */ f, /** @type {string|undefined} */ word, /** @type {string} */ reason, /** @type {string|undefined} */ other = undefined) => {
     const t = /** @type {{line: number, rule?: number}} */ (ties.get(f));
     dropped.push({ line: t.line, ...(t.rule === undefined ? {} : { rule: t.rule }), fact: String(f.name ?? ''), ...(word === undefined ? {} : { word }), reason, ...(other === undefined ? {} : { other }) });

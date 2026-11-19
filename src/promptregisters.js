@@ -65,6 +65,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/sheetoffer.js', name: 'sheetSuggestProp() (property descriptions)' }),
   Object.freeze({ file: 'src/sheetoffer.js', name: 'agreedColumnWords()' }),
 
+  // src/shapelook.js - the shape look (shape jobs): the call that proposes the shape of a list-of-items answer before the asks (hamr 2026-11-18, 2a)
+  Object.freeze({ file: 'src/shapelook.js', name: 'SHAPE_SYSTEM' }),
+  Object.freeze({ file: 'src/shapelook.js', name: 'shapeLookPrompt(), shapeMenuLines() (inline template, not a const)' }),
+
   // src/readshim.js — the capped/deduplicating read shim's worker-facing strategy
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_STRATEGY' }),
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_DIFF_STRATEGY' }),

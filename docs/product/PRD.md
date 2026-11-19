@@ -2390,3 +2390,37 @@ Ruled by hamr 2026-11-18.
 - d1 POC, 2026-11-18, local record (bareguard 8b1bb81): PASSED. 6/6 real saved answers green; 7/7 one-defect copies gave exactly the expected red.
 - Test data for the resume case: hamr's own resume plus one made-up resume, kept out of every repo and every commit.
 - Status: rulings given, build not approved; bareloop flow spec next; POC before any build.
+
+### Shape jobs: rules first, scope and gains rulings (v1.144 — 2026-11-19)
+
+Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "shape jobs (itemShape)", through "Scope round 2 PASS and the gains rulings"); evidence F357-F365 in `docs/wiki/FINDINGS.md`.
+
+- [ ] Shape jobs (itemShape): `~` rules get today's truth check first; only a rule that would end Not checked takes a shape field. Strongest wins, no ask (the "rules or shape could both fit" ask is removed). F359, F360.
+- [ ] Every shape row carries a `[shape]` tag (form only, not truth) and a Drop, the person's own `~` rows included; a dropped rule goes Not checked, and the card's "Add back" button undoes it (Revise keeps a Drop) (2ff04218, live walk research-5).
+- [ ] Boolean kind for yes/no fields (bareguard 0.37.0, `equals` true/false). F358.
+- [ ] The cite default always stays on a shape line; facts and shape ride one `results` answer (cited + closed itemShape). F361.
+- [ ] The shape look runs only when a rule is left Not checked, so page jobs stay byte-identical to today.
+- [ ] A shape field covers a `~` rule only with at least one real bound grounded in it (required + minChars 1 for "has a title"-style rules stays). F360.
+- [ ] Negating rules ("no nonstop") never take a shape; negations stay with the human. F360.
+- [ ] Scope rounds 3-5: the shape look prompt names the limit a field needs; round 5 PASS, UNDERPOWERED. Detail in `docs/product/ITEM33-BUILD.md` ("Scope rounds 3-5"). F366-F368.
+- [ ] Shape on D (repo) report jobs: same flow, lift the repo block, D-shaped look text; POC first; next after feat/shape-jobs. Pointer: ITEM33-BUILD Addendum 2026-11-19 (shape on D).
+- [x] Number-then-marker prices ("€216 total", "1.299,00 €") are already read (F251); POC 1 ran, premise stale, nothing to build. Why block A of the scope harness left those rules Not checked is unexplained, under investigation. F365.
+- [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
+- Status: rulings given, being built.
+- [ ] Bold item rows on the Result fold are normal weight (a9b62515, live walk).
+
+### Next after feat/shape-jobs ships: barebrowse bump (2026-11-19)
+
+- [ ] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse").
+
+### Future ideas, parked (2026-11-19) — not for today
+
+Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"; "hire an agent"). Ideas only: nothing is specced, nothing is built, no build without a spec and a POC.
+
+1. Workflows of jobs: job A writes into a folder; a folder trigger on that folder starts job B — a chain with no new machinery (folder triggers exist today). Each link keeps its own signed check and cap; the chain never signs itself. An agent may propose a chain; a person signs each link.
+2. Many jobs at once: each repo run already has its own worktree and cap, and the monthly limit counts all runs together, so parallel runs are a scheduler question, not a safety one; the limits are the machine and the provider's rate limits.
+3. barebox (sandbox) for the close: the worker has no shell (`run` locked) and a worktree holds the files; the open hole is the close, which runs code (F273, parked: the close must never execute worker-written code). Running the close inside barebox would close it. Arbiter territory: hamr's call.
+4. An approvals window: not needed for now; Accept is the approval; approvals mid-job belong to fwdloop (humans in the job).
+5. Headless, other agents hire bareloop: a coding agent hands bareloop a small job and gets back a verdict plus a receipt (the run record). Fits the identity line: they build the harness ("does it run"), bareloop is the judge ("was it good").
+
+- README "hire" framing ("Hire an agent for a job, not a task") is being drafted for this release, pending hamr's sign-off.

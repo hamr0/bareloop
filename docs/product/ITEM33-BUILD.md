@@ -5161,3 +5161,164 @@ PDF/DOCX reading; per-item cite (bareguard part 2); conditional required (ticket
 - src/resultmd.js `stepSection` would not throw on a shape answer: `isResultList` (line 42) needs every item to carry a `values` record, so an item without `values` makes `hasResults` false and the section is silently dropped (null when there is no `text`). Worse, a shape field that is itself named `values` and is an object would be rendered as a facts result. Either way it needs the explicit shape branch (clause 8).
 - `results` is already the facts-line file key (`{"results":[{"quote","values"}]}`, src/rubricstep.js 45-48, 103-107). A shape line reuses the name; that is safe only because a line is one class, so the brief, `flattenStep` and `stepSection` must pick by the line's signed class, never by the key.
 - `buildSheetChecks` is called at src/authorflow.js 2907 and 3086 (3083 is its typedef line).
+
+### POC results and code rules (2026-11-18)
+
+Primary files are under `.claude/scratch/shape-poc/` (scratch, not committed). Provider for every paid round: DeepSeek direct, deepseek-flash, cap $0.10. n=5 jobs, one call each: UNDERPOWERED. A PASS shows the mapping can work, not its rate.
+
+- Round 1 (prereg sha 34d2b951a7e0...): FAIL. Mapping was 5/5 and the resume item count was right. One invented bound survived code: the flights extra field `duration` kept minChars 3 and maxChars 20. The 3 was grounded by luck ("3" in "List 3 flights") and the 20 through the under-N candidate 21 from "21:59". Also seen: the nonstop values were dropped whole, and the tracker job's AI said one item per input. Cost $0.00795.
+- Round 2 (prereg sha 6d86772f1848...): code-only change, the prompt and call parameters byte-identical. A $0 replay of the round-1 answers gave PASS, which is a reading and not evidence (the answers were seen before the rules were written). The fresh paid run gave PASS. Bar line: "mapping 5/5 jobs (need >=4): ok; invented bounds surviving code: 0 (need 0; caught: 5): ok; resume item count exactly resume-1, resume-2: ok; no other job signs an item count: ok". Cost $0.00794.
+
+The four code rules from round 2 become rules of clause 2 ("Build or refuse") of the build:
+
+- R1. A bound is grounded only in that field's own `~` rule. A field with no rule gets no grounded bounds.
+- R2. An AI-added field whose name has no word in the job line or its `~` rules is Suggested: held out of the signed shape, off until the person's Add, no bounds. Same law as src/checkblock.js:286.
+- R3. oneOf keeps each grounded value and drops only the ungrounded ones.
+- R4. An item count is signed only when the person's words say "per <label stem>" or "each <label stem>".
+
+Gap found in round 2: the AI wrote nonstop as oneOf [true]. No yes/no kind existed, so the box checked presence only. bareguard added `kind: "boolean"` with `equals: true|false` (JSON true/false only; reds `#i:path:wrong-type` and `#i:path:wrong-value`; `wrong-value` is a reserved word). This is bareguard f712769 on feat/item-shape, unreleased. A $0 check, d3, passed 10/10 on crafted data, so it proves spelling and behaviour only.
+
+Our grounding for it, new rule R5: `equals` is allowed only on a field that has its own `~` rule (fromRule set). An AI-added field never gets `equals`. The card shows it, so the person sees it.
+
+Known loose spot, not fixed: the R2 word match is literal. `arrivalTime` counted as from the job through "time" in "departure time". It carries no bounds, so it cannot red by luck.
+
+Still open: round 3, which asks whether the AI picks boolean for "the flight is nonstop" once the menu has it. The build needs hamr's go, plus the bareguard release and a pin bump from ^0.36.0.
+
+- Round 3 (prereg sha 9a04e3ee7ad6...): the kind menu gained `boolean` (bound `equals`, true or false) and the code gained R5 (above). The prompt differs from round 2 by that one menu line; the call parameters, inputs and jobs are unchanged. Fresh paid run (DeepSeek direct, deepseek-flash): PASS on every bar item, including "flights rule 5 is boolean with equals true surviving code". Mapping 5/5, invented bounds surviving code 0 (caught 4), resume item count exactly resume-1, resume-2. Cost $0.00793. n=5, UNDERPOWERED: a PASS shows the AI can pick boolean, not its rate. Files: `.claude/scratch/shape-poc/PREREG-r3.md`, `SHAS-r3.txt`, `results-r3.md`.
+
+### Next on this branch (hamr 2026-11-18)
+
+After shape is done: copy fwd v0.36.0's report-heading rule from fwd's RELEASED tag v0.36.0 into our report (`### The answer` only when code checked the line's own text; fwd `src/whole-job.js` `proseCheckedOf`). fwd found its report wrote `### The answer` over a sheet line whose only check was non-empty; our `proseNotChecked` path may let the same through (unchecked on our side: check at $0 first). It ships in this same release. Not built yet.
+
+### Scope check round 1 FAIL and ruling (2026-11-19)
+
+Round 1 of the scope check (prereg and results under `.claude/scratch/shape-scope/`, scratch, not committed; DeepSeek direct, deepseek-flash, thinking off; the shape look then `buildShapes` then `CheckBlock.setShape` then `isShapeLine`, the draft's own path; the page-map look not run): 10 archived page/fact drafts and 2 positive controls, $0.0225 of the $0.20 cap. Result: FAIL. 8 of the 10 page patients ended up with a shape-class line (the six flights sessions, Dell and Airbnb: sessions smwj9uhatleaj, smwiw3dcfjmeu, smwezme3y35id, smvqz6h1bnc5k, smviejacde4qx, smvh566bnsgno, smvh7bxou4win, smv7q1w53of5n); the 2 changelog patients stayed countable; both controls (research-tracker, resume-readout) were shape-class. Bar was 0 wrong of 10; 2 or more is FAIL. UNDERPOWERED (n=10), but 8 of 10 is not noise. Read the file for per-patient proposals and refused fields (for example "rule 1 already has a field" on Dell, flights-a and flights-3). So the shape look over-offers: a fact rule like "under $450" is turned into a shape field and the shape replaces its fact/cite checks.
+
+Ruling (hamr 2026-11-19), replacing "a job line is exactly one class" for shape:
+- RULES FIRST. Each `~` rule gets today's truth check (fact, cite, count, phrase) when code can build one. Only the `~` rules that would otherwise end up Not checked go to a shape field. A line can hold BOTH (fact rows and shape fields); the cite `$` default always stays. A line is facts, sheet, or facts+shape.
+- STRONGEST WINS, no ask: a rule that fits both becomes the truth check; the person can Revise. The "rules or shape could both fit" ask (clause 3) is removed.
+- Every shape row carries a visible `[shape]` tag (form only, not truth). Every shape row has Drop, the person's own `~` rows too (drop = that rule goes Not checked; undo by Revise). `[agent]` extra fields stay Suggested with Add.
+- Open: how one answer carries both quoted facts and shape fields is being asked of bareguard (guard session). No code for the combined answer until guard answers.
+- Next: round 2 of the scope check on the same 10 patients and 2 controls, prereg'd before any code runs. Bar: 0 of the 10 page patients loses a truth check to a shape (the flights, Dell and Airbnb rows identical to today's); both controls get their shape fields; the tracker's 3 rules all end up checked (rule or shape).
+
+### Facts and shape on one answer, rules first: the spec (2026-11-19)
+
+Basis: hamr's ruling above (rules first, strongest wins, no ask) and the $0 verification on real data: `.claude/scratch/shape-combined/` round 1 FAIL (its V4 prediction came from guard's raw-list probe, not our `flattenStep` path; dell was graded single-pass), round 2 PASS (`round2/`, 47 of 47 scored variants and 12 of 12 stand-in self-checks, six real archived step answers with their real signed fact parts, bareguard 0.37.0, the product's gradeStep flow). Facts used below are round 2's.
+
+Class model. A job line is facts, sheet, or facts+shape. It is no longer exactly one class for shape. The shape look still runs once per rubric job (hamr: no word carve-outs; scope round 2 measures it).
+
+Who decides a rule's check. `CheckBlock.matchRule` is the one owner. Today's truth check (fact, cite, count, phrase, pick) is tried first. Only a rule that ends with no truth check and no open ask may take the shape field the shape look proposed for it (`fromRule`, built by `buildShapes`, R1-R5 unchanged): it becomes `can: {ok: true, how: 'shape'}` as the LAST step of `matchRule`. A rule that fits both is therefore the truth check; the person can Revise. The "rules or shape could both fit" ask (clause 3) and the AI's `alsoFitsRules` are removed. A line with no rule that took a shape field has no shape rows at all (the extra `[agent]` fields and the `$` shape row are pruned), so a page job's rows, card and signed list stay byte-identical to today's.
+
+Rows. A rule row that took a shape field keeps its `~ [you]` tag; every shape row (rule field, `[agent]` extra field, the `$` count row) also shows `[shape]`: form only, not truth. Every shape row has Drop, the person's own `~` rows too: dropping a rule's shape row leaves that rule Not checked ("You dropped it."); undo is Revise (the Drop is kept for it like the others, tied to the line's words and the rule number). `[agent]` extra fields stay Suggested with Add.
+
+The signed step. A rubric-step stage may carry a `fact` part and a `shape` part together (and a shape part alone: a line with no fact rows). The shape part is unchanged: `{class: 'shape', text, fields: [{name, spec, rule?, row?}], minItems?, maxItems?, rules?}`. The stage-shape rule: one shape part per step; shape beside a sheet part is a red; shape beside a fact part is legal; the `$cited` default and the numbers tie are not added to a line that holds a shape part but no fact part (its file has no `cites`).
+
+The merged check (`buildStepSpec`, the one builder). ONE bareguard `itemShape` check, id `p<k>-shape`, over `results`, and CLOSED (an unlisted key is `#i:unknown-field:<key>`). With no fact part its fields are the shape part's. With a fact part it also lists `quote` (text, required) and `values` (object, one OPTIONAL field per signed fact: `number` with `fromText: true` for a money or number fact, `text` for every other shape) and NO `claim` key: `cited` reads claims that `flattenStep` builds from the signed fact names, so the list needs none. `minItems`/`maxItems` are the fact part's `count`, else the shape part's item count. `cited` and `itemShape` read the same `results` list with the same 0-based item index. `flattenStep` keeps `results` for the shape check whether or not a fact part exists.
+
+Faults are reported once. Measured on real data (round 2): a bad shape field reds `itemShape` only; a made-up quote or a "$"-prefixed value reds `cited` only; both on one item give exactly two gaps (one per check); an extra key inside `values` reds `itemShape` only, `cited` never sees it. So there is no double report and no de-duplication rule is needed; the words are the existing ones (`item 3: "status" is not one of the allowed values`, a cited gap in its own words).
+
+The worker's brief (`lineBriefs`, code-written, never model-written). A facts+shape line: the facts brief as today (one result per thing found, one quote, the values written as the quote writes them) plus, in the same `{"results": [...]}` file, "each result also carries these fields:" with each shape field in plain words and ONE example result built by code: the quote and values placeholders from the facts brief plus a legal value for each shape field (`shapeExampleItem`), validated against the merged check in the test. A shape-only line keeps today's shape brief.
+
+Views. The card, Job tab and Audit draw shape rows as built (heading, `name · sentence`, tags), now with `[shape]` and a Drop on every shape row; the Result grid and the report keep their layout (signed mock); a facts+shape line shows its fact results as today and the shape grid after them (columns: the shape fields). Per-row results map a gap to its row by check and field; an item red under `quote` or `values` lands on the line's `$` row, or is told as its own failed item when none exists.
+
+Pinned by real-data fail-first tests (from round 2): V4 (extra key in `values`) is reported once, by `itemShape`; the real dell answer with the shape check added is green; V3 (bad shape field and made-up quote on item 0) gives exactly two gaps.
+
+Open / not built: the combined answer on a facts line whose facts use a source other than the shape look's inputs; a shape field whose name equals a fact name (refused: one name per field); per-item cite for shape fields (bareguard part 2); the Result grid's fact columns beside shape columns (shown as two cards for now).
+
+Amendment while building (2026-11-19): the spec above said the merged itemShape carries the fact part's item count. Built otherwise, so a count fault is reported once: with a fact part the item count stays with that part's own count checks (`cited`'s claims count) and the itemShape carries none; the shape part's own count (from "per <input>") is used only when the line has no fact part or its fact part has none. The rules-first build is `src/checkblock.js` (`matchRule` truth first, `takesShape`, `syncShapeRows`), the merged check `shapeItemCheck` (`src/shaperows.js`), the brief `shapeBriefOf` (`src/rubricstep.js`); the real-data pins are `tests/shape-combined.test.js` and `tests/shape-rows.test.js` (fixtures `tests/fixtures/shape-combined`). The AI's `alsoFitsRules` and the counted "rules or shape" ask are gone.
+
+Second amendment while building (2026-11-19, found by the round-2 dry run of the scope harness): "the cite `$` default always stays" is built literally. A line whose rules took shape fields and whose only truth check today is the `$cited` default keeps that default: the signed step holds the shape part AND the `cited` countable part, and the step file is `{"text", "cites", "results"}` (the brief says "a TEXT line AND a LIST line"); without it the page job would lose its cite default to the shape. A line with a fact part keeps the fact brief plus the shape fields. The shape part is therefore legal beside countable parts (only a sheet part is refused beside it).
+
+### Scope round 2 PASS and the gains rulings (hamr 2026-11-19)
+
+Round 2 of the scope check (prereg `.claude/scratch/shape-scope/round2/PREREG.md` frozen before the rules-first code; results and `raw.json` beside it, scratch, not committed; DeepSeek direct, deepseek-flash; the product's own `runLookWithShape` then a `CheckBlock` with and without shapes): PASS. 0 of the 10 page patients lost a truth check to a shape; both controls got shape fields; the tracker's 3 rules were all checked. Cost $0.228 of the $0.4 cap. n=10 + 2, UNDERPOWERED: a PASS shows these ten keep their truth checks, not a rate. Evidence F360.
+
+The GAINS were read by hand in `raw.json` (the bar did not test whether a gain is a real check):
+- airbnb-case1, rule 1 ("under EUR 200 total"): the AI's field was `stay`, text, no bound. It was counted as covering the rule: a fake check (form only, says nothing about the price).
+- flight-nononstop1, rule 3 ("no nonstop"): turned into `nonstop` boolean, equals false. A negation became a flag value.
+- dell-price2, rule 1: the AI proposed a `price` money field with lt 1500 from rule 1, yet the built list ends with rule 1 not checked and only the countable part. The good field was dropped; cause not yet known.
+
+Rulings (hamr 2026-11-19):
+1. A shape field covers a `~` rule only with at least one real bound grounded in that rule (R1 grounding). `required` + `minChars 1` for a "has a title"-style rule stays (that bound is the rule). A bound-less field does not cover its rule: the rule stays Not checked.
+2. Negating rules never take a shape field ("no nonstop", "not ..."): the card shows them Not checked, a human judges at Accept. No code word list of negations beyond what the checks already use for negation; the card says it.
+3. Find why dell's good price field was dropped, from the signed list and the build path ($0 read), before any fix.
+4. The shape look runs only when a rule is left Not checked, so page jobs (all rules checked) skip the call and stay byte-identical to today, cost included.
+5. The cite default stays: a shape line keeps text + cites + results (as built in the second amendment above).
+
+POC 1 (number-then-marker prices, `.claude/scratch/marker-after-poc/`, $0) ran: its premise was stale, today's code already reads both forms (Airbnb 24/24, Dell 16/16; `src/pagerules.js:360-364`, `src/pagedry.js:52-86`, F251), nothing to build. Why those two rules were Not checked in the scope harness's block A is unexplained and under investigation (the harness's "today" block may not be the full draft path; F365). Still to do: a round-3 re-run of scope patients 3, 4 and 6 plus the controls (prereg'd first, paid, DeepSeek flash).
+
+Status: rulings given, being built.
+
+### Scope rounds 3-5 (2026-11-19)
+
+Three more scope rounds on the shape look, each with a frozen prereg and a results file under `.claude/scratch/shape-scope/round3/`, `round4/`, `round5/` (scratch, not committed; DeepSeek direct, deepseek-flash). Block A is the page-map look plus code only (no row-edit turn, asks off), so the gains below are over that baseline, not over a full draft.
+
+Round 3 FAIL ($0.00761). The tracker rule "each item has a title" stayed Not checked: the AI gave a `title` field as required with no `minChars`, so code refused it as bound-less. The prompt never said that "has a title" means required plus `minChars 1`, and it ordered "give a field for each rule". The refused rule also showed the generic no-rule reason instead of NO_BOUND_WHY. hamr read the whole injected text; the fix was a whole-text rewrite (a field only when the rule's own words give a limit, "has a title" = `minChars 1`, a boolean equals true only), commits 0c38f64a and fe41ed14.
+
+Round 4 FAIL ($0.00756). Every product bar was met. The FAIL came from the scorer: it counted a rule already checked by a fact (resume L1.~2) whose extra shape field was refused. The rewrite had also dropped "for no other rule". Commit 0e1ae774 restores that wording, and the round 5 scorer counts only rules still Not checked.
+
+Round 5 PASS ($0.00847). 0 losses of 3 patients, 0 bound-less, 0 negated, both controls shaped, tracker 3 of 3 checked, 0 wrong why. Dell and Airbnb now carry a real euro price shape. n=5 is UNDERPOWERED.
+
+Order kept (hamr 2026-11-19): the code truth check first, the shape look only for rules code left Not checked, Not checked only after the shape also fails; one list.
+
+## Addendum 2026-11-19: shape on Deterministic (repo) jobs — agreed, next
+
+Status: agreed (hamr, 2026-11-19), next item, not built, POC first.
+
+Title: Shape on Deterministic (repo) jobs — report jobs (assess, review, speed/refactor ideas, no code changes).
+
+Why: a job like "look at this code and tell me what could make it faster, no changes" answers with a LIST OF ITEMS. Shape (bareguard itemShape) checks that form. hamr: "follow the same rules we have and extend it to D, or adjust the injected text to match D; not much carve-out, not so many changes, simpler."
+
+What (agreed):
+1. No new job kind and no "rubric on a repo" unlock. D jobs already run the one check-list flow; the same order applies: code's own check first (the D checks), then shape for any ~ rule code could not check, then Not checked for the person at Accept.
+2. Lift the one block that keeps shape off repo jobs today (CheckBlock: `takesShape` and `shapeCandidates` return nothing when `this.repo !== null`, src/checkblock.js — re-verify lines at build time).
+3. Adjust the shape look's injected text for D: today it shows "THE INPUTS" (page/file text); on a D job it shows the input files the person listed (input lines 2+), or none. No new step, no new form question.
+4. The report goes to the job's Destination inside the repo (existing ruling: repo Destination is a path inside the repo); the write fence keeps code unchanged.
+5. Accepted loss (hamr agreed): no "the quoted code really sits in that file" truth check on D (that cite check is a page/file-job feature). Shape checks the form (each idea has file, function, why; "at least N" counts items); whether a quote is real and whether the idea is good or faster stay Not checked, judged at Accept.
+
+Example job (for the POC):
+
+    Look at src/ and list what could make the draft step faster, no code changes
+    ~ each idea names a file and a function
+    ~ each idea quotes the slow code
+    ~ each idea says why it would be faster
+    ~ at least 3 ideas
+
+(Source: a COPY of a real repo; Destination: reports/ inside it.)
+
+Risk to prove first (POC before any build): a D job's worker normally edits code; here it must write one clean list-of-items answer file into the Destination that itemShape can check. POC on a copy of a real repo, real code, frozen bar before data.
+
+Order: after feat/shape-jobs ships (heading rule, full suite, /code-review, release). Next branch: POC, then the two small changes, then one live run.
+
+## Addendum 2026-11-19 (b): shape jobs — live fixes, check-list look, Result fold
+
+Branch feat/shape-jobs, not pushed. Findings F369-F374 in `docs/wiki/FINDINGS.md`; earlier scope rounds are F366-F368.
+
+**Rulings today (hamr).**
+- Order: code truth check first, then shape for rules code could not check, then Not checked (human at Accept) only after the shape fails too. One flow, one list.
+- Do not over-engineer; more passes than not, a human still reads at Accept. A contested rule goes Not checked/human. No machinery for cases no real run showed. A wording fix gets one live run, not prereg rounds.
+- Check-list look A (signed mock): tags first `[you]`/`[agent]`/`[default]`, kind word truth/shape/file, groups CHECKED / NOT CHECKED / SUGGESTED, reasons behind "why"; same on card, Audit (result at right, failed reason indented) and the text readout. To go to fwd after release.
+- Result: every shape line draws the fold (one row per item, opens to its fields, failed items open, values shown, no separate errors list).
+- Report heading: match fwd v0.36.0 proseCheckedOf.
+- Shape on Deterministic (repo) jobs: same flow, POC first, next branch after this ships (see the earlier 2026-11-19 addendum).
+- "in progress" in the Status column is the item's own tracker value, not a bug. Bold rule names: leave.
+
+**Built.**
+- Truth check refused at build becomes a shape candidate: 2a4c8d0d (F369).
+- Contested rule (fact `from` plus `cannot`): 7c9c19c2 (F370).
+- Source error text for a git repo with Deterministic picked: bb362bd2 ("Nothing spent").
+- Check-list look: card 66ddc9ed, Audit ce7ec99c, CHANGELOG and CSS 50679ef5, readout cadb268b (F374).
+- Audit Line blocks: 7165ad29 (F371); "line 1:" prefix dropped in a one-line job: 7a530b1e.
+- Report heading rule: 521e2ed4, 022c5f02 (F373).
+- Result fold: 1a1ce277 (5+ fields), f36c6778 (values on every cell, errors list dropped), 322850aa (every shape line; grid, SHAPE_FOLD_MIN, fold flag and column hints removed).
+
+**Reverted (F372).** fe41ed14 NO_BOUND_WHY reverted by 369815d9; 7a4f6057 switch-back reverted by 511fb9b5.
+
+**Live evidence.** Runs mwnbs3np, mwndngl5, mwngwznk on DeepSeek flash (job research tracker), the last two green. Scope round 5 PASS is n=5, UNDERPOWERED.
+
+**Open / not seen live.**
+- Contested fix firing on a real draft; Drop on a `[you]` shape row; Add of an `[agent]` field; the new source error text; phone width on card, Audit, readout and Result (needs hamr's DevTools).
+- The card shows no Not checked note for a facts+text line while the report heading says not checked (leave unless seen).
+- A text-only line with a built maxWords keeps the `$` prose row Not checked on the card while the report heading reads "The answer".
+- A facts+shape line may show 2 cards in Result (mock had 1); not re-checked after the fold change.
+- Full suite not run since the morning; not pushed; flights-page job (no shape call) still to be walked.

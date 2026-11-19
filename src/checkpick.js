@@ -54,6 +54,14 @@ export function guardrailItemCount(g) {
 /** a list-bound word the guardrail uses: the count it names, or the one it stands for ("more than 3" = at least 4, "fewer than 3" = at most 2) */
 const MORE_THAN = /(?<!\b(?:no|not)\s)\bmore\s+than\s+(\d+)\b/i;
 const FEWER_THAN = /(?<!\b(?:no|not)\s)\b(?:(?:fewer|less)\s+than|under|below)\s+(\d+)\b/i;
+/** the numbers a text says as "under / fewer than / less than / below N" (the one reader of that wording: a list-items rule and a shape field's bound both use it) @param {string} text @returns {number[]} */
+export function underNumbers(text) {
+  return [...String(text).matchAll(new RegExp(FEWER_THAN.source, 'gi'))].map((m) => Number(m[1]));
+}
+/** the numbers a text says as "at most / up to / no more than / not more than N" @param {string} text @returns {number[]} */
+export function atMostNumbers(text) {
+  return [...String(text).matchAll(/\b(?:at\s+most|up\s+to|no\s+more\s+than|not\s+more\s+than)\s+(\d+)\b/gi)].map((m) => Number(m[1]));
+}
 /** the direction of a list-items rule's wording: 'max', 'min' or null (exact / not said) @param {string} t @returns {'max'|'min'|null} */
 function listDirection(t) {
   if (/\b(at\s+most|up\s+to|no\s+more\s+than|not\s+more\s+than|max(?:imum)?(?:\s+of)?)\b/i.test(t) || FEWER_THAN.test(t)) return 'max';

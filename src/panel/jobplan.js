@@ -15,17 +15,64 @@ import { NOT_REACHED } from './status.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { stageQuestionsByName } from '../stagewords.js';
+import { SHAPE_HEAD, SHAPE_TRUTH_WORDS } from '../shaperows.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
-/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string}} AuditRow */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string, shape?: true, kind?: 'truth'|'shape'|'file'}} AuditRow */
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true}} PlanCheck */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true, kind?: 'truth'|'shape'|'file'}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, restorable?: {key: string, line: number, text: string}[], ncRows?: NcRow[]}} JobPlan */
+/** a Not checked row of the signed look (hamr 2026-11-19): `line` 0 = no one line owns it, `why` = the code-owned reason, drawn behind "why" */
+/** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default', addBack?: string}} NcRow */
+
+/** the kind word of a check row (hamr 2026-11-19, signed list look): `shape` = code checks the form of the items, `file` = code checks the files (the write fence, a guard, a line's output-file floor, a rule the fence keeps), `truth` = every other check @param {{key?: string, shape?: true, fence?: true}} c @returns {'truth'|'shape'|'file'} */
+export function kindOfCheck(c) {
+  if (c.shape === true) return 'shape';
+  if (c.fence === true || c.key === FENCE_KEY || (typeof c.key === 'string' && c.key.startsWith('J.$guard.')) || (typeof c.key === 'string' && /^L\d+\.\$floor$/.test(c.key))) return 'file';
+  return 'truth';
+}
+
+/** a Not checked text `head — reason` split into the row and the reason behind "why"; the quotes round a rule go; "you judge it at Accept" is the group title's, not a reason @param {string} raw @returns {{text: string, why?: string}} */
+export function splitNotChecked(raw) {
+  const i = raw.indexOf(' \u2014 ');
+  if (i < 0) return { text: raw };
+  const text = raw.slice(0, i).replace(/^"([\s\S]*)"$/, '$1');
+  const why = raw.slice(i + 3);
+  return why === 'you judge it at Accept' ? { text } : { text, why };
+}
+
+/** the one model both views read: every check carries its kind word and the Not checked rows come split (line, row, why, tag) @param {JobPlan} plan @returns {JobPlan} */
+function finishPlan(plan) {
+  const by = plan.notCheckedBy ?? {};
+  /** @type {NcRow[]} */
+  const ncRows = [];
+  /** @param {number} line @param {string} raw */
+  const add = (line, raw) => ncRows.push({ line, ...splitNotChecked(raw), ...(by[raw] ? { by: by[raw] } : {}) });
+  for (const l of plan.lines) for (const r of l.refused) add(l.n, r);
+  // a one-line job draws its no-line rows inside Line 1's block, where "line 1: " says nothing; a many-line job keeps the prefix (the row sits outside any line block)
+  for (const r of plan.notChecked) {
+    const own = plan.lines.length === 1 ? /^line (\d+): ([\s\S]*)$/.exec(r) : null;
+    if (own && Number(own[1]) === plan.lines[0].n) { ncRows.push({ line: 0, ...splitNotChecked(own[2]), ...(by[r] ? { by: by[r] } : {}) }); continue; }
+    add(0, r);
+  }
+  const withKind = (/** @type {PlanCheck} */ c) => ({ ...c, kind: kindOfCheck(c) });
+  // a rule the person dropped (confirm card only): its Not checked row carries the key the Add back button posts
+  for (const x of plan.restorable ?? []) {
+    const n = ncRows.find((r) => r.addBack === undefined && r.text === x.text && (r.line === x.line || r.line === 0));
+    if (n) n.addBack = x.key;
+  }
+  return { ...plan, lines: plan.lines.map((l) => ({ ...l, checks: l.checks.map(withKind) })), loose: plan.loose.map(withKind), ncRows };
+}
+
+/** the one heading of a shape line's rows, code's words, only when some line has a shape row (hamr 2026-11-18) @param {PlanLine[]} lines @returns {{shapeHead?: string}} */
+function shapeHeadPart(lines) {
+  return lines.some((l) => l.checks.some((c) => c.shape === true)) ? { shapeHead: SHAPE_HEAD } : {};
+}
 
 /** the ticket filter's code-owned words as a plan part, or nothing (R5) @param {any} f @returns {{ticketFilter?: string}} */
 function filterPart(f) {
@@ -57,7 +104,7 @@ export function checkClassOfKind(kind) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec, ledger = null) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string, shape?: true}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -71,7 +118,7 @@ export function planFromSpec(spec, ledger = null) {
         if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];
         // a repo job's `!` work stage is its list row (Addendum 2026-11-15 (d)): the row's key rides on the check
         const stageRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) && spec.closeDecl.list.some((/** @type {any} */ r) => r && r.kind === 'stage' && r.key === stageKeyOf(s.name));
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: stageRow ? (stageQuestionsByName(spec).get(s.name) ?? s.name) : s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}), ...(r.shape ? { shape: /** @type {const} */ (true) } : {}) })) : [{ name: stageRow ? (stageQuestionsByName(spec).get(s.name) ?? s.name) : s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name, ...(stageRow ? { key: stageKeyOf(s.name) } : {}) }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -86,13 +133,13 @@ export function planFromSpec(spec, ledger = null) {
   const { notChecked: notes, readNotes } = splitReadNotes(allNotes, signedFactNames(spec?.closeDecl));
   const jl = Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string') : [];
   if (jl.length === 0) {
-    return {
+    return finishPlan({
       lines: [{
         n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '', rules: [],
         checks: stages.map((s) => ({ name: s.name, cls: s.cls })), refused: [],
       }],
       loose: [], notChecked: notes, readNotes, alwaysOn: [], older: true, ...filterPart(spec?.ticketFilter),
-    };
+    });
   }
   /** @type {PlanLine[]} */
   const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', rules: lineRules(l), checks: [], refused: [] }));
@@ -106,7 +153,7 @@ export function planFromSpec(spec, ledger = null) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
     // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
-    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}), ...(s.shape ? { shape: true } : {}) });
     if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
   }
   // the write fence is a job-level `$` row of the signed list (hamr 2026-11-15): one check that serves no one line
@@ -136,18 +183,24 @@ export function planFromSpec(spec, ledger = null) {
     if (line) line.refused.push(`${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`);
   }
   const notCheckedBy = { ...refusedBy };
+  // a shape field the person did not add (Suggested: not in the signed shape) is still on the signed list: it is told under Suggested, by its name (the spec holds no sentence for a field that was held out)
+  /** @type {{key: string, line: number, text: string}[]} */
+  const suggested = [];
+  for (const r of Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : []) {
+    if (r && r.kind === 'shape' && r.by === 'agent' && r.state === 'dropped' && typeof r.key === 'string' && Number.isInteger(r.line)) suggested.push({ key: r.key, line: r.line, text: r.key.replace(/^L\d+\.shape\./, '') });
+  }
   for (const i of ruleNotCheckedItems(spec?.closeDecl, spec?.jobLines, ledger)) if (i.by) notCheckedBy[i.text] = i.by;
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...filterPart(spec?.ticketFilter) };
+  return finishPlan({ lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) });
 }
 
 /**
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], restorable?: {key: string, line: number, text: string}[], editable?: boolean}} plan
  * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
@@ -166,7 +219,7 @@ export function planFromConfirm(jobLines, plan) {
     const by = /** @type {any} */ (c).by === null ? {} : { by: /** @type {'agent'|'you'|'default'} */ (/** @type {any} */ (c).by ?? 'agent') };
     const served = lines.filter((l) => Array.isArray(c.fromLine) && c.fromLine.includes(l.n));
     const key = typeof (/** @type {any} */ (c).key) === 'string' ? { key: /** @type {any} */ (c).key } : {};
-    for (const line of served) line.checks.push({ name: c.text, cls: null, ...by, ...key });
+    for (const line of served) line.checks.push({ name: c.text, cls: null, ...by, ...key, ...(/** @type {any} */ (c).shape === true ? { shape: true } : {}) });
     if (served.length === 0) loose.push({ name: c.text, cls: null, ...by, ...key });
   }
   const { notChecked, readNotes } = splitReadNotes(plan?.notChecked, plan?.signedFacts);
@@ -175,12 +228,13 @@ export function planFromConfirm(jobLines, plan) {
     const line = lines.find((l) => l.n === x?.line);
     if (line && typeof x.text === 'string') (line.picked ??= []).push(x.text);
   }
-  return {
-    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...filterPart(plan?.ticketFilter),
+  return finishPlan({
+    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...shapeHeadPart(lines), ...filterPart(plan?.ticketFilter),
     ...(plan?.notCheckedBy && typeof plan.notCheckedBy === 'object' && Object.keys(plan.notCheckedBy).length ? { notCheckedBy: plan.notCheckedBy } : {}),
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),
-  };
+    ...(Array.isArray(plan?.restorable) && plan.restorable.length ? { restorable: plan.restorable } : {}),
+  });
 }
 
 /** the words of a row the run recorded no verdict for: never "passed" */
@@ -197,15 +251,16 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked] @param {boolean} [closeRan] the results are a CLOSE's (the latest), so a declared stage missing from them was not reached (the close stops at its first red); else a stage no verdict was recorded for reads none
  * @param {{results: Map<string, {result: string, why?: string}>, unclaimed: Map<number, string[]>}|null} [rowRes]
  * `loose` = the job-level rows with their `other · ` words, for the Result tab's reader only (not drawn on the Audit)
- * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[]}}
+ * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[], lines: {n: number, text: string, checks: AuditRow[], notChecked: AuditRow[]}[], jobNotChecked: AuditRow[], shapeHead?: string, suggested?: {key: string, line: number, text: string}[]}}
  */
 export function auditChecksOf(plan, guards, results, blocked = null, closeRan = false, rowRes = null) {
   /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'|'not-reached'} */
   const verdict = (stage) => (!stage || !results ? 'none' : (!results.has(stage) ? (closeRan ? 'not-reached' : 'none') : (results.get(stage) ? 'passed' : 'failed')));
   /** @type {AuditRow[]} */
   const checks = [];
-  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true}} c @param {string} text @returns {AuditRow} */
-  const rowOf = (c, text) => {
+  /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true, shape?: true}} c @param {string} text @returns {AuditRow} */
+  const rowOf0 = (c, text) => {
+    const shape = c.shape === true ? { shape: /** @type {const} */ (true) } : {};
     // the fence row reads the gate's own record of THIS run (never a stage verdict): held · N writes blocked, or the record is missing
     if (c.key === FENCE_KEY || c.fence === true) {
       const by = c.fence === true ? /** @type {'you'} */ ('you') : /** @type {'default'} */ ('default');
@@ -214,12 +269,15 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
         : { text, by, result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked`, key: String(c.key) };
     }
     const own = c.key ? rowRes?.results.get(c.key) : undefined;
-    if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}) };
+    if (!own) return { text, by: c.by ?? null, result: verdict(c.stage), ...(c.key ? { key: c.key } : {}), ...shape };
     // `unread`: the line's file could not be read, so this row was not looked at: never passed, never failed
-    return { text, by: c.by ?? null, result: own.result === 'passed' ? 'passed' : own.result === 'failed' ? 'failed' : 'none', ...(own.result === 'failed' && own.why ? { why: own.why } : {}), key: String(c.key) };
+    return { text, by: c.by ?? null, result: own.result === 'passed' ? 'passed' : own.result === 'failed' ? 'failed' : 'none', ...(own.result === 'failed' && own.why ? { why: own.why } : {}), key: String(c.key), ...shape };
   };
+  /** @param {{by?: any, stage?: string, key?: string, fence?: true, shape?: true}} c @param {string} text @returns {AuditRow} */
+  const rowOf = (c, text) => ({ ...rowOf0(c, text), kind: kindOfCheck(c) });
   for (const l of plan.lines) {
-    for (const c of l.checks) checks.push(rowOf(c, `line ${l.n} · ${c.name}`));
+    // a shape row reads `name · sentence` as the card does (signed mock C): no `line N ·` prefix, the heading above says what is checked
+    for (const c of l.checks) checks.push(rowOf(c, c.shape === true ? c.name : `line ${l.n} · ${c.name}`));
     for (const u of rowRes?.unclaimed.get(l.n) ?? []) checks.push({ text: `line ${l.n} · ${u}`, by: null, result: 'failed' });
   }
   // the job-level rows no line owns (the `$` defaults, the write fence) are the Audit's "Always checked" (fwdloop); `loose` keeps them with their old `other · ` words for the Result tab's one reader
@@ -228,7 +286,8 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
   /** @type {AuditRow[]} */
   const notChecked = [];
   const by = plan.notCheckedBy ?? {};
-  for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: `line ${l.n} · ${r}`, by: by[r] ?? null, result: 'not-checked' });
+  // the truth of a shape line's items is told in its own words (signed mock C: no `line N ·` prefix)
+  for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: r.includes(SHAPE_TRUTH_WORDS) ? SHAPE_TRUTH_WORDS : `line ${l.n} · ${r}`, by: by[r] ?? (r.includes(SHAPE_TRUTH_WORDS) ? 'default' : null), result: 'not-checked' });
   for (const r of plan.notChecked) notChecked.push({ text: r, by: by[r] ?? null, result: 'not-checked' });
   const names = guards.length > 0 ? guards : plan.alwaysOn;
   // a guard/fence row the loose rows already show (same signed row: the fence key, the guard's stage or key) is shown once, as the loose row
@@ -245,6 +304,16 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
     }
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
   })];
-  for (const r of [...checks, ...loose, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
-  return { checks, notChecked, always, loose };
+  // the signed look (hamr 2026-11-19): one block per job line, each with its CHECKED rows (words without a `line N ·` prefix) and its NOT CHECKED rows; the job-level rows no line owns come apart
+  /** @param {NcRow} n @returns {AuditRow} */
+  const ncOf = (n) => ({ text: n.text, by: n.by ?? null, result: 'not-checked', ...(n.why ? { why: n.why } : {}) });
+  const ncRows = plan.ncRows ?? [];
+  const lineBlocks = plan.lines.map((l) => ({
+    n: l.n, text: l.text,
+    checks: [...l.checks.map((c) => rowOf(c, c.name)), ...(rowRes?.unclaimed.get(l.n) ?? []).map((u) => /** @type {AuditRow} */ ({ text: u, by: null, result: 'failed', kind: 'truth' }))],
+    notChecked: ncRows.filter((n) => n.line === l.n).map(ncOf),
+  }));
+  const jobNotChecked = ncRows.filter((n) => n.line === 0).map(ncOf);
+  for (const r of [...checks, ...loose, ...always, ...lineBlocks.flatMap((b) => b.checks)]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
+  return { checks, notChecked, always: always.map((r) => ({ kind: /** @type {'file'} */ ('file'), ...r })), loose, lines: lineBlocks, jobNotChecked, ...(plan.shapeHead ? { shapeHead: plan.shapeHead } : {}), ...(Array.isArray(plan.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}) };
 }

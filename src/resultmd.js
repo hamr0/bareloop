@@ -4,6 +4,8 @@
 import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { lineRules, proseNotCheckedItems, refusedOf } from './rubricstep.js';
+import { shapePartOfLine } from './shaperows.js';
+import { shapeResultModel, shapeMarkdown } from './shaperesult.js';
 
 const SCALAR = ['string', 'number', 'boolean'];
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -132,9 +134,20 @@ function stepSection(obj, claimWords, reportLines) {
   return { checked, answer: hasText && o.text.trim() !== '' ? o.text : null };
 }
 
-/** is the prose of job line `n` Not checked? Read from the signed close: a list-built close has a `prose` Not checked row for the line, an older one derives it from its stages (the Result tab's own reading) @param {any} closeDecl @param {number} n */
+/** the countable checks that measure the line's own text (its words, lines, sections, list items, phrases, or the numbers in it). `nonEmpty` (the default note) and `cited`/claim counts check no sentence of it @type {Set<string>} */
+const TEXT_MEASURES = new Set(['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'listItems', 'maxListItems', 'minListItems', 'sectionOrder', 'mustCarry', 'blockLines', 'numbersFromFacts']);
+
+/**
+ * is the prose of job line `n` Not checked? Copied in rule from fwdloop v0.36.0 `proseCheckedOf` (src/whole-job.js:54): `### The answer` only when code checked the line's OWN text. Not checked when the signed list
+ * says so (a Not checked `~` rule row on the line; the `$` prose meaning row alone does not, as fwd), when an older close derives it from its stages, or when no signed part of the line measures its text (only the default note, a quote or a sheet check).
+ * Read from the signed close, never a second mapping.
+ * @param {any} closeDecl @param {number} n
+ */
 function proseNotChecked(closeDecl, n) {
-  return proseNotCheckedItems(closeDecl).some((i) => i.line === n) || refusedOf(closeDecl).some((r) => r.line === n && r.kind === 'prose');
+  if (proseNotCheckedItems(closeDecl).some((i) => i.line === n) || refusedOf(closeDecl).some((r) => r.line === n && r.kind === 'rule')) return true;
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  const parts = stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n).flatMap((/** @type {any} */ st) => (Array.isArray(st.params.parts) ? st.params.parts : []));
+  return !parts.some((/** @type {any} */ p) => isRec(p) && p.class === 'countable' && TEXT_MEASURES.has(p.check));
 }
 
 /**
@@ -157,9 +170,19 @@ export function renderRunMd({ job, runNo, now, closeDecl, jobLines, steps }) {
     const origText = textOf(obj);
     const sentText = textOf(sent);
     const report = sentText.startsWith(origText) ? sentText.slice(origText.length).split('\n').map((l) => l.trim()).filter(Boolean) : [];
+    const jl = jobLines.find((/** @type {any} */ l) => isRec(l) && l.n === s.n);
+    // a shape line (picked by the line's signed class, never by the key `results`, which a facts line also uses): the signed mock's section (src/shaperesult.js): the shape-checks line, the table, the Not checked line, the Failed list.
+    // A report is written for a green run only, so no item is red here; the model takes the reds a caller has.
+    const shape = shapePartOfLine(closeDecl, s.n);
+    if (shape !== null) {
+      const results = isRec(obj) ? /** @type {Record<string, any>} */ (obj).results : null;
+      if (!Array.isArray(results) || results.length === 0) continue;
+      const head = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`, ...(jl ? lineRules(jl) : []).map((r) => `Rule: ${r}`)].join('\n');
+      sections.push([head, shapeMarkdown(shapeResultModel({ part: shape, results, rules: jl ? lineRules(jl) : [] }))].join('\n\n'));
+      continue;
+    }
     const sec = stepSection(obj, stepClaimWords(closeDecl, s.n), report);
     if (sec === null || (sec.checked.length === 0 && sec.answer === null)) continue;
-    const jl = jobLines.find((/** @type {any} */ l) => isRec(l) && l.n === s.n);
     const lines = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`];
     for (const r of jl ? lineRules(jl) : []) lines.push(`Rule: ${r}`);
     const parts = [lines.join('\n')];

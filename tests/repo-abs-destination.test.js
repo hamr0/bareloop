@@ -120,7 +120,7 @@ test('Reuse card: an absolute Destination on a REPO source is refused with the s
   assert.notEqual(ok.state.error, MSG, String(ok.state.error));
 });
 
-const FILE_MSG = 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
+const FILE_MSG = 'This file is inside a git repo, and Deterministic is picked: that needs the repo folder as Source. If you meant Rubric, pick Rubric and Revise. Nothing spent.';
 const FOLDER_MSG = "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
 
 test('non-repo source: a single FILE is refused at $0 with the file message (not "Plain folder"); no model call', async () => {
@@ -143,4 +143,23 @@ test('non-repo source: a plain FOLDER is refused at $0 with the folder message; 
   assert.equal(s.state.error, FOLDER_MSG);
   assert.equal(calls.n, 0, 'no model seam was reached');
   assert.ok(!(s.state.draftSpentUsd > 0), 'nothing spent');
+});
+
+test('the same single FILE with Rubric picked is NOT refused with the file message (it is a rubric input); Deterministic is (the wording says so)', async () => {
+  const dir = tmp('nonrepo-file-rubric-'); const file = join(dir, 'digest.txt'); writeFileSync(file, 'one line of text\n');
+  const calls = { n: 0 };
+  const s = createSession({
+    inputs: `tracker: ${file}`, checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-file-job', jobText: 'List the lines', capUsd: 2, destination: tmp('nonrepo-out-'),
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: home(), sessionsRoot: tmp('absdest-sess-'),
+    generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },
+    prepareSigningFn: async () => { throw new Error('no signing'); },
+  });
+  // 'drafting' is transient (the fake model throws at once, so the phase flips to 'error'): assert the claim, not a phase snapshot.
+  assert.ok(await until(() => calls.n > 0 || s.state.phase === 'refused'), 'the rubric file input reached the model seam');
+  assert.ok(calls.n > 0, 'a rubric file input goes on to the model');
+  assert.notEqual(s.state.phase, 'refused', String(s.state.error));
+  assert.notEqual(s.state.error, FILE_MSG, String(s.state.error));
+  assert.doesNotMatch(String(s.state.error ?? ''), /inside a git repo/);
+  assert.match(FILE_MSG, /Deterministic is picked.*pick Rubric and Revise/);
 });

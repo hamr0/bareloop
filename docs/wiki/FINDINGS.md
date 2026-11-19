@@ -16548,3 +16548,113 @@ Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`,
 **Fix.** A cell counts only if it is a strict plain number (optional sign, digits, commas only as thousands groups of exactly three, optional decimals); any other cell takes the existing "not computed (row N has no number in the column ...)" line. Commits aa7bbda6 (red test) and the fix after it; test `tests/sheet-total-strict.test.js`. `src/sheetfind.js` PLAIN_NUMBER (copied from fwdloop) is untouched: out of scope.
 
 **Why no earlier test saw it.** The existing total tests used only `1,234.50`-style cells. Test-proven only, not seen live.
+
+### F357: Shape POC round 1 FAIL: an invented bound survived, grounded by luck in whole-job text (2026-11-18, $0.00795)
+
+**What was seen.** Round 1 of the shape-jobs mapping POC (DeepSeek direct, deepseek-flash, 5 jobs, one call each; `.claude/scratch/shape-poc/results.md`, `PREREG.md`, `SHAS.txt`): mapping 5/5 and the resume item count right, but the bar "0 invented bounds survive code" failed with 1 survivor (7 caught). The flights extra field `duration` kept minChars 3 and maxChars 20. Also seen: `nonstop.values` ["nonstop","Nonstop","true"] was dropped whole, and the tracker job's AI said `itemCountFrom ["tracker"]` (would sign exactly 1 item).
+
+**Cause (read from the round-2 prereg and the results).** Bounds were grounded against the whole job text: the 3 matched "List 3 flights" and the 20 matched through the under-N candidate 21 from "21:59". A number present anywhere in the job grounded a bound on an unrelated field.
+
+**Outcome.** Recorded as FAIL, files untouched. Round 2 was a code-only change (R1-R4, see F358). n=5, UNDERPOWERED.
+
+### F358: Shape POC rounds 2 and 3 PASS: per-field grounding, then the boolean kind (2026-11-18, $0.00794 and $0.00793)
+
+**What was seen.** Round 2 (`PREREG-r2.md`, `results-r2.md`; prompt and call parameters byte-identical to round 1, code only): PASS, mapping 5/5, 0 invented bounds survived (5 caught), resume item count exactly resume-1, resume-2, no other job signed an item count; suggested fields (tracker.owner, flights.airline, flights.duration) held out of the signed shape. The four code rules: R1 a bound is grounded only in the field's own `~` rule, R2 a field whose name is not in the person's words is Suggested, R3 oneOf keeps each grounded value, R4 an item count only from "per/each <stem>". A $0 replay of the round-1 answers read PASS first (`results-r2-replay.md`); that is a reading, not evidence, since the answers were seen before the rules were written.
+
+Round 2 left a gap: the AI wrote nonstop as oneOf [true], so the box checked presence only. bareguard added `kind: "boolean"` (`equals` true/false; f712769, pinned at 0.37.0 for the build); the $0 check d3 (`.claude/scratch/itemshape-poc/d3/`) matched 10 of 10 expected reds on crafted data (spelling and behaviour only). Round 3 (`PREREG-r3.md`, `results-r3.md`; the menu gained one line, code gained R5: `equals` only on a field with its own rule): PASS, flights rule 5 came out boolean with equals true, 0 survivors (4 caught).
+
+**Reading.** n=5 per round, UNDERPOWERED: a PASS shows the mapping can work, not its rate. The `arrivalTime` word match through "time" in "departure time" is a known loose spot (no bounds, cannot red by luck).
+
+### F359: Scope check round 1 FAIL: 8 of 10 page jobs came out shape-class and lost truth checks (2026-11-19, $0.0225)
+
+**What was seen.** The shape look run over 10 archived page/fact drafts plus 2 positive controls (`.claude/scratch/shape-scope/results.md`): 8 of 10 page patients ended with a shape-class line (the six flights sessions, Dell, Airbnb); the 2 changelog patients stayed countable; both controls (research-tracker, resume-readout) were shape-class. Bar was 0 wrong of 10. Refusals such as "rule 1 already has a field" on Dell, flights-a and flights-3 show the shape field replacing the rule's own check.
+
+**Cause.** Shape-first: the look's fields took the line and displaced the fact/cite checks (a rule like "under $450" became a shape field). Ruled by hamr 2026-11-19: rules first, shape only for what would be Not checked (ITEM33-BUILD, "Scope check round 1 FAIL and ruling"). n=10, UNDERPOWERED, but 8 of 10 is not noise.
+
+### F360: Scope check round 2 PASS (rules first), and the hand-read of the gains (2026-11-19, $0.228)
+
+**What was seen.** Round 2 (`shape-scope/round2/PREREG.md`, `results.md`, `raw.json`; the product's own `runLookWithShape` then a `CheckBlock` with and without shapes): 0 of 10 patients lost a truth check to a shape; both controls got shape fields; the tracker's 3 rules were all checked (shape, fact, shape). 4 of the 10 patients differ from today (gains only: flight-nononstop1, dell-price2, airbnb-case1, one of the flights-3 sessions); the other 6 are identical. Cost $0.228 of the $0.4 cap. UNDERPOWERED (n=10 + 2).
+
+**Hand-read of the gains (read from `raw.json`, not just the table).**
+- airbnb-case1, rule 1: the AI's field was `stay`, a text field with no bound (fromRule 1), and it was counted as covering "~ under EUR 200 total". A required text field with no bound checks nothing about the price: a fake check that the card would show as covered.
+- flight-nononstop1, rule 3 "~ no nonstop": the AI made `nonstop` boolean with equals false (as it did for red-eye). A negation turned into a flag equal to false: the person's "no" is now a value the worker can set; this is the negation hazard, and the page reader's own handling stays with the human.
+- dell-price2: the AI proposed `price` money, lt 1500, fromRule 1, yet the built list ends with rule 1 `none` and only the countable part: the good field was dropped. Cause under investigation (not yet known).
+- The flights-3 gain (a shape field on a rule that was Not checked) and the controls' gains were not hand-read here; only the three above were.
+
+**Outcome.** Rulings in ITEM33-BUILD "Scope round 2 PASS and the gains rulings". The PASS bar (no loss) held; the bar did not test whether a gain is a real check, which is why the hand-read mattered.
+
+### F361: Facts and shape on one answer: $0 round 1 FAIL, round 2 PASS 47/47 (2026-11-19, $0)
+
+**What was seen.** Real signed fact parts and saved answers, cited and a closed itemShape on one `results` list (bareguard 0.37.0). Round 1 (`.claude/scratch/shape-combined/results-round1-FAIL.md`): FAIL, 5 mismatches, all variant V4 (an extra key inside `values`), plus dell V2-V5 unscored (baseline dirty). Round 2 (`round2/PREREG.md`, `results.md`): PASS, 0 self-check mismatches, 0 variant/baseline mismatches, 47 scored variants.
+
+**Cause of the round-1 FAIL.** The V4 prediction came from guard's probe on a raw list that `cited` reads directly. In bareloop `cited` reads claims `flattenStep` builds from the signed fact names only, so an unlisted `values` key is invisible to it: itemShape red, cited green, reported once. Dell's baseline was dirty because round 1 graded `cited` in one pass, while `gradeStep` does a second as-written pass for decimal-comma prices. Round 2 graded through a scratch stand-in of that flow (checked equal to `gradeStep` without the shape check before scoring).
+
+**Reading.** A prediction taken from another path's probe was wrong for ours; round 1 stays recorded FAIL. The stand-in is scratch; the product path is pinned by `tests/shape-combined.test.js`.
+
+### F362: "under N" signed as maxChars 200 for "under 200" (scripted screenshot, 2026-11-19, $0)
+
+**What was seen.** In a scripted screenshot the AI signed `maxChars 200` for a rule "under 200"; "under N" means N-1.
+
+**Fix.** Code now signs the person's own form of the number rather than the AI's bound. Test-proven only; not seen live.
+
+### F363: prompt-commit-check is satisfied by any 8-letter word after "run" (2026-11-18, $0)
+
+**What was seen.** The shape builder cited "run citation" on a `Failure:` line and `prompt-commit-check` passed: the check matches `run <8 chars>` with any 8 letters, not a real run id.
+
+**Status.** Not fixed; on the fix ledger. Narrowing it silently is not allowed (a real id can be a 13-character panel draft id or a peer's run name); a fix needs hamr's word.
+
+### F364: A list-of-items job's per-item rules went to unbuildable fact checks (live run mwmmcjxo, research-1)
+
+**What was seen.** Live run `mwmmcjxo` (job research-1): a job whose answer is a list of items had its per-item `~` rules sent to fact checks that cannot be built for such rules, with words on the card that the person could not act on. This is the evidence for the shape commits (a list of items with fields has no fact to read from a page).
+
+**Reading.** Not re-read for this entry: it is recorded from the report that came with the build; the exact words and numbers are in that run's own files. The shape jobs build is the answer for this class (F357-F361).
+
+### F365: Why Airbnb and Dell money rules were Not checked in the scope harness's block A is unexplained; not the page reader (2026-11-19, $0)
+
+**What was seen.** In the scope round-2 harness (F360), block A ("today") left the Airbnb rule (`~ under €200 total`) and the Dell rule (`~ under 1500 euros`) Not checked. Why is UNEXPLAINED. The harness's "today" block may not be the full draft path; under investigation.
+
+**Ruled out: the page reader.** A $0 POC (`.claude/scratch/marker-after-poc/`) showed today's code already reads both forms: U1 (`src/pagerules.js:360-364`) and the no-label branch of `moneyResultLines` (`src/pagedry.js:52-86`, F251) read Airbnb 24/24 and Dell 16/16. POC 1 ran; its premise (the reader cannot read number-then-marker prices) was stale; nothing to build. The earlier wording of this finding claiming a reader gap was wrong and is withdrawn.
+
+**Reading-derived, not built (PRD section 8a).** `moneyResultLines` has no whole-word edge on markers ("3 USD1", "5 EUROPEAN" read a number from inside a word; `src/pagedry.js:71-78`), and "EUR 17.86" (code before the number) is not read. No real page holds either; a bareguard ask if ever wanted.
+
+**Stale doc.** `docs/product/PRD.md:2085` ("page rules read label-then-number only, so these are unreadable") is stale: marker-after forms ARE built (F251).
+
+### F366: A prompt that orders "a field for each rule" while code refuses bound-less fields fails the draft (2026-11-19, $0.00761)
+Scope round 3 (`.claude/scratch/shape-scope/round3/results.md`): the tracker rule "each item has a title" ended Not checked; the AI proposed `title` required with no `minChars`, code refused it for no bound, and the card showed the generic no-rule reason instead of NO_BOUND_WHY. The prompt never told the AI the rule the code applies ("has a title" = required + `minChars 1`). Lesson: tell the AI the rule the code will apply, and never order output the code then refuses. Fixed in 0c38f64a and fe41ed14; passed in round 5.
+
+### F367: A scorer that does not ask whether a rule is already checked elsewhere mints a false FAIL (2026-11-19, $0.00756)
+Scope round 4 (`.claude/scratch/shape-scope/round4/results.md`): every product bar held, but the scorer counted resume L1.~2, already checked by a fact, whose extra shape field was refused. Round 5 (`round5/results.md`) counts only rules still Not checked and prints round 4's count as info (1 row vs 0).
+
+### F368: A whole-text rewrite can silently drop a needed limit; re-read the whole text after one (2026-11-19)
+The round 3 rewrite of the shape look prompt dropped "for no other rule", which round 4 exposed (`.claude/scratch/shape-scope/round4/results.md`). Restored in 0e1ae774. After any whole-text rewrite, diff old against new for each limit sentence.
+
+### F369: A truth check refused at build left its rule Not checked even though a shape could check it (live run mwnbs3np, 2026-11-19, $0.029)
+**Failure.** Live run `mwnbs3np` (research-2): the title and status `~` rules got fact checks that the build refused ("words in input only 1 time but 4 results"), after the shape look had already run, so the rules ended Not checked while a shape field could have checked them. Evidence: that run's draft log and card. **Fix.** 2a4c8d0d: a rule whose truth check is refused at build becomes a shape candidate (order of the day's ruling: code truth check, then shape, then Not checked). **Status.** Test-proven only. Later runs mwndngl5 and mwngwznk went green, but nobody checked that the refused-build path fired in them, so they are not proof of this fix.
+
+### F370: A rule named in both a fact `from` and a `cannot` entry got a fact check it could not honour (live run mwndngl5, 2026-11-19, $0.0106)
+**Failure.** The page-map look named the rule "summary notes" in a fact's `from` and also in a `cannot` entry ("Notes:"); the fact check was built anyway. **Fix.** 7c9c19c2 (`src/pagerules.js` applyPageRules): such a rule is contested, gets no fact check, and stays a shape candidate or Not checked for the human at Accept (ruling: contested goes to the human, no extra machinery). **Status.** Test-proven only; the run that showed it was green and the fix firing on a real draft has NOT been seen live.
+
+### F371: The Audit lost its Line blocks (2026-11-19)
+**Failure.** `getRunDetail` in `src/panel/server.js` (about L2240) dropped `lines` and `jobNotChecked` from what it sent, so the Audit showed no per-line check blocks. Found while building the check-list look on the Audit (ce7ec99c) and checking the real screen. **Fix.** 7165ad29 ships both fields; a line's output-file floor check (`L<n>.$floor`) is now kind `file`. 7a530b1e drops the redundant "line 1: " prefix inside a one-line job's Line 1 block (card and Audit, one owner in `finishPlan`). **Status.** Not checked on a real screen yet (hamr's walk); phone width NOT checked.
+
+### F372: Two try-it fixes were withdrawn because they did not earn their place (2026-11-19)
+**fe41ed14 NO_BOUND_WHY** (reason text on a rule row whose picked field has no limit): reverted by 369815d9. Round 5 passed with the prompt fix alone (F366), so the extra reason path had no real case behind it. **7a4f6057 switch-back** (a shaped rule goes back to its truth check once that check builds): reverted by 511fb9b5. No real run reached that path, and it added a second flow beside the one list, against the "no machinery for cases no real run showed" ruling. Both reverts leave the tree as before the commits (not byte-diffed in this entry).
+
+### F373: Report heading said "The answer" for lines code had not checked; rule copied from fwd v0.36.0 proseCheckedOf (2026-11-19)
+**Failure.** The report's `### The answer` heading could sit over text no code check covered. **Fix.** 521e2ed4 (`src/resultmd.js` proseNotChecked): "The answer" only when code checked the line's own text; a note-only, quote-only or Not-checked-`~`-rule line reads "The AI's answer (not checked, you judge it at Accept)". 022c5f02 follow-up: the `$` prose meaning row alone no longer makes a line not checked, matching fwd. **Status.** Test-proven; open differences are recorded in the build addendum.
+
+### F374: The draft readout in the check-list look drops the fence row for pre-check-list fixture specs (2026-11-19)
+**Observation.** cadb268b rewrote `src/authorreadout.js` to read `planFromSpec` and `kindOfCheck`; the always:/WRITE FENCE/REFUSED sections are gone. Side effect: fixture specs authored before the check list existed show no fence row in the readout. **Status.** Accepted; not a defect for new drafts; to be seen only if a real draft shows it.
+
+### F375: Competitor scan — no project found that does all five (2026-11-19, web search, $0)
+**Question.** Is there any project that, for any job, (1) lets the agent design its own workflow from a plain-language job, (2) has hard money and time caps outside the agent, (3) decides by code, not an LLM judge, with a Not checked list for a human, (4) has a human sign before spend and accept at the end, every run recorded and replayable, (5) reuses and improves workflows across runs. **Result.** None found. Evidence is THIN: one README and one abstract read; the rest comes from search summaries and third-party posts.
+
+**Closest: Bounded Loops** (github.com/qualixar/bounded-loops, Apache-2.0, arXiv:2609.27871). (1) No: the user writes `loop.yaml`. (2) Yes: nine bounds declared before the run, including token budget and wall clock; the engine stops. (3) Yes/partial: README says "A command, a test suite, a schema — never the agent" and "No loop uses 'an LLM decides' as its gate"; no Not checked list; the default graph gate only checks a well-formed reply. (4) Partial: approval nodes pause (exit 3), a hash-chained event log is re-checked by `bl verify`, no plan signing. (5) Partial: 69 shipped loops, digest-pinned, no learning from past runs. Their paper's abstract reports 47 vacuous gates in shipped reviewed code and a 23.3% false-accept rate on a fresh mutant family: the same "a check that cannot fail" class bareloop guards against.
+
+**Others (search summaries only).** DeepSeek's open harness "dsh": round cap only, token/price/time budgets deferred, done = the worker's own report, approval policy and session log. Inspect AI (UK AISI): per-task token/time limits, text-match and model-graded scorers, per-tool approvals, logs; tasks are human-written. LangGraph / Conductor OSS: human-coded graphs, approval gates, checkpoint replay; Conductor advertises budget caps, hardness unclear. promptfoo and Guardrails AI: deterministic assertions/validators, but checkers, not run harnesses. Paperclip (docs.paperclip.ing): agent-team control plane listing budgets, approvals, activity log; how work is verified is not stated; lead only. Oracle runtime-budget-guardrails post and similar dev posts: a deterministic policy engine outside the agent (cap, allowlist, approve/deny); budget only, not output verification; secondhand note: an approval channel the agent can reach, it can complete.
+
+**Unchecked leads.** sunday (rithulkamesh/sunday), Sponsio, CodeWhale, OpenHuman (awesome-agent-harness list).
+
+**Not covered.** OpenHands, SWE-agent, Devin, Factory, CrewAI, AutoGen, DSPy, DeepEval, Braintrust, NeMo Guardrails, Pydantic-AI docs; "AI employee" products; small 2026 GitHub projects. No evidence either way.
+
+**Consequence.** The README makes no "first" or "only" claim. The common gap seen: no one pairs an agent-designed flow with code-decided verification, a Not checked list for the human, and reuse across runs.

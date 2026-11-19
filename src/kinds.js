@@ -1520,7 +1520,7 @@ async function runRubricStep(stage, ctx) {
     exitCode: red ? EXIT_RED : EXIT_GREEN,
     gapLines: gap.render(),
     // the trend number (`trendValueOf`, src/declaredclose.js, reads `detail.redCount` for a stage with no measurement)
-    detail: { ...graded.detail, ...(notRegular ? { redCount: 1 } : {}), ...(per ? { rows: per.rows, unclaimed: per.unclaimed } : {}) },
+    detail: { ...graded.detail, ...(notRegular ? { redCount: 1 } : {}), ...(per ? { rows: per.rows, unclaimed: per.unclaimed, ...(per.items ? { items: per.items } : {}) } : {}) },
   });
 }
 

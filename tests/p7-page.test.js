@@ -16,7 +16,7 @@ function fnSrc(name) {
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // eslint-disable-next-line no-new-func
-const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
+const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
 
 const PLAN = {
   lines: [
@@ -36,35 +36,36 @@ test('renderJobPlan: the legend shows only when the plan has a › check row', (
   assert.match(always, /jp-legend/, 'an always-on row under a line counts');
 });
 
-test('renderJobPlan: legend, numbered lines with their rule, checks as "check · name · class", the two folds with their counts; every text escaped', () => {
+test('renderJobPlan: legend, numbered lines with their rule, rows as `[tag] kind words` in CHECKED / NOT CHECKED groups, the rows no line owns in an "Every line" block; every text escaped', () => {
   const h = renderJobPlan(PLAN);
-  assert.match(h, /Done when every <b>›<\/b> check passes/);
+  assert.match(h, /Done when every check below passes/);
   assert.match(h, /class="num">1<\/span>Find &lt;3&gt; flights/, 'a job line is escaped');
   assert.match(h, /class="sub">~ PASS: quoted; FAIL: invented</);
-  assert.match(h, /check · flights-found · judge/);
-  assert.match(h, /check · sorted · machine check/);
-  assert.match(h, /check · stray</, 'a check with no class shows no class');
-  assert.match(h, /not checked · no command can check the layout/);
-  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked · 1</);
-  assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always checked · 2</);
-  assert.doesNotMatch(h, /plan-older/);
+  assert.match(h, /<span class="kind" data-testid="ck-kind">truth<\/span><span class="ck-t">flights-found<\/span>/);
+  assert.match(h, /title="machine check"/, 'the check class stays reachable, as the row\'s title');
+  assert.match(h, /<span class="ck-t">stray<\/span>/, 'a check with no class has no title');
+  assert.match(h, /<div class="ck-h">NOT CHECKED \u00B7 1 \u00B7 you judge these at Accept<\/div><div class="ck-row" data-testid="plan-refused">[^]*no command can check the layout/);
+  assert.match(h, /<div class="ck-h">CHECKED \u00B7 3<\/div>/, 'the stray row and the two guards are CHECKED rows of the Every line block');
+  assert.match(h, /data-by="default">\[default\]<\/span><span class="kind" data-testid="ck-kind">file<\/span><span class="ck-t">no-suppressions/);
+  assert.match(h, /data-testid="plan-job-level"/);
+  assert.doesNotMatch(h, /Always checked|other checks|plan-older/);
   assert.doesNotMatch(h, /<script|<input|<button/i);
 });
 
-test('renderJobPlan: a line covered by an always-on guard shows "check · always-on: <guard>" under it, escaped; none = no row', () => {
+test('renderJobPlan: a line covered by an always-on guard shows a [default] file row under it, escaped; none = no row', () => {
   const h = renderJobPlan({ ...PLAN, lines: [{ n: 1, text: 'Fix src', rule: '', rules: [], checks: [], refused: [], always: ['changed-from-seed', 'no-<x>'] }] });
-  assert.equal((h.match(/data-testid="plan-always"/g) ?? []).length, 2);
-  assert.match(h, /check \u00B7 always-on: changed-from-seed/);
+  assert.equal((h.match(/data-testid="plan-always"/g) ?? []).length, 4, 'two under the line, the two protections beside them');
+  assert.match(h, /file<\/span><span class="ck-t">always-on: changed-from-seed/);
   assert.match(h, /always-on: no-&lt;x&gt;/);
-  assert.ok(!/data-testid="plan-always"/.test(renderJobPlan(PLAN)));
+  assert.ok(!/always-on:/.test(renderJobPlan(PLAN)));
 });
 
-test('renderJobPlan: "How the page was read" is its own fold right after Not checked, counted apart, same markup; none = no fold', () => {
+test('renderJobPlan: "How the page was read" is its own fold after the check groups, counted apart; none = no fold', () => {
   const h = renderJobPlan({ ...PLAN, readNotes: ['line 1: "price" \u2014 "from" was not used.', 'second <note>'] });
-  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked · 1</, 'the notes are not in the Not checked count');
+  assert.match(h, /NOT CHECKED \u00B7 1 \u00B7 you judge these at Accept/, 'the notes are not in the Not checked count');
   assert.match(h, /<details class="fold" data-testid="plan-readnotes"><summary>How the page was read · 2<\/summary><ul><li>line 1/);
   assert.match(h, /second &lt;note&gt;/);
-  assert.ok(h.indexOf('plan-notchecked') < h.indexOf('plan-readnotes') && h.indexOf('plan-readnotes') < h.indexOf('plan-alwayson'));
+  assert.ok(h.lastIndexOf('plan-notchecked') < h.indexOf('plan-readnotes'));
   assert.doesNotMatch(renderJobPlan(PLAN), /plan-readnotes/);
 });
 

@@ -108,7 +108,7 @@ export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'ki
 export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
 const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
 const SIGNED_BY = Object.freeze(['you', 'agent', 'default']);
-const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor', 'guard', 'prose', 'fence', 'stage', 'sheet']);
+const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor', 'guard', 'prose', 'fence', 'stage', 'sheet', 'shape']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).
@@ -632,7 +632,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
  * The per-row results one stage entry records (Addendum 2026-11-14 (c) piece 4): `{rows, unclaimed?}` or nothing. A rubric step's come from its detail (the runner graded them against the signed list);
  * a guard stage with a signed `guard` row is that row, passed when the stage was satisfied. The stage's own verdict is never changed by any of this.
  * @param {any[]|null} list @param {any} st the declared stage @param {any} r the stage result @param {any} t its translation @param {(s: string) => string} redact
- * @returns {{rows?: any[], unclaimed?: string[]}}
+ * @returns {{rows?: any[], unclaimed?: string[], items?: string[]}}
  */
 function rowsRecordOf(list, st, r, t, redact) {
   if (!Array.isArray(list)) return {};
@@ -640,6 +640,8 @@ function rowsRecordOf(list, st, r, t, redact) {
     return {
       rows: r.detail.rows.map((/** @type {any} */ x) => ({ key: x.key, result: x.result, ...(typeof x.why === 'string' ? { why: redact(x.why) } : {}) })),
       ...(Array.isArray(r.detail.unclaimed) && r.detail.unclaimed.length ? { unclaimed: r.detail.unclaimed.map((/** @type {string} */ u) => redact(String(u))) } : {}),
+      // a shape line's raw item reds (names and counts, never a value): the Result tab's grid marks its cells from them
+      ...(Array.isArray(r.detail.items) && r.detail.items.length ? { items: r.detail.items.slice(0, 200).map((/** @type {unknown} */ u) => redact(String(u))) } : {}),
     };
   }
   const guard = list.find((/** @type {any} */ x) => x && x.kind === 'guard' && x.key === guardKeyOf(String(st?.name)));
