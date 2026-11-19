@@ -5229,3 +5229,22 @@ Amendment while building (2026-11-19): the spec above said the merged itemShape 
 
 Second amendment while building (2026-11-19, found by the round-2 dry run of the scope harness): "the cite `$` default always stays" is built literally. A line whose rules took shape fields and whose only truth check today is the `$cited` default keeps that default: the signed step holds the shape part AND the `cited` countable part, and the step file is `{"text", "cites", "results"}` (the brief says "a TEXT line AND a LIST line"); without it the page job would lose its cite default to the shape. A line with a fact part keeps the fact brief plus the shape fields. The shape part is therefore legal beside countable parts (only a sheet part is refused beside it).
 
+### Scope round 2 PASS and the gains rulings (hamr 2026-11-19)
+
+Round 2 of the scope check (prereg `.claude/scratch/shape-scope/round2/PREREG.md` frozen before the rules-first code; results and `raw.json` beside it, scratch, not committed; DeepSeek direct, deepseek-flash; the product's own `runLookWithShape` then a `CheckBlock` with and without shapes): PASS. 0 of the 10 page patients lost a truth check to a shape; both controls got shape fields; the tracker's 3 rules were all checked. Cost $0.228 of the $0.4 cap. n=10 + 2, UNDERPOWERED: a PASS shows these ten keep their truth checks, not a rate. Evidence F360.
+
+The GAINS were read by hand in `raw.json` (the bar did not test whether a gain is a real check):
+- airbnb-case1, rule 1 ("under EUR 200 total"): the AI's field was `stay`, text, no bound. It was counted as covering the rule: a fake check (form only, says nothing about the price).
+- flight-nononstop1, rule 3 ("no nonstop"): turned into `nonstop` boolean, equals false. A negation became a flag value.
+- dell-price2, rule 1: the AI proposed a `price` money field with lt 1500 from rule 1, yet the built list ends with rule 1 not checked and only the countable part. The good field was dropped; cause not yet known.
+
+Rulings (hamr 2026-11-19):
+1. A shape field covers a `~` rule only with at least one real bound grounded in that rule (R1 grounding). `required` + `minChars 1` for a "has a title"-style rule stays (that bound is the rule). A bound-less field does not cover its rule: the rule stays Not checked.
+2. Negating rules never take a shape field ("no nonstop", "not ..."): the card shows them Not checked, a human judges at Accept. No code word list of negations beyond what the checks already use for negation; the card says it.
+3. Find why dell's good price field was dropped, from the signed list and the build path ($0 read), before any fix.
+4. The shape look runs only when a rule is left Not checked, so page jobs (all rules checked) skip the call and stay byte-identical to today, cost included.
+5. The cite default stays: a shape line keeps text + cites + results (as built in the second amendment above).
+
+Then, before more build claims: POC 1 (number-then-marker prices, `.claude/scratch/marker-after-poc/`: $0, prereg'd, frozen candidate, real AI maps, unseen pages; F365), and a round-3 re-run of scope patients 3, 4 and 6 plus the controls (prereg'd first, paid, DeepSeek flash). No build of a number-then-marker rule until POC 1 passes.
+
+Status: rulings given, being built.

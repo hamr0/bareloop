@@ -2390,3 +2390,18 @@ Ruled by hamr 2026-11-18.
 - d1 POC, 2026-11-18, local record (bareguard 8b1bb81): PASSED. 6/6 real saved answers green; 7/7 one-defect copies gave exactly the expected red.
 - Test data for the resume case: hamr's own resume plus one made-up resume, kept out of every repo and every commit.
 - Status: rulings given, build not approved; bareloop flow spec next; POC before any build.
+
+### Shape jobs: rules first, scope and gains rulings (v1.144 — 2026-11-19)
+
+Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "shape jobs (itemShape)", through "Scope round 2 PASS and the gains rulings"); evidence F357-F365 in `docs/wiki/FINDINGS.md`.
+
+- [ ] Shape jobs (itemShape): `~` rules get today's truth check first; only a rule that would end Not checked takes a shape field. Strongest wins, no ask (the "rules or shape could both fit" ask is removed). F359, F360.
+- [ ] Every shape row carries a `[shape]` tag (form only, not truth) and a Drop, the person's own `~` rows included; a dropped rule goes Not checked, undo by Revise.
+- [ ] Boolean kind for yes/no fields (bareguard 0.37.0, `equals` true/false). F358.
+- [ ] The cite default always stays on a shape line; facts and shape ride one `results` answer (cited + closed itemShape). F361.
+- [ ] The shape look runs only when a rule is left Not checked, so page jobs stay byte-identical to today.
+- [ ] A shape field covers a `~` rule only with at least one real bound grounded in it (required + minChars 1 for "has a title"-style rules stays). F360.
+- [ ] Negating rules ("no nonstop") never take a shape; negations stay with the human. F360.
+- [ ] Number-then-marker prices ("€216 total", "1.299,00 €"): POC 1 first ($0, prereg'd, unseen pages), no build before it passes. F365.
+- [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
+- Status: rulings given, being built.

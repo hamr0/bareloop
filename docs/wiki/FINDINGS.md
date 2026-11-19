@@ -16548,3 +16548,71 @@ Run as the prereg above (frozen in 5b07e9ff). DeepSeek direct, `deepseek-flash`,
 **Fix.** A cell counts only if it is a strict plain number (optional sign, digits, commas only as thousands groups of exactly three, optional decimals); any other cell takes the existing "not computed (row N has no number in the column ...)" line. Commits aa7bbda6 (red test) and the fix after it; test `tests/sheet-total-strict.test.js`. `src/sheetfind.js` PLAIN_NUMBER (copied from fwdloop) is untouched: out of scope.
 
 **Why no earlier test saw it.** The existing total tests used only `1,234.50`-style cells. Test-proven only, not seen live.
+
+### F357: Shape POC round 1 FAIL: an invented bound survived, grounded by luck in whole-job text (2026-11-18, $0.00795)
+
+**What was seen.** Round 1 of the shape-jobs mapping POC (DeepSeek direct, deepseek-flash, 5 jobs, one call each; `.claude/scratch/shape-poc/results.md`, `PREREG.md`, `SHAS.txt`): mapping 5/5 and the resume item count right, but the bar "0 invented bounds survive code" failed with 1 survivor (7 caught). The flights extra field `duration` kept minChars 3 and maxChars 20. Also seen: `nonstop.values` ["nonstop","Nonstop","true"] was dropped whole, and the tracker job's AI said `itemCountFrom ["tracker"]` (would sign exactly 1 item).
+
+**Cause (read from the round-2 prereg and the results).** Bounds were grounded against the whole job text: the 3 matched "List 3 flights" and the 20 matched through the under-N candidate 21 from "21:59". A number present anywhere in the job grounded a bound on an unrelated field.
+
+**Outcome.** Recorded as FAIL, files untouched. Round 2 was a code-only change (R1-R4, see F358). n=5, UNDERPOWERED.
+
+### F358: Shape POC rounds 2 and 3 PASS: per-field grounding, then the boolean kind (2026-11-18, $0.00794 and $0.00793)
+
+**What was seen.** Round 2 (`PREREG-r2.md`, `results-r2.md`; prompt and call parameters byte-identical to round 1, code only): PASS, mapping 5/5, 0 invented bounds survived (5 caught), resume item count exactly resume-1, resume-2, no other job signed an item count; suggested fields (tracker.owner, flights.airline, flights.duration) held out of the signed shape. The four code rules: R1 a bound is grounded only in the field's own `~` rule, R2 a field whose name is not in the person's words is Suggested, R3 oneOf keeps each grounded value, R4 an item count only from "per/each <stem>". A $0 replay of the round-1 answers read PASS first (`results-r2-replay.md`); that is a reading, not evidence, since the answers were seen before the rules were written.
+
+Round 2 left a gap: the AI wrote nonstop as oneOf [true], so the box checked presence only. bareguard added `kind: "boolean"` (`equals` true/false; f712769, pinned at 0.37.0 for the build); the $0 check d3 (`.claude/scratch/itemshape-poc/d3/`) matched 10 of 10 expected reds on crafted data (spelling and behaviour only). Round 3 (`PREREG-r3.md`, `results-r3.md`; the menu gained one line, code gained R5: `equals` only on a field with its own rule): PASS, flights rule 5 came out boolean with equals true, 0 survivors (4 caught).
+
+**Reading.** n=5 per round, UNDERPOWERED: a PASS shows the mapping can work, not its rate. The `arrivalTime` word match through "time" in "departure time" is a known loose spot (no bounds, cannot red by luck).
+
+### F359: Scope check round 1 FAIL: 8 of 10 page jobs came out shape-class and lost truth checks (2026-11-19, $0.0225)
+
+**What was seen.** The shape look run over 10 archived page/fact drafts plus 2 positive controls (`.claude/scratch/shape-scope/results.md`): 8 of 10 page patients ended with a shape-class line (the six flights sessions, Dell, Airbnb); the 2 changelog patients stayed countable; both controls (research-tracker, resume-readout) were shape-class. Bar was 0 wrong of 10. Refusals such as "rule 1 already has a field" on Dell, flights-a and flights-3 show the shape field replacing the rule's own check.
+
+**Cause.** Shape-first: the look's fields took the line and displaced the fact/cite checks (a rule like "under $450" became a shape field). Ruled by hamr 2026-11-19: rules first, shape only for what would be Not checked (ITEM33-BUILD, "Scope check round 1 FAIL and ruling"). n=10, UNDERPOWERED, but 8 of 10 is not noise.
+
+### F360: Scope check round 2 PASS (rules first), and the hand-read of the gains (2026-11-19, $0.228)
+
+**What was seen.** Round 2 (`shape-scope/round2/PREREG.md`, `results.md`, `raw.json`; the product's own `runLookWithShape` then a `CheckBlock` with and without shapes): 0 of 10 patients lost a truth check to a shape; both controls got shape fields; the tracker's 3 rules were all checked (shape, fact, shape). 4 of the 10 patients differ from today (gains only: flight-nononstop1, dell-price2, airbnb-case1, one of the flights-3 sessions); the other 6 are identical. Cost $0.228 of the $0.4 cap. UNDERPOWERED (n=10 + 2).
+
+**Hand-read of the gains (read from `raw.json`, not just the table).**
+- airbnb-case1, rule 1: the AI's field was `stay`, a text field with no bound (fromRule 1), and it was counted as covering "~ under EUR 200 total". A required text field with no bound checks nothing about the price: a fake check that the card would show as covered.
+- flight-nononstop1, rule 3 "~ no nonstop": the AI made `nonstop` boolean with equals false (as it did for red-eye). A negation turned into a flag equal to false: the person's "no" is now a value the worker can set; this is the negation hazard, and the page reader's own handling stays with the human.
+- dell-price2: the AI proposed `price` money, lt 1500, fromRule 1, yet the built list ends with rule 1 `none` and only the countable part: the good field was dropped. Cause under investigation (not yet known).
+- The flights-3 gain (a shape field on a rule that was Not checked) and the controls' gains were not hand-read here; only the three above were.
+
+**Outcome.** Rulings in ITEM33-BUILD "Scope round 2 PASS and the gains rulings". The PASS bar (no loss) held; the bar did not test whether a gain is a real check, which is why the hand-read mattered.
+
+### F361: Facts and shape on one answer: $0 round 1 FAIL, round 2 PASS 47/47 (2026-11-19, $0)
+
+**What was seen.** Real signed fact parts and saved answers, cited and a closed itemShape on one `results` list (bareguard 0.37.0). Round 1 (`.claude/scratch/shape-combined/results-round1-FAIL.md`): FAIL, 5 mismatches, all variant V4 (an extra key inside `values`), plus dell V2-V5 unscored (baseline dirty). Round 2 (`round2/PREREG.md`, `results.md`): PASS, 0 self-check mismatches, 0 variant/baseline mismatches, 47 scored variants.
+
+**Cause of the round-1 FAIL.** The V4 prediction came from guard's probe on a raw list that `cited` reads directly. In bareloop `cited` reads claims `flattenStep` builds from the signed fact names only, so an unlisted `values` key is invisible to it: itemShape red, cited green, reported once. Dell's baseline was dirty because round 1 graded `cited` in one pass, while `gradeStep` does a second as-written pass for decimal-comma prices. Round 2 graded through a scratch stand-in of that flow (checked equal to `gradeStep` without the shape check before scoring).
+
+**Reading.** A prediction taken from another path's probe was wrong for ours; round 1 stays recorded FAIL. The stand-in is scratch; the product path is pinned by `tests/shape-combined.test.js`.
+
+### F362: "under N" signed as maxChars 200 for "under 200" (scripted screenshot, 2026-11-19, $0)
+
+**What was seen.** In a scripted screenshot the AI signed `maxChars 200` for a rule "under 200"; "under N" means N-1.
+
+**Fix.** Code now signs the person's own form of the number rather than the AI's bound. Test-proven only; not seen live.
+
+### F363: prompt-commit-check is satisfied by any 8-letter word after "run" (2026-11-18, $0)
+
+**What was seen.** The shape builder cited "run citation" on a `Failure:` line and `prompt-commit-check` passed: the check matches `run <8 chars>` with any 8 letters, not a real run id.
+
+**Status.** Not fixed; on the fix ledger. Narrowing it silently is not allowed (a real id can be a 13-character panel draft id or a peer's run name); a fix needs hamr's word.
+
+### F364: A list-of-items job's per-item rules went to unbuildable fact checks (live run mwmmcjxo, research-1)
+
+**What was seen.** Live run `mwmmcjxo` (job research-1): a job whose answer is a list of items had its per-item `~` rules sent to fact checks that cannot be built for such rules, with words on the card that the person could not act on. This is the evidence for the shape commits (a list of items with fields has no fact to read from a page).
+
+**Reading.** Not re-read for this entry: it is recorded from the report that came with the build; the exact words and numbers are in that run's own files. The shape jobs build is the answer for this class (F357-F361).
+
+### F365: The page reader cannot read number-then-marker prices; POC 1 running (2026-11-19)
+
+**What was seen.** Airbnb's "€216 total" and Dell's "1.299,00 €" are number-then-marker prices (the marker after the amount); today the rules about them (Airbnb "under 200 total", Dell "under 1500") end Not checked. That is why those rules show as gains in F360.
+
+**Evidence so far (the prereg, before any run).** `.claude/scratch/marker-after-poc/PREREG.md` reads `src/pagedry.js` and `src/pagerules.js`: a label-less fact already reads "€216 total" and "1.299,00 €" through the marker rules (U1/R1L), so the PRD line "unreadable until a marker-after-number rule is written" is stale for sign and word markers; what the code does not cover is a code written before its number ("EUR 17.86") with no label, and a fact that keeps its label yet reads 0 lines while its markers sit after numbers. The candidate is frozen with a sha; its test pages are real AI maps from recorded drafts, with two fitting pages and the rest unseen.
+
+**Status.** POC 1 is running ($0, prereg'd). No claim until its result is written.
