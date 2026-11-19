@@ -2237,7 +2237,7 @@ function getRunDetailBody(runid, opts) {
   }
   // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
   const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
-  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
+  const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, lines: auditChecksAll.lines, jobNotChecked: auditChecksAll.jobNotChecked, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never

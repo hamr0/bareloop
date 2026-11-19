@@ -30,10 +30,10 @@ import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guard
 /** a Not checked row of the signed look (hamr 2026-11-19): `line` 0 = no one line owns it, `why` = the code-owned reason, drawn behind "why" */
 /** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default'}} NcRow */
 
-/** the kind word of a check row (hamr 2026-11-19, signed list look): `shape` = code checks the form of the items, `file` = code checks the files (the write fence, a guard, a rule the fence keeps), `truth` = every other check @param {{key?: string, shape?: true, fence?: true}} c @returns {'truth'|'shape'|'file'} */
+/** the kind word of a check row (hamr 2026-11-19, signed list look): `shape` = code checks the form of the items, `file` = code checks the files (the write fence, a guard, a line's output-file floor, a rule the fence keeps), `truth` = every other check @param {{key?: string, shape?: true, fence?: true}} c @returns {'truth'|'shape'|'file'} */
 export function kindOfCheck(c) {
   if (c.shape === true) return 'shape';
-  if (c.fence === true || c.key === FENCE_KEY || (typeof c.key === 'string' && c.key.startsWith('J.$guard.'))) return 'file';
+  if (c.fence === true || c.key === FENCE_KEY || (typeof c.key === 'string' && c.key.startsWith('J.$guard.')) || (typeof c.key === 'string' && /^L\d+\.\$floor$/.test(c.key))) return 'file';
   return 'truth';
 }
 

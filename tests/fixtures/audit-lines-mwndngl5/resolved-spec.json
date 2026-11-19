@@ -1,0 +1,229 @@
+{
+  "schema": "job-v1",
+  "job": "research-3",
+  "description": "research-3 — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List every research item in the tracker, one entry each",
+      "rule": "each item has a title; status is one of in progress, closed, finished; summary is under 200 characters",
+      "rules": [
+        "each item has a title",
+        "status is one of in progress, closed, finished",
+        "summary is under 200 characters"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "tracker",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/shape-poc/inputs/research-tracker.txt"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - tracker: input/research-tracker.txt\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"cites\". It holds a \"text\" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so\nthe same file carries both \"results\" and \"text\"). A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List every research item in the tracker, one entry each\n   rule: each item has a title; status is one of in progress, closed, finished; summary is under 200 characters\n\nJob line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"tracker\": one result for every one you find.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - summary notes — no value to write; the quote you copy must say \"Notes:\"\n  Each result ALSO carries these fields (named exactly as written; a field marked optional may be left out when it does not apply):\n    - title: not empty\n    - status: one of: in progress, closed, finished\n  One example result: {\"quote\":\"<words copied from the page>\",\"values\":{\"summary notes\":\"<as the quote writes it>\"},\"title\":\"Example text\",\"status\":\"in progress\"}\n\nThe plan the person confirmed: List every research item in the tracker as one entry each, with a title, a status of in progress, closed or finished, and a summary under 200 characters.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "summary notes",
+              "class": "fact",
+              "source": "tracker",
+              "facts": [
+                {
+                  "name": "summary notes",
+                  "shape": "phrase",
+                  "phrase": "Notes:"
+                }
+              ],
+              "rules": [
+                3
+              ]
+            },
+            {
+              "class": "shape",
+              "text": "the items of line 1",
+              "fields": [
+                {
+                  "name": "title",
+                  "spec": {
+                    "kind": "text",
+                    "required": true,
+                    "minChars": 1
+                  },
+                  "rule": 1
+                },
+                {
+                  "name": "status",
+                  "spec": {
+                    "kind": "oneOf",
+                    "required": true,
+                    "values": [
+                      "in progress",
+                      "closed",
+                      "finished"
+                    ],
+                    "ignoreCase": true
+                  },
+                  "rule": 2
+                }
+              ],
+              "rules": [
+                1,
+                2
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "list": [
+      {
+        "line": 1,
+        "key": "L1.~1",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 1,
+        "part": {
+          "line": 1,
+          "part": 1
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.~2",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 2,
+        "part": {
+          "line": 1,
+          "part": 1
+        },
+        "facts": [
+          "status words"
+        ]
+      },
+      {
+        "line": 1,
+        "key": "L1.~3",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 3,
+        "part": {
+          "line": 1,
+          "part": 0
+        },
+        "facts": [
+          "summary notes"
+        ]
+      },
+      {
+        "line": 1,
+        "key": "L1.$floor",
+        "from": "default",
+        "by": "default",
+        "kind": "floor",
+        "state": "built"
+      },
+      {
+        "line": 1,
+        "key": "L1.$cited",
+        "from": "default",
+        "by": "default",
+        "kind": "cited",
+        "state": "not-checked",
+        "reason": "this line finds facts, so it has no text to quote"
+      },
+      {
+        "line": 1,
+        "key": "L1.count.4-4",
+        "from": "agent",
+        "by": "agent",
+        "kind": "count",
+        "state": "dropped",
+        "reason": "Suggested: not in your job, so it is not checked unless you add it."
+      },
+      {
+        "line": 1,
+        "key": "L1.phrase.research tracker",
+        "from": "agent",
+        "by": "agent",
+        "kind": "phrase",
+        "state": "dropped",
+        "reason": "code could not build a legal check from it: line 1: fact \"RESEARCH TRACKER\": the words \"RESEARCH TRACKER\" are in the input \"tracker\" only 1 time, but this line asks for 4 results - each result's own quote must say them. Pick words every result says, or drop this check. Nothing was signed."
+      },
+      {
+        "line": 1,
+        "key": "L1.shape.owner",
+        "from": "agent",
+        "by": "agent",
+        "kind": "shape",
+        "state": "dropped",
+        "reason": "Suggested: not in your job, so it is not checked unless you add it."
+      },
+      {
+        "line": 1,
+        "key": "L1.$prose",
+        "from": "default",
+        "by": "default",
+        "kind": "prose",
+        "state": "not-checked",
+        "reason": "whether each one is true — you judge it at Accept"
+      },
+      {
+        "line": 0,
+        "key": "J.$guard.changed-from-seed",
+        "from": "default",
+        "by": "default",
+        "kind": "guard",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$fence",
+        "from": "default",
+        "by": "default",
+        "kind": "fence",
+        "state": "built"
+      }
+    ]
+  }
+}

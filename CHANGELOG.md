@@ -21,6 +21,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The Audit's check list shows its Line blocks again: the run detail shipped the Audit checks without `lines` and `jobNotChecked`, so a passed run showed only the line-less guards under "Every line" (live run mwndngl5, fixture `tests/fixtures/audit-lines-mwndngl5`). A line's output-file check (`L<n>.$floor`) now has the kind `file`, not `truth`.
+
 - Shape jobs: a `~` rule whose truth check code picked but REFUSED when it built the line (live run mwnbs3np: the look tied "each item has a title" and the status rule to page words, the job's 4-result count made code refuse them) is now a shape candidate like any rule left Not checked, so it takes its shape field instead of ending Not checked (`src/checkblock.js` `truthRefused`; the shape look still runs once per draft).
 
 ### Changed
