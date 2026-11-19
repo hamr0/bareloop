@@ -139,12 +139,12 @@ const TEXT_MEASURES = new Set(['maxWords', 'minWords', 'maxLines', 'sections', '
 
 /**
  * is the prose of job line `n` Not checked? Copied in rule from fwdloop v0.36.0 `proseCheckedOf` (src/whole-job.js:54): `### The answer` only when code checked the line's OWN text. Not checked when the signed list
- * says so (a `prose` row, or a Not checked `~` rule row on the line), when an older close derives it from its stages, or when no signed part of the line measures its text (only the default note, a quote or a sheet check).
+ * says so (a Not checked `~` rule row on the line; the `$` prose meaning row alone does not, as fwd), when an older close derives it from its stages, or when no signed part of the line measures its text (only the default note, a quote or a sheet check).
  * Read from the signed close, never a second mapping.
  * @param {any} closeDecl @param {number} n
  */
 function proseNotChecked(closeDecl, n) {
-  if (proseNotCheckedItems(closeDecl).some((i) => i.line === n) || refusedOf(closeDecl).some((r) => r.line === n && (r.kind === 'prose' || r.kind === 'rule'))) return true;
+  if (proseNotCheckedItems(closeDecl).some((i) => i.line === n) || refusedOf(closeDecl).some((r) => r.line === n && r.kind === 'rule')) return true;
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const parts = stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n).flatMap((/** @type {any} */ st) => (Array.isArray(st.params.parts) ? st.params.parts : []));
   return !parts.some((/** @type {any} */ p) => isRec(p) && p.class === 'countable' && TEXT_MEASURES.has(p.check));

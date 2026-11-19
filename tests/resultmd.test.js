@@ -143,6 +143,15 @@ test('FACTS line with a words check AND a Not checked `~` rule on the line (sign
   assert.ok(built.endsWith('### The answer\nMy summary.\n'), built);
 });
 
+test('TEXT line with a built maxWords and only the `$` prose row (signed list): `### The answer` (fwd v0.36.0: the meaning row does not make the text unchecked); no measuring part keeps the not-checked heading', () => {
+  const prose = { line: 1, key: 'L1.$prose', kind: 'prose', by: 'default', state: 'not-checked', reason: 'whether it says the right thing — you judge it at Accept' };
+  const guard = { line: 0, key: 'J.$guard.x', kind: 'guard', state: 'built' };
+  const withPart = run({ stages: [textStage], list: [guard, prose] }, [{ n: 1, text: 'L' }], [[1, { text: 'A note.' }]]);
+  assert.ok(withPart.endsWith('### The answer\nA note.\n'), withPart);
+  const noPart = run({ stages: [{ kind: 'rubric-step', params: { step: 1, parts: [{ class: 'countable', check: 'nonEmpty', text: 'x' }] } }], list: [guard, prose] }, [{ n: 1, text: 'L' }], [[1, { text: 'A note.' }]]);
+  assert.ok(noPart.endsWith(`${NOT_CHECKED}\nA note.\n`), noPart);
+});
+
 test('TEXT line: only the answer, under the not-checked heading (no "Checked by code" with nothing in it); cites are not written; the text is kept exactly', () => {
   const text = '- one\n- two\n\n  "quoted" {braces} ok';
   const got = run({ stages: [textStage] }, [{ n: 1, text: 'Write a note', rules: ['two bullets'] }], [[1, { text, cites: [{ quote: 'q', line: 3 }] }]]);
@@ -150,12 +159,12 @@ test('TEXT line: only the answer, under the not-checked heading (no "Checked by 
   assert.ok(!/cites|Checked by code/.test(got));
 });
 
-test('a text line whose prose IS checked (a list-built close with no prose Not-checked row for it) gets `The answer`; one with the prose row gets the not-checked heading', () => {
+test('a text line whose prose IS checked (a list-built close with no prose Not-checked row for it) gets `The answer`; one with a Not checked `~` rule row gets the not-checked heading (the `$` prose row alone does not)', () => {
   const guard = { line: 0, key: 'J.$guard.x', kind: 'guard', state: 'built' };
   const checked = run({ stages: [textStage], list: [guard] }, [{ n: 1, text: 'L' }], [[1, { text: 'T' }]]);
   assert.ok(checked.endsWith('### The answer\nT\n'), checked);
-  const prose = { line: 1, key: 'L1.$prose', kind: 'prose', state: 'not-checked', reason: 'what the text says — you judge it at Accept' };
-  const unchecked = run({ stages: [textStage], list: [guard, prose] }, [{ n: 1, text: 'L' }], [[1, { text: 'T' }]]);
+  const rule = { line: 1, key: 'L1.r1', kind: 'rule', rule: 1, state: 'not-checked', reason: 'no check was picked' };
+  const unchecked = run({ stages: [textStage], list: [guard, rule] }, [{ n: 1, text: 'L' }], [[1, { text: 'T' }]]);
   assert.ok(unchecked.endsWith('### The AI\'s answer (not checked — you judge it at Accept)\nT\n'), unchecked);
 });
 
