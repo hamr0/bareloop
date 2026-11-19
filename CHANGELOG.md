@@ -13,6 +13,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - Shape jobs, hamr's rulings of 2026-11-18: a failed, unreadable or capped shape look does not stop the draft (it goes on with no shape, the spend booked, a draft-log line `the shape look did not complete: <reason>; going on without a shape`); a shape line's card reads `Shape checks · code checks each item's form, not whether it is true`, then `name · sentence` rows in the person's own form (`under 200 characters`), Suggested with Add, and `Not checked · whether each one is true — you judge it at Accept`.
 
+- Shape jobs, rules first (hamr 2026-11-19, after the scope check round 1 FAIL): every `~` rule gets today's truth check first, and only a rule that would otherwise be Not checked takes the shape field proposed for it; a line can be facts+shape (one `results` list checked by `cited` and a closed `itemShape` that also lists `quote` and `values`); the "rules or shape" ask and `alsoFitsRules` are removed; every shape row shows `[shape]` and can be dropped, the person's own `~` rows too (that rule goes Not checked; Revise brings it back). Pinned on real archived answers (`tests/shape-combined.test.js`).
+
 ### Changed
 
 - The refusal for a single-file Source now reads `This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.`
