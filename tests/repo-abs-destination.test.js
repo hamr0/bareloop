@@ -120,7 +120,7 @@ test('Reuse card: an absolute Destination on a REPO source is refused with the s
   assert.notEqual(ok.state.error, MSG, String(ok.state.error));
 });
 
-const FILE_MSG = 'This file is inside a git repo, so bareloop treats it as a repo job. For a repo job, Source is the repo folder and the file goes in Destination. To use just this one file, copy it to a folder outside any repo. Nothing spent.';
+const FILE_MSG = 'This file is inside a git repo, and Deterministic is picked: that needs the repo folder as Source. If you meant Rubric, pick Rubric and Revise. Nothing spent.';
 const FOLDER_MSG = "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
 
 test('non-repo source: a single FILE is refused at $0 with the file message (not "Plain folder"); no model call', async () => {
@@ -143,4 +143,21 @@ test('non-repo source: a plain FOLDER is refused at $0 with the folder message; 
   assert.equal(s.state.error, FOLDER_MSG);
   assert.equal(calls.n, 0, 'no model seam was reached');
   assert.ok(!(s.state.draftSpentUsd > 0), 'nothing spent');
+});
+
+test('the same single FILE with Rubric picked is NOT refused with the file message (it is a rubric input); Deterministic is (the wording says so)', async () => {
+  const dir = tmp('nonrepo-file-rubric-'); const file = join(dir, 'digest.txt'); writeFileSync(file, 'one line of text\n');
+  const calls = { n: 0 };
+  const s = createSession({
+    inputs: `tracker: ${file}`, checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-file-job', jobText: 'List the lines', capUsd: 2, destination: tmp('nonrepo-out-'),
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: home(), sessionsRoot: tmp('absdest-sess-'),
+    generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },
+    prepareSigningFn: async () => { throw new Error('no signing'); },
+  });
+  assert.ok(await until(() => s.state.phase !== 'starting' && (s.state.phase === 'refused' || settled(s) || calls.n > 0)));
+  assert.notEqual(s.state.error, FILE_MSG, String(s.state.error));
+  assert.equal(s.state.phase, 'drafting', 'a rubric file input goes on to drafting');
+  assert.doesNotMatch(String(s.state.error ?? ''), /inside a git repo/);
+  assert.match(FILE_MSG, /Deterministic is picked.*pick Rubric and Revise/);
 });

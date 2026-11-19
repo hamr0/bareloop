@@ -720,7 +720,7 @@ test('C1: a single-FILE source gets the file wording on the CLI (the one message
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 1, text);
-  assert.match(text, /This file is inside a git repo, so bareloop treats it as a repo job\. For a repo job, Source is the repo folder and the file goes in Destination\. To use just this one file, copy it to a folder outside any repo\. Nothing spent\./);
+  assert.match(text, /This file is inside a git repo, and Deterministic is picked: that needs the repo folder as Source\. If you meant Rubric, pick Rubric and Revise\. Nothing spent\./);
   assert.doesNotMatch(text, /plain folder/);
 });
 
