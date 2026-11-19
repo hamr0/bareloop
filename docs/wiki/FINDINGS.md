@@ -16609,10 +16609,12 @@ Round 2 left a gap: the AI wrote nonstop as oneOf [true], so the box checked pre
 
 **Reading.** Not re-read for this entry: it is recorded from the report that came with the build; the exact words and numbers are in that run's own files. The shape jobs build is the answer for this class (F357-F361).
 
-### F365: The page reader cannot read number-then-marker prices; POC 1 running (2026-11-19)
+### F365: Why Airbnb and Dell money rules were Not checked in the scope harness's block A is unexplained; not the page reader (2026-11-19, $0)
 
-**What was seen.** Airbnb's "€216 total" and Dell's "1.299,00 €" are number-then-marker prices (the marker after the amount); today the rules about them (Airbnb "under 200 total", Dell "under 1500") end Not checked. That is why those rules show as gains in F360.
+**What was seen.** In the scope round-2 harness (F360), block A ("today") left the Airbnb rule (`~ under €200 total`) and the Dell rule (`~ under 1500 euros`) Not checked. Why is UNEXPLAINED. The harness's "today" block may not be the full draft path; under investigation.
 
-**Evidence so far (the prereg, before any run).** `.claude/scratch/marker-after-poc/PREREG.md` reads `src/pagedry.js` and `src/pagerules.js`: a label-less fact already reads "€216 total" and "1.299,00 €" through the marker rules (U1/R1L), so the PRD line "unreadable until a marker-after-number rule is written" is stale for sign and word markers; what the code does not cover is a code written before its number ("EUR 17.86") with no label, and a fact that keeps its label yet reads 0 lines while its markers sit after numbers. The candidate is frozen with a sha; its test pages are real AI maps from recorded drafts, with two fitting pages and the rest unseen.
+**Ruled out: the page reader.** A $0 POC (`.claude/scratch/marker-after-poc/`) showed today's code already reads both forms: U1 (`src/pagerules.js:360-364`) and the no-label branch of `moneyResultLines` (`src/pagedry.js:52-86`, F251) read Airbnb 24/24 and Dell 16/16. POC 1 ran; its premise (the reader cannot read number-then-marker prices) was stale; nothing to build. The earlier wording of this finding claiming a reader gap was wrong and is withdrawn.
 
-**Status.** POC 1 is running ($0, prereg'd). No claim until its result is written.
+**Reading-derived, not built (PRD section 8a).** `moneyResultLines` has no whole-word edge on markers ("3 USD1", "5 EUROPEAN" read a number from inside a word; `src/pagedry.js:71-78`), and "EUR 17.86" (code before the number) is not read. No real page holds either; a bareguard ask if ever wanted.
+
+**Stale doc.** `docs/product/PRD.md:2085` ("page rules read label-then-number only, so these are unreadable") is stale: marker-after forms ARE built (F251).

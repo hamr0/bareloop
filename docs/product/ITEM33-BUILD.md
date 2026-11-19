@@ -5245,6 +5245,6 @@ Rulings (hamr 2026-11-19):
 4. The shape look runs only when a rule is left Not checked, so page jobs (all rules checked) skip the call and stay byte-identical to today, cost included.
 5. The cite default stays: a shape line keeps text + cites + results (as built in the second amendment above).
 
-Then, before more build claims: POC 1 (number-then-marker prices, `.claude/scratch/marker-after-poc/`: $0, prereg'd, frozen candidate, real AI maps, unseen pages; F365), and a round-3 re-run of scope patients 3, 4 and 6 plus the controls (prereg'd first, paid, DeepSeek flash). No build of a number-then-marker rule until POC 1 passes.
+POC 1 (number-then-marker prices, `.claude/scratch/marker-after-poc/`, $0) ran: its premise was stale, today's code already reads both forms (Airbnb 24/24, Dell 16/16; `src/pagerules.js:360-364`, `src/pagedry.js:52-86`, F251), nothing to build. Why those two rules were Not checked in the scope harness's block A is unexplained and under investigation (the harness's "today" block may not be the full draft path; F365). Still to do: a round-3 re-run of scope patients 3, 4 and 6 plus the controls (prereg'd first, paid, DeepSeek flash).
 
 Status: rulings given, being built.
