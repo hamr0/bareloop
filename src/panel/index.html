@@ -3865,12 +3865,10 @@
   // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
   function auditCheckRowHtml(r){
     var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : r.result === "not-reached" ? ["grey", r.word || "not reached"] : ["grey", "no result recorded"];
-    // a shape row (signed mock C, fix 1): `\u203A name \u00B7 sentence`, and its red reason sits on its OWN line under the row (every other job's rows keep the reason beside the state)
-    if(r.shape){
-      return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">\u203A ' + escapeXml(r.text) + byTagOf(r.by, "shape") + " " + stateDotHTML(res[0], res[1], "audit-check-state") +
-        (r.result === "failed" && r.why ? '<div class="hint" data-testid="audit-check-why" style="margin-left:14px">\u2014 ' + escapeXml(r.why) + "</div>" : "") + "</div>";
-    }
-    return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + (r.result === "failed" && r.why ? ' <span class="hint" data-testid="audit-check-why">\u2014 ' + escapeXml(r.why) + "</span>" : "") + "</div>";
+    // the signed look: `[tag] kind words ... result`, the result word at the right, a failed row's red reason indented on its own line under it; a Not checked row has no result word, only its "why"
+    var nc = r.result === "not-checked";
+    return ckRowHtml({ by: r.by, kind: nc ? "" : r.kind, text: r.text, why: nc ? r.why : "", testid: "audit-check-row", attrs: ' data-result="' + escapeXml(r.result) + '"', right: nc ? "" : stateDotHTML(res[0], res[1], "audit-check-state"),
+      under: r.result === "failed" && r.why ? '<div class="hint ck-under" data-testid="audit-check-why">' + escapeXml(r.why) + "</div>" : "" });
   }
   // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
   function auditChecksSignClass(rows){
@@ -3898,16 +3896,18 @@
     body.className = "audit-part-body";
     body.hidden = true;
     body.setAttribute("data-testid", "audit-checks-body");
-    var sec = function(title, rows, tid){
-      if(!rows || !rows.length) return "";
-      var head = tid === "audit-checks-checks" && ac.shapeHead ? '<div class="fold" data-testid="audit-shape-head"><b>' + escapeXml(ac.shapeHead) + "</b></div>" : "";
-      return '<div data-testid="' + tid + '" style="margin:6px 0"><div><b>' + escapeXml(title) + "</b></div>" + head + rows.map(auditCheckRowHtml).join("") + "</div>";
-    };
-    // shape fields the person did not add: told under Suggested with the card's own markup; an Add on a finished run's Audit does nothing, so the button is there but off (add it from a new draft)
-    var sugg = (ac.suggested || []).length ? '<div class="jl jp-sug" data-testid="audit-suggested"><span class="lbl">Suggested \u00B7 not in your job, not checked unless you add it</span>' + ac.suggested.map(function(x){
-      return '<div class="fold" data-testid="audit-suggest-row"><span class="mk">\u203A</span> ' + escapeXml(x.text) + byTagOf("agent") + ' <button type="button" class="btn jp-btn" disabled title="add it from a new draft: Reuse workflow, then Revise">Add</button></div>';
-    }).join("") + "</div>" : "";
-    body.innerHTML = '<div class="jp">' + sec("Checks", ac.checks, "audit-checks-checks") + sugg + sec("Not checked", ac.notChecked, "audit-checks-notchecked") + sec("Always checked", ac.always, "audit-checks-always") + "</div>";
+    // one block per job line (signed look): `Line N  text`, its CHECKED rows, its NOT CHECKED rows; the rows no line owns (the guards, the write fence) join the block of a one-line job, else have a block of their own
+    var grp = function(title, rows, tid, tail){ return ckGroupHtml(title, rows.map(auditCheckRowHtml), tid, tail); };
+    var blocks = (ac.lines || []).map(function(l, i, all){
+      var own = all.length === 1;
+      return '<div class="jl" data-testid="audit-line"><span class="lbl">Line ' + escapeXml(String(l.n)) + "</span> " + escapeXml(l.text) +
+        grp("CHECKED", (l.checks || []).concat(own ? (ac.always || []) : []), "audit-checks-checks") + grp("NOT CHECKED", (l.notChecked || []).concat(own ? (ac.jobNotChecked || []) : []), "audit-checks-notchecked", "you judge these at Accept") + "</div>";
+    });
+    if((ac.lines || []).length !== 1){
+      var rest = grp("CHECKED", ac.always || [], "audit-checks-always") + grp("NOT CHECKED", ac.jobNotChecked || [], "audit-checks-notchecked", "you judge these at Accept");
+      if(rest) blocks.push('<div class="jl" data-testid="audit-job-level"><span class="lbl">Every line</span>' + rest + "</div>");
+    }
+    body.innerHTML = '<div class="jp">' + blocks.join("") + "</div>";
     btn.addEventListener("click", function(){
       var open = btn.getAttribute("aria-expanded") === "true";
       btn.setAttribute("aria-expanded", open ? "false" : "true");

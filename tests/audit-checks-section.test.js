@@ -43,7 +43,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
+const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
 
 test('the Audit lists Checks, Not checked and Always checked, each row tagged, with its recorded result (real run mwenvde5)', () => {
   const ac = getRunDetail('mwenvde5', { home: runHome() }).auditChecks;
@@ -64,7 +64,8 @@ test('the Audit lists Checks, Not checked and Always checked, each row tagged, w
   assert.equal(ac.always[1].word, 'held · 0 writes blocked', 'the real gate audit of mwenvde5 records 1 allowed write and no denial');
   assert.match(rowHtml(ac.always[0]), /\[default\]<\/span>.*<b class="st-word">passed<\/b>/);
   assert.match(rowHtml(ac.always[1]), /<b class="st-word">held · 0 writes blocked<\/b>/);
-  assert.match(rowHtml(ac.notChecked[0]), /<b class="st-word">not checked<\/b>/);
+  assert.doesNotMatch(rowHtml(ac.notChecked[0]), /st-word/, 'a Not checked row has no result word: its group title says it');
+  assert.match(rowHtml(ac.notChecked[0]), /data-by="default">\[default\]<\/span>/);
   assert.match(rowHtml(ac.checks[0]), /\[you\]<\/span>.*<b class="st-word">passed<\/b>/);
 });
 
@@ -86,7 +87,7 @@ test('a run whose close recorded nothing says no result recorded for every row, 
 });
 
 test('the page draws the three sections with bold headings and no second check list in the drafting table', () => {
-  assert.match(PAGE, /sec\("Checks", ac\.checks[^]*sec\("Not checked", ac\.notChecked[^]*sec\("Always checked", ac\.always/);
+  assert.match(PAGE, /grp\("CHECKED"[^]*grp\("NOT CHECKED"[^]*"you judge these at Accept"/);
   assert.doesNotMatch(PAGE, /data-testid="drafting-check"/);
 });
 
@@ -144,5 +145,5 @@ test('the Checks fold header word is lowercase like the other Audit part rows (h
   assert.match(body, /var head = '<b class="st-word audit-checks-label">checks<\/b>' \+ " &middot; " \+ nPass/);
   assert.match(PAGE, /\.audit-checks-label\{font-size:12px;\}/, 'the label is the same 12px as the row result word');
   assert.doesNotMatch(body, /var head = "Checks &middot;/);
-  assert.match(PAGE, /sec\("Checks", ac\.checks/, 'the card section name keeps its capital');
+  assert.match(PAGE, /grp\("CHECKED", \(l\.checks/, 'the signed look\'s group names keep their capitals');
 });

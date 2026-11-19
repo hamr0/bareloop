@@ -50,7 +50,7 @@ function fnSrc(/** @type {string} */ name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
+const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
 
 test('Audit: each check row reads ITS row\'s recorded result: the failed row failed with its reason, the rest of the line passed', () => {
   const ac = getRunDetail('mwenvde5', { home: runHome(redClose({ rows: ROWS })) }).auditChecks;

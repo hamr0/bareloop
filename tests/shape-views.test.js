@@ -189,7 +189,7 @@ test('the page draws the Result grid and the Audit shape rows as the signed mock
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'resultField', 'resultNotChecked', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
   const { shapeResultCard, auditCheckRowHtml } = new Function('escapeXml', `var RESULT_NONE = "no saved result to show";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard, auditCheckRowHtml };`)(escapeXml);
   const { shapeResultModel } = await import('../src/shaperesult.js');
   const part = buildShapePart({ text: 't', fields: [{ name: 'title', spec: { kind: 'text', minChars: 1 }, rule: 1, by: 'you' }, { name: 'status', spec: { kind: 'oneOf', values: ['a', 'b'] }, rule: 2, by: 'you' }] });
@@ -204,11 +204,11 @@ test('the page draws the Result grid and the Audit shape rows as the signed mock
   assert.match(html, /<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors<\/div><div class="fx-lines"><div><span class="glyph-red">✗<\/span> item 2: status is &quot;done&quot;, not one of: a, b<\/div>/);
   assert.match(html, /<label>Not checked<\/label>.*whether each one is true — you judge it at Accept .*\$ \[default\]/);
   assert.match(shapeResultCard({ n: 1, kind: 'shape', shape: null, notChecked: [] }, {}, true), /<h4>Result · line 1<\/h4><div class="hint" data-testid="result-nofile">no saved result to show<\/div>/);
-  // Audit C: the shape row's reason is on its own line; any other row keeps the reason beside the state
-  const shapeRow = auditCheckRowHtml({ text: 'status · one of: a, b', by: 'you', result: 'failed', why: 'item 2: "status" is not one of the allowed values', shape: true });
-  assert.match(shapeRow, /^<div class="audit-check-row"[^>]*>› status · one of: a, b .*failed<\/b><\/span><div class="hint" data-testid="audit-check-why" style="margin-left:14px">— item 2: &quot;status&quot; is not one of the allowed values<\/div><\/div>$/);
-  const other = auditCheckRowHtml({ text: 'line 1 · fact · price', by: 'you', result: 'failed', why: 'x' });
-  assert.match(other, /failed<\/b><\/span> <span class="hint" data-testid="audit-check-why">— x<\/span><\/div>$/, 'other jobs\' rows are unchanged');
+  // the signed look: `[tag] shape words ... result`, the red reason on its own indented line under the row; every kind of row reads the same
+  const shapeRow = auditCheckRowHtml({ text: 'status · one of: a, b', by: 'you', kind: 'shape', result: 'failed', why: 'item 2: "status" is not one of the allowed values', shape: true });
+  assert.match(shapeRow, /^<div class="ck-row" data-testid="audit-check-row" data-result="failed"><span class="by tagcol" data-testid="plan-by" data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind">shape<\/span><span class="ck-t">status · one of: a, b<\/span><span class="ck-right">.*failed<\/b><\/span><\/span><div class="hint ck-under" data-testid="audit-check-why">item 2: &quot;status&quot; is not one of the allowed values<\/div><\/div>$/);
+  const other = auditCheckRowHtml({ text: 'fact · price', by: 'you', kind: 'truth', result: 'failed', why: 'x' });
+  assert.match(other, /truth<\/span><span class="ck-t">fact · price<\/span>.*failed<\/b>.*<div class="hint ck-under" data-testid="audit-check-why">x<\/div><\/div>$/, 'a truth row\'s red reason sits under it the same way');
 });
 
 test('the Audit model: shape rows without the `line N` prefix, the heading and the Suggested names, the truth row with no prefix and its $ tag', async () => {

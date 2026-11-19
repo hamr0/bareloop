@@ -79,3 +79,43 @@ test('the card (signed mock A): legend, summary, the line with its ~ rules, then
   assert.match(h, /<span class="ck-t">each item has a title <details class="ck-why" data-testid="ck-why"><summary>▸ why<\/summary><div class="hint">Code tried a quote check: &quot;Evaluate queue libraries/);
   assert.doesNotMatch(h, /Shape checks|other checks|Always checked/);
 });
+
+test('the Audit model (signed mock): one block per job line with its CHECKED and NOT CHECKED rows, kind words on every row, the job-level rows apart', () => {
+  const plan = planFromSpec(SPEC);
+  const results = new Map([['line-1', true], ['changed-from-seed', true]]);
+  const ac = auditChecksOf(plan, [], results, 0, true, null);
+  assert.equal(ac.lines.length, 1);
+  assert.equal(ac.lines[0].n, 1);
+  assert.equal(ac.lines[0].text, JOB[0].text);
+  const shape = ac.lines[0].checks.find((r) => r.kind === 'shape');
+  assert.ok(shape, JSON.stringify(ac.lines[0].checks));
+  assert.ok(!/^line 1 ·/.test(shape.text), 'no `line N ·` prefix: the block says which line');
+  assert.ok(ac.lines[0].checks.every((r) => r.kind === 'shape' || r.kind === 'truth' || r.kind === 'file'));
+  const nc = ac.lines[0].notChecked.find((r) => r.text === 'each item has a title');
+  assert.equal(nc?.result, 'not-checked');
+  assert.match(String(nc?.why), /^Code tried a quote check/);
+  assert.ok(ac.always.length > 0 && ac.always.every((r) => r.kind === 'file'), 'the guards and the write fence are file rows');
+  // the flat lists the Result tab reads are unchanged
+  assert.ok(ac.checks.every((r) => /^line 1 · |^[^l]/.test(r.text)));
+});
+
+test('the Audit page (signed mock): Line N and its text, CHECKED then NOT CHECKED, a failed row\'s reason indented under it, held at the right', () => {
+  const plan = planFromSpec(SPEC);
+  const shapeKey = String(plan.lines[0].checks.find((c) => c.shape)?.key);
+  const ac = auditChecksOf(plan, [], new Map([['line-1', false], ['changed-from-seed', true]]), 0, true, { results: new Map([[shapeKey, { result: 'failed', why: 'item 3: summary has 241 characters, the limit is 199' }]]), unclaimed: new Map() });
+  const doc = { createElement: () => { const el = /** @type {any} */ ({ children: [], innerHTML: '', setAttribute() {}, appendChild(/** @type {any} */ c) { this.children.push(c); }, addEventListener() {} }); return el; } };
+  const fns = ['escapeXml', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'ckGroupHtml', 'stateDotHTML', 'auditCheckRowHtml', 'auditCaret', 'glyphClass', 'auditChecksSignClass', 'auditChecksEl'];
+  const src = fns.map((n) => { try { return fnSrc(n); } catch { return ''; } }).filter(Boolean).join('\n');
+  const auditChecksEl = /** @type {any} */ (new Function('document', `${src}\nreturn auditChecksEl;`)(doc));
+  const wrap = auditChecksEl(ac);
+  const html = String(wrap.children[1].innerHTML);
+  assert.match(html, /<span class="lbl">Line 1<\/span> List every research item in the tracker, one entry each/);
+  const at = (/** @type {string} */ s) => html.indexOf(s);
+  assert.ok(at('>CHECKED ·') > 0 && at('>CHECKED ·') < at('>NOT CHECKED ·'), 'CHECKED above NOT CHECKED');
+  assert.match(html, /NOT CHECKED · \d+ · you judge these at Accept/);
+  assert.match(html, /data-by="you">\[you\]<\/span><span class="kind" data-testid="ck-kind">shape<\/span>[^]*failed<\/b>[^]*<div class="hint ck-under" data-testid="audit-check-why">item 3: summary has 241 characters, the limit is 199<\/div>/);
+  assert.match(html, /kind" data-testid="ck-kind">file<\/span><span class="ck-t">[^<]*<\/span><span class="ck-right">/, 'a file row\'s result sits at the right');
+  assert.match(page.auditCheckRowHtml({ text: 'only files in output/ changed', by: 'default', kind: 'file', result: 'held', word: 'held \u00B7 0 writes blocked' }), /file<\/span><span class="ck-t">only files in output\/ changed<\/span><span class="ck-right">.*held \u00B7 0 writes blocked<\/b>/);
+  assert.match(html, /each item has a title <details class="ck-why"/);
+  assert.doesNotMatch(html, /Always checked|Shape checks/);
+});

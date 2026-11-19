@@ -240,7 +240,7 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked] @param {boolean} [closeRan] the results are a CLOSE's (the latest), so a declared stage missing from them was not reached (the close stops at its first red); else a stage no verdict was recorded for reads none
  * @param {{results: Map<string, {result: string, why?: string}>, unclaimed: Map<number, string[]>}|null} [rowRes]
  * `loose` = the job-level rows with their `other · ` words, for the Result tab's reader only (not drawn on the Audit)
- * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[], shapeHead?: string, suggested?: {key: string, line: number, text: string}[]}}
+ * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[], loose: AuditRow[], lines: {n: number, text: string, checks: AuditRow[], notChecked: AuditRow[]}[], jobNotChecked: AuditRow[], shapeHead?: string, suggested?: {key: string, line: number, text: string}[]}}
  */
 export function auditChecksOf(plan, guards, results, blocked = null, closeRan = false, rowRes = null) {
   /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'|'not-reached'} */
@@ -248,7 +248,7 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
   /** @type {AuditRow[]} */
   const checks = [];
   /** one row: its own recorded result when there is one, else its stage's verdict @param {{by?: any, stage?: string, key?: string, fence?: true, shape?: true}} c @param {string} text @returns {AuditRow} */
-  const rowOf = (c, text) => {
+  const rowOf0 = (c, text) => {
     const shape = c.shape === true ? { shape: /** @type {const} */ (true) } : {};
     // the fence row reads the gate's own record of THIS run (never a stage verdict): held · N writes blocked, or the record is missing
     if (c.key === FENCE_KEY || c.fence === true) {
@@ -262,6 +262,8 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
     // `unread`: the line's file could not be read, so this row was not looked at: never passed, never failed
     return { text, by: c.by ?? null, result: own.result === 'passed' ? 'passed' : own.result === 'failed' ? 'failed' : 'none', ...(own.result === 'failed' && own.why ? { why: own.why } : {}), key: String(c.key), ...shape };
   };
+  /** @param {{by?: any, stage?: string, key?: string, fence?: true, shape?: true}} c @param {string} text @returns {AuditRow} */
+  const rowOf = (c, text) => ({ ...rowOf0(c, text), kind: kindOfCheck(c) });
   for (const l of plan.lines) {
     // a shape row reads `name · sentence` as the card does (signed mock C): no `line N ·` prefix, the heading above says what is checked
     for (const c of l.checks) checks.push(rowOf(c, c.shape === true ? c.name : `line ${l.n} · ${c.name}`));
@@ -291,6 +293,16 @@ export function auditChecksOf(plan, guards, results, blocked = null, closeRan = 
     }
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
   })];
-  for (const r of [...checks, ...loose, ...always]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
-  return { checks, notChecked, always, loose, ...(plan.shapeHead ? { shapeHead: plan.shapeHead } : {}), ...(Array.isArray(plan.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}) };
+  // the signed look (hamr 2026-11-19): one block per job line, each with its CHECKED rows (words without a `line N ·` prefix) and its NOT CHECKED rows; the job-level rows no line owns come apart
+  /** @param {NcRow} n @returns {AuditRow} */
+  const ncOf = (n) => ({ text: n.text, by: n.by ?? null, result: 'not-checked', ...(n.why ? { why: n.why } : {}) });
+  const ncRows = plan.ncRows ?? [];
+  const lineBlocks = plan.lines.map((l) => ({
+    n: l.n, text: l.text,
+    checks: [...l.checks.map((c) => rowOf(c, c.name)), ...(rowRes?.unclaimed.get(l.n) ?? []).map((u) => /** @type {AuditRow} */ ({ text: u, by: null, result: 'failed', kind: 'truth' }))],
+    notChecked: ncRows.filter((n) => n.line === l.n).map(ncOf),
+  }));
+  const jobNotChecked = ncRows.filter((n) => n.line === 0).map(ncOf);
+  for (const r of [...checks, ...loose, ...always, ...lineBlocks.flatMap((b) => b.checks)]) if (r.result === 'not-reached') r.word = NOT_REACHED.word;
+  return { checks, notChecked, always: always.map((r) => ({ kind: /** @type {'file'} */ ('file'), ...r })), loose, lines: lineBlocks, jobNotChecked, ...(plan.shapeHead ? { shapeHead: plan.shapeHead } : {}), ...(Array.isArray(plan.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}) };
 }
