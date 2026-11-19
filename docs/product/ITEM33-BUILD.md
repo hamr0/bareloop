@@ -5248,3 +5248,15 @@ Rulings (hamr 2026-11-19):
 POC 1 (number-then-marker prices, `.claude/scratch/marker-after-poc/`, $0) ran: its premise was stale, today's code already reads both forms (Airbnb 24/24, Dell 16/16; `src/pagerules.js:360-364`, `src/pagedry.js:52-86`, F251), nothing to build. Why those two rules were Not checked in the scope harness's block A is unexplained and under investigation (the harness's "today" block may not be the full draft path; F365). Still to do: a round-3 re-run of scope patients 3, 4 and 6 plus the controls (prereg'd first, paid, DeepSeek flash).
 
 Status: rulings given, being built.
+
+### Scope rounds 3-5 (2026-11-19)
+
+Three more scope rounds on the shape look, each with a frozen prereg and a results file under `.claude/scratch/shape-scope/round3/`, `round4/`, `round5/` (scratch, not committed; DeepSeek direct, deepseek-flash). Block A is the page-map look plus code only (no row-edit turn, asks off), so the gains below are over that baseline, not over a full draft.
+
+Round 3 FAIL ($0.00761). The tracker rule "each item has a title" stayed Not checked: the AI gave a `title` field as required with no `minChars`, so code refused it as bound-less. The prompt never said that "has a title" means required plus `minChars 1`, and it ordered "give a field for each rule". The refused rule also showed the generic no-rule reason instead of NO_BOUND_WHY. hamr read the whole injected text; the fix was a whole-text rewrite (a field only when the rule's own words give a limit, "has a title" = `minChars 1`, a boolean equals true only), commits 0c38f64a and fe41ed14.
+
+Round 4 FAIL ($0.00756). Every product bar was met. The FAIL came from the scorer: it counted a rule already checked by a fact (resume L1.~2) whose extra shape field was refused. The rewrite had also dropped "for no other rule". Commit 0e1ae774 restores that wording, and the round 5 scorer counts only rules still Not checked.
+
+Round 5 PASS ($0.00847). 0 losses of 3 patients, 0 bound-less, 0 negated, both controls shaped, tracker 3 of 3 checked, 0 wrong why. Dell and Airbnb now carry a real euro price shape. n=5 is UNDERPOWERED.
+
+Order kept (hamr 2026-11-19): the code truth check first, the shape look only for rules code left Not checked, Not checked only after the shape also fails; one list.

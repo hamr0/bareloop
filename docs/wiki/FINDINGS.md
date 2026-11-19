@@ -16618,3 +16618,12 @@ Round 2 left a gap: the AI wrote nonstop as oneOf [true], so the box checked pre
 **Reading-derived, not built (PRD section 8a).** `moneyResultLines` has no whole-word edge on markers ("3 USD1", "5 EUROPEAN" read a number from inside a word; `src/pagedry.js:71-78`), and "EUR 17.86" (code before the number) is not read. No real page holds either; a bareguard ask if ever wanted.
 
 **Stale doc.** `docs/product/PRD.md:2085` ("page rules read label-then-number only, so these are unreadable") is stale: marker-after forms ARE built (F251).
+
+### F366: A prompt that orders "a field for each rule" while code refuses bound-less fields fails the draft (2026-11-19, $0.00761)
+Scope round 3 (`.claude/scratch/shape-scope/round3/results.md`): the tracker rule "each item has a title" ended Not checked; the AI proposed `title` required with no `minChars`, code refused it for no bound, and the card showed the generic no-rule reason instead of NO_BOUND_WHY. The prompt never told the AI the rule the code applies ("has a title" = required + `minChars 1`). Lesson: tell the AI the rule the code will apply, and never order output the code then refuses. Fixed in 0c38f64a and fe41ed14; passed in round 5.
+
+### F367: A scorer that does not ask whether a rule is already checked elsewhere mints a false FAIL (2026-11-19, $0.00756)
+Scope round 4 (`.claude/scratch/shape-scope/round4/results.md`): every product bar held, but the scorer counted resume L1.~2, already checked by a fact, whose extra shape field was refused. Round 5 (`round5/results.md`) counts only rules still Not checked and prints round 4's count as info (1 row vs 0).
+
+### F368: A whole-text rewrite can silently drop a needed limit; re-read the whole text after one (2026-11-19)
+The round 3 rewrite of the shape look prompt dropped "for no other rule", which round 4 exposed (`.claude/scratch/shape-scope/round4/results.md`). Restored in 0e1ae774. After any whole-text rewrite, diff old against new for each limit sentence.
