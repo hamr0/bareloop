@@ -26,9 +26,9 @@ import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guard
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true, kind?: 'truth'|'shape'|'file'}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, ncRows?: NcRow[]}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, restorable?: {key: string, line: number, text: string}[], ncRows?: NcRow[]}} JobPlan */
 /** a Not checked row of the signed look (hamr 2026-11-19): `line` 0 = no one line owns it, `why` = the code-owned reason, drawn behind "why" */
-/** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default'}} NcRow */
+/** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default', addBack?: string}} NcRow */
 
 /** the kind word of a check row (hamr 2026-11-19, signed list look): `shape` = code checks the form of the items, `file` = code checks the files (the write fence, a guard, a line's output-file floor, a rule the fence keeps), `truth` = every other check @param {{key?: string, shape?: true, fence?: true}} c @returns {'truth'|'shape'|'file'} */
 export function kindOfCheck(c) {
@@ -61,6 +61,11 @@ function finishPlan(plan) {
     add(0, r);
   }
   const withKind = (/** @type {PlanCheck} */ c) => ({ ...c, kind: kindOfCheck(c) });
+  // a rule the person dropped (confirm card only): its Not checked row carries the key the Add back button posts
+  for (const x of plan.restorable ?? []) {
+    const n = ncRows.find((r) => r.addBack === undefined && r.text === x.text && (r.line === x.line || r.line === 0));
+    if (n) n.addBack = x.key;
+  }
   return { ...plan, lines: plan.lines.map((l) => ({ ...l, checks: l.checks.map(withKind) })), loose: plan.loose.map(withKind), ncRows };
 }
 
@@ -195,7 +200,7 @@ export function planFromSpec(spec, ledger = null) {
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], restorable?: {key: string, line: number, text: string}[], editable?: boolean}} plan
  * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
@@ -228,6 +233,7 @@ export function planFromConfirm(jobLines, plan) {
     ...(plan?.notCheckedBy && typeof plan.notCheckedBy === 'object' && Object.keys(plan.notCheckedBy).length ? { notCheckedBy: plan.notCheckedBy } : {}),
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),
+    ...(Array.isArray(plan?.restorable) && plan.restorable.length ? { restorable: plan.restorable } : {}),
   });
 }
 

@@ -1214,6 +1214,11 @@ export class CheckBlock {
     return [...rows, ...this.guards.map((name) => ({ line: 0, key: guardKeyOf(name), from: 'default', by: 'default', kind: 'guard', state: 'built' })), ...(this.fence ? [{ line: 0, key: FENCE_KEY, from: 'default', by: 'default', kind: 'fence', state: 'built' }] : [])];
   }
 
+  /** the `[you]` rule rows the person dropped (Not checked, "You dropped it."): the card gives each an Add back button @returns {{key: string, line: number, text: string}[]} */
+  droppedRulesView() {
+    return this.rows.filter((r) => r.kind === 'rule' && this.shapeDrops.rules.has(`${r.line}:${r.rule}`)).map((r) => ({ key: r.key, line: r.line, text: String(r.text ?? '') }));
+  }
+
   /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */
   suggestedView() {
     return this.rows.filter((r) => r.state === 'suggested' && r.offer?.text).map((r) => ({ key: r.key, line: r.line, text: String(r.offer.text), ...(r.choice === 'drop' ? { dropped: true } : {}) }));
@@ -1235,12 +1240,18 @@ export class CheckBlock {
     if (!r) return { ok: false, why: 'there is no such check on the list' };
     // a rule's own shape field (rules first: the rule had no truth check) can be dropped: that rule goes Not checked; to get it back, Revise
     if (r.kind === 'rule' && r.can?.how === 'shape') {
-      if (choice !== 'drop') return { ok: false, why: 'a dropped shape check is brought back by Revise' };
+      if (choice !== 'drop') return { ok: false, why: 'that check is already on the card' };
       this.shapeDrops.rules.add(`${r.line}:${r.rule}`);
       this.reconcile();
       return { ok: true };
     }
-    if (r.kind === 'rule' && this.shapeDrops.rules.has(`${r.line}:${r.rule}`)) return { ok: false, why: 'a dropped shape check is brought back by Revise' };
+    if (r.kind === 'rule' && this.shapeDrops.rules.has(`${r.line}:${r.rule}`)) {
+      // Add back: the inverse of the Drop above; the rule is judged again by code, so it returns to its own row (Checked) exactly as before the drop
+      if (choice !== 'add') return { ok: false, why: 'that check is already dropped' };
+      this.shapeDrops.rules.delete(`${r.line}:${r.rule}`);
+      this.reconcile();
+      return { ok: true };
+    }
     if (r.by === 'you') return { ok: false, why: 'that check comes from a rule you wrote; edit the job to change it' };
     if (r.by !== 'agent' || !this.droppable(r)) return { ok: false, why: 'that check is code\'s own and stays' };
     if (choice !== 'drop' && choice !== 'add') return { ok: false, why: 'not one of the choices' };

@@ -132,16 +132,14 @@ test('Drop and Add on an [agent] field cost no AI; a Dropped field is offered un
   assert.ok(parts(b)[0].fields.some((/** @type {any} */ x) => x.name === 'duration'));
 });
 
-test('Drop on a rule\'s OWN shape row ([you]): that rule goes Not checked ("You dropped it."), its field leaves the shape; Add is refused (Revise brings it back); the Drop is kept for a Revise by line words and rule number', () => {
+test('Drop on a rule\'s OWN shape row ([you]): that rule goes Not checked ("You dropped it."), its field leaves the shape; Add back is in tests/shape-add-back.test.js; the Drop is kept for a Revise by line words and rule number', () => {
   const b = blockOf();
   assert.deepEqual(b.rowChoice('L1.~2', 'drop'), { ok: true });
   assert.equal(row(b, 'L1.~2')?.state, 'not-checked');
   assert.equal(row(b, 'L1.~2')?.reason, REASON.dropped);
   assert.ok(!parts(b)[0].fields.some((/** @type {any} */ x) => x.name === 'matching'));
   assert.deepEqual(parts(b)[0].rules, [1, 3]);
-  assert.equal(b.rowChoice('L1.~2', 'add').ok, false);
-  assert.match(String(/** @type {any} */ (b.rowChoice('L1.~2', 'add')).why), /Revise/);
-  assert.equal(b.rowChoice('L1.~3', 'add').ok, false);
+  assert.equal(b.rowChoice('L1.~3', 'add').ok, false, 'a rule that was not dropped has nothing to add back');
   const rec = b.shapeDroppedRecord();
   assert.deepEqual(rec.map((r) => r.rule), [2]);
   const fresh = blockOf();

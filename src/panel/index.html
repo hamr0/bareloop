@@ -4225,7 +4225,7 @@
       var drop = c.shape ? (ctl && c.by !== "default" && c.key ? ctl("drop", c.key) : "") : (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "");
       return ckRowHtml({ by: c.by, kind: kind, text: c.name, right: drop, title: c.cls || "", attrs: c.shape ? ' data-shape="1"' : "" });
     };
-    var ncRow = function(r){ return ckRowHtml({ by: r.by, text: r.text, why: r.why, testid: "plan-refused" }); };
+    var ncRow = function(r){ return ckRowHtml({ by: r.by, text: r.text, why: r.why, testid: "plan-refused", right: ctl && r.addBack ? ctl("add", r.addBack, "Add back") : "" }); };
     var suggRow = function(x){
       return ckRowHtml({ by: "agent", kind: /\.shape\./.test(x.key) ? "shape" : "truth", text: x.text + (x.dropped ? " (you dropped it)" : ""), right: ctl ? ctl("add", x.key) : "", testid: "plan-suggest-row" });
     };
@@ -6175,8 +6175,8 @@
     // the thread is redrawn only when its messages changed: a 2 s poll tick must not close a fold the person just opened
     var lastMsgSig = null;
     // the confirm card's Drop / Add button (N-2): a typed row edit, instant and $0; the click is handled once on the thread
-    function planControlHTML(op, key){
-      return ' <button type="button" class="btn jp-btn" data-testid="plan-' + op + '" data-rowop="' + op + '" data-rowkey="' + escapeXml(key) + '">' + (op === "add" ? "Add" : "Drop") + "</button>";
+    function planControlHTML(op, key, label){
+      return ' <button type="button" class="btn jp-btn" data-testid="plan-' + op + '" data-rowop="' + op + '" data-rowkey="' + escapeXml(key) + '">' + (label || (op === "add" ? "Add" : "Drop")) + "</button>";
     }
     // the draft readout is plain text; the server names which lines are headings (src/authorreadout.js readoutHeadIndexes), drawn bold
     function readoutHtml(r){
