@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CheckBlock, REASON } from '../src/checkblock.js';
-import { buildShapes, NO_BOUND_WHY } from '../src/shapebuild.js';
+import { buildShapes } from '../src/shapebuild.js';
 import { SHAPE_TRUTH_WORDS } from '../src/shaperows.js';
 import { questionsOfBlock, applyChoices } from '../src/blockasks.js';
 import { cardOfClose, listMatchesClose } from '../src/rubricstep.js';
@@ -219,23 +219,6 @@ test('REAL flight-nononstop1 raw shape (scope round 2): a rule code marks negati
   assert.equal(b.takesShape(/** @type {any} */ (rule(2))), null, 'not a red-eye stays with the person');
   assert.equal(b.takesShape(/** @type {any} */ (rule(3))), null, 'no nonstop must not become nonstop equals false');
   assert.deepEqual(b.shapeCandidates().map((x) => x.rule).filter((n) => n > 1), [], 'a negating rule is never asked of the shape look');
-});
-
-// shape-scope round 3 (real raw answer, tests/fixtures/shape-scope/round3-tracker.json): the AI gave `title` required with NO minChars; code refuses the bound-less field and the row must SAY so (NO_BOUND_WHY), not the truth check's generic "No rule can check this"
-test('a rule whose picked field has no limit shows NO_BOUND_WHY, not the generic noRule reason (round 3 tracker)', () => {
-  const fx = JSON.parse(readFileSync(new URL('./fixtures/shape-scope/round3-tracker.json', import.meta.url), 'utf8'));
-  const lines = fx.jobLines;
-  const b = new CheckBlock({ texts: { tracker: 'x' }, labels: ['tracker'], asks: false, split: true });
-  b.fromJob(lines);
-  b.setGuards(['changed-from-seed'], ['output/']);
-  b.reconcile();
-  b.setShape(buildShapes({ lines, labels: ['tracker'], suggestions: JSON.parse(fx.rawShape).shapes, nameRules: NR }));
-  b.reconcile();
-  const r1 = row(b, 'L1.~1');
-  assert.equal(r1?.state, 'not-checked');
-  assert.equal(r1?.can?.why, NO_BOUND_WHY);
-  assert.notEqual(r1?.can?.why, REASON.noRule);
-  assert.equal(row(b, 'L1.~3')?.can?.how, 'shape', 'the rule with a real bound still takes its field');
 });
 
 // LIVE run mwnbs3np (research-2, 2026-11-19): the look tied "each item has a title" and "status is one of ..." to phrase facts; the job's 4-result count made code refuse both when it BUILT them. Both rules ended Not checked

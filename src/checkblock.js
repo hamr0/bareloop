@@ -23,7 +23,7 @@ import { buildSheetPart } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { sheetCheckName, sheetPlainText, coversWords, sheetCheckBody, sheetRowKey, sheetDefaultKey } from './sheetrows.js';
 import { shapeRowKey, shapeDefaultKey, shapeFieldText, buildShapePart, SHAPE_TRUTH_WORDS } from './shaperows.js';
-import { fieldSpec, NO_BOUND_WHY } from './shapebuild.js';
+import { fieldSpec } from './shapebuild.js';
 
 /**
  * A row. `kind`: rule, fact, phrase, count, cited, numbers, floor. `by`: you (`~`), agent (`!`), default (`$`). A `~` row may carry `links` (the look's facts tied to it),
@@ -206,13 +206,6 @@ export class CheckBlock {
     for (const r of this.rows) {
       if (r.kind === 'shape' && r.by === 'agent' && r.choice === 'drop' && r.field?.name !== undefined) this.shapeDrops.agent.add(`${r.line}:${r.field.name}`);
     }
-  }
-
-  /** The no-limit refusal of the field picked for this rule (src/shapebuild.js `NO_BOUND_WHY`), or null: only a rule that could take a shape at all (not a sheet/repo job, not negating) and whose shape row stayed Not checked for that reason @param {Row} r @returns {string|null} */
-  takesShapeRefusal(r) {
-    if (this.repo !== null || r.kind !== 'rule' || this.isSheetLine(r.line) || NEGATING_RE.test(String(r.text))) return null;
-    const rs = this.shapeBuilt?.built[r.line]?.rows.find((x) => x.rule === r.rule && x.text === r.text);
-    return rs && rs.state === 'not-checked' && rs.reason === NO_BOUND_WHY ? NO_BOUND_WHY : null;
   }
 
   /**
@@ -451,12 +444,7 @@ export class CheckBlock {
     // a truth check code picked but REFUSED when it built the line (live mwnbs3np: 4 results, a title said once) is no check: the rule is still Not checked, so it may take its shape field (hamr: shape for what code could not check)
     if (r.can?.ask || (r.can?.ok && !r.truthRefused)) return;
     const sh = this.takesShape(r);
-    if (sh === null) {
-      // a field the AI picked for this rule but code refused for having no limit from the rule's own words: say so (the truth check's generic reason is not the cause); every other refusal keeps today's reason
-      const refused = this.takesShapeRefusal(r);
-      if (refused !== null) r.can = { ok: false, why: refused };
-      return;
-    }
+    if (sh === null) return;
     r.can = this.shapeDrops.rules.has(`${r.line}:${r.rule}`) ? { ok: false, why: REASON.dropped } : { ok: true, how: 'shape', name: sh.name };
   }
 
