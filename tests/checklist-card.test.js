@@ -44,9 +44,9 @@ function fnSrc(name) {
 }
 
 test('A11 renderJobPlan draws [default] with the same markup as the other two marks', () => {
-  const { renderJobPlan } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)();
+  const { renderJobPlan } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)();
   const html = renderJobPlan(planFromSpec(spec));
-  assert.match(html, /<span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span>/);
+  assert.match(html, /<span class="by tagcol" data-testid="plan-by" data-by="default">\[default\]<\/span>/);
   assert.equal((html.match(/\[default\]/g) ?? []).length, 2);
-  assert.match(html, /data-by="agent">! \[agent\]<\/span>/);
+  assert.match(html, /data-by="agent">\[agent\]<\/span>/);
 });

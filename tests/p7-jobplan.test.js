@@ -38,8 +38,8 @@ test('planFromSpec: each stage lands under the job line it names; stages with no
   const p = planFromSpec(NEW_SPEC);
   assert.equal(p.older, false);
   assert.deepEqual(p.lines.map((l) => [l.n, l.text, l.rule, l.checks, l.refused]), [
-    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge', by: 'agent', stage: 'flights-found' }], []],
-    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check', by: 'agent', stage: 'sorted-by-price' }], []],
+    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge', by: 'agent', stage: 'flights-found', kind: 'truth' }], []],
+    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check', by: 'agent', stage: 'sorted-by-price', kind: 'truth' }], []],
     [3, 'Write a table', '', [], ['no command can check a table layout']],
   ]);
   assert.deepEqual(p.alwaysOn, ['changed-from-seed']);
@@ -67,7 +67,7 @@ test('planFromSpec: an OLDER spec shows the signed goal as line 1 and every stag
   assert.deepEqual(p.alwaysOn, []);
   // a command-close (array) spec reads as machine checks
   const cmd = planFromSpec({ goal: 'g', close: [{ name: 'suite-green', cmd: 'npm test', expect: 0 }] });
-  assert.deepEqual(cmd.lines[0].checks, [{ name: 'suite-green', cls: 'machine check' }]);
+  assert.deepEqual(cmd.lines[0].checks, [{ name: 'suite-green', cls: 'machine check', kind: 'truth' }]);
 });
 
 test('planFromConfirm: the person\'s lines, the model\'s checks under the line each names (class not known yet), the real protections as Always checked', () => {
@@ -75,8 +75,8 @@ test('planFromConfirm: the person\'s lines, the model\'s checks under the line e
     [{ n: 1, text: 'Fix it', rule: '' }, { n: 2, text: 'Run tests', rule: 'quiet' }],
     { checkItems: [{ text: 'tsc clean', fromLine: [1] }, { text: 'tests pass', fromLine: [2] }, { text: 'stray', fromLine: [9] }], notChecked: ['style'], protections: ['no-suppressions'] },
   );
-  assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null, by: 'agent' }], [{ name: 'tests pass', cls: null, by: 'agent' }]]);
-  assert.deepEqual(p.loose, [{ name: 'stray', cls: null, by: 'agent' }]);
+  assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null, by: 'agent', kind: 'truth' }], [{ name: 'tests pass', cls: null, by: 'agent', kind: 'truth' }]]);
+  assert.deepEqual(p.loose, [{ name: 'stray', cls: null, by: 'agent', kind: 'truth' }]);
   assert.deepEqual([p.notChecked, p.alwaysOn], [['style'], ['no-suppressions']]);
   assert.equal(checkClassOfKind('human-confirms'), 'judge');
   assert.equal(checkClassOfKind('command-exit'), 'machine check');

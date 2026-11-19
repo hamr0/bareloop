@@ -22,11 +22,42 @@ import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guard
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
-/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string, shape?: true}} AuditRow */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-reached'|'not-checked'|'held'|'record-missing', word?: string, key?: string, why?: string, shape?: true, kind?: 'truth'|'shape'|'file'}} AuditRow */
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true}} PlanCheck */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true, kind?: 'truth'|'shape'|'file'}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, ncRows?: NcRow[]}} JobPlan */
+/** a Not checked row of the signed look (hamr 2026-11-19): `line` 0 = no one line owns it, `why` = the code-owned reason, drawn behind "why" */
+/** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default'}} NcRow */
+
+/** the kind word of a check row (hamr 2026-11-19, signed list look): `shape` = code checks the form of the items, `file` = code checks the files (the write fence, a guard, a rule the fence keeps), `truth` = every other check @param {{key?: string, shape?: true, fence?: true}} c @returns {'truth'|'shape'|'file'} */
+export function kindOfCheck(c) {
+  if (c.shape === true) return 'shape';
+  if (c.fence === true || c.key === FENCE_KEY || (typeof c.key === 'string' && c.key.startsWith('J.$guard.'))) return 'file';
+  return 'truth';
+}
+
+/** a Not checked text `head — reason` split into the row and the reason behind "why"; the quotes round a rule go; "you judge it at Accept" is the group title's, not a reason @param {string} raw @returns {{text: string, why?: string}} */
+export function splitNotChecked(raw) {
+  const i = raw.indexOf(' \u2014 ');
+  if (i < 0) return { text: raw };
+  const text = raw.slice(0, i).replace(/^"([\s\S]*)"$/, '$1');
+  const why = raw.slice(i + 3);
+  return why === 'you judge it at Accept' ? { text } : { text, why };
+}
+
+/** the one model both views read: every check carries its kind word and the Not checked rows come split (line, row, why, tag) @param {JobPlan} plan @returns {JobPlan} */
+function finishPlan(plan) {
+  const by = plan.notCheckedBy ?? {};
+  /** @type {NcRow[]} */
+  const ncRows = [];
+  /** @param {number} line @param {string} raw */
+  const add = (line, raw) => ncRows.push({ line, ...splitNotChecked(raw), ...(by[raw] ? { by: by[raw] } : {}) });
+  for (const l of plan.lines) for (const r of l.refused) add(l.n, r);
+  for (const r of plan.notChecked) add(0, r);
+  const withKind = (/** @type {PlanCheck} */ c) => ({ ...c, kind: kindOfCheck(c) });
+  return { ...plan, lines: plan.lines.map((l) => ({ ...l, checks: l.checks.map(withKind) })), loose: plan.loose.map(withKind), ncRows };
+}
 
 /** the one heading of a shape line's rows, code's words, only when some line has a shape row (hamr 2026-11-18) @param {PlanLine[]} lines @returns {{shapeHead?: string}} */
 function shapeHeadPart(lines) {
@@ -92,13 +123,13 @@ export function planFromSpec(spec, ledger = null) {
   const { notChecked: notes, readNotes } = splitReadNotes(allNotes, signedFactNames(spec?.closeDecl));
   const jl = Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string') : [];
   if (jl.length === 0) {
-    return {
+    return finishPlan({
       lines: [{
         n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '', rules: [],
         checks: stages.map((s) => ({ name: s.name, cls: s.cls })), refused: [],
       }],
       loose: [], notChecked: notes, readNotes, alwaysOn: [], older: true, ...filterPart(spec?.ticketFilter),
-    };
+    });
   }
   /** @type {PlanLine[]} */
   const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', rules: lineRules(l), checks: [], refused: [] }));
@@ -152,7 +183,7 @@ export function planFromSpec(spec, ledger = null) {
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) };
+  return finishPlan({ lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) });
 }
 
 /**
@@ -187,12 +218,12 @@ export function planFromConfirm(jobLines, plan) {
     const line = lines.find((l) => l.n === x?.line);
     if (line && typeof x.text === 'string') (line.picked ??= []).push(x.text);
   }
-  return {
+  return finishPlan({
     lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...shapeHeadPart(lines), ...filterPart(plan?.ticketFilter),
     ...(plan?.notCheckedBy && typeof plan.notCheckedBy === 'object' && Object.keys(plan.notCheckedBy).length ? { notCheckedBy: plan.notCheckedBy } : {}),
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),
-  };
+  });
 }
 
 /** the words of a row the run recorded no verdict for: never "passed" */

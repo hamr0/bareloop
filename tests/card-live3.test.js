@@ -65,12 +65,13 @@ function fnSrc(/** @type {string} */ name) {
 }
 const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // eslint-disable-next-line no-new-func
-const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
+const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
 
-test('3: the Always checked rows (and a guard under a line) carry the [default] tag, the same markup as the other tags', () => {
+test('3: the always-on guards are [default] file rows of CHECKED (the same tag markup as the other rows), under the line and beside it', () => {
   const h = renderJobPlan({ lines: [{ n: 1, text: 'a', checks: [], always: ['changed-from-seed'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: ['no-suppressions', 'changed-from-seed'], older: false });
-  assert.equal((h.match(/<span class="by" data-testid="plan-by" data-by="default">\$ \[default\]<\/span>/g) ?? []).length, 3, h);
-  assert.match(h, /plan-alwayson"><summary>Always checked · 2<\/summary><ul><li>no-suppressions <span class="by"[^>]*data-by="default">/);
+  assert.equal((h.match(/<span class="by tagcol" data-testid="plan-by" data-by="default">\[default\]<\/span><span class="kind" data-testid="ck-kind">file<\/span>/g) ?? []).length, 3, h);
+  assert.match(h, /<div class="ck-h">CHECKED \u00B7 3<\/div>/);
+  assert.doesNotMatch(h, /Always checked/);
 });
 
 test('1: the section headings (Suggested, Not checked, How the page was read, Always checked) are bold', () => {

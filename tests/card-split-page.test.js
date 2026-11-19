@@ -20,7 +20,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const page = () => new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)(escapeXml);
+const page = () => new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)(escapeXml);
 const ctl = (op, key) => ` <button type="button" class="btn jp-btn" data-rowop="${op}" data-rowkey="${escapeXml(key)}">${op === 'add' ? 'Add' : 'Drop'}</button>`;
 
 async function confirmPlan(/** @type {'A'|'B'} */ which) {
@@ -37,14 +37,14 @@ test('draft A, the signed preview: [agent] rows carry Drop, [you] rows none, Non
   assert.match(rowOf(/fact · price/), /\[you\]/); assert.doesNotMatch(rowOf(/fact · price/), /<button/);
   assert.match(rowOf(/fact · departure time/), /\[you\]/); assert.doesNotMatch(rowOf(/fact · departure time/), /<button/);
   for (const re of [/fact · origin/, /fact · destination/, /fact · results/]) { assert.match(rowOf(re), /\[agent\]/, String(re)); assert.match(rowOf(re), /data-rowop="drop" data-rowkey="L1\./, String(re)); }
-  assert.match(h, /Suggested · not in your job, not checked unless you add it/);
+  assert.match(h, /SUGGESTED \u00B7 add if you want it/);
   const sug = h.slice(h.indexOf('plan-suggested'));
   assert.match(sug, /must say &quot;Nonstop&quot;[^]*data-rowop="add" data-rowkey="L1\.phrase\.nonstop"/);
-  assert.match(h, /<summary>Not checked · \d/);
+  assert.match(h, /NOT CHECKED \u00B7 \d+ \u00B7 you judge these at Accept/);
   // (this saved draft's close has no guard rows: an older close keeps today's Not checked row)
-  assert.match(h, /every claim quotes its input[^<]*<span class="by"[^>]*data-by="default">\$ \[default\]/);
-  // the section sits between the lines and the Not checked fold
-  assert.ok(h.indexOf('plan-suggested') > h.indexOf('fact · results') && h.indexOf('plan-suggested') < h.indexOf('plan-notchecked'));
+  assert.match(h, /data-by="default">\[default\]<\/span><span class="kind" data-testid="ck-kind"><\/span><span class="ck-t">[^<]*every claim quotes its input/);
+  // the signed look's order: CHECKED, NOT CHECKED, SUGGESTED
+  assert.ok(h.indexOf('plan-checked') < h.indexOf('plan-notchecked') && h.indexOf('plan-notchecked') < h.indexOf('plan-suggested'));
 });
 
 test('without controls (the Job tab, the signed card) the same plan draws no button; and a plan with nothing suggested has no Suggested section', async () => {
