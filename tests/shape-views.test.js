@@ -125,7 +125,7 @@ test('the view model (signed mock A and D): marks per cell from the item reds, s
   assert.deepEqual(m.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
   assert.deepEqual([m.total, m.passed, m.failed], [4, 2, 2]);
   assert.equal(m.rows[2].name, '3 \u00B7 Field survey');
-  assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: '' }, { mark: 'r', text: 'done' }, { mark: 'g', text: '120 chars' }]);
+  assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: '' }, { mark: 'r', text: 'done', why: 'is "done", not one of: in progress, closed, finished' }, { mark: 'g', text: '120 chars' }]);
   assert.deepEqual(m.rows[3].cells.map((c) => c.mark + c.text), ['g', 'gfinished', 'r236 chars']);
   assert.deepEqual(m.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);
   assert.match(shapeMarkdown(m), /\| 3 \u00b7 Field survey \| \u2713 \| \u2717 done \| \u2713 120 chars \|\n/);
@@ -189,7 +189,7 @@ test('the page draws the Result grid and the Audit shape rows as the signed mock
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'resultField', 'resultNotChecked', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
   const { shapeResultCard, auditCheckRowHtml } = new Function('escapeXml', `var RESULT_NONE = "no saved result to show";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard, auditCheckRowHtml };`)(escapeXml);
   const { shapeResultModel } = await import('../src/shaperesult.js');
   const part = buildShapePart({ text: 't', fields: [{ name: 'title', spec: { kind: 'text', minChars: 1 }, rule: 1, by: 'you' }, { name: 'status', spec: { kind: 'oneOf', values: ['a', 'b'] }, rule: 2, by: 'you' }] });
@@ -222,4 +222,33 @@ test('the Audit model: shape rows without the `line N` prefix, the heading and t
   assert.deepEqual(ac.suggested, [{ key: 'L2.shape.owner', line: 2, text: 'owner' }]);
   const truth = ac.notChecked.find((r) => r.text === SHAPE_TRUTH_WORDS);
   assert.deepEqual([truth?.by, truth?.result], ['default', 'not-checked']);
+});
+
+test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a failed item open with its field line and red reason; 4 fields stay the grid (A1)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
+  const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
+  const { shapeResultCard } = new Function('escapeXml', `var RESULT_NONE = "x";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard };`)(escapeXml);
+  const { shapeResultModel, SHAPE_FOLD_MIN } = await import('../src/shaperesult.js');
+  assert.equal(SHAPE_FOLD_MIN, 5);
+  const mk = (/** @type {number} */ n) => {
+    const fields = Array.from({ length: n }, (_v, k) => ({ name: k === 0 ? 'title' : `f${k}`, spec: k === 0 ? { kind: 'text', minChars: 1 } : { kind: 'text', maxChars: 9 }, rule: 1, by: 'you' }));
+    const ok = Object.fromEntries(fields.map((f) => [f.name, 'abc']));
+    const bad = { ...ok, f1: 'x'.repeat(30) };
+    return shapeResultModel({ part: buildShapePart({ text: 't', fields }), results: [ok, bad], reds: ['#1:f1:too-long:chars:30>9'], rules: ['t'] });
+  };
+  const draw = (/** @type {any} */ m) => shapeResultCard({ n: 1, kind: 'shape', shape: m, notChecked: [] }, { job: 'j', runNo: 1, runid: 'x' }, false);
+  const five = draw(mk(5));
+  assert.match(five, /data-testid="shape-fold"/);
+  assert.doesNotMatch(five, /data-testid="shape-grid"/);
+  assert.match(five, /<b>2<\/b> items · <b>1<\/b> passed · <b>1<\/b> failed/);
+  assert.match(five, /<details class="sf-item" data-testid="shape-item"><summary>.*?1 · abc.*?5 of 5/);
+  assert.match(five, /<details class="sf-item bad" data-testid="shape-item" open><summary>.*?4 of 5/);
+  assert.match(five, /data-result="failed"><span class="k">f1<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">30 chars <span class="why">· is too long/);
+  const four = draw(mk(4));
+  assert.match(four, /data-testid="shape-grid"/);
+  assert.doesNotMatch(four, /shape-fold|<details/);
 });

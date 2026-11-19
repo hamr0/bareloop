@@ -7,6 +7,8 @@ import { shapeFieldSentence, upper, SHAPE_HEAD_PARTS, SHAPE_TRUTH_PARTS } from '
 import { parseShapeItem, itemFieldOf, plainShapeItem } from './shapewords.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** a shape line with this many fields or more reads as one folded row per item (the Result tab's A2), fewer stay the grid (A1) */
+export const SHAPE_FOLD_MIN = 5;
 const clip = (/** @type {string} */ t, n = 40) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
 /** the column's short sub-label (the mock): `not empty`, `one of 3`, `under 200`, else the field's sentence @param {Record<string, any>} spec @param {string} said the person's rule for the field @returns {string} */
@@ -51,7 +53,7 @@ export function shapeViewRed(red, field, value, said) {
 /**
  * The model of a shape line's answer.
  * @param {{part: any, results: unknown, reds?: string[], rules?: string[]}} o `part` the signed shape part; `results` the answer's `results` list; `reds` the item reds the close recorded (`#<i>:<path>:<reason>`, none for a green run); `rules` the line's `~` rules
- * @returns {{columns: {name: string, hint: string}[], rows: {name: string, cells: {mark: 'g'|'r', text: string}[]}[], total: number, passed: number, failed: number, errors: string[], notChecked: string, head: string}}
+ * @returns {{columns: {name: string, hint: string}[], rows: {name: string, cells: {mark: 'g'|'r', text: string, why?: string}[]}[], fold: boolean, total: number, passed: number, failed: number, errors: string[], notChecked: string, head: string}}
  */
 export function shapeResultModel({ part, results, reds = [], rules = [] }) {
   const fields = (Array.isArray(part?.fields) ? part.fields : []).filter(isRec);
@@ -66,16 +68,18 @@ export function shapeResultModel({ part, results, reds = [], rules = [] }) {
     const whole = mine.some((x) => itemFieldOf(x) === null && !String(x).includes(':unknown-field:'));
     const val = (/** @type {string} */ n) => (isRec(it) ? it[n] : undefined);
     const title = first !== undefined && typeof val(first.name) === 'string' && String(val(first.name)).trim() !== '' ? ` · ${clip(String(val(first.name)).trim())}` : '';
+    /** @type {Record<string, string>} */
+    const why = {};
+    for (const x of mine) { const nm = itemFieldOf(x); const f = fields.find((y) => y.name === nm) ?? null; const e = shapeViewRed(x, f, f ? val(f.name) : undefined, f ? said(f) : ''); errors.push(e); if (f) why[f.name] = e.replace(`item ${i + 1}: ${f.name} `, ''); }
     const cells = fields.map((f) => {
       const bad = whole || mine.some((x) => itemFieldOf(x) === f.name);
-      return { mark: /** @type {'g'|'r'} */ (bad ? 'r' : 'g'), text: cellText(f.spec, val(f.name)) };
+      return { mark: /** @type {'g'|'r'} */ (bad ? 'r' : 'g'), text: cellText(f.spec, val(f.name)), ...(why[f.name] !== undefined ? { why: why[f.name] } : {}) };
     });
-    for (const x of mine) { const nm = itemFieldOf(x); const f = fields.find((y) => y.name === nm) ?? null; errors.push(shapeViewRed(x, f, f ? val(f.name) : undefined, f ? said(f) : '')); }
     return { name: `${i + 1}${title}`, cells };
   });
   const failed = rows.filter((r) => r.cells.some((c) => c.mark === 'r')).length;
   return {
-    columns: fields.map((f) => ({ name: String(f.name), hint: shapeHint(f.spec, said(f)) })), rows, total: rows.length, passed: rows.length - failed, failed, errors,
+    columns: fields.map((f) => ({ name: String(f.name), hint: shapeHint(f.spec, said(f)) })), fold: fields.length >= SHAPE_FOLD_MIN, rows, total: rows.length, passed: rows.length - failed, failed, errors,
     notChecked: SHAPE_TRUTH_PARTS.join(' — '), head: SHAPE_HEAD_PARTS.join(' · '),
   };
 }
