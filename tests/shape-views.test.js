@@ -104,7 +104,7 @@ test('the report (signed mock D): the shape-checks line, a table of items x fiel
   const md = /** @type {string} */ (renderRunMd({ job: 'Resumes', runNo: 3, now: new Date(2026, 10, 18), closeDecl: CLOSE, jobLines: JOB, steps: [{ n: 2, orig: buf, delivered: buf }] }));
   assert.match(md, /^# Resumes \u2014 run-3\nPassed \u00b7 18 Nov 2026/);
   assert.match(md, /## 2\. Read each resume\nRule: each blurb is under 60 words\nRule: matching words is a list of at most 5 words\nRule: the candidate has a name\n\nShape checks \(code checks each item's form, not whether it is true\)\n\n/);
-  assert.match(md, /\| item \| name \| blurb \| matching \| remote \|\n\| --- \| --- \| --- \| --- \| --- \|\n\| 1 \u00b7 Ada Lovelace \| \u2713 \| \u2713 2 words \| \u2713 2 entries \| \u2713 true \|\n\| 2 \u00b7 Alan Turing \| \u2713 \| \u2713 1 word \| \u2713 0 entries \| \u2713 false \|\n/);
+  assert.match(md, /\| item \| name \| blurb \| matching \| remote \|\n\| --- \| --- \| --- \| --- \| --- \|\n\| 1 \u00b7 Ada Lovelace \| \u2713 Ada Lovelace \| \u2713 Strong fit. \(2 words\) \| \u2713 python, sql \(2 entries\) \| \u2713 yes \|\n\| 2 \u00b7 Alan Turing \| \u2713 Alan Turing \| \u2713 Good. \(1 word\) \| \u2713 0 entries \| \u2713 no \|\n/);
   assert.match(md, /\nNot checked: whether each one is true \(you judge it at Accept\)\n$/);
   assert.ok(!md.includes('never printed') && !md.includes("The AI's answer") && !md.includes('Failed') && !md.includes('#### Item'));
 });
@@ -125,10 +125,10 @@ test('the view model (signed mock A and D): marks per cell from the item reds, s
   assert.deepEqual(m.columns, [{ name: 'title', hint: 'not empty' }, { name: 'status', hint: 'one of 3' }, { name: 'summary', hint: 'under 200' }]);
   assert.deepEqual([m.total, m.passed, m.failed], [4, 2, 2]);
   assert.equal(m.rows[2].name, '3 \u00B7 Field survey');
-  assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: '' }, { mark: 'r', text: 'done', why: 'is "done", not one of: in progress, closed, finished' }, { mark: 'g', text: '120 chars' }]);
-  assert.deepEqual(m.rows[3].cells.map((c) => c.mark + c.text), ['g', 'gfinished', 'r236 chars']);
+  assert.deepEqual(m.rows[2].cells, [{ mark: 'g', text: 'Field survey' }, { mark: 'r', text: 'done', why: 'is "done", not one of: in progress, closed, finished' }, { mark: 'g', text: `${'x'.repeat(39)}… (120 chars)` }]);
+  assert.deepEqual(m.rows[3].cells.map((c) => c.mark + c.text), ['gWater quality review', 'gfinished', `r${'x'.repeat(39)}… (236 chars)`]);
   assert.deepEqual(m.errors, ['item 3: status is "done", not one of: in progress, closed, finished', 'item 4: summary is too long (236 characters, under 200)']);
-  assert.match(shapeMarkdown(m), /\| 3 \u00b7 Field survey \| \u2713 \| \u2717 done \| \u2713 120 chars \|\n/);
+  assert.match(shapeMarkdown(m), /\| 3 \u00b7 Field survey \| \u2713 Field survey \| \u2717 done \| \u2713 x{39}… \(120 chars\) \|\n/);
   assert.match(shapeMarkdown(m), /\n### Failed\n\n- item 3: status is "done", not one of: in progress, closed, finished\n- item 4: summary is too long \(236 characters, under 200\)$/);
   assert.equal(shapeHint({ kind: 'text', minChars: 5 }), 'at least 5 characters'.replace(' characters', ''));
   const whole = shapeResultModel({ part, results: [null], rules, reds: ['#0:item-not-object'] });
@@ -247,8 +247,46 @@ test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a fa
   assert.match(five, /<b>2<\/b> items · <b>1<\/b> passed · <b>1<\/b> failed/);
   assert.match(five, /<details class="sf-item" data-testid="shape-item"><summary>.*?1 · abc.*?5 of 5/);
   assert.match(five, /<details class="sf-item bad" data-testid="shape-item" open><summary>.*?4 of 5/);
-  assert.match(five, /data-result="failed"><span class="k">f1<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">30 chars <span class="why">· is too long/);
+  assert.match(five, /data-result="failed"><span class="k">f1<\/span><span class="g"><span class="glyph-red">✗<\/span><\/span><span class="v">xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \(30 chars\) <span class="why">· is too long/);
   const four = draw(mk(4));
   assert.match(four, /data-testid="shape-grid"/);
   assert.doesNotMatch(four, /shape-fold|<details/);
+});
+
+test('every cell shows the item\'s own value (clipped, escaped): a free title, a list joined, yes/no, a number; a bounded field adds its words in brackets', async () => {
+  const { shapeResultModel } = await import('../src/shaperesult.js');
+  const part = buildShapePart({ text: 't', fields: [
+    { name: 'title', spec: { kind: 'text', required: true, minChars: 1 }, rule: 1, by: 'you' },
+    { name: 'blurb', spec: { kind: 'text', maxWords: 9 }, rule: 1, by: 'you' },
+    { name: 'tags', spec: { kind: 'list', of: { kind: 'text' } }, rule: 1, by: 'you' },
+    { name: 'remote', spec: { kind: 'boolean' }, rule: 1, by: 'you' },
+    { name: 'long', spec: { kind: 'text', minChars: 1 }, rule: 1, by: 'you' },
+  ] });
+  const m = shapeResultModel({ part, rules: ['t'], results: [{ title: 'Ada <b>', blurb: 'two words', tags: ['a', 'b'], remote: true, long: 'y'.repeat(60) }] });
+  const t = m.rows[0].cells.map((c) => c.text);
+  assert.equal(t[0], 'Ada <b>');
+  assert.equal(t[1], 'two words (2 words)');
+  assert.equal(t[2], 'a, b (2 entries)');
+  assert.equal(t[3], 'yes');
+  assert.equal(t[4], `${'y'.repeat(39)}…`);
+});
+
+test('the fold view draws no separate errors list (its reasons sit on the opened items\' red lines); the grid keeps it', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
+  const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
+  const { shapeResultCard } = new Function('escapeXml', `var RESULT_NONE = "x";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard };`)(escapeXml);
+  const { shapeResultModel } = await import('../src/shaperesult.js');
+  const mk = (/** @type {number} */ n) => {
+    const fields = Array.from({ length: n }, (_v, k) => ({ name: `f${k}`, spec: { kind: 'text', maxChars: 9 }, rule: 1, by: 'you' }));
+    const bad = Object.fromEntries(fields.map((f) => [f.name, 'abc'])); bad.f1 = 'x'.repeat(30);
+    return shapeResultModel({ part: buildShapePart({ text: 't', fields }), results: [bad], reds: ['#0:f1:too-long:chars:30>9'], rules: ['t'] });
+  };
+  const draw = (/** @type {any} */ m) => shapeResultCard({ n: 1, kind: 'shape', shape: m, notChecked: [] }, { job: 'j', runNo: 1, runid: 'x' }, false);
+  assert.doesNotMatch(draw(mk(5)), /shape-errors/);
+  assert.match(draw(mk(5)), /class="why">· is too long/);
+  assert.match(draw(mk(4)), /shape-errors/);
 });

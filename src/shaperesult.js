@@ -1,7 +1,6 @@
 // SHAPE JOBS (itemShape), the signed mock design/shape-views-mock.html (hamr 2026-11-18): the ONE view-model of a shape line's answer, read by the Result tab's grid (src/panel/server.js -> src/panel/index.html) and the
 // .md report (src/resultmd.js), so the grid and the report say the same thing. Items are rows, the signed fields are columns; a cell is a mark and a short value; the errors are the plain item reds. Pure.
-//   cell value: a text field shows its length (`142 chars`) when the person bounded it and nothing when they did not (a free title); a one-of, number, money, date, time, url or yes/no field shows its value (clipped);
-//   a list shows `N entries`. A red `#<i>:<path>:<reason>` (bareguard's, names and counts only) marks the cell of its field; a red with no field (`item-not-object`) marks the whole row.
+//   cell value: the item's own value (clipped, yes/no for a boolean, a list's entries joined), then the bound's words in brackets when the person bounded the field (`Ada (2 words)`, `a, b (2 entries)`). A red `#<i>:<path>:<reason>` (bareguard's, names and counts only) marks the cell of its field; a red with no field (`item-not-object`) marks the whole row.
 //   The words of a red here name the worker's own value where the reason is a wrong value (`status is "done", not one of: ...`): the value comes from the delivered file, never from bareguard's gap.
 import { shapeFieldSentence, upper, SHAPE_HEAD_PARTS, SHAPE_TRUTH_PARTS } from './shaperows.js';
 import { parseShapeItem, itemFieldOf, plainShapeItem } from './shapewords.js';
@@ -18,13 +17,22 @@ export function shapeHint(spec, said = '') {
   return shapeFieldSentence(spec, said).replace(/ (characters|words|entries)$/, '');
 }
 
-/** the short value of one cell @param {Record<string, any>} spec @param {unknown} v @returns {string} */
+/** one scalar as written, whitespace folded @param {unknown} v @returns {string} */
+const scalar = (v) => (typeof v === 'boolean' ? (v ? 'yes' : 'no') : typeof v === 'string' || typeof v === 'number' ? String(v).replace(/\s+/g, ' ').trim() : '');
+
+/** the short value of one cell: the item's own value (clipped), then the bound's words in brackets where the field has one (`Ada (2 words)`, `a, b (2 entries)`) @param {Record<string, any>} spec @param {unknown} v @returns {string} */
 function cellText(spec, v) {
   if (v === undefined || v === null) return '';
+  const join = (/** @type {string} */ val, /** @type {string} */ extra) => (val && extra ? `${val} (${extra})` : val || extra);
   switch (spec.kind) {
-    case 'text': { const bounded = ['maxChars', 'minChars', 'maxWords', 'minWords'].some((k) => spec[k] !== undefined && !(k === 'minChars' && spec[k] === 1)); return bounded && typeof v === 'string' ? (spec.maxWords !== undefined || spec.minWords !== undefined ? ((n) => `${n} word${n === 1 ? '' : 's'}`)(v.trim() === '' ? 0 : v.trim().split(/\s+/).length) : `${[...v].length} chars`) : ''; }
-    case 'list': return Array.isArray(v) ? `${v.length} ${v.length === 1 ? 'entry' : 'entries'}` : '';
-    default: return typeof v === 'object' ? '' : clip(String(v), 24);
+    case 'text': {
+      if (typeof v !== 'string') return '';
+      const bounded = ['maxChars', 'minChars', 'maxWords', 'minWords'].some((k) => spec[k] !== undefined && !(k === 'minChars' && spec[k] === 1));
+      const extra = !bounded ? '' : spec.maxWords !== undefined || spec.minWords !== undefined ? ((n) => `${n} word${n === 1 ? '' : 's'}`)(v.trim() === '' ? 0 : v.trim().split(/\s+/).length) : `${[...v].length} chars`;
+      return join(clip(scalar(v)), extra);
+    }
+    case 'list': return Array.isArray(v) ? join(clip(v.map(scalar).filter((x) => x !== '').join(', ')), `${v.length} ${v.length === 1 ? 'entry' : 'entries'}`) : '';
+    default: return typeof v === 'object' ? '' : clip(scalar(v), 40);
   }
 }
 

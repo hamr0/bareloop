@@ -4466,7 +4466,7 @@
         m.rows.map(function(r){
           return '<tr data-testid="shape-row"><td class="r"><div class="tg-rowname"><span class="tg-name tg-name-plain" data-testid="shape-name" title="' + escapeXml(r.name) + '">' + escapeXml(r.name) + '</span></div></td>' + r.cells.map(function(c){ return tgCell(c); }).join("") + '</tr>';
         }).join("") + '</tbody></table></div>');
-      if(m.errors.length) h += '<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors</div><div class="fx-lines">' + m.errors.map(function(e){ return '<div>' + gridGlyph("\u2717") + " " + escapeXml(e) + "</div>"; }).join("") + '</div></div>';
+      if(m.errors.length && !m.fold) h += '<div class="fx-errors" data-testid="shape-errors"><div class="fx-label">errors</div><div class="fx-lines">' + m.errors.map(function(e){ return '<div>' + gridGlyph("\u2717") + " " + escapeXml(e) + "</div>"; }).join("") + '</div></div>';
     }
     return h + resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }
