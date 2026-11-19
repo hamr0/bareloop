@@ -2,7 +2,7 @@
 // Fixtures are written here, in the live reply's shape (the POC's `fields` / `extraFields` / `itemCountFrom`); no bareguard itemShape is needed ($0, no model).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShapeLine, buildShapes, boundGrounded, fieldSpec, NO_FIELD_WHY } from '../src/shapebuild.js';
+import { buildShapeLine, buildShapes, boundGrounded, fieldSpec, hasRealBound, NO_FIELD_WHY, NO_BOUND_WHY } from '../src/shapebuild.js';
 import { rubricVocabulary } from 'bareguard';
 import { SHAPE_KINDS, shapeAvailable, nameWhy, shapeNameRules } from '../src/shapemenu.js';
 import { shapeMenuLines } from '../src/shapelook.js';
@@ -48,8 +48,10 @@ test('every ~ rule maps to one field of the right kind and a grounded bound; a s
 test('R1: a bound is grounded only in the field\'s own rule (200 is in rule 3, not in rule 1)', () => {
   const ans = { fields: [f({ name: 'title', kind: 'text', bounds: { maxChars: 200 }, fromRule: 1 })] };
   const r = buildShapeLine({ line: TRACKER, labels: [], suggestion: ans, nameRules: NR });
-  assert.deepEqual(r.fields[0].bounds, {}, 'the number is in another rule of the line, not this field\'s');
   assert.match(r.refused.map((x) => x.why).join('|'), /maxChars 200 is not in your rule for this field/);
+  assert.equal(r.fields.length, 0, 'the number is in another rule of the line, so the field has no limit of its own and covers nothing');
+  assert.equal(r.rows[0].state, 'not-checked');
+  assert.equal(r.rows[0].reason, NO_BOUND_WHY);
 });
 
 test('R1: an AI-added field gets no grounded bound, even one that is a number in the job line', () => {
@@ -106,8 +108,9 @@ test('R5: equals only on a field with its own rule, only true or false', () => {
   const own = { fields: [f({ name: 'nonstop', kind: 'boolean', bounds: {}, fromRule: 1 })], extraFields: [f({ name: 'airline', kind: 'boolean', bounds: { equals: true } })] };
   const a = buildShapeLine({ line, labels: [], suggestion: own, nameRules: NR });
   assert.deepEqual(a.fields.find((x) => x.name === 'airline')?.bounds, {}, 'an AI-added field never gets equals');
+  assert.equal(a.fields.some((x) => x.name === 'nonstop'), false, 'a yes/no field with no `equals` has no limit: it covers nothing');
   const s = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'nonstop', kind: 'boolean', bounds: { equals: 'true' }, fromRule: 1 })] }, nameRules: NR });
-  assert.deepEqual(s.fields[0].bounds, {}, 'the string "true" is not a boolean');
+  assert.equal(s.fields.length, 0, 'the string "true" is not a boolean: no bound left, the rule stays Not checked');
 });
 
 test('the menu check: kind, a bound the kind does not list, and a bound of the wrong type are refused with their reason', () => {
@@ -133,7 +136,7 @@ test('the name check: no . : [ ], at most 128 characters, not a reserved reason 
     assert.equal(r.ok, false);
   }
   assert.equal(nameWhy('x'.repeat(128), NR), null);
-  const twice = buildShapeLine({ line: TRACKER, labels: [], nameRules: NR, suggestion: { fields: [f({ name: 'title', kind: 'text', fromRule: 1 }), f({ name: 'title', kind: 'text', fromRule: 3 })] } });
+  const twice = buildShapeLine({ line: TRACKER, labels: [], nameRules: NR, suggestion: { fields: [f({ name: 'title', kind: 'text', bounds: { minChars: 1 }, fromRule: 1 }), f({ name: 'title', kind: 'text', bounds: { minChars: 1 }, fromRule: 3 })] } });
   assert.equal(twice.fields.length, 1);
 });
 
@@ -151,7 +154,7 @@ test('the name rules are bareguard\'s own and the reserved-word refusal is ON (w
 });
 
 test('a rule no field holds is Not checked with the no-pick sentence; two fields for one rule keep the first', () => {
-  const r = buildShapeLine({ line: TRACKER, labels: [], nameRules: NR, suggestion: { fields: [f({ name: 'title', kind: 'text', fromRule: 1 }), f({ name: 'heading', kind: 'text', fromRule: 1 })] } });
+  const r = buildShapeLine({ line: TRACKER, labels: [], nameRules: NR, suggestion: { fields: [f({ name: 'title', kind: 'text', bounds: { minChars: 1 }, fromRule: 1 }), f({ name: 'heading', kind: 'text', bounds: { minChars: 1 }, fromRule: 1 })] } });
   assert.deepEqual(r.fields.map((x) => x.name), ['title']);
   assert.equal(r.rows[1].reason, NO_FIELD_WHY);
 });
@@ -162,9 +165,9 @@ test('list fields: `of` is an entry spec whose bounds are grounded in the same r
   const r = buildShapeLine({ line, labels: [], suggestion: ans, nameRules: NR });
   assert.deepEqual(r.fields[0].bounds, { of: { kind: 'text', maxChars: 39 }, maxEntries: 5 }, '"each under 40" signs 39; "at most 5" signs 5');
   const nested = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'm', kind: 'list', fromRule: 1, bounds: { of: { kind: 'list' } } })] }, nameRules: NR });
-  assert.deepEqual(nested.fields[0].bounds, {});
-  const str = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'm', kind: 'list', fromRule: 1, bounds: { of: 'text' } })] }, nameRules: NR });
-  assert.deepEqual(str.fields[0].bounds, { of: { kind: 'text' } }, 'the POC\'s string form is read as {kind}');
+  assert.equal(nested.fields.length, 0, 'a list of lists is refused, and a list with no limit covers nothing');
+  const str = buildShapeLine({ line, labels: [], suggestion: { fields: [f({ name: 'm', kind: 'list', fromRule: 1, bounds: { of: 'text', maxEntries: 5 } })] }, nameRules: NR });
+  assert.deepEqual(str.fields[0].bounds, { of: { kind: 'text' }, maxEntries: 5 }, 'the POC\'s string form is read as {kind}');
 });
 
 test('boundGrounded: an upper bound may be the written number minus one; a lower bound only the written number', () => {
@@ -200,4 +203,35 @@ test('the law of the words (code signs it, whatever the AI sent): under N = N-1 
   assert.deepEqual(sign('no more than 450', 'number', { max: 449 }), { max: 450 });
   assert.deepEqual(sign('the summary is at most 200 characters', 'text', { maxChars: 200 }), { maxChars: 200 });
   assert.deepEqual(sign('the summary has 200 characters', 'text', { maxChars: 200 }), { maxChars: 200 }, 'no direction word: the AI\'s bound stands');
+});
+
+// ---- the real shapes DeepSeek proposed in scope round 2 (tests/fixtures/shape-scope/round2-raw-shapes.json, raw answers of the archived drafts smvh566bnsgno airbnb, smvqz6h1bnc5k dell, smwezme3y35id flights) ----
+import { readFileSync as readFx } from 'node:fs';
+import { parseJobBlock } from '../src/jobblock.js';
+const RAW = JSON.parse(readFx(new URL('./fixtures/shape-scope/round2-raw-shapes.json', import.meta.url), 'utf8'));
+const lineOf = (/** @type {string} */ k) => /** @type {any} */ (parseJobBlock(RAW[k].jobText)).lines[0];
+
+test('REAL airbnb shape: "~ under \u20ac200 total" got `stay: text, required` with no bound: it covers NOTHING, the rule stays Not checked with the no-limit sentence', () => {
+  const r = buildShapeLine({ line: lineOf('airbnb'), labels: ['stays'], suggestion: RAW.airbnb.rawShape[0] });
+  assert.equal(r.fields.some((x) => x.by === 'you'), false);
+  assert.equal(r.rows[0].state, 'not-checked');
+  assert.equal(r.rows[0].reason, NO_BOUND_WHY);
+  assert.equal(r.ok, false, 'no rule field: the line is no shape line');
+});
+
+test('REAL dell shape: `price` money with currency "EUR" is refused by bareguard (it takes a sign), told in plain words for THAT field; with the sign it is built and covers the rule', () => {
+  const raw = RAW.dell.rawShape[0];
+  const bad = buildShapeLine({ line: lineOf('dell'), labels: ['page'], suggestion: raw });
+  assert.equal(bad.fields.some((x) => x.by === 'you'), false);
+  assert.match(bad.rows[0].reason ?? '', /^field refused: price: currency must be one of "\$", "\u20ac", "\u00a3"$/);
+  const fixed = JSON.parse(JSON.stringify(raw));
+  fixed.fields.find((/** @type {any} */ x) => x.name === 'price').bounds.currency = '\u20ac';
+  const ok = buildShapeLine({ line: lineOf('dell'), labels: ['page'], suggestion: fixed });
+  assert.deepEqual(ok.fields.find((x) => x.name === 'price')?.bounds, { currency: '\u20ac', lt: 1500 });
+  assert.equal(ok.rows[0].state, 'built');
+});
+
+test('hasRealBound: a number, a count, one-of values, a yes/no value or an entry bound is a bound; a currency, a unit or how a number is read is not', () => {
+  for (const b of [{ lt: 1500 }, { minChars: 1 }, { maxWords: 5 }, { values: ['a'] }, { equals: false }, { maxEntries: 2 }, { of: { kind: 'text', maxChars: 4 } }, { currency: '\u20ac', max: 3 }]) assert.equal(hasRealBound(b), true, JSON.stringify(b));
+  for (const b of [{}, { currency: '\u20ac' }, { unit: 'euros' }, { fromText: true }, { unique: true }, { of: { kind: 'text' } }, { ignoreCase: true }]) assert.equal(hasRealBound(b), false, JSON.stringify(b));
 });

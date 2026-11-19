@@ -12,6 +12,7 @@
 // What this throws away: a refused field or bound (only its plain reason is kept, in `refused`, and on the rule that named it); the AI's `required` on an AI-added field's bounds; a second field for one rule.
 // Not built (named): the `object` kind (src/shapemenu.js); an item count read from the person's words alone (a number, not a label): the spec says "else the count comes only from the person's words" and gives no
 // mechanism, so none is invented here. The part code signs from this (`buildShapePartOf`) and the run's brief are clauses 5 and 6, waiting for the bareguard release that carries `itemShape`.
+import { createRubric } from 'bareguard';
 import { lineRules, wordsSaidOn } from './rubricstep.js';
 import { underNumbers, atMostNumbers } from './checkpick.js';
 import { SHAPE_KINDS, ENTRY_KINDS, GROUNDED_BOUNDS, UPPER_BOUNDS, COUNT_BOUNDS, nameWhy, shapeNameRules } from './shapemenu.js';
@@ -21,6 +22,26 @@ const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** why a `~` rule no field holds is Not checked, when no field named it (judged at Accept, not at an Ask) */
 export const NO_FIELD_WHY = 'No field was picked for it, so you judge it at Accept.';
+
+/** why a rule whose field carries no limit from its own words stays Not checked: a field with no bound checks nothing the person asked for (hamr 2026-11-19) */
+export const NO_BOUND_WHY = 'The field picked for it has no limit from your words, so it checks nothing; you judge it at Accept.';
+
+/**
+ * Does a field carry at least ONE real bound the person's rule grounds (a number, a count of characters, words or entries, the one-of values, a yes/no value; `required` + `minChars: 1` is "each item has a title")?
+ * A modifier alone (a currency, a unit, how a number is read) is no bound. A list counts when its entries do.
+ * @param {Record<string, any>} bounds @returns {boolean}
+ */
+export function hasRealBound(bounds) {
+  if (!isRec(bounds)) return false;
+  if (Object.keys(bounds).some((k) => GROUNDED_BOUNDS.includes(k) || k === 'equals')) return true;
+  return isRec(bounds.of) && hasRealBound(bounds.of);
+}
+
+/** bareguard's refusal of one field spec, in plain words: `price: currency must be one of "$", "€", "£"` @param {string} name @param {unknown} message @returns {string} */
+function plainRefusal(name, message) {
+  const m = /fields\.[^.\s]+\.(\S+) (.*)$/s.exec(String(message));
+  return m ? `${name}: ${m[1]} ${m[2]}` : `${name}: ${String(message).replace(/^invalid rubric: /, '')}`;
+}
 
 const norm = (/** @type {unknown} */ s) => String(s).toLowerCase().replace(/\b0(\d:)/g, '$1');
 const words = (/** @type {unknown} */ s) => String(s).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().match(/[a-z0-9]+/g) ?? [];
@@ -172,6 +193,10 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
       // R2: an AI-added field with none of its words in the job is Suggested (held out, off until Add); one with a word in the job is job-derived
       const derived = own || words(nm).some((w) => jobWords.has(w));
       const bounds = buildBounds({ kind: f.kind, bounds: f.bounds, required, ruleText, refuse: (what, why) => refuse(`${nm}.${what}`, why) });
+      // a field picked for the person's own rule must carry a real bound from that rule, else it checks nothing and the rule stays Not checked
+      if (own && !hasRealBound(bounds)) { refused.push({ helper: 'bound', why: `${nm}: no limit from your rule` }); refusedFor.set(/** @type {number} */ (rule), NO_BOUND_WHY); continue; }
+      // bareguard is the judge of the field: a combination it refuses (a currency word it has no sign for) is this field's refusal, told in plain words, and never the whole shape's
+      try { createRubric({ schema: 1, goal: 'field', inputs: [], checkpoints: { field: { gating: false, checks: [{ id: 'f', rule: 'itemShape', field: 'results', fields: { [nm]: { kind: f.kind, ...(required ? { required: true } : {}), ...bounds } } }] } } }); } catch (e) { refuse('bareguard', plainRefusal(nm, /** @type {any} */ (e)?.message ?? e)); continue; }
       seen.add(nm);
       fields.push({ name: nm, kind: f.kind, required, bounds, rule, by: own ? 'you' : 'agent', held: !derived, ...(own ? {} : { why: derived ? 'job-derived' : 'suggested' }) });
     }

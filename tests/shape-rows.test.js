@@ -210,3 +210,13 @@ test('a block with no shape is exactly what it was (no shape row, no shape line)
   assert.equal(b.rows.some((r) => r.kind === 'shape'), false);
   assert.equal(b.isShapeLine(1), false);
 });
+
+test('REAL flight-nononstop1 raw shape (scope round 2): a rule code marks negating ("not a red-eye", "no nonstop") never takes a shape field; the plain rule keeps its field', () => {
+  const RAW = JSON.parse(readFileSync(new URL('./fixtures/shape-scope/round2-raw-shapes.json', import.meta.url), 'utf8')).nonstop;
+  const lines = [{ n: 1, text: 'List 3 flights from Boston to Chicago', rules: ['under $450', 'not a red-eye', 'no nonstop'] }];
+  const b = blockOf(RAW.rawShape[0], { lines });
+  const rule = (/** @type {number} */ n) => b.rows.find((r) => r.kind === 'rule' && r.rule === n);
+  assert.equal(b.takesShape(/** @type {any} */ (rule(2))), null, 'not a red-eye stays with the person');
+  assert.equal(b.takesShape(/** @type {any} */ (rule(3))), null, 'no nonstop must not become nonstop equals false');
+  assert.deepEqual(b.shapeCandidates().map((x) => x.rule).filter((n) => n > 1), [], 'a negating rule is never asked of the shape look');
+});

@@ -12,6 +12,9 @@ const IS = /** @type {any} */ (rubricVocabulary).rules.itemShape.fields.fields;
 /** kind -> the options (bounds and modifiers) the kind accepts, as bareguard lists them (`object` is not offered). `of` and `minEntries`/`maxEntries`/`unique` are the list's; `equals` is the boolean's. @type {Readonly<Record<string, readonly string[]>>} */
 export const SHAPE_KINDS = Object.freeze(Object.fromEntries(Object.entries(IS.kinds).filter(([k]) => k !== 'object').map(([k, opts]) => [k, Object.freeze(Object.keys(/** @type {any} */ (opts)))])));
 
+/** the options whose value must be one of a closed list, as bareguard lists them (`money.currency` is a SIGN: "$", "€", "£"; `decimal`, `date.lang`): `kind` -> option -> the allowed values @type {Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>} */
+export const SHAPE_OPTION_VALUES = Object.freeze(Object.fromEntries(Object.entries(IS.kinds).filter(([k]) => k !== 'object').map(([k, opts]) => [k, Object.freeze(Object.fromEntries(Object.entries(/** @type {any} */ (opts)).filter(([, d]) => isRec(d) && Array.isArray(d.enum)).map(([o, d]) => [o, Object.freeze(d.enum.map(String))])))])));
+
 /** the kinds a list entry (`of`) may be: every scalar kind (never `list`, never `object`) */
 export const ENTRY_KINDS = Object.freeze(Object.keys(SHAPE_KINDS).filter((k) => k !== 'list'));
 

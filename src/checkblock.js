@@ -213,9 +213,20 @@ export class CheckBlock {
    * @param {Row} r @returns {{name: string}|null}
    */
   takesShape(r) {
-    if (this.repo !== null || r.kind !== 'rule' || this.isSheetLine(r.line)) return null;
+    // a rule code marks as negating says what is NOT needed: it stays with the person (NEGATING_RE, the old ruling), never a shape field ("no nonstop" must not become nonstop = false)
+    if (this.repo !== null || r.kind !== 'rule' || this.isSheetLine(r.line) || NEGATING_RE.test(String(r.text))) return null;
     const rs = this.shapeBuilt?.built[r.line]?.rows.find((x) => x.rule === r.rule && x.text === r.text);
     return rs && rs.state === 'built' && typeof rs.name === 'string' ? { name: rs.name } : null;
+  }
+
+  /**
+   * The rules that are still Not checked once every truth check, the person's answers and the pending asks are settled, and that may still take a shape field (not a sheet or repo job, not left or negating by the person's words):
+   * the ONLY rules the shape look is asked about, and only when there is one. Call after `reconcile`.
+   * @returns {{line: number, rule: number}[]}
+   */
+  shapeCandidates() {
+    if (this.repo !== null) return [];
+    return this.rows.filter((r) => r.kind === 'rule' && !r.left && !r.can?.ok && !r.can?.ask && !this.isSheetLine(r.line) && !NEGATING_RE.test(String(r.text))).map((r) => ({ line: r.line, rule: Number(r.rule) }));
   }
 
   /**
