@@ -35,7 +35,7 @@ test('the prompt carries the job with its numbered rules, the bounded inputs, th
   assert.ok(p.includes('  boolean: bounds equals'));
   assert.equal(shapeMenuLines().length, Object.keys(SHAPE_KINDS).length);
   assert.match(p, /The lines a shape can be offered for: 1\./);
-  assert.match(p, /code drops every bound the person did not write/);
+  assert.match(p, /"bounds" holds only the bounds that kind accepts, taken from that field's own rule/);
 });
 
 test('parse: strict, no repair; what a field means is code\'s to judge', () => {
@@ -69,7 +69,12 @@ test('the prompt names the rules still without a check ONLY when there are some,
   const plain = shapeLookPrompt({ jobLines: JOB, lineNums: [1], texts: { Flights: 'x' } });
   assert.equal(plain.includes('Only these ~ rules'), false);
   const left = shapeLookPrompt({ jobLines: JOB, lineNums: [1], texts: { Flights: 'x' }, left: [{ line: 1, rules: [2] }] });
-  assert.match(left, /Only these ~ rules have no check yet: line 1 rule 2\. Give a field for each of them and for no other rule/);
+  assert.match(left, /Only these ~ rules have no check yet: line 1 rule 2\. For each, give a field ONLY if that rule's own words give it a limit code can check/);
+  assert.ok(left.includes('"Each item has a title" counts: required, with minChars 1.'));
+  assert.ok(left.includes('A rule whose words give no limit gets no field; it stays with the person.'));
+  assert.ok(left.includes('"equals": true.'));
+  assert.equal(left.includes('or false'), false);
+  assert.equal(left.includes('one field for each ~ rule'), false);
   assert.match(left, /  money: bounds currency \(one of "\$", "€", "£"\), unit, decimal \(one of "\.", ","\), min, max, gt, lt/);
 });
 

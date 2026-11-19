@@ -38,13 +38,12 @@ export function shapeLookPrompt({ jobLines, lineNums, texts, left = [] }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}${lineRules(l).map((r, i) => `\n~ rule ${i + 1}: ${r}`).join('')}`).join('\n');
   const inputs = Object.entries(texts).map(([label, t]) => `Input "${label}"${t.length > SHAPE_SHOWN_CHARS ? ` (first ${SHAPE_SHOWN_CHARS} of ${t.length} characters)` : ''}:\n<<<\n${t.slice(0, SHAPE_SHOWN_CHARS)}\n>>>`).join('\n\n');
   // only when code left some `~` rules without a check: say which, so the AI gives a field for those and no other (injected only IF the case happens)
-  const needs = left.length ? `Only these ~ rules have no check yet: ${left.map((x) => `line ${x.line} rule${x.rules.length === 1 ? '' : 's'} ${x.rules.join(', ')}`).join('; ')}. Give a field for each of them and for no other rule (extra fields are fine).\n` : '';
+  const needs = left.length ? `Only these ~ rules have no check yet: ${left.map((x) => `line ${x.line} rule${x.rules.length === 1 ? '' : 's'} ${x.rules.join(', ')}`).join('; ')}. For each, give a field ONLY if that rule's own words give it a limit code can check: a number, a count of characters, words or entries, a list of allowed values, or yes/no. "Each item has a title" counts: required, with minChars 1. A rule whose words give no limit gets no field; it stays with the person. "fromRule" is the rule's number on the line (1 is its first rule). Extra fields are fine.\n` : '';
   return `THE JOB (each ~ rule applies to the line above it):\n${job}\n\nTHE INPUTS:\n${inputs}\n\n`
     + `A job line whose answer is a LIST OF ITEMS with named fields (for example one item per flight, per resume or per research topic) gets a shape. The lines a shape can be offered for: ${lineNums.join(', ')}. A line whose answer is not such a list gets none.\n`
     + needs
-    + '- "fields": one field for each ~ rule of the line that names something an item has; "fromRule" is that rule\'s number on the line (1 is its first rule).\n'
     + '- "extraFields": any other field you think would help (none is fine); its "fromRule" is null and code shows it to the person as a suggestion.\n'
-    + '- "kind" is one of the kinds below and "bounds" holds only the bounds that kind accepts. Put in "bounds" only what the person wrote in that field\'s own rule; code drops every bound the person did not write. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true or false.\n'
+    + '- "kind" is one of the kinds below; "bounds" holds only the bounds that kind accepts, taken from that field\'s own rule. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true.\n'
     + '- "itemCountFrom": the labels of the inputs that give exactly one item each, only when the person wrote it ("one blurb per resume"); otherwise [].\n'
     + `- A field name is at most ${NAME_MAX_CHARS} characters and holds none of . : [ ] ; a list field writes its entries as "of": {"kind": "text", ...bounds}.\n\n`
     + `The field kinds (and the bounds each kind accepts):\n${shapeMenuLines().join('\n')}\n\n`
