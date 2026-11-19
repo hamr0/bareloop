@@ -233,7 +233,7 @@ export class CheckBlock {
    */
   shapeCandidates() {
     if (this.repo !== null) return [];
-    return this.rows.filter((r) => r.kind === 'rule' && !r.left && !r.can?.ok && !r.can?.ask && !this.isSheetLine(r.line) && !NEGATING_RE.test(String(r.text))).map((r) => ({ line: r.line, rule: Number(r.rule) }));
+    return this.rows.filter((r) => r.kind === 'rule' && !r.left && (!r.can?.ok || r.truthRefused) && !r.can?.ask && !this.isSheetLine(r.line) && !NEGATING_RE.test(String(r.text))).map((r) => ({ line: r.line, rule: Number(r.rule) }));
   }
 
   /**
@@ -448,7 +448,8 @@ export class CheckBlock {
   /** RULES FIRST (hamr 2026-11-19): today's truth check for the rule; only a rule that ends with none and no open ask takes the shape field proposed for it (the strongest check wins, no ask) @param {Row} r */
   matchRule(r) {
     this.matchTruthRule(r);
-    if (r.can?.ok || r.can?.ask) return;
+    // a truth check code picked but REFUSED when it built the line (live mwnbs3np: 4 results, a title said once) is no check: the rule is still Not checked, so it may take its shape field (hamr: shape for what code could not check)
+    if (r.can?.ask || (r.can?.ok && !r.truthRefused)) return;
     const sh = this.takesShape(r);
     if (sh === null) {
       // a field the AI picked for this rule but code refused for having no limit from the rule's own words: say so (the truth check's generic reason is not the cause); every other refusal keeps today's reason
@@ -666,7 +667,7 @@ export class CheckBlock {
       }
       if (r.can.how === 'count') { countRow = r; continue; }
       const built = this.factsOf(r, facts);
-      if ('why' in built) { r.state = 'not-checked'; r.reason = `code could not build a legal check from it: ${built.why}`; continue; }
+      if ('why' in built) { r.state = 'not-checked'; r.reason = `code could not build a legal check from it: ${built.why}`; if (r.kind === 'rule') r.truthRefused = true; continue; }
       facts.push(...built.fresh);
       r.factNames = built.names;
       factRows.push({ r, src: built.src });

@@ -237,3 +237,27 @@ test('a rule whose picked field has no limit shows NO_BOUND_WHY, not the generic
   assert.notEqual(r1?.can?.why, REASON.noRule);
   assert.equal(row(b, 'L1.~3')?.can?.how, 'shape', 'the rule with a real bound still takes its field');
 });
+
+// LIVE run mwnbs3np (research-2, 2026-11-19): the look tied "each item has a title" and "status is one of ..." to phrase facts; the job's 4-result count made code refuse both when it BUILT them. Both rules ended Not checked
+// although the shape look had a field for each. hamr's order: a truth check first, the shape for what code could not check, Not checked only after the shape fails too. Real raw answers, tests/fixtures/shape-scope/live-mwnbs3np-tracker.json.
+test('LIVE mwnbs3np: a rule whose truth check is refused when BUILT is a shape candidate and takes its shape field', () => {
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/shape-scope/live-mwnbs3np-tracker.json', import.meta.url), 'utf8'));
+  const lines = fx.jobLines;
+  const facts = JSON.parse(fx.pageMapRaw).facts.map((/** @type {any} */ x) => ({ line: 1, name: x.name, shape: x.shape, source: 'tracker', words: x.words, forRule: Number(/rule (\d+)/.exec(x.from)?.[1]) }));
+  const b = new CheckBlock({ texts: { tracker: fx.tracker }, labels: ['tracker'], asks: false, split: true });
+  b.fromJob(lines);
+  b.setGuards(['changed-from-seed'], ['output/']);
+  b.addLook(facts, []);
+  b.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: [{ op: 'add', kind: 'count', line: 1, min: 4, max: 4 }] });
+  b.reconcile();
+  assert.equal(row(b, 'L1.~1')?.state, 'not-checked', 'precondition: the truth check is refused at build (live reason)');
+  assert.match(String(row(b, 'L1.~1')?.reason), /only 1 time/);
+  assert.deepEqual(b.shapeCandidates().map((x) => x.rule), [1, 2, 3], 'every rule no built check took is asked of the shape look');
+  b.setShape(buildShapes({ lines, labels: ['tracker'], suggestions: JSON.parse(fx.shapeMapRaw).shapes, nameRules: NR }));
+  b.reconcile();
+  assert.equal(row(b, 'L1.~1')?.state, 'built');
+  assert.equal(row(b, 'L1.~1')?.can?.how, 'shape');
+  assert.equal(row(b, 'L1.~2')?.state, 'built');
+  assert.equal(row(b, 'L1.~2')?.can?.how, 'shape');
+  assert.equal(row(b, 'L1.~3')?.state, 'built');
+});
