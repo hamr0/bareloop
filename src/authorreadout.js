@@ -26,7 +26,8 @@
 import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
-import { cardOfClose, fenceOfClose, fenceRowText, refusedOf, stepFileRel, lineRules, FENCE_KEY } from './rubricstep.js';
+import { stepFileRel, lineRules } from './rubricstep.js';
+import { planFromSpec, kindOfCheck } from './panel/jobplan.js';
 import { decidedWords } from './draftspend.js';
 import { ticketFilterWords } from './ticketfilter.js';
 
@@ -631,8 +632,6 @@ export function redsRecord(reds, { signing = false } = {}) {
 export const READOUT_HEADS = Object.freeze({
   inputs: 'INPUTS',
   steps: 'STEPS',
-  fence: 'WRITE FENCE',
-  notChecked: 'REFUSED / NOT CHECKED',
   jobLines: 'JOB LINES',
   answers: 'YOUR ANSWERS',
 });
@@ -649,6 +648,18 @@ export function readoutHeadIndexes(text) {
   return idx;
 }
 
+/** the signed look's groups as readout rows (hamr 2026-11-19): tag column first, kind word second, the rows the card draws (`planFromSpec`'s plan, one reader); an empty group is not told
+ * @param {{checks: {name: string, by?: string|null, key?: string, shape?: true, fence?: true}[], nc: {text: string, why?: string, by?: string}[], suggested: {text: string}[]}} g @returns {string[]} */
+function readoutGroups({ checks, nc, suggested }) {
+  const row = (/** @type {string|null|undefined} */ by, /** @type {string} */ kind, /** @type {string} */ text) => `       ${`[${by ?? 'default'}]`.padEnd(9)}  ${kind.padEnd(5)}  ${text}`;
+  /** @type {string[]} */
+  const out = [];
+  if (checks.length) out.push(`     CHECKED \u00B7 ${checks.length}`, ...checks.map((c) => row(c.by, kindOfCheck(c), c.name)));
+  if (nc.length) out.push(`     NOT CHECKED \u00B7 ${nc.length} \u00B7 you judge these at Accept`, ...nc.map((n) => row(n.by, '', `${n.text}${n.why ? ` \u2014 ${n.why}` : ''}`)));
+  if (suggested.length) out.push(`     SUGGESTED \u00B7 add if you want it`, ...suggested.map((s) => row('agent', 'shape', s.text)));
+  return out;
+}
+
 /** @param {number|null|undefined} ms the signed time cap in words; an absent one reads unbounded, never 0 @returns {string} */
 function capTimeWords(ms) {
   if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return 'no time cap set';
@@ -657,8 +668,7 @@ function capTimeWords(ms) {
 
 /**
  * The plain-text readout of the draft the person is about to sign (hamr 2026-11-15, copied from fwdloop v0.34.0 `buildReadout`; ASKS, SEND TARGET, flows root and grants are fwd-only and not here).
- * DISPLAY ONLY: built from the signed resolved spec, the draft log and the session's own figures; never signed, never stored, never part of the hash. Pure. The check rows are `cardOfClose`'s (the same reader and tags the card draws),
- * the fence is `fenceRowText`'s, the Not checked rows are `ruleNotCheckedItems`'s plus the `refusedOf` rows it leaves out. The whole text goes through `redactSecrets`.
+ * DISPLAY ONLY: built from the signed resolved spec, the draft log and the session's own figures; never signed, never stored, never part of the hash. Pure. The check, fence and Not checked rows are `planFromSpec`'s (the model the card and the Audit draw), grouped in the signed look by `readoutGroups`. The whole text goes through `redactSecrets`.
  * @param {{spec: any, name?: string, modelId?: string|null, rounds: number, costUsd: number|null, spendComplete?: boolean, specHash?: string|null, source?: string, destination?: string,
  *   humans?: {question: string, answer: string, line?: number, choice?: string, words?: string}[], ledger?: {key: string, words: string[]}[]|null}} o
  *   `costUsd` = the known drafting spend; `spendComplete` false = a provider call was unpriced, so it reads "at least"
@@ -667,7 +677,6 @@ function capTimeWords(ms) {
 export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spendComplete = true, specHash = null, source = '', destination = '', humans = [], ledger = null }) {
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
   const closeDecl = spec?.closeDecl;
-  const card = cardOfClose({ closeDecl, jobLines, ledger });
   const out = [];
   out.push(`${READOUT_HEADER_PREFIX}${name ?? spec?.job ?? '?'}`, '');
   const cost = typeof costUsd === 'number' ? (spendComplete === false ? `at least ${panelMoney2(costUsd)} (a provider call is unpriced)` : panelMoney2(costUsd)) : 'unknown';
@@ -682,20 +691,20 @@ export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spen
   if (filter) out.push(`  ticket filter: ${filter}`);
   out.push('', READOUT_HEADS.steps);
   const rubricLines = new Set((Array.isArray(closeDecl?.stages) ? closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st.params?.step)).map((/** @type {any} */ st) => st.params.step));
+  const plan = planFromSpec(spec, ledger);
+  const many = plan.lines.length > 1;
   for (const l of jobLines) {
     out.push(`  (line ${l.n}) ${l.text}`);
     if (rubricLines.has(l.n)) out.push(`     writes: ${stepFileRel(l.n)}`);
-    for (const c of card.checkItems.filter((x) => x.fromLine[0] === l.n)) out.push(`     check: ${c.text} [${c.by}]`);
+    const pl = plan.lines.find((x) => x.n === l.n);
+    if (!pl) continue;
+    // a one-line job reads its line-less rows (the guards, the fence, a line-less Not checked) inside its one block, as the card does
+    out.push(...readoutGroups({ checks: many ? pl.checks : [...pl.checks, ...plan.loose], nc: [...(plan.ncRows ?? []).filter((n) => n.line === l.n), ...(many ? [] : (plan.ncRows ?? []).filter((n) => n.line === 0))],
+      suggested: (plan.suggested ?? []).filter((s) => s.line === l.n) }));
   }
-  // the job-level rows (the always-on guards, line 0) serve no one line; the fence row is told once under its own head below
-  for (const c of card.checkItems.filter((x) => x.fromLine[0] === 0 && x.key !== FENCE_KEY)) out.push(`  always: ${c.text} [${c.by}]`);
-  const fence = fenceOfClose(closeDecl);
-  if (fence) out.push('', READOUT_HEADS.fence, `  ${fenceRowText(fence)}`);
-  const refusedRest = refusedOf(closeDecl).filter((r) => !(Number.isInteger(r.rule) || r.fromList));
-  if (card.notChecked.length || refusedRest.length) {
-    out.push('', READOUT_HEADS.notChecked);
-    for (const t of card.notChecked) out.push(`  ${t}${card.notCheckedBy[t] ? ` [${card.notCheckedBy[t]}]` : ''}`);
-    for (const r of refusedRest) out.push(`  line ${r.line}: ${r.reason}`);
+  if (many) {
+    const rest = readoutGroups({ checks: plan.loose, nc: (plan.ncRows ?? []).filter((n) => n.line === 0), suggested: [] });
+    if (rest.length) out.push('  EVERY LINE', ...rest);
   }
   out.push('', READOUT_HEADS.jobLines);
   for (const l of jobLines) {
