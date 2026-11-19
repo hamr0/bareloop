@@ -2411,7 +2411,7 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 
 ### Next after feat/shape-jobs ships: barebrowse bump (2026-11-19)
 
-- [ ] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse").
+- [x] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse"). Done on `chore/barebrowse-031`: proof is two real page fetches through `src/pagefetch.js` with no browser left behind, also after kill -9, plus the full gate (details in the branch commit message).
 
 ### Future ideas, parked (2026-11-19) — not for today
 

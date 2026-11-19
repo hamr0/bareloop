@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- barebrowse is now ^0.31.0 (0.30.1 Firefox goto() status fix: no status 0 on big streamed pages, the final page after a redirect).
+
 ## [0.61.0] - 2026-11-19
 
 ### Added
