@@ -15,7 +15,7 @@ const HEAD = '# job — run-3\nPassed · 18 Nov 2026';
 const NO_MARKS = (s) => assert.ok(!/[{}[\]✓✗]/.test(s), `no JSON braces or check marks in: ${s}`);
 const buf = (o) => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o));
 const factStage = { kind: 'rubric-step', params: { step: 1, parts: [{ class: 'fact' }] } };
-const textStage = { kind: 'rubric-step', params: { step: 1, parts: [{ class: 'countable' }] } };
+const textStage = { kind: 'rubric-step', params: { step: 1, parts: [{ class: 'countable', check: 'maxWords', value: 50 }] } };
 const run = (closeDecl, jobLines, steps, job = 'job', runNo = 3) => renderRunMd({ job, runNo, now: NOW, closeDecl, jobLines, steps: steps.map(([n, orig, delivered]) => ({ n, orig: buf(orig), delivered: buf(delivered ?? orig) })) });
 
 /** the walk's delivered step file (code's report lines at the end of its text) and the worker's own file (the text before them) */
@@ -118,9 +118,29 @@ test('FACTS names as words: a label with a space, camelCase, nested value/rows d
   assert.ok(dup.includes('- a.value: 1\n- A: 2'), dup);
 });
 
-test('FACTS line with text: the text is under `The answer` (its prose is not Not checked), after the checked results', () => {
-  const got = run({ stages: [factStage] }, [{ n: 1, text: 'L' }], [[1, { text: 'My summary.', results: [{ quote: 'q', values: { price: 5 } }] }]]);
+const NOT_CHECKED = "### The AI's answer (not checked — you judge it at Accept)";
+const factsWithText = { n: 1, results: [{ quote: 'q', values: { price: 5 } }], text: 'My summary.' };
+const factsStage = (...extra) => ({ kind: 'rubric-step', params: { step: 1, parts: [{ class: 'fact' }, ...extra] } });
+
+// rule copied from fwdloop v0.36.0 src/whole-job.js:54 `proseCheckedOf`: `### The answer` only when code checked the line's own text
+test('FACTS line with text and a check on that text (words in the text): the text is under `The answer`, after the checked results', () => {
+  const got = run({ stages: [factsStage({ class: 'countable', check: 'maxWords', value: 50 })] }, [{ n: 1, text: 'L' }], [[1, factsWithText]]);
   assert.ok(got.endsWith('from the page: "q"\n\n### The answer\nMy summary.\n'), got);
+});
+
+test('FACTS line with text whose only text check is the default note (non-empty), a quote or nothing: the not-checked heading (fwd v0.36.0: a non-empty check alone is no prose check)', () => {
+  for (const extra of [[], [{ class: 'countable', check: 'nonEmpty', text: 'line 1 writes a note — the note must be there' }], [{ class: 'countable', check: 'cited', source: 'page' }]]) {
+    const got = run({ stages: [factsStage(...extra)] }, [{ n: 1, text: 'L' }], [[1, factsWithText]]);
+    assert.ok(got.endsWith(`${NOT_CHECKED}\nMy summary.\n`) && !got.includes('### The answer'), got);
+  }
+});
+
+test('FACTS line with a words check AND a Not checked `~` rule on the line (signed list): the not-checked heading; a built rule row keeps `The answer`', () => {
+  const stages = [factsStage({ class: 'countable', check: 'maxWords', value: 50 })];
+  const notChecked = run({ stages, list: [{ line: 1, key: 'L1.r1', kind: 'rule', rule: 1, state: 'not-checked', reason: 'no check was picked' }] }, [{ n: 1, text: 'L' }], [[1, factsWithText]]);
+  assert.ok(notChecked.endsWith(`${NOT_CHECKED}\nMy summary.\n`), notChecked);
+  const built = run({ stages, list: [{ line: 1, key: 'L1.r1', kind: 'rule', rule: 1, state: 'built' }] }, [{ n: 1, text: 'L' }], [[1, factsWithText]]);
+  assert.ok(built.endsWith('### The answer\nMy summary.\n'), built);
 });
 
 test('TEXT line: only the answer, under the not-checked heading (no "Checked by code" with nothing in it); cites are not written; the text is kept exactly', () => {
