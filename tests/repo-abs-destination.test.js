@@ -155,9 +155,11 @@ test('the same single FILE with Rubric picked is NOT refused with the file messa
     generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },
     prepareSigningFn: async () => { throw new Error('no signing'); },
   });
-  assert.ok(await until(() => s.state.phase !== 'starting' && (s.state.phase === 'refused' || settled(s) || calls.n > 0)));
+  // 'drafting' is transient (the fake model throws at once, so the phase flips to 'error'): assert the claim, not a phase snapshot.
+  assert.ok(await until(() => calls.n > 0 || s.state.phase === 'refused'), 'the rubric file input reached the model seam');
+  assert.ok(calls.n > 0, 'a rubric file input goes on to the model');
+  assert.notEqual(s.state.phase, 'refused', String(s.state.error));
   assert.notEqual(s.state.error, FILE_MSG, String(s.state.error));
-  assert.equal(s.state.phase, 'drafting', 'a rubric file input goes on to drafting');
   assert.doesNotMatch(String(s.state.error ?? ''), /inside a git repo/);
   assert.match(FILE_MSG, /Deterministic is picked.*pick Rubric and Revise/);
 });
