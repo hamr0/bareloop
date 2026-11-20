@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { repoListingText } from './repocite.js';
 import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote, tableSha } from 'bareguard';
@@ -578,7 +579,8 @@ export function plainStepGap(step, why, g, params = null) {
  * Grade ONE step: build the rubric, run it over the step file's fields, and say what happened in the close's own terms.
  * Pure of the filesystem (the runner in src/kinds.js reads the files). `stopped` = the instrument failed (never a red).
  * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>,
- *   factQuotes?: Record<number, string[]>, factMissing?: number[], tables?: Record<string, {header: string[], rows: any[]}>}} o
+ *   factQuotes?: Record<number, string[]>, factMissing?: number[], tables?: Record<string, {header: string[], rows: any[]}>, extraReds?: string[]}} o
+ *   `extraReds`: code's own plain-words reds (src/repocite.js: an item's file that is no file of the repo, a named-files text over the cap), each counted as one red and listed with the tie's lines
  *   `tables` (S3) maps each sheet role a `sheet` part reads to bareguard's table of the run's FROZEN csv; `inputShas[role]` is the `tableSha` recorded at the run's start, and bareguard stops the check if the table no longer gives it
  *   `factQuotes` maps an earlier fact line's number to the quotes its (already checked) step file holds — what a prose step's numbers are tied to
  *   `factMissing` lists the earlier fact lines whose step file is not there (yet): a normal red, never an instrument fault
@@ -589,7 +591,7 @@ export function plainStepGap(step, why, g, params = null) {
  *   rawGaps?: any[], extraGaps?: string[], evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
  *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
-export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [], tables = {} }, inputShas) {
+export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [], tables = {}, extraReds = [] }, inputShas) {
   let rubric;
   try { rubric = createRubric(buildStepSpec(params, inputShas)); } catch (e) {
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
@@ -619,6 +621,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   /** @type {string[]} */
   const extra = [];
   let extraCount = 0;
+  for (const w of extraReds) { extraCount += 1; extra.push(w); }
   const tie = params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
   if (tie) {
     for (const n of factMissing) {
@@ -1331,14 +1334,24 @@ export function planMatchesClose(shown, closeDecl, jobLines = null) {
   return { ok: false, error: `The checks you were shown do not match the checks the signed close would run (${parts.join(' | ')}). Nothing was signed — draft again.` };
 }
 
+/** a repo source's drafting-time texts: every asked label reads the repo's tracked-path listing (paths only, never file contents). Never throws @param {string} workdir @param {string[]} labels @returns {{ok: true, texts: Record<string, string>}|{ok: false, why: string}} */
+function repoTexts(workdir, labels) {
+  /** @type {string} */
+  let listing;
+  try { listing = repoListingText(workdir); } catch (e) { return { ok: false, why: `the repo's files could not be listed: ${/** @type {Error} */ (e).message.split('\n')[0]}` }; }
+  return { ok: true, texts: Object.fromEntries(labels.map((l) => [l, listing])) };
+}
+
 /**
  * The frozen TEXT of the named inputs, read the way the runner reads them: the source door's record (`source.json`, one level
  * above the tree) names each input's file and sha256, and a file whose bytes no longer match is not returned. Used at DRAFTING
  * (the drafter reads the input, the early tests run on it) and at run start (the backstop). Never throws.
- * @param {string} workdir the frozen tree @param {string[]} labels
+ * `source` is the SIGNED one (src/sourcedefaults.js): `repo` reads the repo's tracked-path listing instead of a frozen input record. It is read, never sniffed: a files source with no record is a refusal.
+ * @param {string} workdir the frozen tree @param {string[]} labels @param {string} [source]
  * @returns {Promise<{ok: true, texts: Record<string, string>}|{ok: false, why: string}>}
  */
-export async function readFrozenInputs(workdir, labels) {
+export async function readFrozenInputs(workdir, labels, source = 'files') {
+  if (source === 'repo') return repoTexts(workdir, labels);
   /** @type {any} */
   let manifest;
   try { manifest = JSON.parse(await readFile(join(dirname(workdir), 'source.json'), 'utf8')); } catch (e) {

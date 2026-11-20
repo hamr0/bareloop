@@ -2645,7 +2645,7 @@ export async function authorClose({
   /** @type {string[]|null} */
   let labelLists = null;
   if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
-    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
+    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label), source);
     if (frozen.ok) { inputTexts = frozen.texts; labelLists = labelListsFor(frozen.texts, facts?.look ?? null); }
   }
   // every rubric job drafts through the check block (src/authorjob.js builds it, with the person's answers applied); a caller that brings none (a direct authorClose call) gets the block of the look alone, nobody to ask

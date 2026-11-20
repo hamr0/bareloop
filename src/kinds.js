@@ -59,6 +59,8 @@
 // imported from the arbiter's shell, never re-spelled — two inventories are
 // two instruments.
 
+import { REPO_LABEL } from './sourcedefaults.js';
+import { namedFilesText } from './repocite.js';
 import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
@@ -1449,10 +1451,15 @@ async function runRubricStep(stage, ctx) {
   const step = p.step;
   const stop = (/** @type {string} */ why, /** @type {string} */ fault = STOP_FAULTS.FAILED) => stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}": ${why}`, { step }, fault);
   // the source door's record of what was frozen: beside the tree, one level up (`<into>/source.json`, `<into>/tree`)
+  // the SIGNED source (`ctx.source`, from the close's `closeDecl.source`, src/sourcedefaults.js) says where the input comes from: a repo records no frozen input (the worker read the repo's own files), every other stage reads the source door's
+  // record. Nothing is sniffed from the tree: a stage whose source was not given reads the record, and a missing record is an INSTRUMENT STOP.
+  const repoSource = ctx.source === 'repo';
   /** @type {any} */
-  let manifest;
-  try { manifest = JSON.parse(await readFile(join(dirname(ctx.workdir), 'source.json'), 'utf8')); } catch (e) {
-    return stop(`the source record (source.json beside the job's tree) could not be read: ${/** @type {Error} */ (e).message}`);
+  let manifest = { inputs: [] };
+  if (!repoSource) {
+    try { manifest = JSON.parse(await readFile(join(dirname(ctx.workdir), 'source.json'), 'utf8')); } catch (e) {
+      return stop(`the source record (source.json beside the job's tree) could not be read: ${/** @type {Error} */ (e).message}`);
+    }
   }
   const recorded = Array.isArray(manifest?.inputs) ? manifest.inputs : [];
   /** @type {Record<string, string>} */
@@ -1460,6 +1467,8 @@ async function runRubricStep(stage, ctx) {
   /** @type {Record<string, string>} */
   const inputs = {};
   for (const label of citedLabels(p)) {
+    // a repo's cite label is built below, from the files the items name
+    if (repoSource && label === REPO_LABEL) continue;
     const row = recorded.find((/** @type {any} */ r) => r && r.label === label);
     if (!row || typeof row.rel !== 'string' || typeof row.sha256 !== 'string') return stop(`the step cites "${label}", but the source record has no input with that label`);
     let buf;
@@ -1485,6 +1494,20 @@ async function runRubricStep(stage, ctx) {
   } catch (e) {
     if (/** @type {any} */ (e)?.code !== 'ENOENT') return stop(`${stepFileRel(step)} could not be read: ${/** @type {Error} */ (e).message}`);
   }
+  // a repo source: the whole text of ONLY the files the answer's items name, read from the run's tree (src/repocite.js); a file no item can be read from, or a text over the cap, is a plain-words red
+  /** @type {string[]} */
+  const repoReds = [];
+  if (repoSource && citedLabels(p).includes(REPO_LABEL)) {
+    /** @type {unknown} */
+    let items = null;
+    try { items = JSON.parse(bytes ?? 'null')?.results; } catch { /* no readable step file: the `happened` check says so */ }
+    /** @type {ReturnType<typeof namedFilesText>} */
+    let named;
+    try { named = namedFilesText(ctx.workdir, items); } catch (e) { return stop(`the repo's files could not be listed to check the quotes: ${/** @type {Error} */ (e).message.split('\n')[0]}`); }
+    repoReds.push(...named.reds);
+    inputs[REPO_LABEL] = named.text;
+    inputShas[REPO_LABEL] = sha256Of(Buffer.from(named.text, 'utf8'));
+  }
   // PART 1b: a prose step's numbers are tied to the quotes the earlier fact lines' step files hold (those stages ran, and were
   // green, before this one: the close is first-red-wins in stage order, which the validator pins). Unreadable = a stopped instrument.
   /** @type {Record<number, string[]>} */
@@ -1503,7 +1526,7 @@ async function runRubricStep(stage, ctx) {
       return stop(`the checked facts of line ${n} (${stepFileRel(n)}) could not be read for the number tie: ${/** @type {Error} */ (e).message}`);
     }
   }
-  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing, ...(sheets.roles.length > 0 ? { tables: sheets.tables } : {}) }, inputShas);
+  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing, ...(repoReds.length > 0 ? { extraReds: repoReds } : {}), ...(sheets.roles.length > 0 ? { tables: sheets.tables } : {}) }, inputShas);
   if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
   // REPORT-ONLY: what each cited check read, handed to the runner's seam (the spine's `rubric-evidence`); nothing below reads it
   if (graded.evidence && typeof ctx.onRubricEvidence === 'function') {

@@ -637,7 +637,7 @@ export async function authorCloseForJob({
   if (survey == null && lang === RUBRIC_LANG) {
     const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
     const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
-      ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
+      ? await readFrozenInputs(workdir, inputList.map((i) => i.label), source) : null;
     if (frozen !== null && frozen.ok) ledgerTexts = frozen.texts;
     if (frozen !== null && !frozen.ok) {
       survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };

@@ -1355,7 +1355,7 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
+    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: Array.isArray(prep.manifest.inputs) ? prep.manifest.inputs : [], confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
     const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
