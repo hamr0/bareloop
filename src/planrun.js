@@ -28,7 +28,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE, mcpToolsExample } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, exitExampleFor, mcpToolsExample } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -57,6 +57,7 @@ import {
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
+import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { isRateLimited, rateLimitWaitMs, statedWaitMs } from './ratelimit.js';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature, checkCloseDirRequired } from './close-integrity.js';
@@ -697,7 +698,8 @@ export function boundedNote(bounded, rounds) {
  * file in an exit path in 5 of 5 drafts (a fence escape), and 8 of 53 archived file-job runs did the same. Source-neutral words, injected on a text close only (a code close's prompt is byte-identical to before).
  * @param {number[]} lines the job lines (each has one answer file, `output/steps/<n>.json`) @returns {string}
  */
-export const answerFilesWords = (lines) => `
+export const answerFilesWords = (lines, source = 'files') => `
+You are ${defaultsOf(source).role}. Read what you need, then write your ${defaultsOf(source).answer} to ${lines.map((n) => `output/steps/${n}.json`).join(', ')}. That ${defaultsOf(source).answer} file is the only file you write; every exit and every check goes on it.
 THIS JOB'S OUTPUT IS ITS ANSWER FILES. The input is only READ, never written: no step may write or edit an input file, and no step's "target" or exit "path" may be one. The only file a step writes is the answer file
 (${lines.map((n) => `output/steps/${n}.json`).join(', ')}); give each write step that file as its "target", and put every exit (artifact-written, json-valid, tree-changed under output/) and every check-passes on that answer file. A step that only reads and greps the input first is fine.`;
 
@@ -787,7 +789,7 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
     : '';
   // the rubric road's note (a text close only): its answer files are the only thing written
   const answerLaw = job?.closeDecl?.lang === 'text'
-    ? answerFilesWords((Array.isArray(job.closeDecl?.stages) ? job.closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st?.params?.step)).map((/** @type {any} */ st) => st.params.step))
+    ? answerFilesWords((Array.isArray(job.closeDecl?.stages) ? job.closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st?.params?.step)).map((/** @type {any} */ st) => st.params.step), sourceOf(job.closeDecl) ?? 'files')
     : '';
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
@@ -816,7 +818,7 @@ strictly in array order. Each step (no other fields exist):
   it character for character. No other name exists, and you cannot add one.
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
-  ${EXIT_EXAMPLE}
+  ${exitExampleFor(job)}
   A check-passes may ONLY appear on a step whose tools include write or edit: a
   failing check is reported back to THAT step's worker for another attempt, so
   the step must be able to act on the report. Do not plan a separate read-only
