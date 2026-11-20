@@ -93,6 +93,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/fencepointcall.js', name: 'FENCE_POINT_SCHEMA (property descriptions)' }),
   Object.freeze({ file: 'src/fencepointcall.js', name: 'fencePointUserText() (inline template, not a const)' }),
 
+  // src/reviewpick.js - the crossroads of a Deterministic repo job (Review the code, item 1): the ONE binary question, change the code or review it
+  Object.freeze({ file: 'src/reviewpick.js', name: 'REVIEW_PICK_SYSTEM' }),
+  Object.freeze({ file: 'src/reviewpick.js', name: 'reviewPickPrompt() (inline template, not a const)' }),
+
   // src/checklist.js — the one check list of a rubric job: the list call's system text and schema descriptions, the drafter's list block, the code-written refusal words
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SYSTEM' }),
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SCHEMA (property descriptions)' }),

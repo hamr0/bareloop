@@ -230,7 +230,7 @@ export function mechanicalStages(stages) {
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
- *   list?: any[]|null,
+ *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -1766,7 +1766,7 @@ async function runStageIn(stage, ctx) {
 export async function seedRead(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
-  const inner = { ...ctx, seedTrees };
+  const inner = { ...ctx, seedTrees, ...(declaration?.source ? { source: declaration.source } : {}) };
   /** AFTER the stage completes, never before: a line saying a stage STARTED and
    * a line saying what it RETURNED are two different facts, and only the second
    * one can carry a verdict. The duration is measured around the call rather
@@ -1828,7 +1828,8 @@ export async function seedRead(declaration, ctx) {
 export async function runDeclaredClose(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
-  const inner = { ...ctx, seedTrees };
+  // the close's SIGNED source (`closeDecl.source`, src/sourcedefaults.js) rides into every stage; a stage reads it, never guesses it from the tree
+  const inner = { ...ctx, seedTrees, ...(declaration?.source ? { source: declaration.source } : {}) };
   try {
     /** @type {StageResult[]} */
     const stages = [];

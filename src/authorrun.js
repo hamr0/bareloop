@@ -119,6 +119,7 @@ import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
+import { chooseRoad, makePick, REVIEW_CALL_LABEL } from './reviewpick.js';
 import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
 import { FENCE_POINT_SYSTEM } from './fencepointcall.js';
@@ -293,7 +294,7 @@ export async function main(argv, deps = {}) {
   // full `VERDICT_CLASSES` (so an off-menu pick reaches the pipeline's counted
   // refusal rather than dying here as a typo); the PRINTED text names only the
   // menu (item 34 L19: nothing customer-facing names an off-menu class).
-  const VERDICT = /** @type {string} */ (verdictArg);
+  let VERDICT = /** @type {string} */ (verdictArg);
   if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
   if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
@@ -390,7 +391,7 @@ export async function main(argv, deps = {}) {
   const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
   // PART 1a: a soft-green job whose source froze the person's own local FILES (`proveRubricInputs` left `inputs` in the
   // manifest) is NOT the plain-folder stop below: it is authored against the hidden tree with the text genre, no scout.
-  const RUBRIC_FILES = !IS_REPO_SOURCE && VERDICT === 'soft-green' && isRubricFilesManifest(manifestRead.manifest);
+  let RUBRIC_FILES = !IS_REPO_SOURCE && VERDICT === 'soft-green' && isRubricFilesManifest(manifestRead.manifest);
 
   // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
   // $0, no provider, run BEFORE the API key is even read — this script must
@@ -810,6 +811,22 @@ export async function main(argv, deps = {}) {
    * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
    * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
    * prompt: reusing `generate` would run the wrong system prompt silently. */
+  // REVIEW THE CODE (docs/product/ITEM33-BUILD.md "Addendum 2026-11-20 (b)", item 1): the CROSSROADS of a Deterministic repo job, ONE function for both doors (src/reviewpick.js `chooseRoad`; the panel calls the same one) and the
+  // WRITER of the signed source. The drafter is asked ONE binary question: change the code, or review it? Change = the D flow below, untouched. Review = the rubric road (soft-green, the text close) over the repo, signed as
+  // `closeDecl.source` by `authorCloseForJob`. Failure is OPEN (the D flow).
+  /** @type {'files'|'repo'} */
+  let SOURCE_KIND = 'files';
+  {
+    const road = await chooseRoad({
+      verdictType: VERDICT, isRepoSource: IS_REPO_SOURCE, jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
+      pick: makePick({ provider, ceilingUsd: CEILING_USD, onCall, ...(authorPrice?.rates ? { rates: authorPrice.rates } : {}) }),
+    });
+    if (road.answer !== null) emit(REVIEW_CALL_LABEL, { answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}) });
+    if (road.review) {
+      SOURCE_KIND = road.source; draft.writeScope = road.writeScope; VERDICT = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles;
+      out(`review    this job reads the code and reports; it changes none (verdict ${VERDICT}, text close)`);
+    }
+  }
   const confirmGenerate = makeLoopGenerate(provider, { system: confirmSystemFor(LANG), rates: authorPrice?.rates ?? null });
 
   // ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
@@ -873,6 +890,7 @@ export async function main(argv, deps = {}) {
       // P7: the person's numbered job lines and inputs ride the draft; the drafter tags every stage with a line
       jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
       inputs: Array.isArray(draft.inputs) ? draft.inputs : null,
+      source: SOURCE_KIND,
       provider,
       generate: makeLoopGenerate(provider, { rates: authorPrice?.rates ?? null }),
       rates: authorPrice?.rates ?? null,

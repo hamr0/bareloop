@@ -70,6 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import { guardKeyOf } from './rubricstep.js';
+import { SOURCES } from './sourcedefaults.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -100,7 +101,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv', 'source']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
 export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts', 'fence']);
@@ -342,6 +343,8 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     red('invalid-value', `${at}.genre`, `menu: ${DECLARED_GENRES.join('|')} — a close's genre follows its language (${genreForLang(closeDecl.lang)} for "${String(closeDecl.lang)}"), `
       + 'and a genre with no guard battery must refuse rather than author a close without the guards it cannot supply');
   }
+  // the ONE signed source of a rubric-road close (src/sourcedefaults.js): where its input comes from. Only the text close has one; absent = files
+  if (closeDecl.source !== undefined && !(SOURCES.includes(closeDecl.source) && closeDecl.lang === 'text')) red('invalid-value', `${at}.source`, `menu: ${SOURCES.join('|')}, on the text close only (a code close has no source)`);
   const langOk = DECLARABLE_LANGUAGES.includes(closeDecl.lang);
   if (!langOk) {
     red('invalid-value', `${at}.lang`, `menu: ${DECLARABLE_LANGUAGES.join('|')} — the language selects the genre's guard `
@@ -538,14 +541,15 @@ function translate(r, redact) {
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
- *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null}} [opts]
+ *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null}} [opts]
+ *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
  *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null,
+    onRubricEvidence = null, list = null, source = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -579,6 +583,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // REPORT-ONLY seam: what a rubric-step stage's cited checks read (bareguard `full.evidence`); the runner records it, nothing here reads it
     onRubricEvidence,
     ...(Array.isArray(list) ? { list } : {}),
+    ...(source ? { source } : {}),
     seedTrees,
   };
   try {

@@ -68,6 +68,7 @@ import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
+import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
@@ -497,7 +498,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, fenceGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, reviewPick?: ((jobLines: any[]) => Promise<{answer: string, reason?: string|null}>)|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -869,12 +870,12 @@ export function createSession(card, deps = {}) {
     // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused; old runs are not repaired. Before any copy or read.
     const oldJob = deps.reuse ? oldJobWords(deps.reuse.spec) : null;
     if (oldJob !== null) { refuse(`${oldJob} Nothing spent.`); return; }
-    const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
+    let verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(SOURCE);
     // PART 1a: a RUBRIC job whose first input is not a repo works on the person's own local FILES — every numbered input
     // line is one file, frozen by `proveRubricInputs`; there is no repo, no language and no scout (docs/product/ITEM33-BUILD.md)
-    const RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
+    let RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
     const destProblem = startDestinationProblem(card);
     if (destProblem !== null) { refuse(destProblem); return; }
@@ -1107,9 +1108,26 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    // a rubric job on files writes only inside the hidden tree's own `output/`; its Destination is a drop-off folder
+    const { provider } = buildRunnerProviders({
+      providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
+    });
+    // REVIEW THE CODE (docs/product/ITEM33-BUILD.md "Addendum 2026-11-20 (b)", item 1): the CROSSROADS of a Deterministic repo job, ONE function for both doors (src/reviewpick.js `chooseRoad`), and the WRITER of the signed
+    // source. The drafter is asked ONE binary question: change the code, or review it? Change = the D flow below, untouched. Review = the rubric road (soft-green, the text close) over the repo: `road.source` is signed into
+    // `closeDecl.source` by `authorCloseForJob`. A test that replaces the model boundary (`deps.generate`) asks nothing unless it brings `deps.reviewPick`; failure is OPEN (the D flow).
+    const road = await chooseRoad({
+      verdictType, isRepoSource: IS_REPO_SOURCE, jobLines,
+      pick: deps.reviewPick !== undefined ? deps.reviewPick : (deps.generate ? null : makePick({
+        provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+        ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
+      })),
+    });
+    if (abandoned) return;
+    if (road.answer !== null) appendDraftLog(outDir, { kind: REVIEW_CALL_LABEL, no: Math.max(0, state.steps.length - 1), answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}), at: new Date().toISOString() });
+    if (road.review) { verdictType = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles; }
+
+    // a rubric job writes only inside the tree's own `output/` (a review's report is written by code); its Destination is a drop-off folder
     // (proven above, per run), never a fence
-    let writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    let writeScope = road.review ? road.writeScope : RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -1147,9 +1165,6 @@ export function createSession(card, deps = {}) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
     }
 
-    const { provider } = buildRunnerProviders({
-      providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
-    });
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed
     // `provider` for the model boundary) and/or `scout` (bypassing the real
@@ -1300,7 +1315,7 @@ export function createSession(card, deps = {}) {
     const authored = await authorCloseForJob({
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
-      jobLines, inputs: INPUTS,
+      jobLines, inputs: INPUTS, source: road.review ? road.source : 'files',
       writeScope, provider, generate,
       ceilingUsd: card.capUsd,
       rates: draftPrice?.rates ?? null,

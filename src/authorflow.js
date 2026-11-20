@@ -2420,7 +2420,7 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null, source?: 'files'|'repo',
  *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null, carriedSheetDropped?: any[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
@@ -2448,6 +2448,8 @@ export async function authorClose({
   // P7: the person's numbered job lines and inputs (src/jobblock.js). ABSENT = every caller that predates the job block:
   // no tagging order in the prompt, and no coverage rule in the validator.
   jobLines = null, inputs = null,
+  // the rubric road's signed SOURCE (src/sourcedefaults.js): every close this drafting runs (the seed reads) is told it
+  source = 'files',
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -2971,7 +2973,7 @@ export async function authorClose({
         // it is the runner's own reporting channel, not a knob a caller's close
         // context may quietly redirect.
         const rows = await seedReadFn(injected.declaration, {
-          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees,
+          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees, ...(lang === RUBRIC_LANG ? { source } : {}),
           onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
         });
         onPhase('seed-read-done', { call: label, stages: stageCount });

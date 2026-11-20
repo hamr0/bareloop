@@ -432,7 +432,7 @@ function composerRefusal(reds) {
  * model reached for (the catalogue's own counted-demand red, carried up). D13's
  * one-genre-at-a-time law is untouched.
  *
- * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
+ * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string, source?: 'files'|'repo',
  *   jobLines?: {n: number, text: string, rule?: string, rules?: string[]}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
@@ -457,6 +457,8 @@ export async function authorCloseForJob({
   // P7: the person's numbered job lines and numbered inputs (src/jobblock.js). Absent = every caller that predates the
   // job block (no line tagging, no coverage rule).
   jobLines = null, inputs = null,
+  // the rubric road's SOURCE (src/sourcedefaults.js): where the input is read from. The crossroads (src/reviewpick.js) writes it; absent = files. Signed into `closeDecl.source` (a repo only) and handed to every close this draft runs
+  source = 'files',
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
   rates = null,
@@ -946,7 +948,7 @@ export async function authorCloseForJob({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
-    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
+    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs, source,
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
@@ -970,7 +972,7 @@ export async function authorCloseForJob({
       answers: stageAnswers, questions: questions ?? questionsFor(picked),
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
-      confirmed, jobLines, inputs,
+      confirmed, jobLines, inputs, source,
       ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
@@ -1009,6 +1011,7 @@ export async function authorCloseForJob({
   let closeDecl = {
     genre: genreForLang(lang),
     lang,
+    ...(lang === RUBRIC_LANG && source !== 'files' ? { source } : {}),
     stages: authored.declaration.stages,
     ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),
     // `notes` is the one FREE-TEXT field the model writes straight into the
@@ -1323,7 +1326,7 @@ export async function prepareSigning({
   try {
     rows = await seedReadFn(
       { stages: spec.closeDecl.stages },
-      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }) },
+      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(spec.closeDecl.source ? { source: spec.closeDecl.source } : {}), ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }) },
     );
   } finally {
     await seedTrees.cleanup();
