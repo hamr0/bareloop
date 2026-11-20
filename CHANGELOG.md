@@ -10,6 +10,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - barebrowse is now ^0.31.0 (0.30.1 Firefox goto() status fix: no status 0 on big streamed pages, the final page after a redirect).
+- A shape answer that is not a list now says what it is in plain words (`it is plain text`, `a number`, `true or false`, `an object`, `empty`), not bareguard's `type:string` (matches fwdloop).
 
 ## [0.61.0] - 2026-11-19
 

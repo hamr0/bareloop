@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { plainStepGap } from '../src/rubricstep.js';
-import { plainShapeItem, itemFieldOf, parseShapeItem, shapeGapCount } from '../src/shapewords.js';
+import { plainShapeItem, itemFieldOf, parseShapeItem, shapeGapCount, measuredWords, MEASURED_WORDS } from '../src/shapewords.js';
 
 const gap = (/** @type {any} */ o) => ({ id: 'p1-shape', check: 'itemShape', field: 'results', ...o });
 const words = (/** @type {any} */ g) => plainStepGap(2, 'empty', g, null);
@@ -39,7 +39,7 @@ test('a reason the table does not know is kept in its raw words, never dropped',
 
 test('the whole-field gaps: missing, not-a-list, count-under, count-over, too-many', () => {
   assert.match(words(gap({ kind: 'missing' })), /^line 2: output\/steps\/2\.json has no "results" list/);
-  assert.match(words(gap({ kind: 'not-a-list', measured: 'string' })), /"results" in output\/steps\/2\.json is not a list \(it is string\)/);
+  assert.match(words(gap({ kind: 'not-a-list', measured: 'type:string' })), /"results" in output\/steps\/2\.json is not a list \(it is plain text\)/);
   assert.equal(words(gap({ kind: 'count-under', measured: 1, limit: 2, direction: 'at-least' })), 'line 2: "results" lists 1 item(s), at least 2 are required');
   assert.equal(words(gap({ kind: 'count-over', measured: 4, limit: 3, direction: 'at-most' })), 'line 2: "results" lists 4 item(s), at most 3 are allowed');
   assert.match(words(gap({ kind: 'too-many', measured: 100001, limit: 100000 })), /too many items to check \(100001 against a limit of 100000\)/);
@@ -78,4 +78,17 @@ test('shapeItemOfPlain reads our own sentences back: every reason goes both ways
   ];
   for (const r of reds) assert.equal(shapeItemOfPlain(plainShapeItem(r)), r, r);
   assert.equal(shapeItemOfPlain('line 1: something else'), null);
+});
+
+test('a not-a-list gap says what the answer is in plain words', () => {
+  const map = { 'type:string': 'plain text', 'type:number': 'a number', 'type:boolean': 'true or false', 'type:object': 'an object', 'type:null': 'empty' };
+  for (const [k, v] of Object.entries(map)) {
+    assert.equal(measuredWords(k), v);
+    assert.match(words(gap({ kind: 'not-a-list', measured: k })), new RegExp(`is not a list \\(it is ${v}\\) — give a list of items$`));
+  }
+  assert.equal(measuredWords('type:weird'), 'type:weird');
+  assert.equal(measuredWords(undefined), 'something else');
+  assert.equal(measuredWords(null), 'something else');
+  assert.deepEqual(Object.keys(MEASURED_WORDS).sort(), ['type:boolean', 'type:null', 'type:number', 'type:object', 'type:string']);
+  assert.match(words(gap({ kind: 'not-a-list' })), /\(it is something else\)/);
 });

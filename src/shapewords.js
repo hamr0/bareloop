@@ -72,6 +72,15 @@ export function plainShapeItem(item) {
   }
 }
 
+/** the words of a `not-a-list` gap's measured value (bareguard's `type:<kind>`); any other measured value is printed as it came */
+export const MEASURED_WORDS = Object.freeze({ 'type:string': 'plain text', 'type:number': 'a number', 'type:boolean': 'true or false', 'type:object': 'an object', 'type:null': 'empty' });
+
+/** the measured value of a `not-a-list` gap in a person's words, or `something else` when none came @param {unknown} measured @returns {string} */
+export function measuredWords(measured) {
+  if (measured === undefined || measured === null) return 'something else';
+  return Object.hasOwn(MEASURED_WORDS, String(measured)) ? MEASURED_WORDS[/** @type {keyof typeof MEASURED_WORDS} */ (String(measured))] : String(measured);
+}
+
 /**
  * One bareguard `itemShape` gap as plain lines (one per item red, or one for a whole-field gap).
  * @param {{at: string, file: string, field?: string}} where `at` = `line N`, `file` = the step file's path, `field` = the answer field holding the items (default `results`)
@@ -82,7 +91,7 @@ export function plainShapeGap({ at, file, field = 'results' }, g) {
   switch (g.kind) {
     case 'missing': return `${at}: ${file} has no ${f} list — give a list of items, one object per item`;
     case 'unreadable': return `${at}: ${f} in ${file} could not be read`;
-    case 'not-a-list': return `${at}: ${f} in ${file} is not a list (it is ${g.measured ?? 'something else'}) — give a list of items`;
+    case 'not-a-list': return `${at}: ${f} in ${file} is not a list (it is ${measuredWords(g.measured)}) — give a list of items`;
     case 'too-many': return `${at}: ${f} lists too many items to check (${g.measured} against a limit of ${g.limit})`;
     case 'count-under': return `${at}: ${f} lists ${g.measured} item(s), at least ${g.limit} are required`;
     case 'count-over': return `${at}: ${f} lists ${g.measured} item(s), at most ${g.limit} are allowed`;
