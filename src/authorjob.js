@@ -105,7 +105,7 @@ import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import {
-  GENRE_LANGUAGES, RUBRIC_LANG, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
@@ -731,7 +731,7 @@ export async function authorCloseForJob({
     block.fromJob(jobLines);
     // S4: the rules of a line that reads a sheet are the sheet checks' alone: no pick question, no page path (src/sheetrows.js `sheetLineNumbers`, the row-edit turn's own rule)
     block.setSheetLines(sheetLineNumbers({ inputs, texts: ledgerTexts, jobLines }));
-    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
+    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : [...RUBRIC_FENCE]);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
     block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);

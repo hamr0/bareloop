@@ -539,6 +539,8 @@ export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
  * repo job's language detection and the confirm turn offer); this is the one extra value a close may DECLARE.
  */
 export const RUBRIC_LANG = 'text';
+/** the rubric road's worker write fence: the tree's own `output/` and nothing else. ONE truth; sites spread a fresh copy (`[...RUBRIC_FENCE]`). Lives beside `RUBRIC_LANG` (every site already imports from here, no cycle). */
+export const RUBRIC_FENCE = Object.freeze(['output/']);
 /** the genre label a close over local text files carries (`closeDecl.genre`); the code languages' is `TYPES_GENRE.name`. Never the other's. */
 export const TEXT_GENRE = 'TEXT';
 /** @param {unknown} lang @returns {string} the genre a close of this language is authored under */

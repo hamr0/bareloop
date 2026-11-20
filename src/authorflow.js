@@ -80,7 +80,7 @@ import { join, relative, isAbsolute, dirname } from 'node:path';
 import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
-  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
+  GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
@@ -2656,7 +2656,7 @@ export async function authorClose({
     block.reconcile();
   }
   // the mandatory guards are job-level `$` rows of the signed list (piece 2): the block that signs knows their names, whoever built it
-  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
+  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : [...RUBRIC_FENCE]);
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;
   const draftGenerate = rowEdits && editGenerate ? editGenerate : generate;
@@ -2667,7 +2667,7 @@ export async function authorClose({
     const refused = /** @type {CheckBlock} */ (block).refusedView(jobLines, c.stages);
     const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
-    const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
+    const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : [...RUBRIC_FENCE];
     return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
   // S2: with a CSV input the row-edit turn also offers the optional `sheetChecks` (typed suggestions; code builds or refuses each: src/sheetbuild.js). The tables are the drafting copy's table of each CSV input, by its label;

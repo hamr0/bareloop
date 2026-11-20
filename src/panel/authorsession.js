@@ -50,7 +50,7 @@ import {
 } from '../providers.js';
 import { resolveJobJudge } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
-import { RUBRIC_LANG } from '../authoring.js';
+import { RUBRIC_LANG, RUBRIC_FENCE } from '../authoring.js';
 import { rubricGoal, cardOfClose, signedFactNames, carriesOneList, stageNameOfKey } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { FLOW_TYPES, flowTypeOf, oldJobWords } from '../job.js';
@@ -1127,7 +1127,7 @@ export function createSession(card, deps = {}) {
 
     // a rubric job writes only inside the tree's own `output/` (a review's report is written by code); its Destination is a drop-off folder
     // (proven above, per run), never a fence
-    let writeScope = road.review ? road.writeScope : RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    let writeScope = RUBRIC_FILES ? [...RUBRIC_FENCE] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real

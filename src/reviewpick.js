@@ -13,7 +13,7 @@ import { isTransportFailure } from './transport.js';
 import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS } from './authorscout.js';
-import { RUBRIC_LANG } from './authoring.js';
+import { RUBRIC_LANG, RUBRIC_FENCE } from './authoring.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -118,7 +118,7 @@ export async function chooseRoad({ verdictType, isRepoSource, jobLines, pick }) 
   if (verdictType !== 'green' || !isRepoSource || !Array.isArray(jobLines) || jobLines.length === 0 || typeof pick !== 'function') return { review: false, answer: null, reason: null };
   const r = await pick(jobLines);
   if (r.answer !== 'review') return { review: false, answer: r.answer, reason: r.reason ?? null };
-  return { review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: RUBRIC_LANG, rubricFiles: true, writeScope: ['output/'], source: 'repo' };
+  return { review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: RUBRIC_LANG, rubricFiles: true, writeScope: [...RUBRIC_FENCE], source: 'repo' };
 }
 
 /**
