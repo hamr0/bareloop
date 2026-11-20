@@ -2426,3 +2426,7 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 5. Headless, other agents hire bareloop: a coding agent hands bareloop a small job and gets back a verdict plus a receipt (the run record). Fits the identity line: they build the harness ("does it run"), bareloop is the judge ("was it good").
 
 - README "hire" framing ("Hire an agent for a job, not a task") is being drafted for this release, pending hamr's sign-off.
+
+### Phrase alternatives keep only the first word, waiting for fwd (2026-11-20)
+
+- Phrase fact with alternative words keeps only the first (`src/inputlook.js:173`) — waiting for fwd's fix, copy from fwd's tag, build nothing here (hamr 2026-11-20); see the fix ledger bullet for `src/inputlook.js`.
