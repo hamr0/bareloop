@@ -27,6 +27,7 @@ import { scrubRaw } from './text.js';
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
 import { stepFileRel, lineRules } from './rubricstep.js';
+import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { planFromSpec, kindOfCheck } from './panel/jobplan.js';
 import { decidedWords } from './draftspend.js';
 import { ticketFilterWords } from './ticketfilter.js';
@@ -639,6 +640,17 @@ export const READOUT_HEADS = Object.freeze({
 /** The readout's top line prefix: ONE owner for the text `buildReadout` writes and the bold `readoutHeadIndexes` finds. */
 export const READOUT_HEADER_PREFIX = 'DRAFT READOUT \u2014 NOT SIGNED \u2014 job ';
 
+/**
+ * The readout's FIRST line says which road the job took, so the person sees it before anything else. It is read from the road (the verdict class) and the SIGNED source, never from a fence: a text close reads its source's own words (a repo reads the
+ * code and changes none; files says nothing, as before), a Deterministic (class green) job changes the code, any other job says nothing.
+ * @param {any} spec @returns {string}
+ */
+export function jobKindWords(spec) {
+  const source = sourceOf(spec?.closeDecl);
+  if (source !== null) return defaultsOf(source).roadWords;
+  return spec?.verdictType === 'green' ? ' \u2014 change (changes the code)' : '';
+}
+
 /** Zero-based indexes of the header and heading lines in a readout's text (split on "\n"): the panel draws those bold. @param {string} text @returns {number[]} */
 export function readoutHeadIndexes(text) {
   const heads = new Set(Object.values(READOUT_HEADS));
@@ -678,7 +690,7 @@ export function buildReadout({ spec, name, modelId = null, rounds, costUsd, spen
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
   const closeDecl = spec?.closeDecl;
   const out = [];
-  out.push(`${READOUT_HEADER_PREFIX}${name ?? spec?.job ?? '?'}`, '');
+  out.push(`${READOUT_HEADER_PREFIX}${name ?? spec?.job ?? '?'}${jobKindWords(spec)}`, '');
   const cost = typeof costUsd === 'number' ? (spendComplete === false ? `at least ${panelMoney2(costUsd)} (a provider call is unpriced)` : panelMoney2(costUsd)) : 'unknown';
   out.push(`Drafted by: ${modelId ?? spec?.model ?? '?'} in ${rounds} round(s), cost ${cost}`);
   out.push(`Cap: ${typeof spec?.budgetUsd === 'number' ? panelMoney2(spec.budgetUsd) : 'unknown'} (money) \u00B7 ${capTimeWords(spec?.maxWallMs)} (time)`, '');

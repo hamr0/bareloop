@@ -24,12 +24,13 @@ const textField = (name) => Object.freeze({ name, kind: 'text', required: true, 
  *   `fields`: the item fields code adds to EVERY shape line of the source (`[default]` rows; the worker is told them; the shape look is told they exist): none for files; a repo's items name a file, quote it and say why.
  *   `cite`: the label each item's quote is found under (the signed shape part's `cite`), or null: a repo's quotes are found in the repo files the items name.
  *   `reportInRepo`: where the ONE report is delivered. false = every file under output/ plus the report go to the person's folder OUTSIDE the tree; true = ONLY the report is written into `<worktree>/<Destination>` and the run's normal green commit carries it.
+ *   `roadWords`: what the draft readout's first line adds about the job (a files job says nothing).
  *   `commitExclude`: the paths that green commit leaves out (a repo: the worker's scratch `output/`, so only the report goes on the branch).
- * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[], fields: readonly {name: string, kind: 'text', required: true, bounds: {minChars: number}}[], cite: string|null, reportInRepo: boolean, commitExclude: readonly string[]}>>}
+ * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[], fields: readonly {name: string, kind: 'text', required: true, bounds: {minChars: number}}[], cite: string|null, reportInRepo: boolean, commitExclude: readonly string[], roadWords: string}>>}
  */
 export const SOURCE_DEFAULTS = Object.freeze({
-  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])), fields: Object.freeze(/** @type {{name: string, kind: 'text', required: true, bounds: {minChars: number}}[]} */ ([])), cite: /** @type {string|null} */ (null), reportInRepo: false, commitExclude: Object.freeze(/** @type {string[]} */ ([])) }),
-  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']), fields: Object.freeze(['file', 'quote', 'why'].map(textField)), cite: /** @type {string|null} */ (REPO_LABEL), reportInRepo: true, commitExclude: Object.freeze(['output']) }),
+  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])), fields: Object.freeze(/** @type {{name: string, kind: 'text', required: true, bounds: {minChars: number}}[]} */ ([])), cite: /** @type {string|null} */ (null), reportInRepo: false, commitExclude: Object.freeze(/** @type {string[]} */ ([])), roadWords: '' }),
+  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']), fields: Object.freeze(['file', 'quote', 'why'].map(textField)), cite: /** @type {string|null} */ (REPO_LABEL), reportInRepo: true, commitExclude: Object.freeze(['output']), roadWords: ' \u2014 review (reads the code, changes none)' }),
 });
 
 /** the defaults row of a source (files when none) @param {string|null|undefined} source */
