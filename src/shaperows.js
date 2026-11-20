@@ -20,6 +20,7 @@ export const shapeDefaultKey = (line) => `L${line}.$shape`;
 /** the words of the `[default]` row of a shape line, drawn only when the person's words gave an item count (hamr 2026-11-18: the card's `$` row is the Not checked line): `exactly 2 items` @param {{min?: number, max?: number}|null} [count] @returns {string|null} */
 export function shapeDefaultWords(count = null) {
   if (count && Number.isInteger(count.min) && count.min === count.max) return `the answer lists exactly ${count.min} item${count.min === 1 ? '' : 's'}`;
+  if (count && Number.isInteger(count.min) && count.max === undefined) return `the answer lists at least ${count.min} item${count.min === 1 ? '' : 's'}`;
   return null;
 }
 
@@ -88,15 +89,15 @@ export function shapeFieldSentence(spec, said = '') {
 /**
  * The signed part of ONE shape line, from the fields that stand (the `[you]` rule fields, the `[agent]` fields the person has not dropped or left Suggested, and the source's `[default]` fields).
  * `cite` (the source's row, src/sourcedefaults.js): the label the items' quotes are found under; absent when the source has none.
- * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'|'default'}[], itemCount?: {n: number}|null, cite?: string|null}} o
+ * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'|'default'}[], itemCount?: {n: number, atLeast?: boolean, rule?: number}|null, cite?: string|null}} o
  * @returns {Record<string, any>}
  */
 export function buildShapePart({ text, fields, itemCount = null, cite = null }) {
-  const rules = [...new Set(fields.filter((f) => Number.isInteger(f.rule)).map((f) => /** @type {number} */ (f.rule)))].sort((a, b) => a - b);
+  const rules = [...new Set([...fields.filter((f) => Number.isInteger(f.rule)).map((f) => /** @type {number} */ (f.rule)), ...(itemCount?.rule ? [itemCount.rule] : [])])].sort((a, b) => a - b);
   return {
     class: 'shape', text,
     fields: fields.map((f) => ({ name: f.name, spec: f.spec, ...(Number.isInteger(f.rule) ? { rule: f.rule } : {}), ...(f.by === 'agent' || (f.by === 'default' && !Number.isInteger(f.rule)) ? { row: f.by } : {}) })),
-    ...(itemCount ? { minItems: itemCount.n, maxItems: itemCount.n } : {}),
+    ...(itemCount ? (itemCount.atLeast === true ? { minItems: itemCount.n } : { minItems: itemCount.n, maxItems: itemCount.n }) : {}),
     ...(rules.length ? { rules } : {}),
     ...(cite !== null ? { cite } : {}),
   };

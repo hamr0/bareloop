@@ -21,6 +21,9 @@ import { SHAPE_KINDS, ENTRY_KINDS, GROUNDED_BOUNDS, UPPER_BOUNDS, COUNT_BOUNDS, 
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** why a `~` rule no field holds is Not checked, when no field named it (judged at Accept, not at an Ask) */
+/** "at least N" in a rule's own words: the digits are the floor of the item count (read only for the rule the AI pointed at) */
+const AT_LEAST_RE = /\bat least (\d+)\b/i;
+
 export const NO_FIELD_WHY = 'No field was picked for it, so you judge it at Accept.';
 
 /** why a rule whose field carries no limit from its own words stays Not checked: a field with no bound checks nothing the person asked for (hamr 2026-11-19) */
@@ -49,7 +52,7 @@ const words = (/** @type {unknown} */ s) => String(s).replace(/([a-z0-9])([A-Z])
 /**
  * @typedef {{name: string, kind: string, required: boolean, bounds: Record<string, any>, rule: number|null, by: 'you'|'agent'|'default', held: boolean, why?: string}} ShapeField
  * @typedef {{rule: number, text: string, state: 'built'|'not-checked', reason: string|null, name: string|null}} ShapeRule
- * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number}|null, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
+ * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number, atLeast?: boolean, rule?: number}|null, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
  */
 
 /**
@@ -217,7 +220,7 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
   // the rule fields in rule order first, then the agent's, in the order sent
   const ordered = [...fields.filter((x) => x.by === 'default'), ...fields.filter((x) => x.by === 'you').sort((a, b) => /** @type {number} */ (a.rule) - /** @type {number} */ (b.rule)), ...fields.filter((x) => x.by === 'agent')];
   // R4: the item count
-  /** @type {{labels: string[], n: number}|null} */
+  /** @type {{labels: string[], n: number, atLeast?: boolean, rule?: number}|null} */
   let itemCount = null;
   const pick = s.itemCountFrom;
   if (Array.isArray(pick) && pick.length > 0) {
@@ -229,10 +232,19 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
       else refused.push({ helper: 'itemCount', why: 'the count is not in your words (say "per" or "each" and the input, e.g. "one summary per resume")' });
     }
   }
+  // "at least N": the AI POINTS at the rule that sets the list's floor (`countFromRule`); code only checks that the rule is the line's own, that no field holds it, and that its own words give the number as digits after "at least"
+  // (no unit word list). No pointing = no count from code. The result is `minItems N` alone (the person gave no ceiling).
+  if (itemCount === null && Number.isInteger(s.countFromRule) && s.countFromRule >= 1 && s.countFromRule <= rules.length && !ordered.some((x) => x.rule === s.countFromRule)) {
+    const m = AT_LEAST_RE.exec(rules[s.countFromRule - 1]);
+    if (m && Number(m[1]) >= 1) itemCount = { labels: [], n: Number(m[1]), atLeast: true, rule: s.countFromRule };
+    else refused.push({ helper: 'itemCount', why: `rule ${s.countFromRule} gives no "at least <number>" in its own words` });
+  }
   /** @type {ShapeRule[]} */
   const rows = rules.map((text, i) => {
     const n = i + 1;
     const f = ordered.find((x) => x.rule === n);
+    // a rule the item count's floor carries has no field: its row is built, and the line's `[default]` count row says it
+    if (!f && itemCount?.rule === n) return { rule: n, text, state: /** @type {const} */ ('built'), reason: null, name: null };
     return f ? { rule: n, text, state: /** @type {const} */ ('built'), reason: null, name: f.name } : { rule: n, text, state: /** @type {const} */ ('not-checked'), reason: refusedFor.get(n) ?? NO_FIELD_WHY, name: null };
   });
   const ok = ordered.some((x) => x.by === 'you' || x.by === 'default');

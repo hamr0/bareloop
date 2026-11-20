@@ -138,7 +138,7 @@ export function lineBriefs(closeDecl) {
     if (sp) {
       const fields = sp.fields.filter(isRec);
       const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
-      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : 'one item for every one you find';
+      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : Number.isInteger(sp.minItems) && sp.maxItems === undefined ? `at least ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}, one for every one you find` : 'one item for every one you find';
       out.push({
         line: n,
         text: [

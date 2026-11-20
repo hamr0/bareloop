@@ -220,7 +220,8 @@ export class CheckBlock {
     // a rule code marks as negating says what is NOT needed: it stays with the person (NEGATING_RE, the old ruling), never a shape field ("no nonstop" must not become nonstop = false)
     if (this.repo !== null || r.kind !== 'rule' || this.isSheetLine(r.line) || NEGATING_RE.test(String(r.text))) return null;
     const rs = this.shapeBuilt?.built[r.line]?.rows.find((x) => x.rule === r.rule && x.text === r.text);
-    return rs && rs.state === 'built' && typeof rs.name === 'string' ? { name: rs.name } : null;
+    // a rule the item count's floor carries ("at least N") has no field name: its row is still built, the `[default]` count row says it
+    return rs && rs.state === 'built' && (typeof rs.name === 'string' || this.shapeBuilt?.built[r.line]?.itemCount?.rule === r.rule) ? { name: rs.name ?? '' } : null;
   }
 
   /**

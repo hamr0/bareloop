@@ -55,10 +55,11 @@ export function shapeLookPrompt({ jobLines, lineNums, texts, left = [], have = [
     + '- "extraFields": any other field you think would help (none is fine); its "fromRule" is null and code shows it to the person as a suggestion.\n'
     + '- "kind" is one of the kinds below; "bounds" holds only the bounds that kind accepts, taken from that field\'s own rule. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true.\n'
     + '- "itemCountFrom": the labels of the inputs that give exactly one item each, only when the person wrote it ("one blurb per resume"); otherwise [].\n'
+    + '- "countFromRule": the number of the ~ rule on the line that says how FEW items the list must have ("at least 3 issues"), only when a rule says it with a number; otherwise null. A rule that limits a field (words or characters in one field) is not it.\n'
     + `- A field name is at most ${NAME_MAX_CHARS} characters and holds none of . : [ ] ; a list field writes its entries as "of": {"kind": "text", ...bounds}.\n\n`
     + `The field kinds (and the bounds each kind accepts):\n${shapeMenuLines().join('\n')}\n\n`
     + 'Return ONLY a JSON object, no prose, no code fence, with "shapes" empty when no line is a list of items:\n'
-    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[]}]}';
+    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[],"countFromRule":null}]}';
 }
 
 /**
@@ -72,6 +73,7 @@ export function parseShapeAnswer(text) {
   if (m === null || typeof m !== 'object' || Array.isArray(m) || !Array.isArray(m.shapes)) return { ok: false };
   for (const s of m.shapes) {
     if (s === null || typeof s !== 'object' || Array.isArray(s) || !Number.isInteger(s.line)) return { ok: false };
+    if (s.countFromRule !== undefined && s.countFromRule !== null && !Number.isInteger(s.countFromRule)) return { ok: false };
     for (const k of ['fields', 'extraFields', 'itemCountFrom']) if (s[k] !== undefined && s[k] !== null && !Array.isArray(s[k])) return { ok: false };
   }
   return { ok: true, shapes: m.shapes };
