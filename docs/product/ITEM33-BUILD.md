@@ -5326,6 +5326,7 @@ Branch feat/shape-jobs, not pushed. Findings F369-F374 in `docs/wiki/FINDINGS.md
 ## Addendum 2026-11-20: Review the code (Deterministic repo jobs) + review by git range or branch
 
 Status: SIGNED by hamr 2026-11-20 ("signed"). Being built on chore/barebrowse-031, Part 1 first.
+Build method replaced 2026-11-20 by "Addendum 2026-11-20 (b): Review the code, clean" (below).
 POC: plans v1-v4 in `.claude/scratch/poc-shape-on-d-plan*.md`; v1-v3 FAIL, v4 (round 3) PASS, n=5, UNDERPOWERED,
 $2.2 in all. Findings F376-F378 (below).
 
@@ -5405,3 +5406,79 @@ The flow:
 1. Part 1 build items 1-6, then fixes 7-10, each one commit with a test.
 2. Part 2: POC (frozen), then build.
 3. Full suite, push, CI, `/code-review`, `/release` (with the barebrowse bump and the wording change already here).
+
+## Addendum 2026-11-20 (b): Review the code, clean — one rubric road, two sources
+
+Status: SIGNED by hamr 2026-11-20 ("sign and go"). Replaces the build method of "Addendum 2026-11-20: Review the code" Part 1 (its rulings,
+flow and fixes 7-10 stand; the flag-threaded build f05f9308..faf1fbc1 is reworked, not stacked on).
+Why: hamr 2026-11-20 rejected the flag-threaded build ("no patch-up work ... the clean way"). A `review` flag was
+passed through ~15 files and got one patch per problem.
+POC: `.claude/scratch/poc-clean-review-plan.md` (sha 4211081d, frozen before data), $0, VERDICT PASS (A1-A8), results
+`.claude/scratch/poc-clean/RESULTS.md`, spike `.claude/scratch/poc-clean/spike.diff` (a reference, never copied:
+graduation is a rewrite).
+
+### The one idea
+
+A review is the EXISTING rubric road. The only new thing is where it reads from: a repo instead of input files.
+So the one variable is the SOURCE, signed once: `closeDecl.source` = `files` | `repo` (absent on a text close =
+`files`; a code close has none). Every place that asked "is this a review?" reads that field, or the one table
+keyed by it. Nothing guesses.
+
+### Build items
+
+1. The field. `closeDecl.source`, validated (only `files`|`repo`, only on a text close). Written by the crossroads
+   (`chooseRoad`, src/reviewpick.js — it runs before any spec, so it is the writer, never a reader). It must reach
+   every place a close runs, drafting included (POC: the two draft-time seed reads also need it).
+2. The table. One small module (`src/sourcedefaults.js`): per source, the `[default]` item fields
+   (`files`: none; `repo`: file, quote, why) and the cite source (`repo`: the files the items name, read from the
+   run's tree, 5 MB plain-words red). CheckBlock, the shape builder and the shape look read the table; the
+   `reviewLines`/`setReview`/`reviewA`/`review:` threading is deleted.
+   The signed shape part's `cite: 'repo'` is the table's output written at signing; the validator refuses a part
+   whose `cite` differs from `defaultsOf(source).cite` (one truth, checked, never two that can disagree).
+3. Reading inputs. `readFrozenInputs`, `runRubricStep` and kinds.js read the signed source; the ENOENT / no-inputs
+   sniffs are deleted. A review stage with no signed source is an instrument stop, never a guess.
+4. Fence. The worker's write scope on the rubric road is `output/` for both sources. The report is written by code.
+   `reviewWriteScope`, `reviewWriteDeny` and ruling 2A's ".md under Destination" are deleted (hamr 2026-11-20: rec
+   1 accepted). POC A2: in 5 live runs every worker write was under `output/`.
+5. Delivery. One delivery step, a row per source (POC A3 corrected my premise): `files` delivers every file under
+   `output/` plus the report to the person's folder outside the tree, as today; `repo` writes only the report into
+   `<worktree>/<Destination>`, and the run's normal green commit carries it (`output/` left out of that commit).
+   No second commit, no containment bypass.
+6. Prompt text belongs to the road, not to "review". The planner line "write only your answer files
+   `output/steps/<n>.json`; every exit is on them" goes to EVERY text-close planner (file jobs had the same first-plan
+   fence escape, 8 of 53 archived runs). This changes released file-job planner prompts (hamr: rec 2 accepted, with
+   one live file-job run). The shape look's "these fields already exist" is said only when the table has default
+   fields (repo today), never by a flag. POC A6: a repo and a files planner prompt differ only by the listing.
+7. The readout's first line comes from the road and the source.
+8. "1. 1." (POC A8: not a review bug). The one owner is `parseJobBlock` (src/jobblock.js:47): it keeps the typed
+   text and numbers by position, and 9 renderers add `n. `. Fix at the owner: a typed leading `<n>.` that equals the
+   line's own position is read as the person's line marker and not kept in the text (hamr: 4A). Any other leading
+   number stays as typed.
+
+### Tests and proof
+
+- Fail-first per item; the POC's mutations are the floor (widened fence reds, commit exclusion removed reds,
+  source not stamped reds, sniff restored reds).
+- Signed rows of the recorded draft smwozq1c7sp8i identical to live; the 4 green runs' answers replay to the same
+  row results; planted negatives (one changed quote word, an untracked file, an empty `why`) red in plain words.
+- Full suite. Then live (DeepSeek flash): one file-job rubric run (item 6), then a fresh 5-pair review run against
+  the round 3 bar.
+
+### Part 2 changes (range/branch), from POC A7
+
+- Reuse the PR path: split `checkoutPrHead`'s last step into one `checkoutAt(sha)`; a range or branch rev-parses both
+  ends and calls the same `checkoutAt`. One checkout path.
+- `diff` joins the allow-listed read-only git (hamr: rec 3 accepted). Code runs it, never the worker.
+- Part 2's own POC (frozen) still comes first, as signed.
+
+### Decided by hamr 2026-11-20
+
+9. (Q1 A) A red for a file name that is not tracked (or a file over 5 MB) is owned by the cite row: that row reads
+   `failed` with the plain-words reason, never every row `passed` beside a red verdict (pre-existing: the red rode
+   `extraReds`, which no row owns). Fail-first test on the live shape.
+10. (Q2 A, then branch A) Rebuild clean on the SAME branch (hamr: one branch): tag the current tip faf1fbc1 as
+   `backup/review-flag` (local, never pushed), then move chore/barebrowse-031 back to 761b7c0a (the signed spec,
+   before any flag code). Only commits up to 9b1e914e were ever pushed and all stay, so no force-push. The
+   flag-threaded commits f05f9308..faf1fbc1 are NOT carried; their tests are reused only where they still fit the
+   clean design, each rewritten to it. This spec addendum is committed first on the moved branch.
+   Hiccup rule (hamr 2026-11-20): any problem in the build stops and comes back to hamr with facts and options.
