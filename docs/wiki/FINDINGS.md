@@ -16658,3 +16658,25 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 **Not covered.** OpenHands, SWE-agent, Devin, Factory, CrewAI, AutoGen, DSPy, DeepEval, Braintrust, NeMo Guardrails, Pydantic-AI docs; "AI employee" products; small 2026 GitHub projects. No evidence either way.
 
 **Consequence.** The README makes no "first" or "only" claim. The common gap seen: no one pairs an agent-designed flow with code-decided verification, a Not checked list for the human, and reuse across runs.
+
+### F376: Shape on D POC rounds v1-v3 failed; the failures were the harness's, not the worker's (2026-11-19/20, $1.88)
+
+- v1 (plan sha a696bd90) stopped at step 0 for $0: a code close may not carry `rubric-step` (src/authoring.js RUBRIC_ONLY_KINDS), the step file had no home in the repo listing, and "at least N" had no shape form.
+- v2 (sha 66fcfd17, amendment 81097cbb, one switch at the crossroads) FAIL, $0.25: the AI picked "review" 5 of 5; no `.md` report reached `reports/` (copyOut runs only with a front door); the shape look was empty in 8 of 14 drafts; the text battery drops `no-suppressions` (hamr then ruled it is not needed on a review: no code changes).
+- v3 (sha e4d53d78) FAIL, $1.63: the hack put "quotes the slow code" on a page-job text fact (value at most 200 characters and found inside the quote), so the worker's good assessments were refused 39 times (runs mwo3a4ak, mwo3p5od); it glued the whole repo's code into one cite text (6.1 MB, over bareguard's 5 MB source cap), dropped files, and refused a REAL quote of src/thinking.js:85-90 (run mwo3p5od).
+- Correction: the operator first told hamr this red "caught a made-up quote". That was wrong and was withdrawn after comparing the quote to the file.
+- The workers never wrote a code file in any round (run_id-scoped gate audits).
+
+### F377: Shape on D round 3 (plan v4, sha 941c3dff) PASS, n=5, UNDERPOWERED; four live defects for the build (2026-11-20, $0.38)
+
+- Flow: a Part A [default] form (file, quote, why) plus a [default] cite over only the files the items name; the rest of the shape from the job.
+- Bars: pick "review" 5 of 5; drafts signed 5 of 5; 4 of 5 runs green with the `.md` on the work branch (runs mwooga1d, mwooiyar, mwoopj82, mwoot6w9); run mwoon0cj died plan-red (exit-illegal after a first scope-escape); no code file written; no false cite red, all 19 items' quotes verified real. A made-up quote red was shown only at $0, never live.
+- Operator quality read: 3 runs sane and specific (for example, five readers re-read the same draft log, true at src/draftspend.js:222-307; per-file NUL sniff awaited one by one, true at src/source.js:316); 1 run weak (only "lower this limit" ideas).
+- Live defects for the build: a `~` rule covered by Part A still showed Not checked (3 of 5); the shape look added fields that duplicate Part A (3 of 5); the planner's first plan escaped the fence in 5 of 5 (a src/ file in an exit path); a worker scratch file (`output/draft-notes.md`) was delivered as a second report; the report clips each item's text in table cells.
+- The hack bypassed the report containment check and committed twice; the build must do both properly.
+
+### F378: Diff size on bareloop's own history, for review by range or branch (2026-11-20, $0)
+
+- v0.60.0..v0.61.0: 0.75 MB, 79 files. v0.57.0..v0.61.0: 2.8 MB, 265 files. v0.50.0..v0.61.0: 8.1 MB, 621 files.
+- The biggest single-file diff in all three is 0.44 MB.
+- So a whole diff can pass bareguard's 5 MB cite cap, but one file's diff is far under it: hamr ruled per-file diffs (piecemeal), never a block.

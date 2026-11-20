@@ -5322,3 +5322,86 @@ Branch feat/shape-jobs, not pushed. Findings F369-F374 in `docs/wiki/FINDINGS.md
 - A text-only line with a built maxWords keeps the `$` prose row Not checked on the card while the report heading reads "The answer".
 - A facts+shape line may show 2 cards in Result (mock had 1); not re-checked after the fold change.
 - Full suite not run since the morning; not pushed; flights-page job (no shape call) still to be walked.
+
+## Addendum 2026-11-20: Review the code (Deterministic repo jobs) + review by git range or branch
+
+Status: SIGNED by hamr 2026-11-20 ("signed"). Being built on chore/barebrowse-031, Part 1 first.
+POC: plans v1-v4 in `.claude/scratch/poc-shape-on-d-plan*.md`; v1-v3 FAIL, v4 (round 3) PASS, n=5, UNDERPOWERED,
+$2.2 in all. Findings F376-F378 (below).
+
+### Part 1: Review the code
+
+Rulings (hamr 2026-11-19/20): the radios stay D and R. On a D repo job, the drafter's injected text asks ONE binary
+question: is this job changing the code or reviewing it? Change = today's D flow, untouched. Review = the rubric
+road's own rules, with no code changes and one `.md` report inside the repo at Destination. The shape check is allowed
+on a D close when the job is a review ("it's our rule, allow it"). The readout's first line says which one.
+
+The flow (round 3, proven):
+- Part A, `[default]` on every review: a list of items, each with `file`, `quote` and `why` (required, non-empty, no
+  other limits), plus the `[default]` cite: each quote is found word for word in the repo files the items name (code
+  reads only those files, whole; over 5 MB is a plain-words red).
+- Part B, open: `~` rules get a truth or shape check where code can build one, else Not checked; the shape look may
+  add `[agent]` fields from the job's words (Suggested with Add); "at least N" gives `minItems N`.
+- Quality stays Not checked, for the person at Accept.
+
+Build items:
+1. The crossroads: one switch where the rubric road is chosen (panel door `src/panel/authorsession.js` and CLI door
+   `src/authorrun.js:393`, ONE shared function, not two copies): a D repo job the drafter picks as "review" takes the
+   rubric road with the text close. The binary question is one prompt register (`src/reviewpick.js`), labelled.
+2. The gate: a D close may carry `rubric-step` when the job is a review (`src/authoring.js` kind filter).
+3. Part A rows added by CheckBlock (one owner, like the `$` rows); the cite source for a review is the named files
+   (`src/repocite.js`), read from the run's worktree; `readFrozenInputs` and `runRubricStep` read the repo when there
+   is no `source.json`.
+4. Report: the rubric report lands at Destination inside the repo and is committed on the work branch in the run's
+   ONE commit (no second commit, no containment bypass: `copyOut` gets a real in-repo door). Only the report is
+   delivered, never the worker's scratch files under `output/` (round 3 delivered `draft-notes.md`).
+5. Fence: a review's write scope is `output/` + Destination; every code file is refused.
+6. "at least N" gives `minItems N` with no `maxItems` (shapebuild/shaperows).
+
+Fixes found live in round 3 (each one change, each test-proven, then one live run):
+7. A `~` rule that a Part A row covers shows that row's check, not Not checked (3 of 5 drafts said "quotes the slow
+   code — Not checked" while the cite checked it). Code maps it; the shape look is told the Part A fields.
+8. No duplicate fields: the shape look's prompt names Part A's fields as already present (`slowCode` beside `quote`
+   in 3 of 5 drafts).
+9. The planner's first plan escaped the fence in 5 of 5 drafts (it put a `src/` file in an exit path); 4 recovered.
+   Fix: the planner's injected text for a review says code is read, never written, and checks are on the answer file.
+10. Report readability: a review's report prints each item's full `why` and `quote` (as a block per item), not a
+    clipped table cell.
+
+Tests: fail-first per item; the full suite; one live run per fix (DeepSeek flash), then a fresh 5-pair run against
+the round 3 bar before release.
+
+### Part 2: Review by git range or branch (hamr 2026-11-20, "important")
+
+Today it does not work: the worker has no shell (`run` is locked forever) and only reads the worktree's files.
+
+Rulings (hamr 2026-11-20):
+- The range or branch is written in a job STEP line, not in a `~` guardrail and not as an input line:
+  `1. Review range: <sha>..<sha> for ...` or `1. Review branch: <name> for ...`. Code reads only these exact typed
+  tokens (`range: A..B`, `branch: NAME`); it never guesses intent from other words. The job box's grey sample text
+  shows one such line.
+- A branch is diffed against main: merge-base(main, branch)..branch tip. A repo with no `main` branch is refused at
+  $0 in plain words.
+- The cite cap stays 5 MB.
+- Big diffs are taken piecemeal, never blocked: code writes ONE diff file per changed file (`review-diff/<path>.diff`,
+  next to the run, never in the repo). The worker reads the ones it needs; an item names the per-file diff (or the
+  repo file) it quotes, and the cite check reads only the named files, as in Part 1. Measured on bareloop's own
+  history ($0, 2026-11-20): one release's diff is 0.75 MB (79 files); four releases 2.8 MB; eleven releases 8.1 MB
+  (621 files), over 5 MB as one file, but the biggest single-file diff in all three is 0.44 MB. So one file's diff over
+  5 MB is not expected; if it happens, that item reds in plain words, the run is not blocked.
+
+The flow:
+- At run start, before any token, code (not the worker) runs read-only git (the `src/prcheckout.js` allow-list
+  style, plus `diff`): it checks both ends exist, puts the worktree at the range's END (or the branch tip), and writes
+  the per-file diffs plus a list of changed files.
+- The worker reads the list, the per-file diffs and any repo file. A quote of a removed line is checkable through the
+  per-file diff it names.
+- Review only: a `range:`/`branch:` token on a "change the code" job is refused at $0 in plain words.
+- POC first ($0 git part, then 5 paid pairs on a copy of bareloop over a real past range, e.g. v0.60.0..v0.61.0),
+  frozen bar before data.
+
+### Order on this branch
+
+1. Part 1 build items 1-6, then fixes 7-10, each one commit with a test.
+2. Part 2: POC (frozen), then build.
+3. Full suite, push, CI, `/code-review`, `/release` (with the barebrowse bump and the wording change already here).

@@ -2404,8 +2404,8 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 - [ ] Negating rules ("no nonstop") never take a shape; negations stay with the human. F360.
 - [ ] Scope rounds 3-5: the shape look prompt names the limit a field needs; round 5 PASS, UNDERPOWERED. Detail in `docs/product/ITEM33-BUILD.md` ("Scope rounds 3-5"). F366-F368.
 - [ ] Shape on D (repo) report jobs: same flow, lift the repo block, D-shaped look text; POC first; next after feat/shape-jobs. Pointer: ITEM33-BUILD Addendum 2026-11-19 (shape on D).
-- [ ] Shape on D, review rounds (2026-11-20): v1-v3 POC rounds failed for $1.88; round 3 (plan v4) signed and running. Review = a small `[default]` form (file, quote, why) plus a cite check over only the files the answer names; the rest of the shape comes from the job. Detail in FINDINGS once round 3 ends.
-- [ ] Next after shape on D (hamr 2026-11-20, "important"): a review bound to a git range (hash from..to) or to a branch, and reading a diff. Not possible today: the worker has no shell (`run` locked) and only reads worktree files. Spec and POC first, own branch.
+- [ ] Review the code (D repo jobs) + review by git range/branch: SIGNED 2026-11-20, being built on chore/barebrowse-031. POC round 3 PASS (n=5, underpowered). Pointer: ITEM33-BUILD "Addendum 2026-11-20: Review the code"; F376-F378.
+- [ ] Review by git range or branch (hamr 2026-11-20, "important"): now Part 2 of the signed addendum above, same branch, POC first.
 - [x] Number-then-marker prices ("€216 total", "1.299,00 €") are already read (F251); POC 1 ran, premise stale, nothing to build. Why block A of the scope harness left those rules Not checked is unexplained, under investigation. F365.
 - [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
 - Status: rulings given, being built.
