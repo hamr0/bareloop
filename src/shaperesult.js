@@ -101,3 +101,31 @@ export function shapeMarkdown(m) {
   ];
   return lines.join('\n');
 }
+
+/** one value of an item as plain text for a report (never clipped): a string as written, a number or boolean written out, a list joined by ", " @param {unknown} v */
+const full = (v) => (typeof v === 'string' ? v : v === null || v === undefined ? '' : Array.isArray(v) ? v.map((x) => `${x}`).join(', ') : typeof v === 'object' ? JSON.stringify(v) : `${v}`);
+
+/**
+ * The section of a CITED list in the .md report (the signed shape part carries a `cite`: its items quote the source they name). One BLOCK per item, with its full `why` and its `quote` (a block quote, every line kept), never a clipped table cell. The item's
+ * other fields follow as bullets. A report is written for a green run only, so every quote was found word for word in the file its item names (the cite) and the form checks passed; what stays with the person is whether each finding is TRUE.
+ * @param {any[]} results the answer's items
+ * @returns {string}
+ */
+export function citedItemsMarkdown(results) {
+  const items = (Array.isArray(results) ? results : []).filter(isRec);
+  const blocks = items.map((it, i) => {
+    const extra = Object.entries(it).filter(([k]) => !['file', 'quote', 'why'].includes(k));
+    const quote = full(it.quote).split('\n').map((l) => `> ${l}`.trimEnd());
+    return [
+      `#### Item ${i + 1} \u00B7 ${full(it.file).replace(/\s*\n\s*/g, ' ')}`, '',
+      `**Why:** ${full(it.why)}`, '', '**Quote:**', '', ...quote,
+      ...(extra.length ? ['', ...extra.map(([k, v]) => `- ${k}: ${full(v)}`)] : []),
+    ].join('\n');
+  });
+  return [
+    `${SHAPE_HEAD_PARTS[0]} (${SHAPE_HEAD_PARTS[1]})`, '',
+    `Checked by code: each quote below is found word for word in the file its item names (${items.length} item${items.length === 1 ? '' : 's'}).`, '',
+    ...blocks.flatMap((b) => [b, '']),
+    `Not checked: ${SHAPE_TRUTH_PARTS[0]} (${SHAPE_TRUTH_PARTS[1]})`,
+  ].join('\n');
+}
