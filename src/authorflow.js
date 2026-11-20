@@ -89,6 +89,7 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
+import { defaultsOf } from './sourcedefaults.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { sheetTable, parseCsv } from './csv.js';
 import { isSheetInput } from './inputlook.js';
@@ -2691,7 +2692,7 @@ export async function authorClose({
   // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
   // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
   const checkDraft = (/** @type {any} */ d) => {
-    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs) });
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs), engineDirs: defaultsOf(source).engineDirs });
     if (r.ok && lang === RUBRIC_LANG) {
       const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
       if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };

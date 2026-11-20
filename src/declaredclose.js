@@ -70,7 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import { guardKeyOf } from './rubricstep.js';
-import { SOURCES } from './sourcedefaults.js';
+import { SOURCES, defaultsOf } from './sourcedefaults.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -426,6 +426,8 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     verdictType: picked,
     jobLines,
     inputLabels,
+    // the directories the engine makes in the run's tree (the SIGNED source's row): a repo's own listing never holds them
+    engineDirs: defaultsOf(closeDecl.source).engineDirs,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so

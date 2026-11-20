@@ -1219,7 +1219,8 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
+ *   verdictType?: string|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null, engineDirs?: readonly string[]}} [opts]
+ *   `engineDirs` — directories the ENGINE makes in the run's tree (the source's own row, src/sourcedefaults.js): they select without being in `listing`. A code close has none.
  *   `inputLabels` — the labels of the person's inputs (Part 1a). Present, a rubric-step `cited` part must name one of them.
  *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
  *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
@@ -1240,7 +1241,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, jobLines = null, inputLabels = null,
+    verdictType = null, jobLines = null, inputLabels = null, engineDirs = [],
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1424,7 +1425,7 @@ export function validateDeclaration(declaration, opts = {}) {
 
     checkKind({ kind: s.kind, params: p, at, red, scoped, label, populations, envOwned: owned ?? [], envInjected: injected });
     checkEnvComplete({ params: p, at, red, kind: s.kind, catalogue, envInjected: injected });
-    checkPaths({ spec, params: p, at, red, idx, haveListing });
+    checkPaths({ spec, params: p, at, red, idx, haveListing, engineDirs });
   });
 
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
@@ -1757,9 +1758,9 @@ function canonicalScope(sc) {
  * selects — it names the whole tree, which exists.
  * @param {{spec: KindSpec, params: any, at: string,
  *   red: (c: string, p: string, d: string, e?: object) => void,
- *   idx: {files: Set<string>, dirs: Set<string>}, haveListing: boolean}} o
+ *   idx: {files: Set<string>, dirs: Set<string>}, haveListing: boolean, engineDirs?: readonly string[]}} o `engineDirs`: the engine's own directories, which select without being listed
  */
-function checkPaths({ spec, params: p, at, red, idx, haveListing }) {
+function checkPaths({ spec, params: p, at, red, idx, haveListing, engineDirs = [] }) {
   if (!haveListing) return; // already redded once, at the top; not twice per path
   for (const dotted of spec.pathParams) {
     const value = readPath(p, dotted);
@@ -1768,7 +1769,7 @@ function checkPaths({ spec, params: p, at, red, idx, haveListing }) {
       if (!isNonEmptyString(raw)) return;
       const wantsDir = /(?:\/|\/\*\*?)$/.test(raw.trim());
       const norm = normPrefix(raw);
-      if (isRoot(norm)) return;
+      if (isRoot(norm) || engineDirs.includes(norm)) return;
       const path = `${at}.params.${dotted}[${i}]`;
       const isFile = idx.files.has(norm);
       const isDir = idx.dirs.has(norm);

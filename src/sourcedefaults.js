@@ -11,3 +11,16 @@ export const SOURCES = Object.freeze(['files', 'repo']);
  * @param {any} closeDecl the signed close declaration @returns {'files'|'repo'|null}
  */
 export const sourceOf = (closeDecl) => (closeDecl?.lang !== 'text' ? null : closeDecl?.source === 'repo' ? 'repo' : 'files');
+
+/**
+ * The ONE table keyed by source: what differs between a rubric job on files and a rubric job on a repo. Nothing else may say "this is a review".
+ *   `engineDirs`: the directories the ENGINE makes in the run's tree (the worker's answer files). A files job's hidden tree lists them; a repo's own listing never does, so for a repo they select without being listed.
+ * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[]}>>}
+ */
+export const SOURCE_DEFAULTS = Object.freeze({
+  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])) }),
+  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']) }),
+});
+
+/** the defaults row of a source (files when none) @param {string|null|undefined} source */
+export const defaultsOf = (source) => (source === 'repo' ? SOURCE_DEFAULTS.repo : SOURCE_DEFAULTS.files);
