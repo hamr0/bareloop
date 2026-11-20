@@ -1095,14 +1095,24 @@ async function listOutputFiles(dir, rel = '') {
  * (`orig` the bytes as the tree holds them, `delivered` the amended copy); a string is written as ONE file `<name>-YYYY-MM-DD.md` at the destination root and recorded like any delivered file; null writes nothing.
  * It takes the dated suffix of the first delivered step file (so a same-day second run gets `-2` for both). Never overwriting: when that name is taken it lands under the next free same-day name (`pickDelivery`) and its file entry
  * carries `pairedTaken`, the basename it could not take (hamr 2026-11-18). It writes only inside this green-only door.
- * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}}} o
+ * `inRepo` (REVIEW THE CODE, the repo source's row of src/sourcedefaults.js, `reportInRepo`): the delivery of a repo source. `tree` is the run's worktree of the person's repo and `destination` a path INSIDE it, proven contained before a byte is written
+ * ({@link proveInRepoDestination}); ONLY the one report is written there (the step files are read to render it, never copied: `output/` is the worker's scratch), and the caller's normal green commit carries it. It is the same step as the files delivery, with a row per source.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}, inRepo?: boolean}} o
  * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string, pairedTaken?: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination, amend, report }) {
-  const prove = await proveDestination(destination, { into: into ?? tree });
-  if (prove.stop !== null) return prove;
-  const destAbs = resolve(destination);
-  await mkdir(destAbs, { recursive: true });
+export async function copyOut({ tree, into, destination, amend, report, inRepo = false }) {
+  /** @type {string} */
+  let destAbs;
+  if (inRepo) {
+    const proved = await proveInRepoDestination(tree, destination);
+    if (proved.stop !== null) return proved;
+    destAbs = proved.destAbs;
+  } else {
+    const proved = await proveDestination(destination, { into: into ?? tree });
+    if (proved.stop !== null) return proved;
+    destAbs = resolve(destination);
+    await mkdir(destAbs, { recursive: true });
+  }
   const outputDir = join(tree, 'output');
   const candidates = await listOutputFiles(outputDir);
   /** @type {{path: string, bytes: number, sha256: string, pairedTaken?: string}[]} */
@@ -1114,6 +1124,8 @@ export async function copyOut({ tree, into, destination, amend, report }) {
     const read = await readFile(srcPath);
     const buf = amend === undefined ? read : amend(rel.split(sep).join('/'), read);
     if (buf.length === 0) continue; // an empty file is not a delivered result — skipped, never refused
+    // a repo source delivers ONLY the report: the step files are read to render it, never copied
+    if (inRepo) { if (/^steps\/\d+\.json$/.test(rel.split(sep).join('/'))) stepFiles.push({ rel: rel.split(sep).join('/'), orig: read, delivered: buf, suffix: '' }); continue; }
     const declaredFile = join(destAbs, rel);
     await mkdir(dirname(declaredFile), { recursive: true });
     const pick = pickDelivery(declaredFile);
@@ -1136,24 +1148,54 @@ export async function copyOut({ tree, into, destination, amend, report }) {
   const text = report !== undefined && stepFiles.length > 0 ? report.render(stepFiles.map(({ rel, orig, delivered: d }) => ({ rel, orig, delivered: d }))) : null;
   if (report !== undefined && text !== null && text.length > 0) {
     const name = report.name.replace(/[/\\\0]/g, '-').replace(/^\.+/, '') || 'report';
-    const paired = join(destAbs, `${name}${stepFiles[0].suffix}.md`);
-    let mdPath = paired;
-    if (existsSync(paired)) {
+    // a files delivery pairs the report with its first step file's dated name; a repo source has no delivered step file, so it takes the next free dated name
+    const paired = stepFiles[0].suffix === '' ? null : join(destAbs, `${name}${stepFiles[0].suffix}.md`);
+    let mdPath = paired ?? '';
+    if (paired === null || existsSync(paired)) {
       const mdPick = pickDelivery(join(destAbs, `${name}.md`));
       if (mdPick.stop !== null) return mdPick;
       mdPath = mdPick.path;
     }
+    await mkdir(destAbs, { recursive: true });
     const mdBuf = Buffer.from(text, 'utf8');
     try { await writeFile(mdPath, mdBuf, { flag: 'wx' }); } catch (e) {
       if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${mdPath} already exists — bareloop never overwrites a person's file`);
       return refuse('destination-write-failed', `copying to ${mdPath} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
     }
-    delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf), ...(mdPath !== paired ? { pairedTaken: basename(paired) } : {}) });
+    delivered.push({ path: mdPath, bytes: mdBuf.length, sha256: sha256Hex(mdBuf), ...(paired !== null && mdPath !== paired ? { pairedTaken: basename(paired) } : {}) });
   }
   if (delivered.length === 0) {
     return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);
   }
   return { stop: null, files: delivered };
+}
+
+/** the places inside a repo a report may never land: git's own, bareloop's, and the worker's scratch (`output/`) */
+const REPORT_BARRED = Object.freeze(['.git', '.bareloop', '.smoke', 'output']);
+
+/**
+ * Prove a repo source's report Destination, $0, before a byte is written: a path INSIDE the run's worktree `tree` (relative, no `..`, not git's or bareloop's own folders or the worker's scratch `output/`, and not a link out of the repo through the
+ * deepest existing parent's real path), and a folder, never a file. Only the first piece of a comma/newline-separated Destination is used.
+ * @param {string} tree @param {unknown} destination @returns {Promise<{stop: null, destAbs: string}|SourceRefusal>}
+ */
+async function proveInRepoDestination(tree, destination) {
+  const piece = String(destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean)[0] ?? '';
+  if (piece === '') return refuse('destination-invalid', 'the review has no Destination to write its report to');
+  if (isAbsolute(piece) || /^[a-zA-Z]:[\\/]/.test(piece)) return refuse('destination-not-in-repo', `${piece} is not a path inside the repo — a review's report lands inside the repo, like docs/`);
+  const rel = piece.replace(/^(\.\/)+/, '').replace(/\/+$/, '') || '.';
+  const segs = rel.split('/').filter((x) => x !== '' && x !== '.');
+  if (segs.includes('..')) return refuse('destination-not-in-repo', `${piece} leaves the repo — a review's report lands inside the repo, like docs/`);
+  if (segs.length > 0 && REPORT_BARRED.includes(segs[0])) return refuse('destination-not-in-repo', `${piece} is a place the run keeps for itself (${segs[0]}/) — pick a folder of your own, like docs/`);
+  const rootReal = await realpath(tree);
+  const destAbs = resolve(tree, ...segs);
+  let probe = destAbs;
+  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+  const probeReal = await realpath(probe);
+  if (probeReal !== rootReal && !probeReal.startsWith(`${rootReal}${sep}`)) return refuse('destination-not-in-repo', `${piece} reaches outside the repo through a link — a review's report lands inside the repo`);
+  let dstat = null;
+  try { dstat = await stat(destAbs); } catch { /* not there yet: made when the report is written */ }
+  if (dstat !== null && !dstat.isDirectory()) return refuse('destination-not-directory', `${piece} is a file; Destination for a review is the FOLDER the report is written into, like docs/`);
+  return { stop: null, destAbs };
 }
 
 /**

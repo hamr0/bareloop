@@ -45,6 +45,7 @@ import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js'
 import { deliveredReporter } from './resultmd.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
+import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
 import { makeSpine } from './spine.js';
 // PRD item 33/M2 — the source front door. `readSourceManifest` finds the
@@ -2142,12 +2143,34 @@ async function execute(ctx) {
   /** @type {string | null} */
   let worktreeLine = null;
   const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  // the ONE delivery step has a row per source (src/sourcedefaults.js): a repo source writes ONLY its report at Destination INSIDE the worktree, before the final commit below, so the run's one commit carries it (and leaves the worker's scratch `output/` out).
+  // A refused delivery is reported beside the green it could not deliver and never changes `outcome`.
+  const delivery = defaultsOf(sourceOf(spec.closeDecl));
+  /** the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title @returns {number|null} */
+  const runNoOfThisRun = () => {
+    /** @type {number|null} */
+    let n = null;
+    for (const home of [deps.runlistHome, cfgHome]) { try { n = n ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    return n;
+  };
+  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && typeof wtManifest?.destination === 'string') {
+    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
+    if (co.stop === null) {
+      for (const f of co.files) {
+        emit('destination-written', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+        out(`\nDESTINATION  written in the repo - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...)`);
+      }
+    } else {
+      emit('destination-refused', { code: co.code, detail: co.stop });
+      out(`\nDESTINATION  NOT written - ${co.code}: ${co.stop}`);
+    }
+  }
   if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
     if (outcome === 'green' || outcome === 'already-green') {
       const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
       try {
         // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door
-        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
+        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`, { exclude: delivery.commitExclude });
         // an already-green COLD run never made a work branch (the close passed before any work): nothing to name
         const done = fin.committed ? `final commit ${fin.sha}` : (wb ? 'nothing left to commit' : 'nothing was changed (the close already passed)');
         const onBranch = wb?.branch ?? 'the work branch';
@@ -2320,10 +2343,7 @@ async function execute(ctx) {
       if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
       else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
     } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
-    // the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title
-    /** @type {number|null} */
-    let runNo = null;
-    for (const home of [deps.runlistHome, cfgHome]) { try { runNo = runNo ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    const runNo = runNoOfThisRun();
     const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo }) } });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
