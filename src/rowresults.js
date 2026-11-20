@@ -21,7 +21,7 @@ const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note
 /**
  * @typedef {{key: string, result: 'passed'|'failed'|'unread', why?: string}} RowResult
  * @param {any[]|null|undefined} list the signed list (`closeDecl.list`) @param {{step: number, parts: any[]}} params the rubric-step stage's params
- * @param {{verdict?: string, rawGaps?: any[], extraGaps?: string[], detail?: Record<string, any>}} graded `gradeStep`'s answer
+ * @param {{verdict?: string, rawGaps?: any[], extraGaps?: string[], citeGaps?: string[], detail?: Record<string, any>}} graded `gradeStep`'s answer
  * @returns {{rows: RowResult[], unclaimed: string[], items?: string[]}}
  */
 export function rowResultsOf(list, params, graded) {
@@ -69,6 +69,12 @@ export function rowResultsOf(list, params, graded) {
     const pi = m ? Number(m[1]) - 1 : -1;
     const part = params.parts[pi];
     if (!m || !isRec(part)) { unclaimed.push(plain()); continue; }
+    // a shape part's cite (the quotes are found in the files the items name): the line's `$cited` row owns it, no item-field row does
+    if (part.class === 'shape' && m[2] === 'cite') {
+      const cited = rows.filter((r) => r.kind === 'cited');
+      if (cited.length === 0) unclaimed.push(plain()); else for (const r of cited) hit(r, plain());
+      continue;
+    }
     if (part.class === 'fact' && m[2] === 'facts') {
       const items = Array.isArray(g.items) ? g.items : [];
       if (g.kind !== 'unsupported' || items.length === 0) { unclaimed.push(plain()); continue; }
@@ -88,6 +94,11 @@ export function rowResultsOf(list, params, graded) {
   // the numbers tie of a text line (gradeStep's own lines): the line's `$ numbers` row owns it
   for (const line of graded.extraGaps ?? []) {
     const owner = rows.find((r) => r.kind === 'numbers');
+    if (owner) hit(owner, line); else unclaimed.push(line);
+  }
+  // the cite's own reds (an item's file that is no file of the repo, a named-files text over the cap): the cite row owns them
+  for (const line of graded.citeGaps ?? []) {
+    const owner = rows.find((r) => r.kind === 'cited');
     if (owner) hit(owner, line); else unclaimed.push(line);
   }
   const unreadable = rows.some((r) => r.kind === 'floor' && red.has(r.key));

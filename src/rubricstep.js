@@ -621,7 +621,9 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   /** @type {string[]} */
   const extra = [];
   let extraCount = 0;
-  for (const w of extraReds) { extraCount += 1; extra.push(w); }
+  /** the cite's own plain-words reds (src/repocite.js): owned by the line's `$cited` row, never by the numbers tie @type {string[]} */
+  const citeLines = [...extraReds];
+  extraCount += citeLines.length;
   const tie = params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
   if (tie) {
     for (const n of factMissing) {
@@ -646,7 +648,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     r = { ...r, gaps: r.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)), full: { ...r.full, gaps: r.full.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)) } };
   }
   const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : g.check === 'itemShape' ? shapeGapCount(g) : 1), 0);
-  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
+  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 || citeLines.length > 0 ? { redCount } : {}) };
   if (r.verdict === 'stopped') {
     // S3: a sheet that no longer gives the table the run recorded at its start is named by its input, before any other word
     const moved = sheetRolesOfParams(params).filter((role) => !isRec(tables[role]) || tableSha(tables[role]) !== inputShas[role]);
@@ -658,9 +660,9 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
   };
   // bareguard's own structured gaps (id, check, field, kind, items) and the tie's own lines: what the per-row results (src/rowresults.js) read; no verdict or sentence is derived from them here
-  const raw = { rawGaps: r.full.gaps, extraGaps: extra };
-  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
-  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
+  const raw = { rawGaps: r.full.gaps, extraGaps: extra, ...(citeLines.length > 0 ? { citeGaps: citeLines } : {}) };
+  if (r.verdict === 'green' && extra.length === 0 && citeLines.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
+  return { verdict: 'red', gapLines: [...citeLines, ...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
