@@ -84,6 +84,8 @@ export const PROMPT_REGISTERS = Object.freeze([
 
   // src/planrun.js — the native-surface read-truncation strategy line
   Object.freeze({ file: 'src/planrun.js', name: 'NATIVE_READ_STRATEGY' }),
+  // src/planrun.js — the planner's rubric-road note: the answer files are the only thing a text close's steps write (every text close, either source)
+  Object.freeze({ file: 'src/planrun.js', name: 'answerFilesWords()' }),
   // src/planrun.js — the fix loop's facts-only close-grade history line
   // (F198 item 2), built inline inside `middle` and appended to `w.ask([...])`
   Object.freeze({ file: 'src/planrun.js', name: 'middle()\'s facts-only "The close\'s own numbers so far" block (inline template, not a const)' }),

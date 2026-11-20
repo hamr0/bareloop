@@ -693,6 +693,15 @@ export function boundedNote(bounded, rounds) {
 }
 
 /**
+ * The PLANNER's note on the rubric road, for EVERY text close (a rubric job on files or on a repo): the input is read, never written, and every check is on the answer file. Round 3 of the review POC: the planner's first plan put an input
+ * file in an exit path in 5 of 5 drafts (a fence escape), and 8 of 53 archived file-job runs did the same. Source-neutral words, injected on a text close only (a code close's prompt is byte-identical to before).
+ * @param {number[]} lines the job lines (each has one answer file, `output/steps/<n>.json`) @returns {string}
+ */
+export const answerFilesWords = (lines) => `
+THIS JOB'S OUTPUT IS ITS ANSWER FILES. The input is only READ, never written: no step may write or edit an input file, and no step's "target" or exit "path" may be one. The only file a step writes is the answer file
+(${lines.map((n) => `output/steps/${n}.json`).join(', ')}); give each write step that file as its "target", and put every exit (artifact-written, json-valid, tree-changed under output/) and every check-passes on that answer file. A step that only reads and greps the input first is fine.`;
+
+/**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
  * menus — never a copyable example (the drafter must author, not echo; the
  * run.js draftPrompt precedent). Check NAMES only: a check's command is
@@ -776,6 +785,10 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   returns only its next 24KB, and those two verbs are the only way to read a symbol in
   full. A step that grants "read" without both is rejected.`
     : '';
+  // the rubric road's note (a text close only): its answer files are the only thing written
+  const answerLaw = job?.closeDecl?.lang === 'text'
+    ? answerFilesWords((Array.isArray(job.closeDecl?.stages) ? job.closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st?.params?.step)).map((/** @type {any} */ st) => st.params.step))
+    : '';
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -815,7 +828,7 @@ strictly in array order. Each step (no other fields exist):
   write an action that forbids editing other in-scope files (e.g. "do not
   modify any file outside X"): a step ordered to leave a file alone while its
   exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
-  Reference checks by NAME only; you cannot author or modify one.
+  Reference checks by NAME only; you cannot author or modify one.${answerLaw}
 
 The worker has NO SHELL. It cannot run a command, a compiler, a linter, or a test suite,
 and it cannot execute a script it writes: its only verbs are the tools you grant that step
