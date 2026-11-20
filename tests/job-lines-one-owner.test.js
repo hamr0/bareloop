@@ -74,7 +74,7 @@ test('Agree on "not a red-eye": every view the person sees holds the agreed word
   // every plan card the chat shows
   for (const msg of session.state.messages.filter((x) => x.plan)) assert.doesNotMatch(seen(msg), /red-eye/, 'a plan card');
   // the card the page reopens, in memory
-  assert.equal(session.state.card.jobText, `1. List 3 flights from Boston to Chicago\n~ under $450\n~ ${READ}`);
+  assert.equal(session.state.card.jobText, `List 3 flights from Boston to Chicago\n~ under $450\n~ ${READ}`);
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);

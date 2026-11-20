@@ -17,6 +17,16 @@ export const RULE_JOINER = '; ';
 export const PASS_FAIL_GONE_WORDS = 'PASS/FAIL examples are gone \u2014 write what you want as a ~ rule.';
 
 /**
+ * The line's words without its own typed number. The box's gutter numbers each line by position and every renderer prefixes `n. ` to the text, so a person who also typed "1. " read "1. 1. ..." (the ONE owner is here, hamr: 4A): a typed leading
+ * `<n>.` followed by a space that EQUALS the line's own position is the person's line marker and is not kept. Any other leading number stays as typed (another position, a decimal "1.5 liters", a bare "2024").
+ * @param {string} text the trimmed line @param {number} n its position @returns {string}
+ */
+function ownMarkerOf(text, n) {
+  const m = /^(\d+)\.\s+(\S.*)$/s.exec(text);
+  return m && Number(m[1]) === n ? m[2] : text;
+}
+
+/**
  * Parse "The job" box. A plain line is a numbered job line (1, 2, 3...). A line starting `~` has no number and belongs
  * to the numbered line above; consecutive `~` lines become ONE rule joined with `'; '`. A `~` line starting `PASS:` or
  * `FAIL:` is a red ({@link PASS_FAIL_GONE_WORDS}). Empty lines are ignored. A `~` before line 1 is a red.
@@ -44,7 +54,8 @@ export function parseJobBlock(text) {
       continue;
     }
     flush();
-    lines.push({ n: lines.length + 1, text: t, rule: '', rules: [] });
+    const n = lines.length + 1;
+    lines.push({ n, text: ownMarkerOf(t, n), rule: '', rules: [] });
   }
   flush();
   if (lines.length === 0) return { ok: false, error: 'The job is required' };
