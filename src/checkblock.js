@@ -23,6 +23,7 @@ import { buildSheetPart } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { sheetCheckName, sheetPlainText, coversWords, sheetCheckBody, sheetRowKey, sheetDefaultKey } from './sheetrows.js';
 import { shapeRowKey, shapeDefaultKey, shapeFieldText, buildShapePart, SHAPE_TRUTH_WORDS } from './shaperows.js';
+import { defaultsOf } from './sourcedefaults.js';
 import { fieldSpec } from './shapebuild.js';
 
 /**
@@ -107,8 +108,11 @@ export function choiceEntries(lines, picks) {
 }
 
 export class CheckBlock {
-  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean, repo?: {files: string[]|null, writeScope: string[]|null}|null}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
-  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false, repo = null }) {
+  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean, repo?: {files: string[]|null, writeScope: string[]|null}|null, source?: 'files'|'repo'}} o `source` the rubric road's SIGNED source (src/sourcedefaults.js): its row says which item fields and which cite every shape line carries. The frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
+  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false, repo = null, source = 'files' }) {
+    /** the rubric road's signed source and its row of the one table (src/sourcedefaults.js): the `[default]` item fields and the cite every shape line carries. No flag, no per-line set: what differs is read here @type {'files'|'repo'} */
+    this.source = source;
+    this.defaults = defaultsOf(source);
     /** a repo job's check TYPE (the only thing that varies): `files` = the repo listing at the seed (null until it is read), `writeScope` = the signed write fence. Null = a rubric job @type {{files: string[]|null, writeScope: string[]|null}|null} */
     this.repo = repo;
     /** @type {any[]} a repo job's drafted stages as the drafter wrote them (guards included); the rows of the work stages are in `rows`, the close's stages are these minus the dropped ones */
@@ -187,7 +191,7 @@ export class CheckBlock {
   }
 
   /** shape jobs, rules first: does job line `n` hold a rule that took its shape field (no truth check could take it)? Only such a line carries shape rows and a shape part @param {number} n */
-  isShapeLine(n) { return !this.isSheetLine(n) && this.rows.some((r) => r.kind === 'rule' && r.line === n && r.can?.how === 'shape'); }
+  isShapeLine(n) { return !this.isSheetLine(n) && (this.rows.some((r) => r.kind === 'rule' && r.line === n && r.can?.how === 'shape') || (this.defaults.fields.length > 0 && Boolean(this.shapeBuilt?.built[n]))); }
 
   /**
    * Shape jobs, rules first (hamr 2026-11-19): remember the shape code built from the shape look (src/shapebuild.js `buildShapes`). It decides nothing by itself: `matchRule` tries every rule's truth check (fact, cite, count, phrase, pick) FIRST,
@@ -240,6 +244,11 @@ export class CheckBlock {
       const live = this.isShapeLine(n);
       const have = this.rows.filter((r) => r.kind === 'shape' && r.line === n);
       if (!live) { if (have.length) { this.keepShapeDrops(); this.rows = this.rows.filter((r) => !(r.kind === 'shape' && r.line === n)); } continue; }
+      // the source's `[default]` item fields: code's own (never dropped, never held); one a rule was mapped onto is carried by that rule's row unless the person dropped the rule
+      for (const f of b.fields.filter((x) => x.by === 'default' && (!Number.isInteger(x.rule) || this.shapeDrops.rules.has(`${n}:${x.rule}`)))) {
+        if (have.some((r) => r.key === shapeRowKey(n, f.name))) continue;
+        this.addRow({ key: shapeRowKey(n, f.name), line: n, kind: 'shape', by: 'default', from: 'default', field: f, state: 'not-checked', reason: 'not yet matched' });
+      }
       for (const f of b.fields.filter((x) => x.by === 'agent')) {
         if (have.some((r) => r.key === shapeRowKey(n, f.name))) continue;
         const row = this.addRow({ key: shapeRowKey(n, f.name), line: n, kind: 'shape', by: 'agent', from: 'agent', field: f, state: 'not-checked', reason: 'not yet matched' });
@@ -709,9 +718,10 @@ export class CheckBlock {
    */
   buildShapePartOf(l, shapeRows, lineParts, lineRows) {
     const b = this.shapeBuilt?.built[l.n];
-    const fields = (b?.fields ?? []).filter((f) => shapeRows.some((r) => (f.by === 'you' && r.kind === 'rule' && r.rule === f.rule) || (f.by === 'agent' && r.key === shapeRowKey(l.n, f.name))));
-    if (!b || !fields.some((f) => f.by === 'you')) { for (const r of shapeRows) { r.state = 'dropped'; r.reason = null; } return; }
-    const part = buildShapePart({ text: `the items of line ${l.n}`, fields: fields.map((f) => ({ name: f.name, spec: fieldSpec(f), rule: f.rule, by: f.by })), itemCount: b.itemCount });
+    // the source's `[default]` fields are always on the line; one a rule was mapped onto is carried by that rule's own row, unless the person dropped the rule (then it stands as the plain `[default]` field)
+    const fields = (b?.fields ?? []).filter((f) => f.by === 'default' || shapeRows.some((r) => (f.by === 'you' && r.kind === 'rule' && r.rule === f.rule) || (f.by === 'agent' && r.key === shapeRowKey(l.n, f.name)))).map((f) => (f.by === 'default' && Number.isInteger(f.rule) && !shapeRows.some((r) => r.kind === 'rule' && r.rule === f.rule) ? { ...f, rule: null } : f));
+    if (!b || !fields.some((f) => f.by === 'you' || f.by === 'default')) { for (const r of shapeRows) { r.state = 'dropped'; r.reason = null; } return; }
+    const part = buildShapePart({ text: `the items of line ${l.n}`, fields: fields.map((f) => ({ name: f.name, spec: fieldSpec(f), rule: f.rule, by: f.by })), itemCount: b.itemCount, ...(this.defaults.cite ? { cite: this.defaults.cite } : {}) });
     const reds = rubricStepShapeReds({ step: l.n, parts: [...lineParts.filter((p) => p.class === 'fact'), part] }, 'trial');
     if (reds.length) { for (const r of shapeRows) { r.state = 'not-checked'; r.reason = `code could not build the line's shape part: ${reds[0]?.detail}`; } return; }
     lineParts.push(part);
@@ -765,6 +775,13 @@ export class CheckBlock {
     const cited = this.rowsOn(l.n, 'cited')[0] ?? this.addRow({ key: `L${l.n}.$cited`, line: l.n, kind: 'cited', by: 'default', from: 'default', source: this.labels[0] });
     const numbers = this.rowsOn(l.n, 'numbers')[0] ?? null;
     cited.part = null;
+    // a source whose items are cited (the table's `cite`): the `[default]` cite is the shape part's own (its quotes are found in the source the items name), so the row rides the shape part and no separate quote part is made
+    if (this.defaults.cite) {
+      const i = lineParts.findIndex((p) => p.class === 'shape' && typeof p.cite === 'string');
+      cited.state = i >= 0 ? 'built' : 'not-checked'; cited.reason = i >= 0 ? null : 'there is no list of items to find quotes in';
+      if (i >= 0) lineRows[i].push(cited.key);
+      return;
+    }
     if (factLines.has(l.n)) { cited.state = 'not-checked'; cited.reason = REASON.onePerLine; this.buildNote(l, lineParts, lineRows); return; }
     const only = this.labels.length === 1 ? this.labels[0] : null;
     if (only) { lineParts.push({ text: defaultCitedText(only), class: 'countable', check: 'cited', source: only }); lineRows.push([cited.key]); cited.state = 'built'; cited.reason = null; }

@@ -122,6 +122,7 @@ import { buildShapes } from './shapebuild.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
+import { defaultsOf } from './sourcedefaults.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
 import { renderJobLines } from './jobblock.js';
@@ -726,7 +727,7 @@ export async function authorCloseForJob({
   let carried = null;
   if (lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines) && ledgerTexts) {
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
-    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
+    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, source, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
     // S4: the rules of a line that reads a sheet are the sheet checks' alone: no pick question, no page path (src/sheetrows.js `sheetLineNumbers`, the row-edit turn's own rule)
     block.setSheetLines(sheetLineNumbers({ inputs, texts: ledgerTexts, jobLines }));
@@ -794,24 +795,34 @@ export async function authorCloseForJob({
     // by checkability, no word lists). A job whose rules are all checkable makes no shape call and its rows, card and prompts stay byte-identical. The AI only suggests; code builds or refuses each field (src/shapebuild.js) and
     // `matchRule` gives a field only to a rule no truth check took. A shape look that fails never stops the draft (its spend stays booked): it goes on without a shape.
     const left = block.shapeCandidates();
-    if (left.length > 0 && typeof shapeFn === 'function') {
+    /** the item fields the SOURCE's row adds to every shape line (src/sourcedefaults.js): none for files */
+    const defaultFields = defaultsOf(source).fields;
+    const asked = left.length > 0 && typeof shapeFn === 'function';
+    /** what the shape look suggested; null = it was not asked or did not answer @type {any[]|null} */
+    let suggested = null;
+    if (asked) {
       const lineNums = [...new Set(left.map((x) => x.line))].sort((a, b) => a - b);
       const shapeCallOptions = provider ? thinkingCallOptions(provider, draftThinking) : {};
-      const got = await shapeFn({
-        texts: ledgerTexts, jobLines, lineNums, left: lineNums.map((n) => ({ line: n, rules: left.filter((x) => x.line === n).map((x) => x.rule) })), provider, ceilingUsd, onCall, priorCalls: survey?.calls ?? [],
+      const got = await /** @type {Function} */ (shapeFn)({
+        texts: ledgerTexts, jobLines, lineNums, ...(defaultFields.length > 0 ? { have: defaultFields.map((d) => d.name) } : {}), left: lineNums.map((n) => ({ line: n, rules: left.filter((x) => x.line === n).map((x) => x.rule) })), provider, ceilingUsd, onCall, priorCalls: survey?.calls ?? [],
         ...(rates ? { rates } : {}), ...(Object.keys(shapeCallOptions).length ? { callOptions: shapeCallOptions } : {}),
       });
       survey.calls = [...(survey.calls ?? []), ...got.calls];
       survey.raws = [...(survey.raws ?? []), ...got.raws];
       if (got.state !== 'PRESENT') onPhase('shape-skipped', { reason: got.reason });
-      else if (got.shapes.length > 0) {
-        const shapes = buildShapes({ lines: jobLines.filter((l) => lineRules(l).length > 0 && !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: got.shapes });
-        block.setShape(shapes);
-        if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
-        onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
-      }
-      block.reconcile();
+      else suggested = got.shapes;
     }
+    // a source with default item fields builds a shape on every line whatever the look said (code's own `[default]` rows); every other job builds a shape only from what the look suggested
+    if ((suggested !== null && suggested.length > 0) || defaultFields.length > 0) {
+      const blk = /** @type {import("./checkblock.js").CheckBlock} */ (block);
+      const shapes = buildShapes({
+        lines: jobLines.filter((l) => (defaultFields.length > 0 || lineRules(l).length > 0) && !blk.isSheetLine(l.n)), labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: suggested ?? [], defaultFields,
+      });
+      block.setShape(shapes);
+      if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
+      onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
+    }
+    if (asked || defaultFields.length > 0) block.reconcile();
   }
 
   // A repo job runs through the SAME check block (hamr 2026-11-15: "same flow as rubric, no exceptions; only the TYPE of checks varies"): its `$` rows are known now (the confirm card draws them); its `~` rule rows

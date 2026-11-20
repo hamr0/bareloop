@@ -2,12 +2,13 @@
 // Modelled on src/sheetrows.js. The ROWS themselves live in the one owner, src/checkblock.js (`setShape`, `rowChoice`); this file only names them and reads them back, so the confirm card, the signed card, the Job tab, the
 // Result tab and the report say the same thing.
 // THE PART (what the views read and what `rubricStepShapeReds`, `buildStepSpec` and `lineBriefs` sign, check and brief):
-//   { class: 'shape', text, fields: [{ name, spec: {kind, required?, ...bounds}, rule?: <the ~ rule number it comes from>, row?: 'agent' }], minItems?, maxItems?, rules?: [<rule numbers>] }
+//   { class: 'shape', text, fields: [{ name, spec: {kind, required?, ...bounds}, rule?: <the ~ rule number it comes from>, row?: 'agent'|'default' }], minItems?, maxItems?, rules?: [<rule numbers>], cite?: <the label the items' quotes are found under> }
 // Rows of one shape line: a `[you]` row per `~` rule that has a field (the rule's own row, kind `rule`), an `[agent]` row per extra field (kind `shape`, key `L<n>.shape.<name>`), and the line's `[default]` row (key
 // `L<n>.$shape`): the answer is a list of items, with the item count when the person's words gave one.
 import { createRubric, rubricVocabulary } from 'bareguard';
 import { lineRules } from './rubricstep.js';
 import { nameWhy, shapeNameRules, SHAPE_KINDS } from './shapemenu.js';
+import { SOURCE_DEFAULTS } from './sourcedefaults.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -21,6 +22,9 @@ export function shapeDefaultWords(count = null) {
   if (count && Number.isInteger(count.min) && count.min === count.max) return `the answer lists exactly ${count.min} item${count.min === 1 ? '' : 's'}`;
   return null;
 }
+
+/** the words of the `[default]` cite row of a source whose items quote it (code's own) */
+export const CITE_WORDS = "every item's quote is found word for word in the repo file the item names";
 
 /** why the truth of a shape line's items is not checked: the person judges it at Accept (the Not checked row of every shape line) */
 export const SHAPE_TRUTH_PARTS = Object.freeze(['whether each one is true', 'you judge it at Accept']);
@@ -82,17 +86,19 @@ export function shapeFieldSentence(spec, said = '') {
 }
 
 /**
- * The signed part of ONE shape line, from the fields that stand (the `[you]` rule fields and the `[agent]` fields the person has not dropped or left Suggested).
- * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'}[], itemCount?: {n: number}|null}} o
+ * The signed part of ONE shape line, from the fields that stand (the `[you]` rule fields, the `[agent]` fields the person has not dropped or left Suggested, and the source's `[default]` fields).
+ * `cite` (the source's row, src/sourcedefaults.js): the label the items' quotes are found under; absent when the source has none.
+ * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'|'default'}[], itemCount?: {n: number}|null, cite?: string|null}} o
  * @returns {Record<string, any>}
  */
-export function buildShapePart({ text, fields, itemCount = null }) {
+export function buildShapePart({ text, fields, itemCount = null, cite = null }) {
   const rules = [...new Set(fields.filter((f) => Number.isInteger(f.rule)).map((f) => /** @type {number} */ (f.rule)))].sort((a, b) => a - b);
   return {
     class: 'shape', text,
-    fields: fields.map((f) => ({ name: f.name, spec: f.spec, ...(Number.isInteger(f.rule) ? { rule: f.rule } : {}), ...(f.by === 'agent' ? { row: 'agent' } : {}) })),
+    fields: fields.map((f) => ({ name: f.name, spec: f.spec, ...(Number.isInteger(f.rule) ? { rule: f.rule } : {}), ...(f.by === 'agent' || (f.by === 'default' && !Number.isInteger(f.rule)) ? { row: f.by } : {}) })),
     ...(itemCount ? { minItems: itemCount.n, maxItems: itemCount.n } : {}),
     ...(rules.length ? { rules } : {}),
+    ...(cite !== null ? { cite } : {}),
   };
 }
 
@@ -119,11 +125,11 @@ export function shapeFieldText(f, rules) {
  * The shape rows of a signed close, read from its shape parts: one per field (a `[you]` rule row's, an `[agent]` row's), then the line's `[default]` row. A close with no shape part has none.
  * `rule` is the rule a `[you]` row is. Text is code's (never a model's).
  * @param {any} closeDecl @param {any[]|null} [jobLines] the person's numbered lines
- * @returns {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number}[]}
+ * @returns {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number, truth?: true}[]}
  */
 export function shapeRowsOf(closeDecl, jobLines = null) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
-  /** @type {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number, shape: true}[]} */
+  /** @type {{line: number, key: string, by: 'you'|'agent'|'default', text: string, name?: string, rule?: number, shape: true, truth?: true}[]} */
   const out = [];
   for (const st of stages) {
     if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params)) continue;
@@ -132,12 +138,14 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
     const n = st.params.step;
     const rules = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === n));
     for (const f of part.fields.filter(isRec)) {
-      out.push(Number.isInteger(f.rule) && f.row !== 'agent'
+      out.push(Number.isInteger(f.rule) && f.row !== 'agent' && f.row !== 'default'
         ? { line: n, key: `L${n}.~${f.rule}`, by: 'you', text: shapeFieldText(f, rules), name: String(f.name), rule: f.rule, shape: true }
-        : { line: n, key: shapeRowKey(n, String(f.name)), by: 'agent', text: shapeFieldText(f, rules), name: String(f.name), shape: true });
+        : { line: n, key: shapeRowKey(n, String(f.name)), by: f.row === 'default' ? 'default' : 'agent', text: shapeFieldText(f, rules), name: String(f.name), shape: true });
     }
     const dw = shapeDefaultWords(Number.isInteger(part.minItems) ? { min: part.minItems, max: part.maxItems } : null);
     if (dw !== null) out.push({ line: n, key: shapeDefaultKey(n), by: 'default', text: dw, shape: true });
+    // the source's `[default]` cite: its own signed row (`L<n>.$cited`), a truth check (not a form check)
+    if (typeof part.cite === 'string') out.push({ line: n, key: `L${n}.$cited`, by: 'default', text: CITE_WORDS, shape: true, truth: true });
   }
   return out;
 }
@@ -191,8 +199,16 @@ export function shapeShapeReds(part, w, red, factPart = null) {
     if (factPart && (f.name === 'quote' || f.name === 'values')) red('invalid-value', `${fw}.name`, `"${f.name}" is a key of the fact results on this line, so it cannot name a shape field`);
     if (!isRec(f.spec) || !Object.hasOwn(SHAPE_KINDS, String(f.spec.kind))) red('invalid-value', `${fw}.spec.kind`, `one of ${Object.keys(SHAPE_KINDS).join(' | ')}`);
     if (Object.hasOwn(f, 'rule') && !(Number.isInteger(f.rule) && f.rule >= 1)) red('invalid-value', `${fw}.rule`, 'the number of the ~ rule the field comes from (an integer, 1 or more)');
-    if (Object.hasOwn(f, 'row') && f.row !== 'agent') red('invalid-value', `${fw}.row`, '"agent" (the tag of a field code made its own row) or absent');
+    if (Object.hasOwn(f, 'row') && f.row !== 'agent' && f.row !== 'default') red('invalid-value', `${fw}.row`, '"agent" or "default" (the tag of a field code made its own row) or absent');
   });
+  // a cite (the source table's, src/sourcedefaults.js): the items' quotes are found under that label, and each item names its file and carries its quote, so both fields are there as required text
+  if (Object.hasOwn(part, 'cite')) {
+    if (part.cite !== SOURCE_DEFAULTS.repo.cite) red('invalid-value', `${w}.cite`, `"${SOURCE_DEFAULTS.repo.cite}" (the one place the quotes are found) or absent`);
+    for (const need of ['file', 'quote']) {
+      const have = fs.find((/** @type {any} */ f) => isRec(f) && f.name === need);
+      if (!have || !isRec(have.spec) || have.spec.kind !== 'text' || have.spec.required !== true) red('invalid-value', `${w}.fields`, `items that are cited carry "${need}" as required text (the cite reads it)`);
+    }
+  }
   for (const k of ['minItems', 'maxItems']) if (Object.hasOwn(part, k) && !(Number.isInteger(part[k]) && part[k] >= (k === 'maxItems' ? 1 : 0))) red('invalid-value', `${w}.${k}`, 'a whole number of items');
   if (Number.isInteger(part.minItems) && Number.isInteger(part.maxItems) && part.minItems > part.maxItems) red('invalid-value', `${w}.maxItems`, 'maxItems is below minItems');
   if (!isRec(part) || fs.some((/** @type {any} */ f) => !isRec(f) || !isRec(f.spec))) return;

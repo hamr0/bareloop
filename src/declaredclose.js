@@ -345,6 +345,18 @@ export function validateCloseDecl(closeDecl, opts = {}) {
   }
   // the ONE signed source of a rubric-road close (src/sourcedefaults.js): where its input comes from. Only the text close has one; absent = files
   if (closeDecl.source !== undefined && !(SOURCES.includes(closeDecl.source) && closeDecl.lang === 'text')) red('invalid-value', `${at}.source`, `menu: ${SOURCES.join('|')}, on the text close only (a code close has no source)`);
+  // a shape part's `cite` is the source table's output written at signing (src/sourcedefaults.js): it must be the signed source's own, so the part and the source are one truth, checked, never two that can disagree
+  if (closeDecl.lang === 'text' && Array.isArray(closeDecl.stages)) {
+    const wantCite = defaultsOf(closeDecl.source).cite ?? null;
+    closeDecl.stages.forEach((/** @type {any} */ st, /** @type {number} */ i) => {
+      if (!isObj(st) || st.kind !== 'rubric-step' || !isObj(st.params) || !Array.isArray(st.params.parts)) return;
+      st.params.parts.forEach((/** @type {any} */ part, /** @type {number} */ j) => {
+        if (isObj(part) && part.class === 'shape' && (part.cite ?? null) !== wantCite) {
+          red('invalid-value', `${at}.stages[${i}].params.parts[${j}].cite`, wantCite === null ? 'a shape part of a close whose source has no cite carries none' : `a shape part of a "${closeDecl.source}" close carries cite "${wantCite}"`);
+        }
+      });
+    });
+  }
   const langOk = DECLARABLE_LANGUAGES.includes(closeDecl.lang);
   if (!langOk) {
     red('invalid-value', `${at}.lang`, `menu: ${DECLARABLE_LANGUAGES.join('|')} — the language selects the genre's guard `

@@ -2650,7 +2650,7 @@ export async function authorClose({
   }
   // every rubric job drafts through the check block (src/authorjob.js builds it, with the person's answers applied); a caller that brings none (a direct authorClose call) gets the block of the look alone, nobody to ask
   if (block === null && lang === RUBRIC_LANG && inputTexts !== null && Array.isArray(jobLines)) {
-    block = new CheckBlock({ texts: inputTexts, labels: (inputs ?? []).map((/** @type {any} */ i) => i.label), asks: false });
+    block = new CheckBlock({ texts: inputTexts, labels: (inputs ?? []).map((/** @type {any} */ i) => i.label), asks: false, source });
     block.fromJob(jobLines);
     block.addLook(Array.isArray(facts?.look?.facts) ? facts.look.facts : [], Array.isArray(facts?.look?.dropped) ? facts.look.dropped : []);
     block.reconcile();

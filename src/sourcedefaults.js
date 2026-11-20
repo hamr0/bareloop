@@ -12,14 +12,22 @@ export const SOURCES = Object.freeze(['files', 'repo']);
  */
 export const sourceOf = (closeDecl) => (closeDecl?.lang !== 'text' ? null : closeDecl?.source === 'repo' ? 'repo' : 'files');
 
+/** the label a repo's quotes are cited under: the one input they come from (the repo itself) */
+export const REPO_LABEL = 'repo';
+
+/** one item field code adds on its own: required text that is not empty, no other limit @param {string} name */
+const textField = (name) => Object.freeze({ name, kind: 'text', required: true, bounds: Object.freeze({ minChars: 1 }) });
+
 /**
  * The ONE table keyed by source: what differs between a rubric job on files and a rubric job on a repo. Nothing else may say "this is a review".
  *   `engineDirs`: the directories the ENGINE makes in the run's tree (the worker's answer files). A files job's hidden tree lists them; a repo's own listing never does, so for a repo they select without being listed.
- * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[]}>>}
+ *   `fields`: the item fields code adds to EVERY shape line of the source (`[default]` rows; the worker is told them; the shape look is told they exist): none for files; a repo's items name a file, quote it and say why.
+ *   `cite`: the label each item's quote is found under (the signed shape part's `cite`), or null: a repo's quotes are found in the repo files the items name.
+ * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[], fields: readonly {name: string, kind: 'text', required: true, bounds: {minChars: number}}[], cite: string|null}>>}
  */
 export const SOURCE_DEFAULTS = Object.freeze({
-  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])) }),
-  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']) }),
+  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])), fields: Object.freeze(/** @type {any[]} */ ([])), cite: /** @type {string|null} */ (null) }),
+  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']), fields: Object.freeze(['file', 'quote', 'why'].map(textField)), cite: /** @type {string|null} */ (REPO_LABEL) }),
 });
 
 /** the defaults row of a source (files when none) @param {string|null|undefined} source */
