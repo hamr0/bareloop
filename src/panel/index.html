@@ -4497,21 +4497,61 @@
     return '<div class="job-card" data-testid="result-ticket"><h4>The ticket</h4><div class="field"><div class="ro-value" data-testid="result-ticket-title" style="color:var(--text)">#' + escapeXml(String(t.number)) +
       ' &middot; ' + escapeXml(t.title || "") + '</div>' + link + '</div></div>';
   }
-  function resultJobCard(job){
-    return '<div class="job-card" data-testid="result-job"><h4>The job</h4>' +
-      resultField("What it was asked", '<div class="ro-value" data-testid="result-asked" style="white-space:pre-wrap">' + escapeXml(job.asked) + '</div>') +
-      (Array.isArray(job.scope) && job.scope.length ? resultField("Where it may change files", '<div class="ro-value" data-testid="result-scope">' + escapeXml(job.scope.join(", ")) + '</div>') : "") + '</div>';
+  // ---- RESULT TAB A (signed by hamr 2026-11-21): stacked boxes, each a job-card. RESULT, THE JOB (its Job type line first), HOW IT RAN, then by job type FINDINGS (a review) or WHAT CHANGED (a change), then the checks, Not checked, Your call, Saved.
+  // The server sends every fact and word (the Job type line is the ONE owner's, src/sourcedefaults.js); the page only draws, with the classes the Job tab, the shape fold and the step map already have.
+  // RESULT: status, money, time (the rubric tab's own head; the generic tab passes its own Spent / Time boxes), then `tail` (the page link, the saved report)
+  function resultHeadHtml(detail, money, time, tail){
+    return '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
+      resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
+        ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
+      '<div class="field-row">' + money + time + '</div>' + (tail || "") + '</div>';
   }
-  function resultChangedCard(c){
+  // THE JOB: the Job type line, the numbered job lines with their ~ rules (the Job tab's own .jl/.num/.sub), then what else the job said (`tail`: covers, the fence)
+  function resultJobCard(data, lines, tail){
+    var h = '<div class="job-card" data-testid="result-job"><h4>The job</h4><div class="jp">' +
+      (data.jobType ? '<div class="jp-sum" data-testid="result-jobtype">' + escapeXml(data.jobType) + '</div>' : "");
+    (lines || []).forEach(function(l){
+      h += '<div class="jl" data-testid="result-jobline"><span class="num">' + escapeXml(String(l.n)) + '</span>' + escapeXml(l.text) +
+        (l.rules || []).map(function(r){ return '<div class="sub">~ ' + escapeXml(r) + '</div>'; }).join("") + '</div>';
+    });
+    return h + '</div>' + (tail || "") + '</div>';
+  }
+  // HOW IT RAN: the step chips the Run tab's map draws (the run's own step parts, one drawing: buildStepMapHTML), then `N steps \u00B7 N tries`; `more` = the generic tab's longer steps words
+  function resultRanCard(data, detail, more){
+    var boxes = buildOrderedBoxes(detail.parts, detail.glyph === "\u25B6" && !detail.died).filter(function(b){ return b.kind === "step"; });
+    if(!boxes.length && !data.ran && !more) return "";
+    return '<div class="job-card" data-testid="result-ran"><h4>How it ran</h4>' + (boxes.length ? buildStepMapHTML(boxes) : "") +
+      (data.ran ? '<div class="hint" data-testid="result-ran-line">' + escapeXml(data.ran.line) + '</div>' : "") + (more || "") + '</div>';
+  }
+  // FINDINGS: the close's own proof line, one fold row per finding (file and the first line of its why; open for the full why and the quote)
+  function resultFindingsCard(f){
+    var mark = '<span class="rs-ok">\u2713</span>';
+    return '<div class="job-card" data-testid="result-findings"><h4>Findings \u00b7 ' + f.total + '</h4>' +
+      (f.cite ? '<div class="hint" data-testid="result-findings-cite">' + escapeXml(f.cite) + ' ' + mark + '</div>' : "") +
+      '<div class="sf-list" data-testid="result-findings-list">' + f.items.map(function(it){
+        return '<details class="sf-item" data-testid="result-finding"><summary><span class="sf-nm" title="' + escapeXml(it.file) + '"><b>' + escapeXml(it.file) + '</b> ' + escapeXml(it.first) + '</span><span class="sf-ar"></span></summary><div class="sf-fl">' +
+          '<div><span class="k">why</span><span class="v" style="white-space:pre-wrap">' + escapeXml(it.why) + '</span></div>' +
+          '<div><span class="k">quote</span><span class="v" style="white-space:pre-wrap">' + escapeXml(it.quote) + '</span></div></div></details>';
+      }).join("") + '</div>' +
+      (f.cut ? '<div class="hint" data-testid="result-findings-cut">' + (f.total - f.items.length) + ' more are in the saved report</div>' : "") + '</div>';
+  }
+  // WHAT CHANGED: the header numbers, the branch, one fold row per file with its +a \u2212r (open for that file's diff), then the notes the old box carried (what the numbers cover, the fence, every edit)
+  function resultChangedCard(c, work){
     if(!c) return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4><div class="hint" data-testid="result-changed-none">no edit was recorded for this run</div></div>';
-    var last = c.last.files.map(function(f){ return resultDiffHtml(f.diff); }).join("\n") + (c.last.note ? '\n<span class="rs-ctx">' + escapeXml(c.last.note) + '</span>' : "");
     var all = c.all.map(function(e){
       return '<div class="hint">edit ' + e.n + (e.step ? ' &middot; ' + escapeXml(e.step) : "") + '</div>' + e.files.map(function(f){
         return '<pre class="rs-diff">' + resultDiffHtml(f.diff) + (f.cutNote ? '\n<span class="rs-ctx">' + escapeXml(f.cutNote) + '</span>' : "") + '</pre>';
       }).join("");
     }).join("");
-    return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4>' +
-      resultField(c.head, '<div class="ro-value"><pre class="rs-diff" data-testid="result-diff">' + last + '</pre></div>') +
+    return '<div class="job-card" data-testid="result-changed"><h4>What changed \u00b7 ' + c.files + ' file' + (c.files === 1 ? '' : 's') + ' <span class="rs-add" data-testid="result-changed-plus">+' + c.plus + '</span> <span class="rs-del" data-testid="result-changed-minus">\u2212' + c.minus + '</span></h4>' +
+      (work ? '<div class="hint" data-testid="result-changed-branch">branch ' + escapeXml(work.branch) + '</div>' : "") +
+      '<div class="hint" data-testid="result-changed-head">' + escapeXml(c.head) + '</div>' +
+      '<div class="sf-list" data-testid="result-changed-files">' + c.byFile.map(function(f){
+        return '<details class="sf-item" data-testid="result-file"><summary><span class="sf-nm" title="' + escapeXml(f.path) + '">' + escapeXml(f.path) + '</span><span class="sf-ct">' +
+          (f.binary ? 'binary' : '<span class="rs-add">+' + f.plus + '</span> <span class="rs-del">\u2212' + f.minus + '</span>') + '</span><span class="sf-ar"></span></summary><div class="sf-fl"><div>' +
+          '<pre class="rs-diff" data-testid="result-diff" style="flex:1 1 auto;min-width:0">' + resultDiffHtml(f.diff) + (f.cutNote ? '\n<span class="rs-ctx">' + escapeXml(f.cutNote) + '</span>' : "") + '</pre></div></div></details>';
+      }).join("") + '</div>' +
+      (c.last.note ? '<div class="hint" data-testid="result-changed-note">' + escapeXml(c.last.note) + '</div>' : "") +
       '<details data-testid="result-all-edits"><summary>' + escapeXml(c.foldWords) + '</summary><div class="ro-value">' + all + '</div></details>' +
       (c.scopeLine ? '<div class="hint" data-testid="result-scopeline">' + escapeXml(c.scopeLine) + '</div>' : "") + '</div>';
   }
@@ -4538,15 +4578,18 @@
       resultField("Throw it away", '<div class="ro-value" data-testid="result-drop">' + escapeXml(w.drop) + '</div>') +
       '<div class="hint" data-testid="result-work-note">' + escapeXml(w.note) + '</div></div>';
   }
-  function resultRunCard(run){
-    return '<div class="job-card" data-testid="result-run"><h4>The run</h4><div class="field-row">' +
-      resultField("Spent", '<div class="ro-value" data-testid="result-spent">' + escapeXml(run.spent) + (run.spentNote ? ' <span class="hint">(' + escapeXml(run.spentNote) + ')</span>' : "") + '</div>') +
-      resultField("Time", '<div class="ro-value" data-testid="result-time">' + escapeXml(run.time) + '</div>') +
-      (run.steps ? resultField("Steps", '<div class="ro-value" data-testid="result-steps">' + escapeXml(run.steps) + '</div>') : "") + '</div></div>';
-  }
   // the whole generic tab, top to bottom; the Your call card is the rubric tab's own resultDoorHtml, only while the run waits at the door
+  // the whole generic tab, top to bottom (layout A); the Your call card is the rubric tab's own resultDoorHtml, only while the run waits at the door
   function resultGenericHtml(data, detail){
-    return resultTicketCard(data.ticket) + resultJobCard(data.job) + resultChangedCard(data.changed) + resultChecksCard(data.checks) + resultWorkCard(data.work) + resultRunCard(data.run) +
+    var run = data.run;
+    var money = resultField("Spent", '<div class="ro-value" data-testid="result-spent">' + escapeXml(run.spent) + (run.spentNote ? ' <span class="hint">(' + escapeXml(run.spentNote) + ')</span>' : "") + '</div>');
+    var time = resultField("Time", '<div class="ro-value" data-testid="result-time">' + escapeXml(run.time) + '</div>');
+    var lines = data.job.lines || [];
+    var tail = (lines.length ? "" : resultField("What it was asked", '<div class="ro-value" data-testid="result-asked" style="white-space:pre-wrap">' + escapeXml(data.job.asked) + '</div>')) +
+      (Array.isArray(data.job.scope) && data.job.scope.length ? resultField("Where it may change files", '<div class="ro-value" data-testid="result-scope">' + escapeXml(data.job.scope.join(", ")) + '</div>') : "");
+    var steps = run.steps ? resultField("Steps", '<div class="ro-value" data-testid="result-steps">' + escapeXml(run.steps) + '</div>') : "";
+    return resultHeadHtml(detail, money, time, "") + resultTicketCard(data.ticket) + resultJobCard(data, lines, tail) + resultRanCard(data, detail, steps) +
+      resultChangedCard(data.changed, data.work) + resultChecksCard(data.checks) + resultWorkCard(data.work) +
       (detail.accept === true && !detail.live ? resultDoorHtml(data.door) : "");
   }
   function resultDoorHtml(door){
@@ -4764,18 +4807,27 @@
     if(resultGrid && resultGrid.runid === detail.runid){ gridWire(body); paintResultBody(body, gridCardHTML(resultGrid, gridUi, detail), detail, typed, rerunOpen); return; }
     if(data.kind === "generic"){ paintResultBody(body, resultGenericHtml(data, detail), detail, typed, rerunOpen); return; }
     var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
-    var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
-      resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
-        ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
-      '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
-      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div>' +
-      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") +
+    var tail = ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") +
       (data.md || []).map(function(m){
         return resultField("Saved", m.words ? '<div class="ro-value" data-testid="result-md-gone">' + escapeXml(m.name) + ' \u2014 ' + escapeXml(m.words) + '</div>'
           : '<div class="ro-value"><a data-testid="result-md" target="_blank" rel="noopener" href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + m.i + '&view=1">' + escapeXml(m.name) + '</a>' + (m.note ? ' \u2014 <span data-testid="result-md-note">' + escapeXml(m.note) + '</span>' : '') + '</div>');
-      }).join("") + '</div>';
+      }).join("");
+    var h = resultHeadHtml(detail, resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>'),
+      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>'), tail);
     var ownPages = (data.pages || []).length >= 2;
-    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
+    if(data.findings){
+      // layout A for a review that passed: its findings come from the run's own record, so there is no saved result to find
+      h += resultJobCard(data, (data.lines || []).map(function(l){ return { n: l.n, text: l.text, rules: l.rules }; }),
+        data.covers ? '<div class="hint" data-testid="result-covers">' + escapeXml(data.covers) + '</div>' : "") + resultRanCard(data, detail, "") + resultFindingsCard(data.findings);
+      (data.lines || []).forEach(function(line){
+        var rows = resultCheckRowsHtml(line);
+        if(rows) h += '<div class="job-card" data-testid="result-line-checks"><h4>Checks</h4>' + rows + '</div>';
+        var nc = resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy);
+        if(nc) h += '<div class="job-card"><h4>Not checked</h4>' + nc + '</div>';
+      });
+    } else {
+      (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
+    }
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
@@ -4798,6 +4850,10 @@
   // the one tail of both Result tabs: draw, then put back what the person was typing and wire the door
   function paintResultBody(body, h, detail, typed, rerunOpen){
     body.innerHTML = h;
+    // a step chip of HOW IT RAN opens that step in the Audit tab, as the Run tab's map does
+    body.querySelectorAll(".map-chip[data-part-index]").forEach(function(chip){
+      chip.addEventListener("click", function(){ document.getElementById("tab-audit").click(); openAuditPart(Number(chip.getAttribute("data-part-index"))); });
+    });
     var ta = body.querySelector("#result-rerun-text");
     if(ta){
       ta.value = typed;

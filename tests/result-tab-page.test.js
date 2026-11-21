@@ -21,10 +21,12 @@ const src = (name) => {
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
 const NONE = /var RESULT_NONE = "([^"]+)";/.exec(PAGE)[1];
 const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultProofHtml', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultCheckRowsHtml', 'resultLineCard', 'resultDoorHtml',
-  'stageQuestionText', 'stageNumberText', 'stageTriedText', 'stateDotHTML', 'resultDiffHtml', 'resultTicketCard', 'resultJobCard', 'resultChangedCard', 'resultChecksCard', 'resultWorkCard', 'resultRunCard', 'resultGenericHtml'];
+  'stageQuestionText', 'stageNumberText', 'stageTriedText', 'stateDotHTML', 'resultDiffHtml', 'resultTicketCard', 'resultJobCard', 'resultChangedCard', 'resultChecksCard', 'resultWorkCard', 'resultHeadHtml', 'resultRanCard', 'resultGenericHtml'];
+// Result tab A: the chips are the Run tab's own drawing (buildStepMapHTML over the run's parts), cut and tested with the Run tab; here they are stubs, and so are the two Run-tab words the head reads
+const STUBS = 'function glyphClass(g){ return String(g); } function runName(j, n, id){ return j + " (run-" + n + ")"; } function buildOrderedBoxes(){ return []; } function buildStepMapHTML(){ return ""; }';
 // cut lazily so a missing page function fails ITS test, not the whole file
 let cut = null;
-const fns = new Proxy({}, { get: (_, k) => { cut ??= new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)(); return cut[k]; } });
+const fns = new Proxy({}, { get: (_, k) => { cut ??= new Function(`${ESC}\n${STUBS}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)(); return cut[k]; } });
 // the rubric tab's own functions only: this test must pass on the page as it was before the generic tab
 const rnames = names.slice(0, 11);
 const rub = new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${rnames.map(src).join('\n')}\nreturn {${rnames.join(', ')}};`)();
@@ -43,9 +45,9 @@ const detailOf = (o = {}) => ({ accept: false, live: false, ...o });
 
 test('green run: five boxes in the signed order, no ticket box, no door unless the run waits at it', () => {
   const { green } = real();
-  const h = fns.resultGenericHtml(green, detailOf());
+  const h = fns.resultGenericHtml(green, detailOf({ job: 'pulselog-panel-strict', glyph: '\u2713', checkType: 'deterministic', runNo: 1, status: { word: 'passed' } }));
   const heads = [...h.matchAll(/<h4>(.*?)<\/h4>/g)].map((m) => m[1]);
-  assert.deepEqual(heads, ['The job', 'What changed', 'The checks', 'The work', 'The run']);
+  assert.deepEqual(heads.map(strip), ['Result', 'The job', 'How it ran', 'What changed \u00b7 1 file +123 \u221226', 'The checks', 'The work']);
   assert.equal(h.includes('data-testid="result-ticket"'), false);
   assert.equal(h.includes('data-testid="result-door"'), false);
   assert.match(h, /data-testid="result-asked"[^>]*>Run the type checker in strict mode/);
@@ -64,10 +66,11 @@ test('what changed: the header, the LAST edit as a coloured wrapped diff (escape
   const { green } = real();
   const h = fns.resultChangedCard(green.changed);
   assert.match(strip(h), /1 file · src\/checks\.js · \+123 −26 lines over 3 edits/);
-  const diff = h.slice(at(h, 'data-testid="result-diff"'), at(h, '<details'));
+  const i0 = at(h, 'data-testid="result-diff"');
+  const diff = h.slice(i0, h.indexOf('</pre>', i0));
   assert.match(diff, /<span class="rs-del">-      if \(err &amp;&amp; &#39;code&#39;|<span class="rs-del">-      if \(err &amp;&amp; 'code'/);
   assert.match(diff, /<span class="rs-add">\+      const killed = typeof err/);
-  assert.match(diff, /<span class="rs-ctx">\.\.\.\(the last edit only; 26 more lines cut\)<\/span>/);
+  assert.match(h, /data-testid="result-changed-note">\.\.\.\(the last edit only; 26 more lines cut\)</);
   assert.equal(/<[a-z]+[^>]*>[^<]*&&/.test(diff.replace(/<span[^>]*>/g, '')), false, 'no raw && leaks out of the escaping');
   assert.match(h, /<summary>show every edit of the run \(3\)<\/summary>/);
   const fold = h.slice(at(h, 'data-testid="result-all-edits"'));
@@ -127,20 +130,21 @@ test('the work box: text lines only, no button, and only when the payload has on
   assert.equal(fns.resultGenericHtml({ ...green, work: null }, detailOf()).includes('result-work'), false);
 });
 
-test('the run box: a floor says so, a complete spend does not; steps and time are the server\'s words', () => {
+test('the run: a floor says so, a complete spend does not; steps and time are the server\'s words (now in RESULT and HOW IT RAN)', () => {
   const { green, red } = real();
-  const g = fns.resultRunCard(green.run);
+  const g = fns.resultGenericHtml(green, detailOf());
   assert.match(g, /data-testid="result-spent">at least \$0\.12 <span class="hint">\(a floor: some rounds were unpriced\)<\/span>/);
   assert.match(g, /data-testid="result-steps">2 steps \(annotate-checks-strict, final-strict-clean\), no replan</);
-  const r = fns.resultRunCard(red.run);
+  const r = fns.resultGenericHtml(red, detailOf());
   assert.equal(r.includes('a floor'), false);
   assert.match(r, /data-testid="result-spent">\$0\.67</);
 });
 
-test('a ticket job gets the small box on top: #n · title and its link (http/https only, new tab); other jobs get none', () => {
+test('a ticket job gets the small box right after RESULT: #n · title and its link (http/https only, new tab); other jobs get none', () => {
   const { ticket, green } = real();
   const h = fns.resultGenericHtml(ticket, detailOf());
-  assert.ok(h.startsWith('<div class="job-card" data-testid="result-ticket"><h4>The ticket</h4>'));
+  assert.ok(h.startsWith('<div class="job-card" data-testid="result-head">'), 'RESULT is the first box');
+  assert.ok(h.indexOf('<div class="job-card" data-testid="result-ticket"><h4>The ticket</h4>') > 0 && h.indexOf('data-testid="result-ticket"') < h.indexOf('data-testid="result-job"'), 'the ticket box sits right after RESULT, before THE JOB');
   assert.match(h, /data-testid="result-ticket-title"[^>]*>#7 &middot; fwdloop test: P1 walk 2</);
   assert.match(h, /<a data-testid="result-ticket-link" href="https:\/\/github\.com\/hamr0\/hol-guard\/issues\/7" target="_blank" rel="noopener noreferrer">/);
   assert.equal(fns.resultTicketCard({ number: 3, title: 'x', url: 'javascript:alert(1)' }).includes('<a '), false);
@@ -170,8 +174,16 @@ test('RUBRIC = A: the rubric tab\'s line cards and door draw exactly what the ol
 });
 
 test('the asked text and the fence are escaped: a job line cannot inject markup', () => {
-  const h = fns.resultJobCard({ asked: 'fix <b>this</b> & "that"', scope: ['<i>x</i>/**'] });
-  assert.equal(/<b>|<i>/.test(h), false);
+  const { green } = real();
+  const h = fns.resultGenericHtml({ ...green, job: { asked: 'fix <b>this</b> & "that"', scope: ['<i>x</i>/**'], lines: [] } }, detailOf());
+  assert.equal(/<b>this|<i>/.test(h), false);
   assert.match(h, /fix &lt;b&gt;this&lt;\/b&gt; &amp; &quot;that&quot;/);
-  assert.equal(fns.resultJobCard({ asked: 'x', scope: null }).includes('Where it may change files'), false, 'no fence recorded: no box for it');
+  assert.equal(fns.resultGenericHtml({ ...green, job: { asked: 'x', scope: null, lines: [] } }, detailOf()).includes('Where it may change files'), false, 'no fence recorded: no box for it');
+});
+
+test('Result tab A: THE JOB opens on the Job type line, then the numbered lines with their ~ rules (escaped)', () => {
+  const { green } = real();
+  const h = fns.resultGenericHtml({ ...green, jobType: 'Job type: Change code', job: { asked: 'x', scope: null, lines: [{ n: 1, text: 'fix <i>dates</i>', rules: ['keep it small'] }] } }, detailOf());
+  const job = h.slice(at(h, 'data-testid="result-job"'), at(h, 'data-testid="result-changed"'));
+  assert.match(job, /<div class="jp"><div class="jp-sum" data-testid="result-jobtype">Job type: Change code<\/div><div class="jl" data-testid="result-jobline"><span class="num">1<\/span>fix &lt;i&gt;dates&lt;\/i&gt;<div class="sub">~ keep it small<\/div>/);
 });
