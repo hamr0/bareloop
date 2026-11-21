@@ -2635,6 +2635,13 @@ unreferenced loose objects are left. Gitignored files inside the fence are seen 
 changed nothing in scope emits nothing, and a failed capture emits `gitError` with empty lists: a record,
 never a verdict, and it never throws. No prompt carries it; the learnings cards read it ("What changed").
 
+#### `check-running` — a declared check running past 5 minutes (`src/kinds.js`, `src/planrun.js`)
+
+REPORT-ONLY. One record per minute once a declared check (an AI-drafted `command-exit` / `count-not-worse` command) has run 5 minutes:
+`{elapsedMs, knownMs, text}` (`knownMs` = how long the same command took earlier in this run, else `null`; `text` is `checkRunningNote`'s words,
+e.g. `Tests are still running (7 min so far), usually about 12 min.`). Nothing reads it back to decide anything. A run that ends the
+check early because of the person's Stop writes the existing `stop-requested` record with `phase: 'close'`.
+
 #### `handoff-note` — LEGACY, no longer written (the handoff note was folded into the carry memo)
 
 Old spines carry `{type:'handoff-note', phase, iteration, chars, paths}` records; nothing in the library reads them (replay, the Audit and the analysis ignore the type), so old runs replay unchanged. A new run writes a `carry-note` record instead (below).
@@ -3132,7 +3139,7 @@ defaulted knob. Arbiter constants, hamr 2026-09-07 verbatim: **floor = 120,000 m
 | `TIMING_PREFLIGHT_CEILING_MS` | `600_000` (library default × K) | the GENEROUS provisional ceiling every stage runs under DURING the timing pass itself — never the autoset/override ceiling the run then uses, which is only known after the pass completes |
 | `timeCloseStages(stages, {cwd, redact})` | → `{ perStage: {name,ms,exitCode,timedOut}[], slowestMs, slowestName, anyTimedOut }` | runs EVERY stage once, ignoring verdicts (first-red-wins stays for the real verdict precheck) — a declared/kind stage (no `.cmd`) is skipped, contributing no reading rather than a false zero. A stage that never finishes within `TIMING_PREFLIGHT_CEILING_MS` reads `timedOut: true` |
 | `computeCloseTimeoutCeiling({slowestMs, overrideMs?})` | → `{ ceilingMs, source: 'estimated'\|'override' }` | `max(FLOOR, K × slowestMs)`, unless `overrideMs` is given, in which case it wins outright (may sit above OR below the estimate — not tighten-only) |
-| `resolveCloseTimeoutMs({job, stages, cwd, redact})` | → `{ closeTimeoutMs, source, timing, timedOut }` | the ONE resolver `src/planrun.js` and `src/userrun.js` (lifted out of `scripts/run-u.mjs` by PANEL-BUILD.md P0) BOTH call (never two independent spellings of this precedence): a signed `job.closeTimeoutMs` wins with NO timing pass run at all; absent, the pass runs and the ceiling autosets. `timedOut: true` means a stage never finished the pass — the caller reds `close-timing-red` rather than trusting any number |
+| `resolveCloseTimeoutMs({job, stages, cwd, redact})` | → `{ closeTimeoutMs, source, timing, timedOut }` | the ONE resolver `src/planrun.js` and `src/userrun.js` (lifted out of `scripts/run-u.mjs` by PANEL-BUILD.md P0) BOTH call (never two independent spellings of this precedence): a signed `job.closeTimeoutMs` wins with NO timing pass run at all; absent, a DECLARED (AI-drafted) close returns the one check limit (`CHECK_LIMIT_MS`, `source: 'check-limit'`, `timing: null`, no pass), and a command close runs the pass and the ceiling autosets. `timedOut: true` means a stage never finished the pass — the caller reds `close-timing-red` rather than trusting any number |
 | `closeTimeoutBanner({ceilingMs, source, slowestMs?, slowestName?})` | → the printed line | ONE spelling for `estimated`/`override`/`explicit` (the last is the pre-M3 shell/test runtime-option escape hatch, never the signed field) — printed on every run so a silent default can never hide behind this feature the way the OLD 120s/900s defaults did |
 
 **`scripts/sign-close.mjs`** — `node scripts/sign-close.mjs <jobs/x.json> [--write]` or
@@ -3150,6 +3157,37 @@ stage and shape-checks it (`invalid-value`, 64 lowercase hex chars) even where n
 demanded. It sits INSIDE the signed spec, so `jobSpecHash` covers it with no
 hash-function change — re-signing a job (minting or changing this field) moves the spec
 hash and needs re-approval, exactly like any other semantic edit.
+
+##### The check limit — an AI-drafted check (hamr 2026-11-21, `src/kinds.js`, `src/closetimeout.js`)
+
+A panel job's checks are AI-drafted (`closeDecl`, kind stages), not hand-written commands. They run under **one**
+code-owned limit, `CHECK_LIMIT_MS` (`src/kinds.js`, **30 minutes per command**), at every place a check runs: the drafting
+seed read, the signing gates (`prepareSigning`, the panel passes the same number), and the run's precheck, preflight and final
+close. `resolveCloseTimeoutMs` returns it for a declared close with `source: 'check-limit'` and no timing pass (the pass cannot
+time a kind stage, which used to read 0 and fall to the 120 s floor); a signed `job.closeTimeoutMs` override still wins. The AI's
+own `params.timeoutMs` may only TIGHTEN it (`effectiveTimeoutMs`). The limit is not in the draft or the signature and is never
+compared to `maxWallMs`: the `wall-under-close-timeout` refusal does not fire for a `check-limit` close (the Time cap does not
+pay for tests). A hand-written command close (`job.close`, `src/ralph.js` `runClose`) is untouched: the 120 s floor x K autoset.
+
+- **Still-running note.** Past `CHECK_NOTE_AFTER_MS` (5 min) and every `CHECK_NOTE_EVERY_MS` (1 min) a running check is announced
+  by `checkRunningNote({elapsedMs, knownMs})`: `Tests are still running (7 min so far).`, and `, usually about 12 min.` once the same
+  command (command, args, env) has a measured time earlier in the draft or run (`ctx.cmdTimes`). Report-only: drafting hears it as
+  `onPhase('check-running', {call, elapsedMs, knownMs, text})` (the panel shows it as the running step's line; the signing gates step
+  too), a run writes a `check-running` spine record `{elapsedMs, knownMs, text}` (no reader decides anything from it; the Run tab has
+  no live line for it yet).
+- **The box.** A check's command (`command-exit`, `count-not-worse`) runs in its own process group; the limit, `ctx.signal` (an
+  `AbortSignal`: the panel's Abandon, the run's Stop) and a dying owner (`exit`, SIGINT, SIGTERM, SIGHUP while a box is live) each kill
+  the WHOLE group: SIGTERM, SIGKILL after 2 s, and SIGKILL again once the leader is gone (a child that ignores SIGTERM). A run's Stop is
+  polled once a second while a declared check runs; a Stop inside the precheck or the preflight ends the run `stopped`.
+- **After a kill, the box is checked** (`boxMembers`, the process table). A survivor is typed on the stop detail (`survivors: [pid]`) and
+  said only then: `Some test processes did not stop: pid 4812, 4815. To stop them: kill 4812 4815` (`survivorsText`).
+- **Plain words on a timeout** (`checkTimedOutText(limitMs)`): `Your tests did not finish inside 30 minutes, so bareloop could not see
+  where they start. Nothing ran and no run money was spent.` The minutes come from the typed `limitMs` on the stage detail (the limit
+  that really bound the check). A STARTING check that hit it stops the draft (`authorClose` stop `check-timed-out`, reds
+  `{code: 'check-timed-out', limitMs, detail}`): no revise call, no declaration kept. At the signing gates the `broken-close` red carries
+  `limitMs` and `signingStopText` says the same words. The drafting log's `try-refused` row carries `stops: [{stage, text, survivors?}]`.
+- **Once per pass.** Each command runs once per check pass (a seed read, a close run: `ctx.cmdMemo`); stages reading the same command
+  (args, env, directory and limit alike) share the result. Nothing is shared across passes.
 
 #### `src/bundle.js` — pure, no provider/process calls
 
@@ -3183,7 +3221,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `close-tampered` | `runPlan` (PRD item 27/M2) | a close script's bytes no longer match its signed `sha256` — checked at run start (alongside `close-absolute-path`, before the close-first precheck and before any provider call) AND before EVERY close run thereafter (`runCloseStages`'s wrapper in `src/planrun.js`, the one seam the precheck/preflight/check-passes/close-fix-loop all share). Distinct from `close-red` (a judged "no" from a working close) and from `close-crashed`/`close-timeout`/`close-killed` (the close ran and hit an instrument fault): this is decided BEFORE the close is even spawned, and it means the close that ran would not have been the one the operator approved. Registered in `CLOSE_FAULTS` (`src/ralph.js`) so it rides out through the same forbidden-zone machinery as every other close fault — never retried, never fed back as a gap |
 | `close-dir-required` | `runPlan` (PRD item 27/M3 Part B) | a close script's source mentions `BARELOOP_CLOSE_DIR` (it reads its own books directory) but the runner was given no `closeDir` at all — `checkCloseDirRequired` (`src/close-integrity.js`) reuses the same `readCloseScripts` reader the other two integrity checks share. $0, run start, before the close-first precheck and before any provider call |
 | `close-timing-red` | `runPlan` (PRD item 27/M3) | the $0 timing preflight (`resolveCloseTimeoutMs`/`timeCloseStages`, `src/closetimeout.js`) ran every close stage once, ignoring verdicts, and at least one never finished within the provisional ceiling (`TIMING_PREFLIGHT_CEILING_MS`, the library default × K = 600s) — the close cannot run on this machine in a boundable time. Only reachable when NEITHER a signed `job.closeTimeoutMs` NOR a caller-passed runtime override is present (both skip the pass entirely). `src/userrun.js`'s (lifted out of `scripts/run-u.mjs` by PANEL-BUILD.md P0) review door hits the SAME red on its own `accept` timing pass (F137) — it refuses the door outright rather than calling `answerReviewDoor` at all, so nothing is recorded |
-| `wall-under-close-timeout` | `runPlan` (PRD item 27/M3) | `job.maxWallMs` is set and is under the EFFECTIVE per-stage close timeout just resolved (autoset or signed) — a budget under one close cannot fund its own close. `validateJob`'s own `MIN_WALL_MS` floor only bounds the un-autoset library default; this run-start check is the honest shape once the real ceiling is known, rather than a silent clamp |
+| `wall-under-close-timeout` | `runPlan` (PRD item 27/M3) | `job.maxWallMs` is set and is under the EFFECTIVE per-stage close timeout just resolved (autoset or signed) — a budget under one close cannot fund its own close. `validateJob`'s own `MIN_WALL_MS` floor only bounds the un-autoset library default; this run-start check is the honest shape once the real ceiling is known, rather than a silent clamp. Does NOT fire for a declared (AI-drafted) close under the check limit (`source: 'check-limit'`, below): that limit is code's own and is never compared to the Time cap |
 | `bundle-missing` | `readBundle` | `dir` is not a directory at all |
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |
@@ -3500,7 +3538,7 @@ key you want first (the panel picks the row by the Model menu).
   same worktree — the AGENT never installs; for a committed npm lock file the panel door first runs `npm ci --ignore-scripts` itself,
   $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure, a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
-  stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts;
+  stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts, and a check still running for the draft (a repo's own tests at drafting or at the signing gates) is killed whole (`ctx.signal`, see "The check limit");
   `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
   button reads **Clear** and only empties the card (a run is stopped from the Run tab). `GET /api/author/live` →
   `{ok, sessionId, state}` of the ONE live (non-terminal) session, or `{sessionId:null, state:null}`: a refreshed page
@@ -3604,7 +3642,7 @@ key you want first (the panel picks the row by the Model menu).
   {phase, step?, iteration, round}` (`step` only on a step phase), end the Loop after that round; `ask` then throws category `stopped`
   and the step loop files it as job-end outcome `stopped` the way a mid-step cap-halt is filed (the scout, plan, replan and
   close-fix phases file it through `relay`, which returns `stopped` as itself, never `provider-red`)
-  (`spendComplete` exact — nothing is in flight at a round boundary). One owner, one check: a one-step run
+  (`spendComplete` exact — nothing is in flight at a round boundary). A DECLARED check running long is the one thing a round seam cannot reach, so while one runs the request file is also polled once a second: present = the check's whole process group is killed at once, the file is consumed, `stop-requested {phase: 'close'}` is emitted, and the precheck and the preflight end `stopped` (a Stop inside the final close kills the check too, and that run then ends through the close's own killed-fault routing, which no test covers). One owner, one check: a one-step run
   and a long step both stop within one turn. Resume re-enters that step, or continues the phase. The request file is cleared three times: when honoured, when the
   leg ends (`finally`), and at the start of the next leg (a click that raced a leg's end never stops a
   resume). `stopped` is in `CHECKPOINT_OUTCOMES`: resumable like a `cap-halt`, the same run continues as a
