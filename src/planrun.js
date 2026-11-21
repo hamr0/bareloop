@@ -4219,6 +4219,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // still red → the escalation ralph already emitted stands.
   const post = await judgeClose();
   emit('outer-close', { ...post });
+  // THE PERSON'S STOP landed inside this close (the poll killed the check): the same `stopped` terminal and records as a Stop at a round boundary
+  // (`stop-requested` was written by the poll; `relay` files the `stopped` escalation). Only a kill CAUSED by the stop routes here; a timeout or
+  // any other killed close keeps the close-fault routing below. No grade is minted and nothing is discarded.
+  if (stoppedInClose) {
+    planExecuted();
+    return relay(Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' }), 'close');
+  }
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
     planExecuted();
@@ -4539,6 +4546,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // case the trend instrument is blind.
       middle, judge: async () => {
         const v = await judgeClose();
+        // a Stop inside a fix-loop close: ends through `relay` below, like a round-boundary stop in the fix phase
+        if (stoppedInClose) throw Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' });
         carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
         return v;
       }, ladder: fixGovernor, emit: emitL, redact: scrub,

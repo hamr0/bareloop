@@ -180,3 +180,75 @@ test('runPlan: Stop while a declared check runs kills the check\'s whole group a
   assert.equal(existsSync(stopFile), false, 'the request was consumed');
   await assertGone(dir, 'run stop');
 });
+
+// ── Stop inside the FINAL close (hamr 2026-11-21): the same `stopped` terminal as a Stop anywhere else ───────────────
+import { runJob } from '../src/run.js';
+import { jobSpecHash } from '../src/job.js';
+import { makeSpine } from '../src/spine.js';
+import { readSpine } from './helpers.js';
+import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+
+/** a patient whose check is a fast red while src/fix.js is absent (precheck, preflight) and HANGS (two children, one ignoring SIGTERM) once the worker wrote it */
+function finalCloseWorld(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'check-kill-final-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'mod.js'), '// nothing yet\n');
+  writeFileSync(join(dir, '.gitignore'), '.smoke/\npids.json\n');
+  writeFileSync(join(dir, 'check.mjs'), `import { existsSync } from 'node:fs';
+if (!existsSync(new URL('./src/fix.js', import.meta.url).pathname)) process.exit(1);
+${readFileSync(join(repo(t).dir, 'suite.mjs'), 'utf8')}`);
+  initPatientRepo(dir);
+  const guards = classGuards({ verdictType: 'green', lang: 'js' }).map((g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) } }));
+  const job = {
+    schema: 'job-v1', job: 'check-kill-final', description: 'a hanging final check', provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 1.5,
+    writeScope: ['src/**'], goal: 'Create src/fix.js.', verdictType: 'green',
+    closeDecl: { genre: GENRE, lang: 'js', stages: [guards[0], { name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['check.mjs'], expectExit: 0 } }, guards[1]] },
+    tools: ['read', 'write', 'edit'], escalation: { mode: 'decision-ready' },
+  };
+  assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
+  const PLAN = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'write-fix', action: 'Create src/fix.js.', tools: ['write'], rounds: 6, target: 'src/fix.js', exit: [{ type: 'tree-changed', scope: 'src/**' }] }] });
+  const provider = scriptedProvider([
+    { text: 'scout' }, { text: PLAN },
+    { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(dir, 'src', 'fix.js'), content: '// ok\n' } }] },
+    { text: 'wrote src/fix.js' },
+  ]);
+  const outDir = mkdtempSync(join(tmpdir(), 'check-kill-final-out-'));
+  t.after(() => rmSync(outDir, { recursive: true, force: true }));
+  return { dir, job, provider, spine: join(outDir, 'spine.jsonl'), stopFile: join(outDir, 'stop') };
+}
+const runFinal = (w, extra = {}) => runJob(w.job, { approvals: [{ specHash: jobSpecHash(w.job), signer: 'hamr', ts: 'now' }], workdir: w.dir, provider: w.provider, emit: makeSpine(w.spine), stopFile: w.stopFile, ...extra });
+
+test('runJob: a Stop during the FINAL declared close kills the check whole and ends the run `stopped`, resumable, with no green booked', async (t) => {
+  const w = finalCloseWorld(t);
+  const presser = setInterval(() => { if (existsSync(join(w.dir, 'pids.json'))) { writeFileSync(w.stopFile, 'stop\n'); clearInterval(presser); } }, 50);
+  t.after(() => clearInterval(presser));
+  const t0 = Date.now();
+  const outcome = await runFinal(w);
+  const events = readSpine(w.spine);
+  assert.equal(outcome, 'stopped', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  assert.ok(Date.now() - t0 < 30_000, 'the run did not wait for the check');
+  await assertGone(w.dir, 'final close stop');
+  assert.ok(events.some((e) => e.type === 'stop-requested' && e.phase === 'close'), 'the stop is on the spine');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1)?.category, 'stopped', 'the same escalation a round-seam stop files');
+  assert.equal(events.find((e) => e.type === 'job-end')?.outcome, 'stopped');
+  assert.equal(existsSync(w.stopFile), false, 'the request was consumed');
+  assert.ok(!events.some((e) => (e.type === 'outer-close' || e.type === 'close-verdict') && e.declared === true && e.verdict === 'satisfied' && e.stage === undefined), 'no green close was booked');
+  assert.notEqual(events.find((e) => e.type === 'job-end')?.outcome, 'green');
+  assert.ok(CHECKPOINT_OUTCOMES.includes('stopped'), 'stopped is a checkpoint outcome');
+  const resume = readResume(events, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.equal(resume.endOutcome, 'stopped');
+  assert.ok(resume.restart, 'a resume point is read back from the spine');
+  assert.equal(resume.restart.seed.phase, 'close', 'the resume continues at the close, the step already done');
+  assert.deepEqual(resume.restart.seed.completedSteps.map((/** @type {any} */ x) => x.id), ['write-fix']);
+});
+
+test('runJob: a check killed by its own TIMEOUT in the final close is NOT a stop - it keeps the close-red routing', async (t) => {
+  const w = finalCloseWorld(t);
+  const outcome = await runFinal(w, { closeTimeoutMs: 1500 });
+  const events = readSpine(w.spine);
+  await assertGone(w.dir, 'final close timeout');
+  assert.equal(outcome, 'close-red');
+  assert.ok(!events.some((e) => e.type === 'stop-requested'), 'nobody pressed Stop');
+  assert.notEqual(events.find((e) => e.type === 'job-end')?.outcome, 'stopped');
+});
