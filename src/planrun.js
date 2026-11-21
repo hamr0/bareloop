@@ -43,6 +43,7 @@ import { createCarryStore } from './carrystore.js';
 import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
+import { reviewFindingsRecords, REVIEW_FINDINGS } from './reviewfindings.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact, rateSourceFields } from './text.js';
 import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
@@ -2019,6 +2020,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       options: [...HUMAN_DECISIONS],
       meaning: 'not a verdict — the verdict is already minted and nothing an answer does can change it; this records a disposition',
     });
+  };
+
+  /**
+   * REPORT ONLY ("Result tab A", hamr 2026-11-21): when the final close PASSED a review line, what its answer said (`review-findings`, src/reviewfindings.js), so the Result tab lists the findings without the run folder.
+   * Called right after the verdict is minted and never before; nothing reads it back into a verdict, a cap or a fence, a red line writes none, and it can fail without anyone knowing (it only ever returns records).
+   * @param {any} v the satisfied close verdict
+   */
+  const emitReviewFindings = async (v) => {
+    for (const rec of await reviewFindingsRecords({ closeDecl: job.closeDecl, stages: v?.stages, workdir, scrub })) emit(REVIEW_FINDINGS, rec);
   };
 
   /** the close, as ONE verdict: every stage in order, first red wins */
@@ -4177,6 +4187,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
     planExecuted();
+    await emitReviewFindings(post);
     await emitReviewDoor('green', post);
     return 'green';
   }
@@ -4558,7 +4569,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // work for is exactly as much a green as one the close minted first time, and a
   // door that opened on only one of them would be a door that quietly graded how
   // the verdict was arrived at.
-  if (fixOutcome === 'green') await emitReviewDoor('green', lastCloseVerdict);
+  if (fixOutcome === 'green') { await emitReviewFindings(lastCloseVerdict); await emitReviewDoor('green', lastCloseVerdict); }
   return fixOutcome === 'green' ? 'green' : 'escalated';
   } finally {
     // Emitted on EVERY exit (return or throw) — `finally` fires exactly once,
