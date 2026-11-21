@@ -14,6 +14,16 @@ const TAIL = 'Nothing spent.';
 /** where a run's per-file diffs live, inside the run's worktree (code-written inputs: untracked, never committed, never a worker edit) */
 export const DIFF_DIR = 'output/review-diff';
 
+/**
+ * The worker may not WRITE or EDIT anything under `DIFF_DIR` (code's per-file diffs are the cite's ground truth; a fenced `output/` alone
+ * let a worker overwrite one and quote a fake line). Wired as `tools.denyArgPatterns` on write/edit, the SAME belt as `.git`/`node_modules`
+ * (`FORBIDDEN_WRITE_SEGMENT_PATTERN`, src/planrun.js) and for the same reason: `fs.deny` would block READS too, and reads stay allowed.
+ * Matched on the serialized action's `path`, whole-segment (`output/review-diffs-notes.md` stays admitted). Tighten-only; code's own
+ * `writeRangeDiffs` writes with fs, never through the gate.
+ * @type {RegExp}
+ */
+export const REVIEW_DIFF_WRITE_PATTERN = new RegExp(`"path":"(?:(?:[^"\\\\]|\\\\.)*\\/)?${DIFF_DIR.replace(/\//g, '\\/')}(?:\\/|")`);
+
 /** @typedef {{kind: 'range', a: string, b: string, line: number}|{kind: 'branch', name: string, line: number}} RangeToken */
 
 /**

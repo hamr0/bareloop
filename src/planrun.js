@@ -56,7 +56,7 @@ import {
   REVIEW_DOOR, doorOpens, mechanicalStages,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
-import { rangeNoteOfSpec } from './rangereview.js';
+import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
 import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { isRateLimited, rateLimitWaitMs, statedWaitMs } from './ratelimit.js';
@@ -2463,7 +2463,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // before). bareguard's allowlist is exclusive for EVERY action and matches the action TYPE (`read`/`write`/`edit`/`ctx_stash`..., see toolAction), so it
       // lists the granted verbs' types plus the signed bridge names (src/stepmcp.js, proven against the real Gate): an unsigned bridge tool is denied by name.
       tools: {
-        denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] },
+        denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN, REVIEW_DIFF_WRITE_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN, REVIEW_DIFF_WRITE_PATTERN] },
         ...(mcpRun ? { allowlist: mcpAllowlist(granted, mcpRun.server, mcpRun.mcpTools, workdir) } : {}),
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 1e-4) },

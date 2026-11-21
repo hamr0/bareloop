@@ -14,6 +14,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The worker can no longer write or edit anything under `output/review-diff/` (the same write/edit deny belt as `.git` and `node_modules`; reads stay allowed). Before, the rubric worker's whole-`output/` fence let it overwrite a per-file diff and quote a fake line the cite would pass. Tighten-only, a runtime gate setting on every worker; no signed hash or row moves.
 - The carry memo no longer lists the per-file diffs code wrote under `output/review-diff/` as the worker's edits (80 of them hid all 29 reads in live round C pair 3).
 
 ### Changed
