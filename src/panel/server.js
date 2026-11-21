@@ -39,6 +39,7 @@ import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
+import { jobTypeLine } from '../sourcedefaults.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
@@ -1486,6 +1487,12 @@ function resultKindOf(row, records, spec) {
   return records.some((r) => r && r.type === 'job-end') ? 'generic' : null;
 }
 
+/** the Job type line of a payload, from the ONE owner (src/sourcedefaults.js `jobTypeLine`): `{jobType}` or nothing (a rubric job on files, no spec) @param {any} spec @returns {{jobType?: string}} */
+function jobTypePart(spec) {
+  const line = jobTypeLine(spec);
+  return line === null ? {} : { jobType: line };
+}
+
 /** the words of the work box and the diff box, code-owned (one spelling) */
 const RESULT_WORK_NOTE = 'shown as text; the merge is yours, no button runs it.';
 
@@ -1702,6 +1709,7 @@ function genericResultOf(runid, row, records, spec, opts) {
   return {
     runid,
     kind: 'generic',
+    ...jobTypePart(spec),
     job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
     ticket,
     changed: changedOf(records, writeScope),
@@ -1940,6 +1948,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const pages = [...new Set(lines.map((/** @type {any} */ l) => l.page).filter((/** @type {any} */ u) => typeof u === 'string'))];
   return {
     runid,
+    ...jobTypePart(spec),
     lines,
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
@@ -2251,6 +2260,8 @@ function getRunDetailBody(runid, opts) {
     goal: summary.goal,
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
+    // the Audit header's Job type line (hamr 2026-11-21): the ONE owner, src/sourcedefaults.js `jobTypeLine`; absent on a rubric job on files
+    ...jobTypePart(specForParts),
     model: summary.model,
     provider: summary.provider,
     budgetUsd: summary.budgetUsd,

@@ -24,15 +24,33 @@ const textField = (name) => Object.freeze({ name, kind: 'text', required: true, 
  *   `fields`: the item fields code adds to EVERY shape line of the source (`[default]` rows; the worker is told them; the shape look is told they exist): none for files; a repo's items name a file, quote it and say why.
  *   `cite`: the label each item's quote is found under (the signed shape part's `cite`), or null: a repo's quotes are found in the repo files the items name.
  *   `reportInRepo`: where the ONE report is delivered. false = every file under output/ plus the report go to the person's folder OUTSIDE the tree; true = ONLY the report is written into `<worktree>/<Destination>` and the run's normal green commit carries it.
- *   `roadWords`: what the draft readout's first line adds about the job (a files job says nothing).
+ *   `jobType`: the Job type words of a job on this source (a repo's is a review; a files job has none): read through `jobTypeLine` below, by every view.
  *   `role`/`answer`: the words of the planner's "You are <role>. ... write your <answer>" sentence (answerFilesWords).
  *   `commitExclude`: the paths that green commit leaves out (a repo: the worker's scratch `output/`, so only the report goes on the branch).
- * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[], fields: readonly {name: string, kind: 'text', required: true, bounds: {minChars: number}}[], cite: string|null, reportInRepo: boolean, commitExclude: readonly string[], roadWords: string, role: string, answer: string}>>}
+ * @type {Readonly<Record<'files'|'repo', {engineDirs: readonly string[], fields: readonly {name: string, kind: 'text', required: true, bounds: {minChars: number}}[], cite: string|null, reportInRepo: boolean, commitExclude: readonly string[], jobType: string|null, role: string, answer: string}>>}
  */
 export const SOURCE_DEFAULTS = Object.freeze({
-  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])), fields: Object.freeze(/** @type {{name: string, kind: 'text', required: true, bounds: {minChars: number}}[]} */ ([])), cite: /** @type {string|null} */ (null), reportInRepo: false, commitExclude: Object.freeze(/** @type {string[]} */ ([])), roadWords: '', role: 'answering from the input files', answer: 'answer' }),
-  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']), fields: Object.freeze(['file', 'quote', 'why'].map(textField)), cite: /** @type {string|null} */ (REPO_LABEL), reportInRepo: true, commitExclude: Object.freeze(['output']), roadWords: ' \u2014 review (reads the code, changes none)', role: 'reviewing the code', answer: 'review' }),
+  files: Object.freeze({ engineDirs: Object.freeze(/** @type {string[]} */ ([])), fields: Object.freeze(/** @type {{name: string, kind: 'text', required: true, bounds: {minChars: number}}[]} */ ([])), cite: /** @type {string|null} */ (null), reportInRepo: false, commitExclude: Object.freeze(/** @type {string[]} */ ([])), jobType: /** @type {string|null} */ (null), role: 'answering from the input files', answer: 'answer' }),
+  repo: Object.freeze({ engineDirs: Object.freeze(['output', 'output/steps']), fields: Object.freeze(['file', 'quote', 'why'].map(textField)), cite: /** @type {string|null} */ (REPO_LABEL), reportInRepo: true, commitExclude: Object.freeze(['output']), jobType: /** @type {string|null} */ ('Review code'), role: 'reviewing the code', answer: 'review' }),
 });
 
 /** the defaults row of a source (files when none) @param {string|null|undefined} source */
 export const defaultsOf = (source) => (source === 'repo' ? SOURCE_DEFAULTS.repo : SOURCE_DEFAULTS.files);
+
+/** the label of the Job type line, and the words of a job that changes the code (a review's words are its source row's `jobType`) */
+export const JOB_TYPE_LABEL = 'Job type';
+export const CHANGE_JOB_TYPE = 'Change code';
+
+/**
+ * The ONE owner of the Job type line (hamr 2026-11-21, "job type everywhere"): the draft card, the draft readout, the Job tab, the Result tab and the Audit header all print THIS string, none spells it.
+ * Read from the road (the verdict class) and the SIGNED source, never from a fence: a text close reads its source row's words (a repo is `Review code`; files has none), a Deterministic (class green) job is `Change code`, any other job has none.
+ * @param {string|null|undefined} verdictType the road's class @param {'files'|'repo'|null} source the signed source (null: not a text close)
+ * @returns {string|null} `Job type: Review code`, `Job type: Change code`, or null (a rubric job on files)
+ */
+export function jobTypeLineOf(verdictType, source) {
+  const words = source !== null ? defaultsOf(source).jobType : (verdictType === 'green' ? CHANGE_JOB_TYPE : null);
+  return words === null ? null : `${JOB_TYPE_LABEL}: ${words}`;
+}
+
+/** {@link jobTypeLineOf} of a resolved or signed spec @param {any} spec @returns {string|null} */
+export const jobTypeLine = (spec) => jobTypeLineOf(spec?.verdictType, sourceOf(spec?.closeDecl));

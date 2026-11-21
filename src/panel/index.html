@@ -3941,6 +3941,14 @@
   function renderAuditGroups(detail){
     var container = document.getElementById("audit-groups");
     container.innerHTML = "";
+    // the Job type line, the ONE owner's words (src/sourcedefaults.js `jobTypeLine`, sent by the server); a rubric job on files has none
+    if(typeof detail.jobType === "string" && detail.jobType !== ""){
+      var typeEl = document.createElement("div");
+      typeEl.className = "hint";
+      typeEl.setAttribute("data-testid", "audit-jobtype");
+      typeEl.textContent = detail.jobType;
+      container.appendChild(typeEl);
+    }
     var parts = Array.isArray(detail.parts) ? detail.parts : [];
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var boxes = buildOrderedBoxes(parts, isLiveRun);
@@ -4218,7 +4226,7 @@
   function renderJobPlan(plan, ctl){
     // the legend promises › checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
     var hasCheck = (plan.loose || []).length > 0 || (plan.alwaysOn || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
-    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job — numbered lines were not saved</div>' : "") + (hasCheck ? '<div class="jp-legend">Done when every check below passes</div>' : "") +
+    var h = '<div class="jp" data-testid="job-plan">' + (plan.jobType ? '<div class="jp-sum" data-testid="plan-jobtype">' + escapeXml(plan.jobType) + "</div>" : "") + (plan.older ? '<div class="older" data-testid="plan-older">older job — numbered lines were not saved</div>' : "") + (hasCheck ? '<div class="jp-legend">Done when every check below passes</div>' : "") +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
     // `ctl` (the confirm card only): draws a Drop button after a row the person may drop (a shape row but code's own `$` one, an [agent] check); a [you] truth or [default] row has none
     var checkRow = function(c){

@@ -69,6 +69,7 @@ import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, wri
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
+import { jobTypeLineOf } from '../sourcedefaults.js';
 import { draftRefusal } from '../rangereview.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
@@ -648,7 +649,10 @@ export function createSession(card, deps = {}) {
   /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
   /** the checks the person has agreed so far (their plain words, `kept from last draft` on a carried one): the plan bubble draws each once, as a `[you picked]` row @type {{line: number, text: string}[]} */
   const pickedSoFar = [];
-  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage({ ...plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines)); };
+  /** the draft's Job type line (src/sourcedefaults.js `jobTypeLineOf`), known once the road is chosen; the plan bubble draws it @type {string|null} */
+  let jobTypeNow = null;
+  const planMsg = (/** @type {any} */ p, /** @type {any} */ lines) => planMessage(jobTypeNow === null ? p : { ...p, jobType: jobTypeNow }, lines);
+  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMsg({ ...plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines)); };
 
   /** @type {((value: string|null) => void)|null} */
   let resolvePending = null;
@@ -1143,6 +1147,7 @@ export function createSession(card, deps = {}) {
     }
     if (road.answer !== null) appendDraftLog(outDir, { kind: REVIEW_CALL_LABEL, no: Math.max(0, state.steps.length - 1), answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}), at: new Date().toISOString() });
     if (road.review) { verdictType = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles; }
+    jobTypeNow = jobTypeLineOf(verdictType, road.review ? 'repo' : null);
 
     // a rubric job writes only inside the tree's own `output/` (a review's report is written by code); its Destination is a drop-off folder
     // (proven above, per run), never a fence
@@ -1253,7 +1258,7 @@ export function createSession(card, deps = {}) {
       state.card = { ...state.card, jobText: jobBoxText(lines) };
       card = { ...card, jobText: state.card.jobText };
       answers[1] = renderJobLines(lines);
-      if (say !== null) state.messages.push({ ...planMessage({ ...(confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, lines), text: say });
+      if (say !== null) state.messages.push({ ...planMsg({ ...(confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, lines), text: say });
     };
     /** the answers message of a check-list ask, drawn once the list has rebuilt the lines @type {{say: string, confirmed: any}|null} */
     let pendingSay = null;
@@ -1419,7 +1424,7 @@ export function createSession(card, deps = {}) {
   /** S4: the sheet rows the person has dropped, waiting under Suggested (Add); only a sheet job's final card has any */
   const sheetSuggested = () => (finalCtx?.block ? finalCtx.block.suggestedView().filter((/** @type {any} */ x) => /^L\d+\.(sheet|shape)\./.test(x.key)) : []);
   const sheetEditable = () => finalCtx?.block != null && (finalCtx.block.shapeDrops.rules.size > 0 || finalCtx.block.rows.some((/** @type {any} */ r) => ((r.kind === 'sheet' || r.kind === 'shape') && r.by === 'agent') || r.can?.how === 'shape'));
-  const finalPlanCard = () => planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : sheetEditable() ? { editable: true, suggested: sheetSuggested(), restorable: finalCtx?.block?.droppedRulesView() ?? [] } : {}) }, jobLines);
+  const finalPlanCard = () => planMsg({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, notCheckedBy: state.finalPlan.notCheckedBy, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [], ...(finalCtx?.repo ? { editable: true } : sheetEditable() ? { editable: true, suggested: sheetSuggested(), restorable: finalCtx?.block?.droppedRulesView() ?? [] } : {}) }, jobLines);
   /** @type {{spec: any, seedRef: string|null, tree: string, repo: boolean, block?: import('../checkblock.js').CheckBlock|null}|null} the spec the final card shows and the seed it was gated against */
   let finalCtx = null;
   let dropping = false;
@@ -1554,7 +1559,7 @@ export function createSession(card, deps = {}) {
       const r = planEdit(op, String(key ?? ''));
       if (!r.ok) return { ok: false, refused: 'bad-row', error: String(r.why) };
       const at = state.messages.findLastIndex((/** @type {any} */ m) => m.kind === 'plan');
-      const msg = planMessage({ ...r.plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines);
+      const msg = planMsg({ ...r.plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines);
       if (at === -1) state.messages.push(msg); else state.messages[at] = msg;
       state.pendingAsk = { ...state.pendingAsk, plan: r.plan };
       if (Array.isArray(r.choices)) { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: r.choices }); } catch { /* a convenience */ } }
