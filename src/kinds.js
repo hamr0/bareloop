@@ -103,6 +103,18 @@ export const GAP_TRIM_MARKER = 'gap trimmed:';
  * job's Time cap. The AI's own `timeoutMs` may only tighten it (`effectiveTimeoutMs`).
  */
 export const CHECK_LIMIT_MS = 1_800_000;
+/** the still-running note: first at 5 of the 30 minutes, then every minute (hamr, 2026-11-21) */
+export const CHECK_NOTE_AFTER_MS = 300_000;
+export const CHECK_NOTE_EVERY_MS = 60_000;
+/**
+ * The still-running note, in code's own words: minutes so far, and the command's own measured time once there is one.
+ * @param {{elapsedMs: number, knownMs: number|null}} t
+ * @returns {string}
+ */
+export function checkRunningNote({ elapsedMs, knownMs }) {
+  const so = `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far)`;
+  return typeof knownMs === 'number' ? `${so}, usually about ${Math.max(1, Math.round(knownMs / 60_000))} min.` : `${so}.`;
+}
 /** used when neither the stage nor the ctx names a bound. A stage that could
  * run forever is not a red — it is a stop, and something must decide when. */
 export const DEFAULT_TIMEOUT_MS = CHECK_LIMIT_MS;
@@ -239,7 +251,9 @@ export function mechanicalStages(stages) {
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
  *   list?: any[]|null, source?: string,
- *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
+ *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
+ *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
+ *   cmdTimes?: Map<string, number>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
@@ -249,6 +263,8 @@ export function mechanicalStages(stages) {
  *   await, so the shell gets told as each stage lands. It decides nothing, it is
  *   never consulted, and no verdict depends on it — the house pattern is
  *   `runJob`'s `emit` (the library reports, the shell prints).
+ *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
+ *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
@@ -340,11 +356,13 @@ function stageEnv(declared = {}) {
  * (F68). Every fault comes back as a `stop` STRING; nothing throws, because
  * a throw here would have to be caught and turned back into a stop anyway.
  * @param {string} cmd @param {string[]} args
- * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number}} o
- * @returns {Promise<{stop: string, fault: string}|{stop: null, code: number, out: string, dropped: string[]}>}
+ * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number,
+ *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null}} o
+ * @returns {Promise<{stop: string, fault: string}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
  */
-async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER }) {
+async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null }) {
   const { env, dropped } = stageEnv(declared);
+  const t0 = Date.now();
   const r = await new Promise((/** @type {(v: {error: (Error & {code?: string})|null, status: number|null, signal: string|null, stdout: string, stderr: string}) => void} */ resolve) => {
     /** @type {import('node:child_process').ChildProcess} */
     let child;
@@ -361,6 +379,17 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
     let error = null;
     /** @type {NodeJS.Timeout|undefined} */ let timer;
     /** @type {NodeJS.Timeout|undefined} */ let killTimer;
+    /** @type {NodeJS.Timeout|undefined} */ let tickTimer;
+    // REPORT-ONLY: the still-running note. Nothing reads it back; a throwing consumer never touches the run.
+    if (typeof onTick === 'function') {
+      const fire = () => {
+        try { onTick({ elapsedMs: Date.now() - t0, knownMs }); } catch { /* a reporting seam never decides */ }
+        tickTimer = setTimeout(fire, tickEveryMs);
+        tickTimer.unref();
+      };
+      tickTimer = setTimeout(fire, tickAfterMs);
+      tickTimer.unref();
+    }
     // FIRST FAULT WINS: a child that blew the buffer and then hit the
     // deadline is one story, not two.
     const fault = (/** @type {string} */ code) => {
@@ -374,6 +403,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
     child.stderr?.on('data', (/** @type {Buffer} */ c) => { errBytes += c.length; errChunks.push(c); if (errBytes > maxBuffer) fault('ENOBUFS'); });
     child.on('error', (e) => { if (!error) error = e; });
     child.on('close', (status, signal) => {
+      clearTimeout(tickTimer);
       clearTimeout(timer);
       clearTimeout(killTimer);
       // Concat-then-decode, never per chunk: a multi-byte character across a
@@ -395,7 +425,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
   }
   if (r.status === null) return { stop: `INSTRUMENT: "${cmd}" returned a null exit code (killed by ${r.signal ?? 'an unknown signal'})`, fault: STOP_FAULTS.KILLED };
   if (typeof r.stdout !== 'string' || typeof r.stderr !== 'string') return { stop: `INSTRUMENT: "${cmd}" produced unreadable output`, fault: STOP_FAULTS.CRASHED };
-  return { stop: null, code: r.status, out: `${r.stdout}${r.stderr}`, dropped };
+  return { stop: null, code: r.status, out: `${r.stdout}${r.stderr}`, dropped, ms: Date.now() - t0 };
 }
 
 /**
@@ -1167,15 +1197,32 @@ export function effectiveTimeoutMs(declared, ctx) {
     : ceiling;
 }
 
-/** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
-async function runCommandExit(stage, ctx) {
-  const p = stage.params;
+/**
+ * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
+ * still-running note, and its measured time kept (`ctx.cmdTimes`, keyed by the command alone) so the NEXT pass of the same command can
+ * say "usually about N min". Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
+ * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx
+ */
+async function runCmd(p, cwd, ctx) {
+  const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
   const r = await sh(p.cmd, p.args ?? [], {
-    cwd: ctx.workdir,
+    cwd,
     env: p.env ?? {},
     timeoutMs: effectiveTimeoutMs(p.timeoutMs, ctx),
     maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
+    onTick: ctx.onTick ?? null,
+    tickAfterMs: ctx.tickAfterMs,
+    tickEveryMs: ctx.tickEveryMs,
+    knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
   });
+  if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
+  return r;
+}
+
+/** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
+async function runCommandExit(stage, ctx) {
+  const p = stage.params;
+  const r = await runCmd(p, ctx.workdir, ctx);
   if (r.stop !== null) return stopped(stage, ctx, r.stop, {}, r.fault);
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   for (const name of r.dropped) gap.push(`${stage.name}: declared env var ${name} was DROPPED — the close never hands worker code a credential`);
@@ -1211,12 +1258,7 @@ async function runCountNotWorse(stage, ctx) {
 
   /** @param {string} cwd @param {string} where */
   const measure = async (cwd, where) => {
-    const r = await sh(p.cmd, p.args ?? [], {
-      cwd,
-      env: p.env ?? {},
-      timeoutMs: effectiveTimeoutMs(p.timeoutMs, ctx),
-      maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
-    });
+    const r = await runCmd(p, cwd, ctx);
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };

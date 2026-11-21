@@ -54,7 +54,7 @@ import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
-  REVIEW_DOOR, doorOpens, mechanicalStages,
+  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
@@ -911,6 +911,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
  *   the runner sets it, the plan cannot express it, and no step may tighten or raise
  *   it.
+ * @param {{afterMs: number, everyMs: number}|null} [opts.checkNote] TEST SEAM ONLY: when the still-running note starts and how often it repeats (production: kinds.js CHECK_NOTE_*)
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory).
  *   OPTIONAL as of PRD item 27/M3: absent, this run autosets it from a $0 seed
  *   timing pass (or the spec's own signed `closeTimeoutMs` override) — an
@@ -1110,7 +1111,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, checkNote = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1799,6 +1800,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'abandon the task',
   ];
 
+  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words), and each
+  // command's measured time is kept for the run's later passes ("usually about N min"). Nothing reads either back to decide anything.
+  /** @type {Map<string, number>} */
+  const cmdTimes = new Map();
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
@@ -1818,6 +1823,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const runCloseStagesInner = (stages) => (declared
     ? runDeclaredStages(stages, scrub, {
       ...closeOpts,
+      onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
+      cmdTimes,
+      ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
       // the signer's answer reaches the human stage the same way every other
       // arbiter-owned fact reaches a stage: through the ctx, never through the

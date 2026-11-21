@@ -77,7 +77,7 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute, dirname } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
@@ -2773,6 +2773,8 @@ export async function authorClose({
   let questionLines = null;
   /** per try: null = it passed (validated AND was measured with a work stage red); else the job lines its failure named @type {({lines: number[]}|null)[]} */
   const tryFails = [];
+  /** each command's measured time across this draft's tries (the still-running note's "usually about N min") @type {Map<string, number>} */
+  const cmdTimes = closeCtx.cmdTimes instanceof Map ? closeCtx.cmdTimes : new Map();
   /** @type {{line: number, question: string}[]} */
   let askedQuestions = [];
   /** P7 item 5: may the try AFTER try `i` ask? Only the last try of a full ladder, and only when try 1 and try `i` both failed. */
@@ -2976,6 +2978,10 @@ export async function authorClose({
         const rows = await seedReadFn(injected.declaration, {
           gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees, ...(lang === RUBRIC_LANG ? { source } : {}),
           onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
+          // REPORT-ONLY (hamr 2026-11-21): a check running past 5 minutes says so, in code's own words, once a minute; the map keeps each
+          // command's measured time for the next try of this draft ("usually about N min")
+          onTick: (/** @type {any} */ t) => onPhase('check-running', { call: label, ...t, text: checkRunningNote(t) }),
+          cmdTimes,
         });
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;

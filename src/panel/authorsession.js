@@ -74,7 +74,7 @@ import { draftRefusal } from '../rangereview.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
-import { CHECK_LIMIT_MS } from '../kinds.js';
+import { CHECK_LIMIT_MS, checkRunningNote } from '../kinds.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -526,6 +526,8 @@ export function createSession(card, deps = {}) {
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
+  /** each command's measured time across this session's signing gates (the still-running note's "usually about N min") @type {Map<string, number>} */
+  const cmdTimes = new Map();
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
   // override the declaration composer and/or `prepareSigning` itself so a
   // test can drive the REAL confirm turn / ask() channel /
@@ -622,6 +624,8 @@ export function createSession(card, deps = {}) {
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
+  /** the signing gates' still-running note: the gates step's one line (src/kinds.js `checkRunningNote`) */
+  const gatesTick = (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => stepDetail('gates', checkRunningNote(t));
   /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
   const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
@@ -739,6 +743,11 @@ export function createSession(card, deps = {}) {
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'shape-skipped') appendDraftLog(outDir, { kind: 'shape-skipped', no: Math.max(0, state.steps.length - 1), reason: redactSecrets(String(data.reason ?? '')), line: `the shape look did not complete: ${redactSecrets(String(data.reason ?? 'unknown'))}; going on without a shape`, at: new Date().toISOString() });
     if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
+    // a check running past 5 minutes: the running step's one line says so, in code's own words (src/kinds.js `checkRunningNote`; hamr 2026-11-21)
+    if (name === 'check-running' && typeof data.text === 'string') {
+      const running = state.steps.findLast((/** @type {any} */ x) => x.status === 'running');
+      if (running) running.detail = data.text;
+    }
     if (name === 'author-try-failed') {
       lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
@@ -1077,7 +1086,7 @@ export function createSession(card, deps = {}) {
       const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
       stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
-        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, cmdTimes,
         shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
@@ -1475,7 +1484,7 @@ export function createSession(card, deps = {}) {
       if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
       if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, shellCapUsd: spec.budgetUsd }) : null;
       if (signing === null || !signing.ok) {
         block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
         return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
@@ -1584,7 +1593,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, shellCapUsd: spec.budgetUsd }) : null;
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);

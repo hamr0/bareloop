@@ -555,7 +555,8 @@ function translate(r, redact) {
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
- *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null}} [opts]
+ *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null,
+ *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, cmdTimes?: Map<string, number>}} [opts]
  *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
  *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
@@ -563,7 +564,7 @@ function translate(r, redact) {
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null, source = null,
+    onRubricEvidence = null, list = null, source = null, onTick = null, tickAfterMs, tickEveryMs, cmdTimes,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -598,6 +599,11 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     onRubricEvidence,
     ...(Array.isArray(list) ? { list } : {}),
     ...(source ? { source } : {}),
+    // REPORT-ONLY: the still-running note for a long check, and the map of each command's measured time (src/kinds.js)
+    ...(typeof onTick === 'function' ? { onTick } : {}),
+    ...(tickAfterMs !== undefined ? { tickAfterMs } : {}),
+    ...(tickEveryMs !== undefined ? { tickEveryMs } : {}),
+    ...(cmdTimes instanceof Map ? { cmdTimes } : {}),
     seedTrees,
   };
   try {
