@@ -108,6 +108,9 @@ export const STEP_LABELS = Object.freeze({
   fetching: 'fetching the page…',
 });
 
+/** the one line under "checking signing gates" while the repo's own check runs once on the seed (code-owned, never the model's) */
+export const SEED_CHECK_LINE = "Running your repo's own check once before signing (on a big repo this can take minutes).";
+
 /**
  * The same steps, worded for a job on the person's own local FILES (Part 1a): there is no worktree and no repo to read.
  * Code-owned, one table beside STEP_LABELS; a step with no entry keeps its STEP_LABELS word.
@@ -1065,7 +1068,9 @@ export function createSession(card, deps = {}) {
         return;
       }
       state.phase = 'signing-gates';
-      stepStart('gates', 'gates 1–3 cost $0');
+      // a code close runs the repo's own check once on the seed inside these gates (minutes on a big repo): say so, in code's own words, as this step's `>` line when it starts (hamr 2026-11-21, session smwqsiwgokb3s)
+      const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
+      stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
         spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
         shellCapUsd: spec.budgetUsd,
