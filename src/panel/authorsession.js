@@ -69,6 +69,7 @@ import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, wri
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
+import { draftRefusal } from '../rangereview.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
@@ -880,6 +881,14 @@ export function createSession(card, deps = {}) {
     const destProblem = startDestinationProblem(card);
     if (destProblem !== null) { refuse(destProblem); return; }
 
+    // Part 2 (hamr 2026-11-21, "refusal should be at the draft"): what git alone can decide about a range/branch token (many tokens, an end or branch that is not there) is refused HERE, $0, before the worktree, the install and any model call.
+    // The one helper (src/rangereview.js `draftRefusal`) is read by the CLI door too. A `range:` on a change job needs the review pick (an AI call), so it stays right after the pick.
+    const rangeRepo = isRepoLike && card.checkType !== 'rubric' ? nearestGitAncestor(resolve(SOURCE))?.dir ?? null : null;
+    if (rangeRepo !== null) {
+      const early = await draftRefusal({ repo: rangeRepo, jobLines });
+      if (early !== null) { refuse(early); return; }
+    }
+
     state.phase = 'preparing-source';
     stepStart('copy');
     // P6 item 1 (hamr 2026-10-05, Q1 = A / Q3 = A): a REPO source gets a worktree in the person's own repo, made now at
@@ -1123,6 +1132,10 @@ export function createSession(card, deps = {}) {
     });
     if (abandoned) return;
     if (typeof road.refusal === 'string') { refuse(road.refusal); return; } // Part 2: a range/branch token the job cannot use, plain words, before any run spend
+    if (road.review && rangeRepo !== null) { // a review branch needs `main` (a change job's branch does not): known only now
+      const late = await draftRefusal({ repo: rangeRepo, jobLines, review: true });
+      if (late !== null) { refuse(late); return; }
+    }
     if (road.answer !== null) appendDraftLog(outDir, { kind: REVIEW_CALL_LABEL, no: Math.max(0, state.steps.length - 1), answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}), at: new Date().toISOString() });
     if (road.review) { verdictType = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles; }
 

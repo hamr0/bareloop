@@ -132,6 +132,26 @@ export async function branchTip({ repo, name, env = process.env, run = spawnClos
 }
 
 /**
+ * DRAFT START, $0, before any worktree, install or model call (hamr 2026-11-21): the refusals of the job's own text that git alone can decide, ONE helper for BOTH doors (the panel session and the CLI author script).
+ * More than one token; a range end that is not a commit/tag/branch of the repo; a `branch:` the repo does not have. Same words as the run-start safety net (`rangeAtRunStart`), which stays.
+ * A `branch:` needs `main` only when the job is a REVIEW (a change job's `branch:` is legal in a repo with no `main`), and review-or-change is known only after the pick: the doors call this again with `review: true` right after it.
+ * @param {{repo: string, jobLines: {n: number, text: string}[]|null|undefined, review?: boolean, env?: NodeJS.ProcessEnv, run?: typeof spawnClose}} o
+ * @returns {Promise<string|null>} the refusal in plain words (ends "Nothing spent."), or null
+ */
+export async function draftRefusal({ repo, jobLines, review = false, env = process.env, run = spawnClose }) {
+  const many = manyTokensRefusal(jobLines);
+  if (many !== null) return many;
+  const token = rangeTokens(jobLines)[0];
+  if (token === undefined) return null;
+  if (token.kind === 'branch' && !review) {
+    const tip = await branchTip({ repo, name: token.name, env, run });
+    return tip.ok ? null : tip.error;
+  }
+  const r = await resolveRange({ repo, token, env, run });
+  return r.ok ? null : r.error;
+}
+
+/**
  * RUN START, before the seed is read and before any token: what the spec's token asks of the worktree. null = the spec names no token (nothing happens, the run is byte-identical).
  * A review: both ends checked, the worktree put at the end (the range's `B`, or the branch tip) through the one `checkoutAt`; the ends ride back so the run records them. A change job's `branch:`: the worktree at the
  * branch's tip, so the work branch starts there; a change job's `range:` is refused (belt: the doors refuse it at drafting). More than one token is refused.

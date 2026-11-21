@@ -48,7 +48,8 @@ test('panel door: two tokens, and a range on a change job, are refused in the pl
   assert.equal(a.s.state.phase, 'refused');
   assert.equal(a.s.state.error, MANY);
   assert.equal(a.authored(), 0);
-  const b = await panel(t, 'Review range: v1..v2 for bugs', 'change');
+  // main..main: both ends exist in the real repo, so the draft-start check passes and the change-pick refusal (which needs the pick) is the one that fires
+  const b = await panel(t, 'Review range: main..main for bugs', 'change');
   assert.equal(b.s.state.phase, 'refused');
   assert.equal(b.s.state.error, CHANGE_RANGE);
   assert.equal(b.authored(), 0);
