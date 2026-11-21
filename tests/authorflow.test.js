@@ -2845,3 +2845,40 @@ test('authorClose: the seed read gets a tick seam; each note reaches onPhase as 
   assert.ok(note, 'onPhase heard check-running');
   assert.equal(note[1].text, 'Tests are still running (7 min so far).');
 });
+
+// ── a starting check that timed out stops the draft at once (hamr 2026-11-21) ──
+/** a seed read whose "tests" stage hit the limit */
+const timedOutRows = (/** @type {any} */ declaration, limitMs = 1_800_000) => declaration.stages.map((/** @type {any} */ s) => (s.name === 'typecheck'
+  ? { verdict: 'instrument-stop', exitCode: EXIT_STOP, value: null, baseline: null, baselineSource: null, gapLines: [`INSTRUMENT: "npx" did not finish inside ${limitMs}ms`], judged: false, stage: s.name, kind: s.kind, detail: { stop: `INSTRUMENT: "npx" did not finish inside ${limitMs}ms`, fault: 'timed-out', limitMs } }
+  : { verdict: 'red', exitCode: EXIT_RED, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {} }));
+
+test('authorClose: a starting check that TIMED OUT stops the draft at once - no revise call, no declaration kept, the real stop text in the reds', async () => {
+  const decl = goodDeclaration();
+  const { generate, calls } = scriptGenerate([{ declaration: decl }, { declaration: decl }, { declaration: decl }]);
+  /** @type {any[]} */ const phases = [];
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: async (/** @type {any} */ d) => timedOutRows(d), onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]) });
+  assert.equal(r.ok, false, 'a close whose check cannot be seen is not signable');
+  assert.equal(r.stop, 'check-timed-out');
+  assert.equal(calls.length, 1, 'one authoring call and NO revise');
+  assert.equal(r.reds[0].code, 'check-timed-out');
+  assert.equal(r.reds[0].limitMs, 1_800_000);
+  assert.match(r.reds[0].detail, /did not finish inside 1800000ms/);
+  const failed = phases.find(([n]) => n === 'author-try-failed');
+  assert.ok(failed, 'the refused try is announced');
+  assert.equal(failed[1].stops[0].stage, 'typecheck');
+  assert.match(failed[1].stops[0].text, /did not finish inside 1800000ms/);
+});
+
+test('authorClose: any OTHER check that could not run keeps today\'s revise, and the real stop text now rides the refused try', async () => {
+  const decl = goodDeclaration();
+  const { generate, calls } = scriptGenerate([{ declaration: decl }, { declaration: decl }]);
+  /** @type {any[]} */ const phases = [];
+  const rows = (/** @type {any} */ d) => d.stages.map((/** @type {any} */ s) => (s.name === 'typecheck'
+    ? { verdict: 'instrument-stop', exitCode: EXIT_STOP, value: null, baseline: null, baselineSource: null, gapLines: ['INSTRUMENT: "npx" could not be run (ENOENT)'], judged: false, stage: s.name, kind: s.kind, detail: { stop: 'INSTRUMENT: "npx" could not be run (ENOENT)', fault: 'failed' } }
+    : { verdict: 'red', exitCode: EXIT_RED, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {} }));
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: async (/** @type {any} */ d) => rows(d), onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]) });
+  assert.notEqual(r.stop, 'check-timed-out');
+  assert.ok(calls.length >= 2, 'the AI is still asked to revise a check that could not run for another reason');
+  const failed = phases.find(([n]) => n === 'author-try-failed');
+  assert.equal(failed[1].stops[0].text, 'INSTRUMENT: "npx" could not be run (ENOENT)');
+});

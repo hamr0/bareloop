@@ -24,6 +24,8 @@
 // not because they are readouts: the runner is a script, and a rule no test can
 // reach is a rule nothing checks.
 import { scrubRaw } from './text.js';
+import { checkTimedOutText } from './kinds.js';
+export { checkTimedOutText };
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
 import { stepFileRel, lineRules } from './rubricstep.js';
@@ -455,6 +457,7 @@ const STOP_TODO = /** @type {Record<string, string>} */ ({
   'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',
   'confirm-restart': 'change the answers you want and start the draft again.',
   'plan-red': 'draft again; if it stops the same way twice, report it (nothing was spent on a close).',
+  'check-timed-out': 'make the tests finish sooner (or point the job at a faster test command), then draft again.',
 });
 
 /** a stop code this table does not know: still plain words, never the code */
@@ -479,7 +482,9 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
   // `scout-absent` red. That is NOT "something it needs was missing", and its reason sits past the 60-char quote bound
   // behind a fixed lead-in, so the person saw neither. Word it as the scout's stop and quote the reason in full (scrubbed).
   const scoutRed = stop === 'precheck' ? redList.find((r) => r?.code === 'scout-absent') : undefined;
-  const head = scoutRed ? heads['scout-absent'] : (Object.hasOwn(heads, stop) ? heads[stop] : STOP_UNKNOWN);
+  // a starting check that hit the limit: the plain words name the limit that bound it (carried on the red), the real stop text follows beneath
+  const timedOutRed = stop === 'check-timed-out' ? redList.find((r) => r?.code === 'check-timed-out' && typeof r.limitMs === 'number') : undefined;
+  const head = timedOutRed ? checkTimedOutText(timedOutRed.limitMs) : scoutRed ? heads['scout-absent'] : (Object.hasOwn(heads, stop) ? heads[stop] : STOP_UNKNOWN);
   /** @type {string[]} */
   const said = scoutRed
     ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
@@ -534,6 +539,10 @@ const SIGNING_TABLE = [
   { kind: 'broken-close-rubric', when: (r) => r.code === 'broken-close' && r.rubricJob === true,
     say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) could not run, so nothing it reported could be trusted.`],
     todo: 'draft again; if it fails the same way, report the check named above' },
+  // a check that hit the limit at the gates: the same plain words as the drafting stop (the limit that bound it rides the red)
+  { kind: 'check-timed-out', when: (r) => r.code === 'broken-close' && typeof r.limitMs === 'number',
+    say: (r) => [checkTimedOutText(r.limitMs)],
+    todo: 'make the tests finish sooner (or point the job at a faster test command), then try again' },
   { kind: 'broken-close', when: (r) => r.code === 'broken-close',
     say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) cannot run on this repository, so nothing it reported could be trusted.`],
     todo: 'check that the project\'s tools (its install, build and test commands) run, then try again' },

@@ -115,6 +115,17 @@ export function checkRunningNote({ elapsedMs, knownMs }) {
   const so = `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far)`;
   return typeof knownMs === 'number' ? `${so}, usually about ${Math.max(1, Math.round(knownMs / 60_000))} min.` : `${so}.`;
 }
+/**
+ * A check that hit the limit, in plain words (hamr, 2026-11-21). `limitMs` is the limit that really bound the check (the one limit, or the
+ * AI's own tighter ask), never a number typed here.
+ * @param {number} limitMs @returns {string}
+ */
+export function checkTimedOutText(limitMs) {
+  const n = (/** @type {number} */ v, /** @type {string} */ unit) => `${v} ${unit}${v === 1 ? '' : 's'}`;
+  const span = limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
+  return `Your tests did not finish inside ${span}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
+}
+
 /** used when neither the stage nor the ctx names a bound. A stage that could
  * run forever is not a red — it is a stop, and something must decide when. */
 export const DEFAULT_TIMEOUT_MS = CHECK_LIMIT_MS;
@@ -1231,7 +1242,8 @@ const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED, note
     exitCode: EXIT_STOP,
     judged: false,
     gapLines: gap.render(),
-    detail: { ...detail, stop, fault },
+    // the limit that bound a timed-out check (the AI's own tighter `timeoutMs` or the one limit), so the plain words can name it
+    detail: { ...detail, stop, fault, ...(fault === STOP_FAULTS.TIMED_OUT ? { limitMs: effectiveTimeoutMs(stage?.params?.timeoutMs, ctx) } : {}) },
   });
 };
 

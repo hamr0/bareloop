@@ -1356,6 +1356,8 @@ export async function prepareSigning({
     baseline: r.baseline ?? null,
     baselineSource: r.baselineSource ?? null,
     guard: guardSet.has(r.stage),
+    // a check that hit the limit carries the limit that bound it (typed on the row, never read out of the stop's prose)
+    ...(r.detail?.fault === 'timed-out' && typeof r.detail?.limitMs === 'number' ? { limitMs: r.detail.limitMs } : {}),
     // the gap is what the user READS to decide whether the close measures their
     // job — scrubbed here, at the emission boundary, exactly like every other
     // close output (M1 deliberately does not scrub; the caller does)
@@ -1373,6 +1375,7 @@ export async function prepareSigning({
     const reds = stops.map((s) => ({
       code: 'broken-close',
       ...(rubricJob ? { rubricJob: true } : {}),
+      ...(typeof s.limitMs === 'number' ? { limitMs: s.limitMs } : {}),
       path: `closeDecl.stages.${s.stage}`,
       detail: s.gap.join('\n') || `stage "${s.stage}" rendered no judgment`,
     }));

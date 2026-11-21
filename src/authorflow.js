@@ -77,7 +77,7 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute, dirname } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, STOP_FAULTS, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
@@ -2985,6 +2985,22 @@ export async function authorClose({
         });
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
+        // A STARTING CHECK THAT HIT THE LIMIT stops the draft at once (hamr 2026-11-21): the AI did not cause it and cannot fix it by revising,
+        // so no revise call is paid and no declaration is kept. The stop is the plain words (src/authorreadout.js `checkTimedOutText`); the red
+        // carries the real stop text and the limit that bound the check.
+        const timedOutRows = rows.filter((/** @type {any} */ r) => r?.verdict === 'instrument-stop' && r?.detail?.fault === STOP_FAULTS.TIMED_OUT);
+        if (timedOutRows.length > 0) {
+          const first = timedOutRows[0];
+          fatal = [{ code: 'check-timed-out', path: `closeDecl.stages.${String(first.stage)}`, detail: redactSecrets(String(first.detail?.stop ?? '')), limitMs: first.detail?.limitMs }];
+          stop = 'check-timed-out';
+          iter.validation = { ok: false, reds: fatal.map(scrubRed), scoped: v.scoped };
+          onPhase('author-try-failed', {
+            call: label, i, of: revisionCap, declaration: ask.declaration,
+            reason: checkTimedOutText(Number(first.detail?.limitMs)),
+            stops: timedOutRows.map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? '') })),
+          });
+          break;
+        }
         accepted = injected.declaration;
         acceptedTicketFilter = proposedFilter;
         acceptedSheet = sheetSuggested;
@@ -3003,6 +3019,8 @@ export async function authorClose({
             reason: stoppedNames.length
               ? `a check could not run at the starting point (${stoppedNames.join(', ')})`
               : 'no check was failing at the starting point, so none of them could tell a finished job from an unfinished one',
+            // the real stop text of each check that could not run (the reason above names them, it never said why)
+            stops: rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? (r.gapLines ?? [])[0] ?? '') })),
           });
         }
       }

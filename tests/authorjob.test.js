@@ -1395,3 +1395,18 @@ test('draftThinking: the tick reaches the scout as per-call options (off and on)
   await assert.rejects(() => go({ draftThinking: 'maybe' }), /draftThinking must be one of/);
   assert.equal(seen.length, 3, 'the bad value threw before the scout ran');
 });
+
+// ── a check that hits the limit at the signing gates (hamr 2026-11-21) ──
+test('D9 gate 2: a check that hits the limit is refused in the plain words, with the limit that bound it typed on the red', async (t) => {
+  const p = makePatient(t, { 'slow.mjs': 'setTimeout(() => {}, 5000);\n' });
+  const spec = assembleSpec(SPEC_DRAFT, { closeDecl: DECL({ verdictCmd: ['slow.mjs'] }), verdictType: 'green' });
+  const r = await prepareSigning({ spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 400 });
+  assert.equal(r.ok, false);
+  const red = r.reds.find((/** @type {any} */ x) => x.code === 'broken-close');
+  assert.equal(red.limitMs, 400, 'the limit that really bound the check, read off the stage row, never out of its prose');
+  const { signingStopText, checkTimedOutText } = await import('../src/authorreadout.js');
+  assert.match(signingStopText({ reds: r.reds }), new RegExp(checkTimedOutText(400).replace(/[.]/g, '\\.')));
+  // a check that fails for another reason carries no limit, and keeps its old words
+  const gone = await prepareSigning({ spec: assembleSpec(SPEC_DRAFT, { closeDecl: { ...DECL(), stages: DECL().stages.map((/** @type {any} */ s) => (s.name === 'verdict' ? { ...s, params: { ...s.params, cmd: 'no-such-binary-xyz' } } : s)) }, verdictType: 'green' }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000 });
+  assert.equal(gone.reds.find((/** @type {any} */ x) => x.code === 'broken-close')?.limitMs, undefined);
+});
