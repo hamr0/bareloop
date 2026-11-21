@@ -7,6 +7,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Review by git range or branch (Part 2).** A job step line may carry the exact typed token `range: A..B` or `branch: NAME` (local branches; `branch:` on a review is diffed against `main`: merge-base..tip). `src/rangereview.js` owns the token, its refusals (more than one token; a `range:` on a change job, refused by the panel and the CLI door alike; a missing end, branch or `main`, each in plain words ending "Nothing spent."), the ends check and the per-file diffs. At run start, before any token, code checks both ends, puts the worktree at the range end (or the branch tip) and writes `output/review-diff/` (`files.txt` plus one `<path>.diff` per changed file, byte-equal to `git diff`); they are never committed and never a worker edit. A change job's `branch:` starts the work branch at that tip. A resume or rerun stands on the end sha and range ends recorded on `source.json` and rewrites the diffs. The planner of a review with a token is told what it covers and to write its answer early (words frozen from live round W, 4 of 4 green); every other planner prompt is byte-identical (golden). The cite accepts `output/review-diff/<path>.diff` of a listed file, so a removed line is quotable. Test-proven on real git; one live round on the built code is still to run.
+- The PR-head checkout's last step is one `checkoutAt(sha)` shared with the git range and branch review; `diff` joined the read-only git allow-list (nothing else in it changed).
+
+### Fixed
+
+- The carry memo no longer lists the per-file diffs code wrote under `output/review-diff/` as the worker's edits (80 of them hid all 29 reads in live round C pair 3).
+
 ### Changed
 
 - barebrowse is now ^0.31.0 (0.30.1 Firefox goto() status fix: no status 0 on big streamed pages, the final page after a redirect).
