@@ -253,7 +253,7 @@ export function mechanicalStages(stages) {
  *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>}} Ctx
+ *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
@@ -265,6 +265,7 @@ export function mechanicalStages(stages) {
  *   `runJob`'s `emit` (the library reports, the shell prints).
  *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
  *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
+ *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
  *   baselineSource: string|null, gapLines: string[], judged: boolean,
@@ -349,6 +350,46 @@ function stageEnv(declared = {}) {
   return { env, dropped };
 }
 
+// ── THE BOX REGISTRY ─────────────────────────────────────────────────────────────────────────────────
+// A check's command runs in its own process group so one kill stops all of it. The price of a separate group is that a ^C or a
+// watchdog kill of THIS process no longer reaches the command by itself, so every live box is remembered here and killed when the process
+// ends (`exit`) or is signalled (SIGINT/SIGTERM/SIGHUP, installed only while a box is live, then the default end is re-raised).
+/** @type {Set<number>} */
+const liveBoxes = new Set();
+/** SIGKILL every box still running; a box already gone is not an error */
+export function killLiveBoxes() {
+  for (const pid of liveBoxes) { try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ } }
+  liveBoxes.clear();
+}
+/** @type {[NodeJS.Signals, () => void][]} */
+let boxHooks = [];
+const dropBoxHooks = () => {
+  for (const [sig, h] of boxHooks) process.removeListener(sig, h);
+  process.removeListener('exit', killLiveBoxes);
+  boxHooks = [];
+};
+/** @param {number} pid */
+function trackBox(pid) {
+  liveBoxes.add(pid);
+  if (boxHooks.length > 0) return;
+  process.on('exit', killLiveBoxes);
+  for (const sig of /** @type {NodeJS.Signals[]} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
+    const h = () => {
+      killLiveBoxes();
+      dropBoxHooks();
+      // our hook only adds the kill: if nobody else handles the signal, it ends the process as it would have without us
+      if (process.listenerCount(sig) === 0) process.kill(process.pid, sig);
+    };
+    process.on(sig, h);
+    boxHooks.push([sig, h]);
+  }
+}
+/** @param {number} pid */
+function untrackBox(pid) {
+  liveBoxes.delete(pid);
+  if (liveBoxes.size === 0) dropBoxHooks();
+}
+
 /**
  * Run a command and read its world. Faithful to `spawnSync`'s observable
  * result — the same `{status, signal, stdout, stderr}`, the same per-stream
@@ -357,17 +398,24 @@ function stageEnv(declared = {}) {
  * a throw here would have to be caught and turned back into a stop anyway.
  * @param {string} cmd @param {string[]} args
  * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null}} o
+ *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null,
+ *   group?: boolean, signal?: AbortSignal|null}} o
+ *   `group`: run the command in its OWN process group (the box) so one kill stops it and everything it started; `signal`: an abort (Abandon, Stop) kills that box at once
  * @returns {Promise<{stop: string, fault: string}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
  */
-async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null }) {
+async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null, group = false, signal = null }) {
   const { env, dropped } = stageEnv(declared);
   const t0 = Date.now();
   const r = await new Promise((/** @type {(v: {error: (Error & {code?: string})|null, status: number|null, signal: string|null, stdout: string, stderr: string}) => void} */ resolve) => {
     /** @type {import('node:child_process').ChildProcess} */
     let child;
+    // a signal already raised never starts the command at all
+    if (signal?.aborted) {
+      resolve({ error: Object.assign(new Error(`spawn ${cmd} ABORTED`), { code: 'ABORTED' }), status: null, signal: null, stdout: '', stderr: '' });
+      return;
+    }
     try {
-      child = spawn(cmd, args, { cwd, env });
+      child = spawn(cmd, args, { cwd, env, ...(group ? { detached: true } : {}) });
     } catch (e) {
       resolve({ error: /** @type {any} */ (e), status: null, signal: null, stdout: '', stderr: '' });
       return;
@@ -390,26 +438,39 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
       tickTimer = setTimeout(fire, tickAfterMs);
       tickTimer.unref();
     }
+    /** the box: one signal to the command and everything it started (the leader's pid IS the group id). Without a box, the command alone. */
+    const killBox = (/** @type {NodeJS.Signals} */ sig) => {
+      if (group && typeof child.pid === 'number') { try { process.kill(-child.pid, sig); return; } catch { /* the group is gone, or never formed */ } }
+      try { child.kill(sig); } catch { /* already gone */ }
+    };
+    if (group && typeof child.pid === 'number') trackBox(child.pid);
     // FIRST FAULT WINS: a child that blew the buffer and then hit the
     // deadline is one story, not two.
     const fault = (/** @type {string} */ code) => {
       if (error) return;
       error = Object.assign(new Error(`spawn ${cmd} ${code}`), { code });
-      try { child.kill('SIGTERM'); } catch { /* already gone */ }
-      killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 2000);
+      killBox('SIGTERM');
+      killTimer = setTimeout(() => killBox('SIGKILL'), 2000);
       killTimer.unref();
     };
+    // Abandon / Stop: the same kill, at once. A signal already raised never starts the command's work.
+    const onAbort = () => fault('ABORTED');
+    if (signal) { if (signal.aborted) onAbort(); else signal.addEventListener('abort', onAbort, { once: true }); }
     child.stdout?.on('data', (/** @type {Buffer} */ c) => { outBytes += c.length; outChunks.push(c); if (outBytes > maxBuffer) fault('ENOBUFS'); });
     child.stderr?.on('data', (/** @type {Buffer} */ c) => { errBytes += c.length; errChunks.push(c); if (errBytes > maxBuffer) fault('ENOBUFS'); });
     child.on('error', (e) => { if (!error) error = e; });
-    child.on('close', (status, signal) => {
+    child.on('close', (status, exitSignal) => {
       clearTimeout(tickTimer);
       clearTimeout(timer);
       clearTimeout(killTimer);
+      signal?.removeEventListener('abort', onAbort);
+      // the leader is gone, but a child that ignored SIGTERM may still be in the box: after a fault the whole box gets SIGKILL now
+      if (error) killBox('SIGKILL');
+      if (group && typeof child.pid === 'number') untrackBox(child.pid);
       // Concat-then-decode, never per chunk: a multi-byte character across a
       // chunk boundary must not become two replacement characters in the text
       // every parser reads.
-      resolve({ error, status, signal, stdout: Buffer.concat(outChunks).toString('utf8'), stderr: Buffer.concat(errChunks).toString('utf8') });
+      resolve({ error, status, signal: exitSignal, stdout: Buffer.concat(outChunks).toString('utf8'), stderr: Buffer.concat(errChunks).toString('utf8') });
     });
     if (typeof timeoutMs === 'number' && timeoutMs > 0 && Number.isFinite(timeoutMs)) timer = setTimeout(() => fault('ETIMEDOUT'), timeoutMs);
     child.stdin?.on('error', () => {});
@@ -419,6 +480,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
   const argv = `${cmd}${args.length ? ` ${args.join(' ')}` : ''}`;
   if (r.error) {
     const code = /** @type {any} */ (r.error).code;
+    if (code === 'ABORTED') return { stop: `INSTRUMENT: "${cmd}" was stopped before it finished`, fault: STOP_FAULTS.KILLED };
     if (code === 'ETIMEDOUT') return { stop: `INSTRUMENT: "${cmd}" did not finish inside ${timeoutMs}ms`, fault: STOP_FAULTS.TIMED_OUT };
     if (code === 'ENOBUFS') return { stop: `INSTRUMENT: "${cmd}" output exceeded the ${maxBuffer}B ceiling — the output is truncated, so any number read from it is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
     return { stop: `INSTRUMENT: "${argv}" could not be run (${code ?? String(r.error.message)})`, fault: STOP_FAULTS.FAILED };
@@ -1214,6 +1276,8 @@ async function runCmd(p, cwd, ctx) {
     tickAfterMs: ctx.tickAfterMs,
     tickEveryMs: ctx.tickEveryMs,
     knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
+    group: true,
+    signal: ctx.signal ?? null,
   });
   if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
   return r;

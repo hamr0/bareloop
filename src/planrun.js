@@ -1805,6 +1805,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   /** @type {Map<string, number>} */
   const cmdTimes = new Map();
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
+  /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
+  const stopChecks = new AbortController();
+  /** the Stop landed inside a close (the callers that can end `stopped` read it) */
+  let stoppedInClose = false;
+  const STOP_POLL_MS = 1000;
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
   /** @type {{seedRef: string}|null} */
@@ -1820,9 +1825,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
    */
-  const runCloseStagesInner = (stages) => (declared
-    ? runDeclaredStages(stages, scrub, {
+  const runCloseStagesInner = async (stages) => {
+    if (!declared) return runStages(stages, scrub, closeOpts);
+    // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
+    // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
+    // consumed here and the stop recorded; the caller routes a close that was stopped (the precheck and the preflight end `stopped`).
+    const poll = stopFile === null ? null : setInterval(() => { if (existsSync(stopFile)) stopChecks.abort(); }, STOP_POLL_MS);
+    poll?.unref();
+    try {
+      return await runDeclaredStages(stages, scrub, {
       ...closeOpts,
+      signal: stopChecks.signal,
       onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
       cmdTimes,
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
@@ -1849,8 +1862,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }),
         ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
       }),
-    })
-    : runStages(stages, scrub, closeOpts));
+      });
+    } finally {
+      if (poll) clearInterval(poll);
+      if (stopChecks.signal.aborted && !stoppedInClose) {
+        stoppedInClose = true;
+        if (stopFile !== null) { try { unlinkSync(stopFile); } catch { /* already consumed */ } }
+        emit('stop-requested', { phase: 'close', meaning: 'the person asked to stop; the check that was running was killed, with everything it started' });
+      }
+    }
+  };
   /**
    * PRD item 27/M2 — the re-verify that runs before EVERY close run, precheck
    * included: `runCloseStagesInner` is the ONE seam every close execution in
@@ -2240,6 +2261,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // exactly this question. No `planExecuted` — there is no plan yet, and an empty
   // one on the spine would be a record of work nobody did.
   if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
+  if (stoppedInClose) return 'stopped';
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
   if (preFault) {
     emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
@@ -2294,6 +2316,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record(closeGrade(v));
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
+    if (stoppedInClose) return 'stopped';
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
       emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });

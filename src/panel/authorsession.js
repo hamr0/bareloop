@@ -528,6 +528,8 @@ export function createSession(card, deps = {}) {
   const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
   /** each command's measured time across this session's signing gates (the still-running note's "usually about N min") @type {Map<string, number>} */
   const cmdTimes = new Map();
+  /** Abandon ends a draft; a check still running for it (a repo's own tests) is killed with it, whole (hamr 2026-11-21) */
+  const abortChecks = new AbortController();
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
   // override the declaration composer and/or `prepareSigning` itself so a
   // test can drive the REAL confirm turn / ask() channel /
@@ -1086,7 +1088,7 @@ export function createSession(card, deps = {}) {
       const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
       stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
-        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, cmdTimes,
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, cmdTimes, signal: abortChecks.signal,
         shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
@@ -1370,7 +1372,7 @@ export function createSession(card, deps = {}) {
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
-      ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),
+      authorOpts: { closeCtx: { cmdTimes, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
     });
 
     if (!authored.ok) {
@@ -1484,7 +1486,7 @@ export function createSession(card, deps = {}) {
       if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
       if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, shellCapUsd: spec.budgetUsd }) : null;
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
       if (signing === null || !signing.ok) {
         block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
         return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
@@ -1540,6 +1542,7 @@ export function createSession(card, deps = {}) {
     abandon: () => {
       if (['refused', 'abandoned', 'error', 'signed', 'signing-failed'].includes(state.phase)) return { ok: false, error: 'this session is not live — nothing to abandon' };
       abandoned = true;
+      abortChecks.abort();
       phaseValue = 'abandoned';
       dropWorktree();
       state.error = 'Abandoned by you — money already spent stays booked.';
@@ -1593,7 +1596,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, shellCapUsd: spec.budgetUsd }) : null;
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
