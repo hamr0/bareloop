@@ -16680,3 +16680,22 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - v0.60.0..v0.61.0: 0.75 MB, 79 files. v0.57.0..v0.61.0: 2.8 MB, 265 files. v0.50.0..v0.61.0: 8.1 MB, 621 files.
 - The biggest single-file diff in all three is 0.44 MB.
 - So a whole diff can pass bareguard's 5 MB cite cap, but one file's diff is far under it: hamr ruled per-file diffs (piecemeal), never a block.
+
+### F379: Hermes Agent's self-improving skills, read against bareloop's learnings: nothing to take (2026-11-21, $0 source read)
+
+- Read: github.com/nousresearch/hermes-agent at HEAD (`agent/background_review.py`, `agent/curator.py`, `agent/learn_prompt.py`, `tools/skill_usage.py`, `tools/skill_ledger.py`, `tools/skill_manager_guards.py`), not only the README.
+- How it learns: after a turn, a forked copy of the agent rereads the chat and decides itself what to save as a skill or a memory, then writes it. The prompt pushes action ("a pass that does nothing is a missed learning opportunity"). No test or verdict checks a lesson; the AI grades its own work.
+- Its curator: skills go active, then stale after 14 days unused, then archived at 30; never deleted; pinned skills are never touched; the curator edits only skills the agent itself made; every edit lands in a JSONL ledger with rollback.
+- Its "do not save" list: setup failures, "tool X is broken" claims, one-off tasks, and failed attempts dressed up as the method.
+- Against bareloop: our cross-run learnings are code only, no LLM (POC-B and D/D2 failed: the AI made up fixes and folded wrongly, PRD ruling 2026-10-22). Reds DO teach here, and that is proven: the seed note's start failure moved big-file workers to write (F262), the carry memo hands earlier failures to every step and fix worker, and cards keep what failed and its outcome as facts, never as advice. So their "do not save" worry is already met.
+- Correction: the operator first said "a run teaches only when it goes red to green". That was wrong and was withdrawn (hamr pointed to F262).
+- Hermes is a personal chat agent with a person at every turn, so self-graded lessons fit there; bareloop runs jobs unattended with an outside close, so they do not.
+- Open idea, LEFT by hamr: retire a hint by use (shown, then the run passed) rather than by age only (56 days). Not seen live; nothing to build.
+
+### F380: Terraform-style plan/apply and YAML, read against bareloop: already covered, nothing to take (2026-11-21, $0 code read)
+
+- YAML: not used by the product. A grep of `src/`, `bin/` and `package.json` finds YAML only in comments and the `pnpm-lock.yaml` file name. Jobs, plans and settings are JSON (the signed `resolved-spec.json`, `config.json`), and the AI fills a fixed-form tool call that code validates, so the "AI breaks YAML indentation" problem cannot happen.
+- The `.claude/agents/*.md` files have YAML headers, but they are Claude Code helper agents, not bareloop.
+- Terraform's loop maps onto what bareloop already has: desired state = the drafted plan (fixed kinds, never code); validate = `validatePlan` plus the $0 seed checks; plan a person approves = the signed plan hash; policy gate = bareguard caps, the write fence and the close, none of which the agent can author; apply = the run on its own work branch or hidden git copy; state file = the spine plus git; drift check = place rules re-read before spend plus the seed check; safe retry = step-level Resume; self-healing = carry memo, fix tries, two strikes, then replan.
+- Why not Terraform itself: it tracks long-lived cloud resources, while bareloop changes files git already tracks; it would add a heavy tool and a new language against the one-dependency rule; and its pattern lets a policy auto-approve, while here the agent never touches its judge and merge stays human.
+- The "gap" first named, then withdrawn: Terraform shows the exact `+ / ~ / -` changes before apply because a program computes them from a human-written state. In bareloop the AI writes the edits during the run, so they cannot exist before it. What can be known up front (write fence, Destination, guards) is already shown by code; the real edits show at Accept, and nothing reaches the repo until the person merges. Nothing to do.
