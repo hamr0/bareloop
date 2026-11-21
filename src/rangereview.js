@@ -2,10 +2,10 @@
 // A job STEP line may carry the exact typed text `range: A..B` or `branch: NAME` (local branches only). Code reads only those tokens; it never guesses intent from other words.
 // Code (never the worker) runs the read-only git of src/prcheckout.js (stripped env, no hooks, `diff` on its allow-list) at run start, before any token is spent:
 //   a range is checked at both ends; a branch is diffed against main (merge-base(main, NAME)..NAME); one diff file per changed file is written under `output/review-diff/`, never into the person's repo, never committed.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { spawnClose } from './ralph.js';
-import { prGitArgs, prGitEnv, firstReason } from './prcheckout.js';
+import { prGitArgs, prGitEnv, firstReason, checkoutAt } from './prcheckout.js';
 
 const SHA = /^[0-9a-f]{40}$/;
 const TAIL = 'Nothing spent.';
@@ -108,3 +108,56 @@ export function rangeNoteOfSpec(spec) {
   const span = t.kind === 'range' ? `${t.a}..${t.b}` : `main..${t.name}`;
   return `This review covers ${span}. The changed files are listed in ${DIFF_DIR}/files.txt; each file's changes are in ${DIFF_DIR}/<path>.diff. Plan ONE step that reads and writes: write output/steps/1.json as soon as you have your first finding, then add each new finding to it as you read. Do not plan a separate step that only re-checks the answer.`;
 }
+
+/**
+ * The tip of a LOCAL branch of the repo, for a change job's `branch:` (its work branch starts there). Plain words when the branch is not there.
+ * @param {{repo: string, name: string, env?: NodeJS.ProcessEnv, run?: typeof spawnClose}} o
+ * @returns {Promise<{ok: true, sha: string}|{ok: false, error: string}>}
+ */
+export async function branchTip({ repo, name, env = process.env, run = spawnClose }) {
+  const r = name === '' || name.startsWith('-') ? null : await run('git', prGitArgs('rev-parse', ['--verify', '--quiet', `refs/heads/${name}^{commit}`]), { env: prGitEnv(env), cwd: repo, timeoutMs: 60_000 });
+  const sha = r === null ? '' : r.stdout.trim();
+  return r !== null && !r.error && r.status === 0 && SHA.test(sha) ? { ok: true, sha } : { ok: false, error: `This repo has no branch named "${name}". ${TAIL}` };
+}
+
+/**
+ * RUN START, before the seed is read and before any token: what the spec's token asks of the worktree. null = the spec names no token (nothing happens, the run is byte-identical).
+ * A review: both ends checked, the worktree put at the end (the range's `B`, or the branch tip) through the one `checkoutAt`; the ends ride back so the run records them. A change job's `branch:`: the worktree at the
+ * branch's tip, so the work branch starts there; a change job's `range:` is refused (belt: the doors refuse it at drafting). More than one token is refused.
+ * @param {{spec: any, repo: string, worktree: string, env?: NodeJS.ProcessEnv, run?: typeof spawnClose}} o
+ * @returns {Promise<null|{ok: true, sha: string, range: {a: string, b: string}|null}|{ok: false, error: string}>}
+ */
+export async function rangeAtRunStart({ spec, repo, worktree, env = process.env, run = spawnClose }) {
+  const many = manyTokensRefusal(spec?.jobLines);
+  if (many !== null) return { ok: false, error: many };
+  const token = rangeTokens(spec?.jobLines)[0];
+  if (token === undefined) return null;
+  /** @param {string} sha @param {{a: string, b: string}|null} range */
+  const at = async (sha, range) => {
+    const co = await checkoutAt({ repo, worktree, sha, env, run });
+    return co.ok ? { ok: /** @type {const} */ (true), sha, range } : { ok: /** @type {const} */ (false), error: `The code could not be checked out (${co.reason}). ${TAIL}` };
+  };
+  if (isReviewSpec(spec)) {
+    const r = await resolveRange({ repo, token, env, run });
+    return r.ok ? at(r.b, { a: r.a, b: r.b }) : r;
+  }
+  if (token.kind === 'range') return { ok: false, error: changeRefusal(token) };
+  const tip = await branchTip({ repo, name: token.name, env, run });
+  return tip.ok ? at(tip.sha, null) : tip;
+}
+
+/**
+ * Record a started range/branch run on the run's `source.json`: `seed` (the end sha, so a resume's moved-HEAD gate and a rerun's cold reset both stand on it, as for a PR head) and, for a review, `range: {a, b}`.
+ * Only these fields change.
+ * @param {string} into the prepared copy's folder (holds source.json) @param {{sha: string, range: {a: string, b: string}|null}} r
+ */
+export function recordRangeOnManifest(into, r) {
+  const file = join(into, 'source.json');
+  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  manifest.seed = r.sha;
+  if (r.range !== null) manifest.range = { a: r.range.a, b: r.range.b };
+  writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/** the recorded range ends of a run's manifest (null when it names none) @param {any} manifest @returns {{a: string, b: string}|null} */
+export const rangeOfManifest = (manifest) => (SHA.test(String(manifest?.range?.a)) && SHA.test(String(manifest?.range?.b)) ? { a: manifest.range.a, b: manifest.range.b } : null);

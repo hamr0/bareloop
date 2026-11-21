@@ -39,6 +39,7 @@ import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
 import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
+import { rangeAtRunStart, recordRangeOnManifest, rangeOfManifest, writeRangeDiffs } from './rangereview.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
@@ -1648,6 +1649,15 @@ async function execute(ctx) {
         } else fresh = { ok: false, error: co.error };
       }
     }
+    // Part 2 (review by git range or branch): a `range:`/`branch:` token in a step line of the signed spec puts the worktree at the range's end (a review) or the branch's tip (a change job's work branch starts there), before the seed is read
+    if (fresh.ok && prIn === undefined) {
+      const read = await readSourceManifest(ctx.into);
+      const repoRoot = read.stop === null && read.present && typeof read.manifest?.repo === 'string' ? read.manifest.repo : null;
+      const rr = repoRoot === null ? null : await rangeAtRunStart({ spec, repo: repoRoot, worktree: wd });
+      if (rr !== null) {
+        if (rr.ok) { recordRangeOnManifest(ctx.into, rr); SEED = rr.sha; } else fresh = { ok: false, error: rr.error };
+      }
+    }
     if (!fresh.ok) {
       const words = /did not start|Nothing spent\.$/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
       err(`${SELECTOR}: ${fresh.error}`);
@@ -1731,6 +1741,21 @@ async function execute(ctx) {
     // audit already in the tree it resumes into is that SAME run's prior leg.
     const preFile = moveStaleGateAudit(wd, spineDir, runid);
     if (preFile) out(`gate audit — a stale file was already sitting in the patient tree (not this run's); moved aside to ${preFile}`);
+  }
+  // Part 2: a review's per-file diffs (`output/review-diff/`) are written by CODE after the cold reset (which cleans untracked files), before any token: a fresh run, a rerun and a resume all stand on the manifest's recorded ends
+  {
+    const m = await readSourceManifest(into);
+    const range = m.stop === null && m.present ? rangeOfManifest(m.manifest) : null;
+    const repoRoot = m.stop === null && m.present && typeof m.manifest?.repo === 'string' ? m.manifest.repo : null;
+    if (range !== null && repoRoot !== null) {
+      const wrote = await writeRangeDiffs({ repo: repoRoot, worktree: wd, a: range.a, b: range.b });
+      if (!wrote.ok) {
+        err(`${SELECTOR}: ${wrote.error}`);
+        if (!dead) settleRefused(wrote.error);
+        throw new ExitSignal(2);
+      }
+      out(`range review - ${wrote.files.length} changed file(s), one diff each in output/review-diff/`);
+    }
   }
 
   const approvals = [{ specHash, signer: ctx.bundle ? 'bundle' : (env.USER ?? 'human'), ts: new Date().toISOString() }];
