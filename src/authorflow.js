@@ -2991,13 +2991,13 @@ export async function authorClose({
         const timedOutRows = rows.filter((/** @type {any} */ r) => r?.verdict === 'instrument-stop' && r?.detail?.fault === STOP_FAULTS.TIMED_OUT);
         if (timedOutRows.length > 0) {
           const first = timedOutRows[0];
-          fatal = [{ code: 'check-timed-out', path: `closeDecl.stages.${String(first.stage)}`, detail: redactSecrets(String(first.detail?.stop ?? '')), limitMs: first.detail?.limitMs }];
+          fatal = [{ code: 'check-timed-out', path: `closeDecl.stages.${String(first.stage)}`, detail: redactSecrets(String(first.detail?.stop ?? '')), limitMs: first.detail?.limitMs, ...(Array.isArray(first.detail?.survivors) ? { survivors: first.detail.survivors } : {}) }];
           stop = 'check-timed-out';
           iter.validation = { ok: false, reds: fatal.map(scrubRed), scoped: v.scoped };
           onPhase('author-try-failed', {
             call: label, i, of: revisionCap, declaration: ask.declaration,
             reason: checkTimedOutText(Number(first.detail?.limitMs)),
-            stops: timedOutRows.map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? '') })),
+            stops: timedOutRows.map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? ''), ...(Array.isArray(r.detail?.survivors) ? { survivors: r.detail.survivors } : {}) })),
           });
           break;
         }
@@ -3020,7 +3020,7 @@ export async function authorClose({
               ? `a check could not run at the starting point (${stoppedNames.join(', ')})`
               : 'no check was failing at the starting point, so none of them could tell a finished job from an unfinished one',
             // the real stop text of each check that could not run (the reason above names them, it never said why)
-            stops: rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? (r.gapLines ?? [])[0] ?? '') })),
+            stops: rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? (r.gapLines ?? [])[0] ?? ''), ...(Array.isArray(r.detail?.survivors) ? { survivors: r.detail.survivors } : {}) })),
           });
         }
       }

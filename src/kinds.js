@@ -61,7 +61,7 @@
 
 import { REPO_LABEL } from './sourcedefaults.js';
 import { namedFilesText } from './repocite.js';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -264,7 +264,8 @@ export function mechanicalStages(stages) {
  *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>}} Ctx
+ *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
@@ -276,6 +277,7 @@ export function mechanicalStages(stages) {
  *   `runJob`'s `emit` (the library reports, the shell prints).
  *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
  *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
+ *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
@@ -403,6 +405,47 @@ function untrackBox(pid) {
 }
 
 /**
+ * The live members of a box (a process group), read from the process table: every process whose group id is `pgid` and that is not a zombie
+ * (a killed process nobody has reaped yet is already gone). Used to CHECK a kill, never to decide one.
+ * @param {number} pgid @returns {Promise<number[]>}
+ */
+export function boxMembers(pgid) {
+  return new Promise((resolve) => {
+    execFile('ps', ['-A', '-o', 'pid=,pgid=,stat='], { timeout: 5000 }, (err, out) => {
+      if (err) {
+        // no process table to read: the group itself still answers whether anything is alive in it (its pid is the best name we have)
+        try { process.kill(-pgid, 0); resolve([pgid]); } catch { resolve([]); }
+        return;
+      }
+      /** @type {number[]} */
+      const pids = [];
+      for (const line of String(out).split('\n')) {
+        const m = /^\s*(\d+)\s+(\d+)\s+(\S+)/.exec(line);
+        if (m && Number(m[2]) === pgid && !m[3].startsWith('Z')) pids.push(Number(m[1]));
+      }
+      resolve(pids.sort((a, b) => a - b));
+    });
+  });
+}
+/**
+ * The sentence when a kill left processes running: who, and the one command that stops them. Said only then.
+ * @param {number[]} pids @returns {string}
+ */
+export function survivorsText(pids) {
+  return `Some test processes did not stop: pid ${pids.join(', ')}. To stop them: kill ${pids.join(' ')}`;
+}
+/** after a kill: look for the box to empty, a moment at a time (SIGKILL lands asynchronously); what is still there is a survivor
+ * @param {number} pgid @param {(pgid: number) => Promise<number[]>} list @returns {Promise<number[]>} */
+async function boxSurvivors(pgid, list) {
+  let left = await list(pgid);
+  for (let i = 0; i < 8 && left.length > 0; i += 1) {
+    await new Promise((res) => { setTimeout(res, 100); });
+    left = await list(pgid);
+  }
+  return left;
+}
+
+/**
  * Run a command and read its world. Faithful to `spawnSync`'s observable
  * result — the same `{status, signal, stdout, stderr}`, the same per-stream
  * ceiling, SIGTERM at the deadline — but without freezing the host loop
@@ -411,13 +454,15 @@ function untrackBox(pid) {
  * @param {string} cmd @param {string[]} args
  * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null,
- *   group?: boolean, signal?: AbortSignal|null}} o
+ *   group?: boolean, signal?: AbortSignal|null, listBox?: (pgid: number) => Promise<number[]>}} o
  *   `group`: run the command in its OWN process group (the box) so one kill stops it and everything it started; `signal`: an abort (Abandon, Stop) kills that box at once
- * @returns {Promise<{stop: string, fault: string}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
+ * @returns {Promise<{stop: string, fault: string, survivors?: number[]}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
  */
-async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null, group = false, signal = null }) {
+async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null, group = false, signal = null, listBox = boxMembers }) {
   const { env, dropped } = stageEnv(declared);
   const t0 = Date.now();
+  /** the box's group id, once the command has started (its leader's pid) @type {number|null} */
+  let boxPid = null;
   const r = await new Promise((/** @type {(v: {error: (Error & {code?: string})|null, status: number|null, signal: string|null, stdout: string, stderr: string}) => void} */ resolve) => {
     /** @type {import('node:child_process').ChildProcess} */
     let child;
@@ -455,7 +500,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
       if (group && typeof child.pid === 'number') { try { process.kill(-child.pid, sig); return; } catch { /* the group is gone, or never formed */ } }
       try { child.kill(sig); } catch { /* already gone */ }
     };
-    if (group && typeof child.pid === 'number') trackBox(child.pid);
+    if (group && typeof child.pid === 'number') { boxPid = child.pid; trackBox(child.pid); }
     // FIRST FAULT WINS: a child that blew the buffer and then hit the
     // deadline is one story, not two.
     const fault = (/** @type {string} */ code) => {
@@ -492,9 +537,11 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
   const argv = `${cmd}${args.length ? ` ${args.join(' ')}` : ''}`;
   if (r.error) {
     const code = /** @type {any} */ (r.error).code;
-    if (code === 'ABORTED') return { stop: `INSTRUMENT: "${cmd}" was stopped before it finished`, fault: STOP_FAULTS.KILLED };
-    if (code === 'ETIMEDOUT') return { stop: `INSTRUMENT: "${cmd}" did not finish inside ${timeoutMs}ms`, fault: STOP_FAULTS.TIMED_OUT };
-    if (code === 'ENOBUFS') return { stop: `INSTRUMENT: "${cmd}" output exceeded the ${maxBuffer}B ceiling — the output is truncated, so any number read from it is unknown, not zero`, fault: STOP_FAULTS.CRASHED };
+    // AFTER A KILL, the box is checked: a process still in it is named in the stop (said only then)
+    const left = boxPid !== null && (code === 'ETIMEDOUT' || code === 'ENOBUFS' || code === 'ABORTED') ? await boxSurvivors(boxPid, listBox) : [];
+        if (code === 'ABORTED') return { stop: `INSTRUMENT: "${cmd}" was stopped before it finished`, fault: STOP_FAULTS.KILLED, ...(left.length ? { survivors: left } : {}) };
+    if (code === 'ETIMEDOUT') return { stop: `INSTRUMENT: "${cmd}" did not finish inside ${timeoutMs}ms`, fault: STOP_FAULTS.TIMED_OUT, ...(left.length ? { survivors: left } : {}) };
+    if (code === 'ENOBUFS') return { stop: `INSTRUMENT: "${cmd}" output exceeded the ${maxBuffer}B ceiling — the output is truncated, so any number read from it is unknown, not zero`, fault: STOP_FAULTS.CRASHED, ...(left.length ? { survivors: left } : {}) };
     return { stop: `INSTRUMENT: "${argv}" could not be run (${code ?? String(r.error.message)})`, fault: STOP_FAULTS.FAILED };
   }
   if (r.status === null) return { stop: `INSTRUMENT: "${cmd}" returned a null exit code (killed by ${r.signal ?? 'an unknown signal'})`, fault: STOP_FAULTS.KILLED };
@@ -1293,6 +1340,7 @@ async function runCmd(p, cwd, ctx) {
       knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
       group: true,
       signal: ctx.signal ?? null,
+      ...(ctx.listBox ? { listBox: ctx.listBox } : {}),
     });
     if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
     return r;
@@ -1306,11 +1354,14 @@ async function runCmd(p, cwd, ctx) {
   return pending;
 }
 
+/** the typed `survivors` of a killed check, for a stop's detail (said in plain words only where it is shown) @param {any} r @returns {Record<string, any>} */
+const survivorsOf = (r) => (Array.isArray(r?.survivors) && r.survivors.length ? { survivors: r.survivors } : {});
+
 /** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
 async function runCommandExit(stage, ctx) {
   const p = stage.params;
   const r = await runCmd(p, ctx.workdir, ctx);
-  if (r.stop !== null) return stopped(stage, ctx, r.stop, {}, r.fault);
+  if (r.stop !== null) return stopped(stage, ctx, r.stop, survivorsOf(r), r.fault);
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   for (const name of r.dropped) gap.push(`${stage.name}: declared env var ${name} was DROPPED — the close never hands worker code a credential`);
   const green = r.code === p.expectExit;
@@ -1346,7 +1397,7 @@ async function runCountNotWorse(stage, ctx) {
   /** @param {string} cwd @param {string} where */
   const measure = async (cwd, where) => {
     const r = await runCmd(p, cwd, ctx);
-    if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault };
+    if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault, ...survivorsOf(r) };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };
     // A BROKEN RULER NEVER CERTIFIES ZERO — the zero-match split (contract (a))
@@ -1406,7 +1457,7 @@ async function runCountNotWorse(stage, ctx) {
   };
 
   const now = await measure(ctx.workdir, 'the current tree');
-  if (now.stop !== null) return stopped(stage, ctx, now.stop, {}, now.fault, now.notes);
+  if (now.stop !== null) return stopped(stage, ctx, now.stop, survivorsOf(now), now.fault, now.notes);
 
   // D12 — the close stores the COUNTING RULE, never the number, so "seed" is
   // MEASURED at this run's own seed. Which route measured it is recorded.
@@ -1416,7 +1467,7 @@ async function runCountNotWorse(stage, ctx) {
   let baselineDetail = null;
   if (p.baseline === 'seed') {
     const at = await treeIsAtSeed(ctx.workdir, ctx.seedRef);
-    if (at.stop !== null) return stopped(stage, ctx, at.stop, {}, at.fault);
+    if (at.stop !== null) return stopped(stage, ctx, at.stop, survivorsOf(at), at.fault);
     if ((ctx.baselineMode ?? 'auto') === 'auto' && at.at) {
       baseline = /** @type {number} */ (now.value);
       baselineSource = 'measured IN PLACE — the working tree is verifiably identical to the seed';
@@ -1424,9 +1475,9 @@ async function runCountNotWorse(stage, ctx) {
     } else {
       const seedTrees = /** @type {SeedTrees} */ (ctx.seedTrees);
       const st = await seedTrees.ensure(ctx.workdir, ctx.seedRef);
-      if (st.stop !== null) return stopped(stage, ctx, st.stop, {}, st.fault);
+      if (st.stop !== null) return stopped(stage, ctx, st.stop, survivorsOf(st), st.fault);
       const b = await measure(st.dir, `the seed tree at ${ctx.seedRef}`);
-      if (b.stop !== null) return stopped(stage, ctx, b.stop, {}, b.fault, b.notes);
+      if (b.stop !== null) return stopped(stage, ctx, b.stop, survivorsOf(b), b.fault, b.notes);
       baseline = /** @type {number} */ (b.value);
       baselineSource = `measured in a detached worktree at ${ctx.seedRef}`;
       baselineDetail = { breakdown: b.breakdown, notes: b.notes };

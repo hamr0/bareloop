@@ -24,7 +24,7 @@
 // not because they are readouts: the runner is a script, and a rule no test can
 // reach is a rule nothing checks.
 import { scrubRaw } from './text.js';
-import { checkTimedOutText } from './kinds.js';
+import { checkTimedOutText, survivorsText } from './kinds.js';
 export { checkTimedOutText };
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
@@ -492,6 +492,9 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
     : [...new Set(redList.map((r) => said1(r)).filter(Boolean))];
   if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
   const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
+  // a kill that left processes running: who, and the one command that stops them (said only then)
+  const left = [...new Set(redList.flatMap((r) => (Array.isArray(r?.survivors) ? r.survivors.filter((/** @type {unknown} */ n) => Number.isInteger(n)) : [])))];
+  if (left.length) lines.push(survivorsText(left));
   if (said.length) {
     lines.push('What it said:');
     for (const x of said.slice(0, PLAIN_MAX_BULLETS)) lines.push(` • ${x}`);
@@ -575,7 +578,13 @@ export function signingReasons(reds) {
   for (const red of Array.isArray(reds) ? reds : []) {
     const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
     const hit = SIGNING_TABLE.find((e) => e.when(r));
-    if (hit) { for (const sentence of hit.say(r)) out.push({ kind: hit.kind, sentence, todo: hit.todo, red: r }); continue; }
+    if (hit) {
+      for (const sentence of hit.say(r)) out.push({ kind: hit.kind, sentence, todo: hit.todo, red: r });
+      // a kill that left processes running: who, and the one command that stops them (said only then)
+      const left = Array.isArray(r.survivors) ? r.survivors.filter((/** @type {unknown} */ n) => Number.isInteger(n)) : [];
+      if (left.length) out.push({ kind: hit.kind, sentence: survivorsText(left), todo: hit.todo, red: r });
+      continue;
+    }
     const [pr] = plainReasons([r]);
     if (pr && pr.kind !== 'unmapped') { out.push({ kind: pr.kind, sentence: pr.sentence, todo: 'draft again', red: r }); continue; }
     out.push({

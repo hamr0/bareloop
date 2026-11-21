@@ -758,7 +758,7 @@ export function createSession(card, deps = {}) {
         kind: 'try-refused', no: no === -1 ? state.steps.length - 1 : no, call: String(data.call ?? ''), reason,
         ...(Array.isArray(data.reds) && data.reds.length ? { reds: redsRecord(data.reds) } : {}), ...declarationRecord(data.declaration),
         // the real stop text of each check that could not run (what `reason` only names), masked and bounded like every red
-        ...(Array.isArray(data.stops) && data.stops.length ? { stops: data.stops.slice(0, 10).map((/** @type {any} */ x) => ({ stage: redactSecrets(String(x?.stage ?? '')), text: redactSecrets(String(x?.text ?? '')).slice(0, 2000) })) } : {}),
+        ...(Array.isArray(data.stops) && data.stops.length ? { stops: data.stops.slice(0, 10).map((/** @type {any} */ x) => ({ stage: redactSecrets(String(x?.stage ?? '')), text: redactSecrets(String(x?.text ?? '')).slice(0, 2000), ...(Array.isArray(x?.survivors) ? { survivors: x.survivors.filter((/** @type {unknown} */ n) => Number.isInteger(n)).slice(0, 50) } : {}) })) } : {}),
         at: new Date().toISOString(),
       });
       stepDetail('draft', `${data.call}: refused — ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`);
