@@ -1323,6 +1323,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // a close stage a test or an operator deliberately made slow/hanging would
   // then block for up to 10 minutes for no purpose. "Guesstimate only when no
   // rate is given" is the same doctrine F113 already applies to pricing.
+  /** the close timeout's source: 'check-limit' = an AI-drafted check under the one code-owned limit (never compared to the Time cap) */
+  let closeTimeoutSource = 'estimated';
   {
     const explicitOverride = typeof closeTimeoutMs === 'number' && Number.isFinite(closeTimeoutMs) ? closeTimeoutMs : null;
     if (explicitOverride !== null) {
@@ -1332,6 +1334,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // `scripts/run-u.mjs` and `src/cli.js` both leave this call site
       // nothing to autoset from but the autoset/signed-override tiers below).
       closeTimeoutMs = explicitOverride;
+      closeTimeoutSource = 'explicit';
       emit('close-timing', { perStage: [], slowestMs: null, slowestName: null, ceilingMs: closeTimeoutMs, source: 'explicit' });
       console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: 'explicit' }));
     } else {
@@ -1353,6 +1356,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         return 'close-timing-red';
       }
       closeTimeoutMs = /** @type {number} */ (resolved.closeTimeoutMs);
+      closeTimeoutSource = resolved.source;
       emit('close-timing', { ...(resolved.timing ?? { perStage: [], slowestMs: null, slowestName: null, anyTimedOut: false }), ceilingMs: closeTimeoutMs, source: resolved.source });
       console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: resolved.source, slowestMs: resolved.timing?.slowestMs, slowestName: resolved.timing?.slowestName }));
     }
@@ -1365,7 +1369,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // run start, so the honest shape is a run-start check, never a silent
   // clamp (a budget under one close cannot fund its own close, verbatim the
   // reasoning `maxWallMs`'s own validator red already states).
-  if (typeof job.maxWallMs === 'number' && job.maxWallMs < closeTimeoutMs) {
+  if (closeTimeoutSource !== 'check-limit' && typeof job.maxWallMs === 'number' && job.maxWallMs < closeTimeoutMs) {
     emit('escalation', {
       category: 'wall-under-close-timeout', decisionReady: true,
       decision: `maxWallMs (${job.maxWallMs}ms) is under the effective close timeout (${closeTimeoutMs}ms) — a budget under one close cannot fund its own close, so nothing was run and nothing was spent.`,

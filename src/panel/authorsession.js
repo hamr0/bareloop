@@ -74,6 +74,7 @@ import { draftRefusal } from '../rangereview.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
+import { CHECK_LIMIT_MS } from '../kinds.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -524,7 +525,7 @@ export function createSession(card, deps = {}) {
   const sessionsRoot = sessionsRootOf(deps.sessionsRoot);
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
-  const timeoutMs = deps.timeoutMs ?? 300_000;
+  const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
   // override the declaration composer and/or `prepareSigning` itself so a
   // test can drive the REAL confirm turn / ask() channel /

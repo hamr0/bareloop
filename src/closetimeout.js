@@ -15,6 +15,8 @@
 // knob a drafted spec or a runner script can reach for.
 
 import { runClose } from './ralph.js';
+import { CHECK_LIMIT_MS } from './kinds.js';
+import { isDeclaredClose } from './declaredclose.js';
 
 /** hamr, 2026-09-07: the floor, verbatim. Also the value `runClose`'s own
  * un-autoset default has always used — kept as its own named constant here
@@ -129,13 +131,20 @@ export function computeCloseTimeoutCeiling({ slowestMs, overrideMs = null }) {
  * @param {{job: any, stages: any[], cwd: string, redact?: (s: string) => string, ceilingMs?: number}} args
  *   `ceilingMs` — see `timeCloseStages`; test seam only.
  * @returns {Promise<{
- *   closeTimeoutMs: number|null, source: 'estimated'|'override',
+ *   closeTimeoutMs: number|null, source: 'estimated'|'override'|'check-limit',
  *   timing: Awaited<ReturnType<typeof timeCloseStages>>|null, timedOut: boolean,
  * }>} `closeTimeoutMs: null, timedOut: true` means a stage never finished the
  *   timing pass — the caller reds `close-timing-red` rather than trusting any
  *   number here.
  */
 export async function resolveCloseTimeoutMs({ job, stages, cwd, redact = (s) => s, ceilingMs }) {
+  // AN AI-DRAFTED (declared) CHECK runs under the ONE check limit (src/kinds.js CHECK_LIMIT_MS, hamr 2026-11-21). The timing pass
+  // cannot time a kind stage (it has no `.cmd`, so it read 0 and the 120 s floor cut a long test suite short). The limit is code's
+  // own: it is never compared to the Time cap, and a signed override still wins. A hand-written command close falls through,
+  // byte for byte as before.
+  if (typeof job?.closeTimeoutMs !== 'number' && isDeclaredClose(job)) {
+    return { closeTimeoutMs: CHECK_LIMIT_MS, source: 'check-limit', timing: null, timedOut: false };
+  }
   const signedOverride = typeof job?.closeTimeoutMs === 'number' ? job.closeTimeoutMs : null;
   if (signedOverride !== null) {
     return { closeTimeoutMs: signedOverride, source: 'override', timing: null, timedOut: false };
@@ -154,11 +163,12 @@ export async function resolveCloseTimeoutMs({ job, stages, cwd, redact = (s) => 
  * backward compatibility and test control — never the signed spec field) is
  * a real override but not a SIGNED one, so it earns its own honest word
  * rather than being folded into 'signed override'.
- * @param {{ceilingMs: number, source: 'estimated'|'override'|'explicit', slowestMs?: number, slowestName?: string|null}} args
+ * @param {{ceilingMs: number, source: 'estimated'|'override'|'explicit'|'check-limit', slowestMs?: number, slowestName?: string|null}} args
  * @returns {string}
  */
 export function closeTimeoutBanner({ ceilingMs, source, slowestMs, slowestName }) {
   const seconds = Math.round(ceilingMs / 1000);
+  if (source === 'check-limit') return `check limit: ${Math.round(ceilingMs / 60000)} minutes per command (the AI-drafted checks' one limit)`;
   if (source === 'override') return `close timeout: ${seconds}s per stage (signed override)`;
   if (source === 'explicit') return `close timeout: ${seconds}s per stage (explicit runner override)`;
   return `close timeout: ${seconds}s per stage (estimated from seed timing: slowest ${slowestName ?? '<none>'} ${slowestMs ?? 0}ms × ${CLOSE_TIMEOUT_K}, floor ${Math.round(CLOSE_TIMEOUT_FLOOR_MS / 1000)}s)`;

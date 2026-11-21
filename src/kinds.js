@@ -97,9 +97,15 @@ export const GAP_LINE_CAP = 40;
  * wording changes; the renderer below is its only other use.
  */
 export const GAP_TRIM_MARKER = 'gap trimmed:';
+/**
+ * THE one limit for an AI-drafted check (hamr, 2026-11-21): 30 minutes per command, at drafting, at the signing gates and
+ * at the run (precheck + final close). Code's own number — not in the draft, not in the signature, never compared to the
+ * job's Time cap. The AI's own `timeoutMs` may only tighten it (`effectiveTimeoutMs`).
+ */
+export const CHECK_LIMIT_MS = 1_800_000;
 /** used when neither the stage nor the ctx names a bound. A stage that could
  * run forever is not a red — it is a stop, and something must decide when. */
-export const DEFAULT_TIMEOUT_MS = 300_000;
+export const DEFAULT_TIMEOUT_MS = CHECK_LIMIT_MS;
 /** PER STREAM, like the arbiter's own close runner. An overrun truncates the
  * output mid-summary, so any number read out of it is unknown, not zero. */
 export const MAX_BUFFER = 16 * 1024 * 1024;
@@ -1154,7 +1160,7 @@ const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED, note
  * @param {any} declared @param {Ctx} ctx
  * @returns {number}
  */
-function effectiveTimeoutMs(declared, ctx) {
+export function effectiveTimeoutMs(declared, ctx) {
   const ceiling = ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
   return typeof declared === 'number' && Number.isFinite(declared) && declared > 0
     ? Math.min(declared, ceiling)
