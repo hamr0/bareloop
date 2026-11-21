@@ -120,6 +120,7 @@ import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from './reviewpick.js';
+import { draftRefusal } from './rangereview.js';
 import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
 import { FENCE_POINT_SYSTEM } from './fencepointcall.js';
@@ -634,6 +635,17 @@ export async function main(argv, deps = {}) {
   /** @type {[string, () => void][]} */
   let sigHandlers = [];
   try {
+    // Part 2 (hamr 2026-11-21, "refusal should be at the draft"): the job-text range/branch refusals git alone can decide, at the START, $0, before the pick and any model call. The panel door reads the SAME helper (src/rangereview.js `draftRefusal`), so the words are one.
+    const rangeRepo = IS_REPO_SOURCE && VERDICT === 'green' && typeof manifestRead.manifest?.repo === 'string' ? manifestRead.manifest.repo : null;
+    const draftLines = Array.isArray(draft.jobLines) ? draft.jobLines : null;
+    if (rangeRepo !== null) {
+      const early = await draftRefusal({ repo: rangeRepo, jobLines: draftLines });
+      if (early !== null) {
+        err(early);
+        emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+        throw new ExitSignal(2);
+      }
+    }
     // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
   //
   // Everything below reports; nothing below governs. The ceiling is enforced where
@@ -827,6 +839,14 @@ export async function main(argv, deps = {}) {
       err(road.refusal);
       emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
       throw new ExitSignal(2);
+    }
+    if (road.review && rangeRepo !== null) { // a review branch needs `main` (a change job's branch does not): known only now
+      const late = await draftRefusal({ repo: rangeRepo, jobLines: draftLines, review: true });
+      if (late !== null) {
+        err(late);
+        emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+        throw new ExitSignal(2);
+      }
     }
     if (road.answer !== null) emit(REVIEW_CALL_LABEL, { answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}) });
     if (road.review) {

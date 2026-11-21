@@ -78,7 +78,7 @@ test('CLI door: two tokens, and a range on a change job, are refused in the SAME
   assert.match(a.e, new RegExp(MANY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(a.spine, /"author-end"/);
   assert.doesNotMatch(a.spine, /author-cost/);
-  const b = await cli(t, [{ n: 1, text: 'Review range: v1..v2 for bugs' }], async () => ({ answer: 'change', reason: null }));
+  const b = await cli(t, [{ n: 1, text: 'Review range: main..main for bugs' }], async () => ({ answer: 'change', reason: null }));
   assert.equal(b.rc, 2, `${b.e}\n${b.o}`);
   assert.ok(b.e.includes(CHANGE_RANGE), b.e);
 });
