@@ -27,10 +27,11 @@ function repoWithInstall(/** @type {import('node:test').TestContext} */ t) {
   return w;
 }
 
-async function panel(/** @type {import('node:test').TestContext} */ t, /** @type {string} */ jobText, /** @type {string} */ pick, /** @type {(repo: string) => void} */ prep = () => {}) {
+async function panel(/** @type {import('node:test').TestContext} */ t, /** @type {string|((w: {c0: string, c1: string, c2: string}) => string)} */ jobTextOf, /** @type {string} */ pick, /** @type {(repo: string) => void} */ prep = () => {}) {
   const w = await world(t, { serve: false });
   const rw = repoWithInstall(t);
   prep(rw.repo);
+  const jobText = typeof jobTextOf === 'function' ? jobTextOf(rw) : jobTextOf;
   const seams = draftSeams({});
   const calls = { author: 0, npm: 0, pick: 0, generate: 0 };
   const inner = seams.authorFn;
@@ -77,4 +78,15 @@ test('draftRefusal: one helper, the same words; a legal token, or none, is null'
   assert.equal(await draftRefusal({ repo: w.repo, jobLines: lines('range: v1..feat') }), null);
   assert.equal(await draftRefusal({ repo: w.repo, jobLines: lines('branch: feat') }), null);
   assert.equal(await draftRefusal({ repo: w.repo, jobLines: lines('fix it') }), null);
+});
+
+test('panel door: a range given as SHORT hashes and as FULL hashes drafts (reaches the menu, no refusal)', async (t) => {
+  for (const [label, text] of /** @type {[string, (w: {c0: string, c1: string}) => string][]} */ ([
+    ['short', (w) => `Review range: ${w.c0.slice(0, 7)}..${w.c1.slice(0, 7)} for bugs`],
+    ['full', (w) => `Review range: ${w.c0}..${w.c1} for bugs`],
+  ])) {
+    const a = await panel(t, text, 'review');
+    assert.equal(a.s.state.pendingAsk?.kind, 'menu', `${label}: phase ${a.s.state.phase} ${a.s.state.error ?? ''}`);
+    assert.equal(a.s.state.phase === 'refused', false, label);
+  }
 });

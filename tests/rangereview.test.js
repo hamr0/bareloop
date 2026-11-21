@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { rangeTokens, manyTokensRefusal, changeRefusal, resolveRange, writeRangeDiffs, rangeNoteOfSpec, DIFF_DIR } from '../src/rangereview.js';
+import { draftRefusal, rangeTokens, manyTokensRefusal, changeRefusal, resolveRange, writeRangeDiffs, rangeNoteOfSpec, DIFF_DIR } from '../src/rangereview.js';
 import { makeRangeWorld, out } from './range-world.mjs';
 import { gitInPatient } from './helpers.js';
 
@@ -80,4 +80,28 @@ test('rangeNoteOfSpec: null without a token (and on a change spec); a note only 
   assert.equal(rangeNoteOfSpec(null), null);
   assert.match(String(rangeNoteOfSpec(review('Review range: v1..v2 for bugs'))), /^This review covers v1\.\.v2\. /);
   assert.match(String(rangeNoteOfSpec(review('Review branch: feat for bugs'))), /^This review covers main\.\.feat\. /);
+});
+
+test('a range given as SHORT hashes and as FULL hashes resolves to the same ends, writes byte-identical diffs, and is not refused at the draft', async (t) => {
+  const w = makeRangeWorld(t);
+  const short = { kind: /** @type {const} */ ('range'), a: w.c0.slice(0, 7), b: w.c2.slice(0, 7), line: 1 };
+  const full = { kind: /** @type {const} */ ('range'), a: w.c0, b: w.c2, line: 1 };
+  const rs = await resolveRange({ repo: w.repo, token: short });
+  const rf = await resolveRange({ repo: w.repo, token: full });
+  assert.deepEqual(rs, { ok: true, a: w.c0, b: w.c2 });
+  assert.deepEqual(rf, rs);
+  assert.equal(await draftRefusal({ repo: w.repo, jobLines: lines(`Review range: ${short.a}..${short.b} for bugs`) }), null);
+  assert.equal(await draftRefusal({ repo: w.repo, jobLines: lines(`Review range: ${full.a}..${full.b} for bugs`) }), null);
+  const dirs = [];
+  for (const r of [rs, rf]) {
+    const dir = join(w.root, `d${dirs.length}`);
+    dirs.push(dir);
+    assert.equal((await writeRangeDiffs({ repo: w.repo, worktree: dir, a: /** @type {any} */ (r).a, b: /** @type {any} */ (r).b })).ok, true);
+  }
+  const names = readdirSync(join(dirs[0], DIFF_DIR), { recursive: true }).map(String).sort();
+  assert.ok(names.includes('files.txt') && names.length > 1);
+  assert.deepEqual(readdirSync(join(dirs[1], DIFF_DIR), { recursive: true }).map(String).sort(), names);
+  for (const n of names.filter((x) => x.endsWith('.diff') || x === 'files.txt')) {
+    assert.equal(readFileSync(join(dirs[0], DIFF_DIR, n), 'utf8'), readFileSync(join(dirs[1], DIFF_DIR, n), 'utf8'), n);
+  }
 });
