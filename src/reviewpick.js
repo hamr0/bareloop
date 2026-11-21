@@ -14,6 +14,7 @@ import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS } from './authorscout.js';
 import { RUBRIC_LANG, RUBRIC_FENCE } from './authoring.js';
+import { rangeTokens, manyTokensRefusal, changeRefusal } from './rangereview.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -112,12 +113,18 @@ export async function runReviewPick({
  * and the signed source `repo` (this is where it is WRITTEN). A change returns `review: false` and nothing else the caller reads: its D flow stays byte for byte what it was.
  * `pick` is the door's own call (its provider, price, thinking and booking), `makePick` below builds it.
  * @param {{verdictType: string, isRepoSource: boolean, jobLines: {n: number, text: string, rules?: string[]}[]|null, pick: ((jobLines: any[]) => Promise<{answer: string, reason?: string|null}>)|null}} o
- * @returns {Promise<{review: false, answer: string|null, reason: string|null}|{review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: string, rubricFiles: true, writeScope: string[], source: 'repo'}>}
+ * @returns {Promise<{review: false, answer: string|null, reason: string|null, refusal?: string}|{review: true, answer: 'review', reason: null, refusal?: undefined, verdictType: 'soft-green', lang: string, rubricFiles: true, writeScope: string[], source: 'repo'}>}
  */
 export async function chooseRoad({ verdictType, isRepoSource, jobLines, pick }) {
+  // Part 2 (review by git range or branch): a job names ONE range or branch (more is refused before the AI is asked); a `range:` can only be reviewed, so on a change pick it is refused (a `branch:` on a change job is legal)
+  const many = manyTokensRefusal(jobLines);
+  if (many !== null) return { review: false, answer: null, reason: null, refusal: many };
   if (verdictType !== 'green' || !isRepoSource || !Array.isArray(jobLines) || jobLines.length === 0 || typeof pick !== 'function') return { review: false, answer: null, reason: null };
   const r = await pick(jobLines);
-  if (r.answer !== 'review') return { review: false, answer: r.answer, reason: r.reason ?? null };
+  if (r.answer !== 'review') {
+    const range = rangeTokens(jobLines).find((x) => x.kind === 'range');
+    return range === undefined ? { review: false, answer: r.answer, reason: r.reason ?? null } : { review: false, answer: r.answer, reason: r.reason ?? null, refusal: changeRefusal(range) };
+  }
   return { review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: RUBRIC_LANG, rubricFiles: true, writeScope: [...RUBRIC_FENCE], source: 'repo' };
 }
 

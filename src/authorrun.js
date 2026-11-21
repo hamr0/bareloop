@@ -153,6 +153,7 @@ class ExitSignal extends Error {
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
  * @property {string} [keysHome] P4a — test seam: load this home's `.env` keys file even when `env` is injected.
+ * @property {(jobLines: any[]) => Promise<{answer: string, reason?: string|null}>} [reviewPick] test seam: replaces the crossroads' change-or-review question (the panel door has the same one); absent = the real call.
  * @property {NodeJS.ReadStream} [stdin]
  * @property {NodeJS.WritableStream} [stdout]
  * @property {NodeJS.WritableStream} [stderr]
@@ -819,8 +820,14 @@ export async function main(argv, deps = {}) {
   {
     const road = await chooseRoad({
       verdictType: VERDICT, isRepoSource: IS_REPO_SOURCE, jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
-      pick: makePick({ provider, ceilingUsd: CEILING_USD, onCall, ...(authorPrice?.rates ? { rates: authorPrice.rates } : {}) }),
+      pick: deps.reviewPick !== undefined ? deps.reviewPick : makePick({ provider, ceilingUsd: CEILING_USD, onCall, ...(authorPrice?.rates ? { rates: authorPrice.rates } : {}) }),
     });
+    // Part 2: a range/branch token the job cannot use is refused in plain words, the same words as the panel door, before any further spend
+    if (typeof road.refusal === 'string') {
+      err(road.refusal);
+      emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+      throw new ExitSignal(2);
+    }
     if (road.answer !== null) emit(REVIEW_CALL_LABEL, { answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}) });
     if (road.review) {
       SOURCE_KIND = road.source; draft.writeScope = road.writeScope; VERDICT = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles;

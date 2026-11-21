@@ -1122,6 +1122,7 @@ export function createSession(card, deps = {}) {
       })),
     });
     if (abandoned) return;
+    if (typeof road.refusal === 'string') { refuse(road.refusal); return; } // Part 2: a range/branch token the job cannot use, plain words, before any run spend
     if (road.answer !== null) appendDraftLog(outDir, { kind: REVIEW_CALL_LABEL, no: Math.max(0, state.steps.length - 1), answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}), at: new Date().toISOString() });
     if (road.review) { verdictType = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles; }
 
