@@ -13,8 +13,8 @@ import { prRefName, removePrRef } from './worktree.js';
 
 export { prRefName };
 
-/** the ONLY git subcommands this piece may run (spec item 10a): anything else throws before a process is made. Nothing that writes to a remote, to the person's config or to their index is on the list. */
-export const PR_GIT_SUBCOMMANDS = Object.freeze(['fetch', 'rev-parse', 'checkout', 'merge-base', 'update-ref', 'worktree']);
+/** the ONLY git subcommands this piece may run (spec item 10a): anything else throws before a process is made. Nothing that writes to a remote, to the person's config or to their index is on the list. `diff` (Part 2, review by range or branch) only reads. */
+export const PR_GIT_SUBCOMMANDS = Object.freeze(['fetch', 'rev-parse', 'checkout', 'merge-base', 'update-ref', 'worktree', 'diff']);
 
 /** the hard deadline of the fetch, in ms (spec item 3: 120 s; tighten-only, like the other clamps) */
 export const PR_FETCH_DEADLINE_MS = 120_000;
@@ -220,16 +220,11 @@ export async function checkoutPrHead({ repo, worktree, pr, env = process.env, ti
     sha = wantAgain;
   }
 
-  // the checkout: the run's OWN worktree, detached at the head; nothing is committed
-  const co = await git(worktree, 'checkout', ['--detach', sha]);
-  if (co.error || co.status !== 0) return failed(`Git could not fetch pull request #${n} (it could not be checked out: ${firstReason(co.stderr || String(co.error?.message ?? ''))}). Check your git login for this repo. ${tail}`);
-
+  // the checkout: the run's OWN worktree, detached at the head; nothing is committed (the one step `checkoutAt`, shared with a git range or branch review)
   const base = prBaseOf(pr.record);
-  let mergeBase = null;
-  if (base !== null) {
-    const mb = await git(repo, 'merge-base', [base.sha, sha]);
-    mergeBase = !mb.error && mb.status === 0 && SHA.test(out(mb)) ? out(mb) : null; // a base this repo has not got is unrecorded, not a refusal
-  }
+  const at = await checkoutAt({ repo, worktree, sha, baseSha: base === null ? null : base.sha, env, timeoutMs, run });
+  if (!at.ok) return failed(`Git could not fetch pull request #${n} (it could not be checked out: ${at.reason}). Check your git login for this repo. ${tail}`);
+  const mergeBase = at.mergeBase;
   return { ok: true, checkout: { sha, number: n, ownerRepo: `${owner}/${name}`, remote: remote.name, ref, base, mergeBase } };
 }
 
@@ -256,4 +251,24 @@ export function recordPrOnManifest(into, c) {
   manifest.prNumber = c.number;
   manifest.prBase = c.base;
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/**
+ * The ONE checkout step a pull request head, a git range's end and a branch's tip all use: the run's own worktree detached at `sha` (nothing is committed), plus the merge-base of `baseSha` and `sha` when a base is given
+ * (a base this repo has not got is null, not a refusal).
+ * @param {{repo: string, worktree: string, sha: string, baseSha?: string|null, env?: NodeJS.ProcessEnv, timeoutMs?: number, run?: typeof spawnClose}} o
+ * @returns {Promise<{ok: true, sha: string, mergeBase: string|null}|{ok: false, reason: string}>}
+ */
+export async function checkoutAt({ repo, worktree, sha, baseSha = null, env = process.env, timeoutMs = PR_FETCH_DEADLINE_MS, run = spawnClose }) {
+  const childEnv = prGitEnv(env);
+  const git = (/** @type {string} */ cwd, /** @type {string} */ sub, /** @type {string[]} */ rest) => run('git', prGitArgs(sub, rest), { env: childEnv, cwd, timeoutMs });
+  const co = await git(worktree, 'checkout', ['--detach', sha]);
+  if (co.error || co.status !== 0) return { ok: false, reason: firstReason(co.stderr || String(co.error?.message ?? '')) };
+  let mergeBase = null;
+  if (baseSha !== null) {
+    const mb = await git(repo, 'merge-base', [baseSha, sha]);
+    const o = mb.stdout.trim();
+    mergeBase = !mb.error && mb.status === 0 && SHA.test(o) ? o : null;
+  }
+  return { ok: true, sha, mergeBase };
 }

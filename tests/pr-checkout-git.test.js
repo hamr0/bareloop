@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from '../src/prcheckout.js';
+import { checkoutPrHead, checkoutAt, prHeadIsAncestor, recordPrOnManifest } from '../src/prcheckout.js';
 import { removePrRef, prRefName } from '../src/worktree.js';
 import { spawnClose } from '../src/ralph.js';
 import { gatedShellOptions, trackedAtSeedGuard } from '../src/tools.js';
@@ -302,4 +302,27 @@ test('the env of every git child keeps HOME and SSH_AUTH_SOCK and drops the prov
     for (const k of ['ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'NPM_TOKEN', 'GIT_DIR']) assert.ok(!(k in e), `${k} must not reach git`);
   }
   assert.ok(patientGitEnv().GIT_AUTHOR_NAME, 'fixture identity is neutral');
+});
+
+test('Part 2 item 2: checkoutAt is the ONE checkout step: the worktree stands detached at the sha, the merge-base with a given base is read, a base the repo lacks is null, a bad sha is a reason', async (t) => {
+  const w = makeWorld(t);
+  await checkoutPrHead({ repo: w.repo, worktree: w.wt, pr: { url: ADDRESS, record: record(w.prSha, w.baseSha) } }); // fetches the fork-shaped head into the repo
+  const r = await checkoutAt({ repo: w.repo, worktree: w.wt, sha: w.prSha, baseSha: w.baseSha });
+  assert.deepEqual(r, { ok: true, sha: w.prSha, mergeBase: w.baseSha });
+  assert.equal(out(w.wt, ['rev-parse', 'HEAD']), w.prSha);
+  assert.equal(out(w.wt, ['rev-parse', '--abbrev-ref', 'HEAD']), 'HEAD', 'detached');
+  const none = await checkoutAt({ repo: w.repo, worktree: w.wt, sha: w.baseSha });
+  assert.deepEqual(none, { ok: true, sha: w.baseSha, mergeBase: null });
+  const lacking = await checkoutAt({ repo: w.repo, worktree: w.wt, sha: w.baseSha, baseSha: 'f'.repeat(40) });
+  assert.equal(lacking.ok && lacking.mergeBase, null, 'a base the repo has not got is unrecorded, not a refusal');
+  const bad = await checkoutAt({ repo: w.repo, worktree: w.wt, sha: 'e'.repeat(40) });
+  assert.equal(bad.ok, false);
+  assert.match(/** @type {any} */ (bad).reason, /\S/);
+});
+
+test('Part 2 item 2: one `checkout` call on the PR/range/branch path: checkoutPrHead has none of its own, checkoutAt holds the only one', () => {
+  const src = readFileSync(new URL('../src/prcheckout.js', import.meta.url), 'utf8');
+  assert.equal(src.match(/git\([^)]*, 'checkout'/g)?.length, 1, 'one git checkout call in the file');
+  const body = src.slice(src.indexOf('export async function checkoutPrHead'), src.indexOf('export async function prHeadIsAncestor'));
+  assert.ok(!/, 'checkout'/.test(body) && body.includes('checkoutAt('));
 });

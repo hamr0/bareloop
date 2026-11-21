@@ -55,8 +55,8 @@ test('urlCarriesLogin / maskUrl: a password or an https user is a login; a bare 
   assert.equal(maskUrl('https://u:p@github.com/o/r.git'), 'https://***@github.com/o/r.git');
 });
 
-test('the subcommand allowlist: only fetch|rev-parse|checkout|merge-base|update-ref|worktree; anything else throws before a process exists', () => {
-  assert.deepEqual([...PR_GIT_SUBCOMMANDS], ['fetch', 'rev-parse', 'checkout', 'merge-base', 'update-ref', 'worktree']);
+test('the subcommand allowlist: only fetch|rev-parse|checkout|merge-base|update-ref|worktree|diff (read-only; joined for Part 2 range review); anything else throws before a process exists', () => {
+  assert.deepEqual([...PR_GIT_SUBCOMMANDS], ['fetch', 'rev-parse', 'checkout', 'merge-base', 'update-ref', 'worktree', 'diff']);
   for (const sub of PR_GIT_SUBCOMMANDS) assert.equal(prGitArgs(sub, ['x']).includes(sub), true);
   for (const bad of ['push', 'remote', 'config', 'add', 'commit', 'reset', 'clone', 'pull', 'merge', 'tag', 'branch', '', 'fetch --all', 'FETCH']) assert.throws(() => prGitArgs(bad, []), /not one of the git calls/, bad);
   assert.deepEqual(prGitArgs('fetch', ['a'], ['k=v']).slice(0, 4), ['-c', 'core.hooksPath=/dev/null/bareloop-no-hooks', '-c', 'k=v']);
