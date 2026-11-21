@@ -11,6 +11,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SMOKE_STORE } from './kinds.js';
 import { redactSecrets } from './validate.js';
 import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
+import { DIFF_DIR } from './rangereview.js';
 
 const exec = promisify(execFile);
 export const CARRY_DIR = 'carry';
@@ -19,6 +20,9 @@ export const RED_MARKER = /Previous attempt failed (this step's checks|the verif
 
 const lineCount = (/** @type {string} */ s) => (s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0));
 const clip = (/** @type {unknown} */ s, n = 200) => redactSecrets(String(s ?? '')).slice(0, n);
+
+/** a file CODE wrote into the run's tree before any token (a range review's per-file diffs under `output/review-diff/`): an input, never a worker edit. The memo's EDITS owner (`workingEdits`) leaves it out; reads of it are still listed. @param {string} p */
+const isCodeWrittenInput = (p) => p === DIFF_DIR || p.startsWith(`${DIFF_DIR}/`);
 
 /**
  * The run's edits from the working tree against the start commit: tracked (git diff) plus untracked (no diff exists).
@@ -33,7 +37,7 @@ export async function workingEdits(workdir, base) {
   try {
     const { stdout: names } = await g(['diff', '--name-only', '-z', base]);
     for (const p of names.split('\0').filter(Boolean)) {
-      if (isCarryExcluded(p)) continue;
+      if (isCarryExcluded(p) || isCodeWrittenInput(p)) continue;
       const { stdout } = await g(['diff', '-U1', '--no-color', '--no-ext-diff', base, '--', `:(literal)${p}`]);
       if (/^(Binary files .* differ|GIT binary patch)$/m.test(stdout)) { out.push({ path: p, lines: 0, hunks: ['(binary file changed)'] }); continue; }
       const body = stdout.split('\n').filter((l) => !/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(l));
@@ -41,7 +45,7 @@ export async function workingEdits(workdir, base) {
     }
     const { stdout: un } = await g(['ls-files', '--others', '--exclude-standard', '-z']);
     for (const p of un.split('\0').filter(Boolean)) {
-      if (isCarryExcluded(p)) continue;
+      if (isCarryExcluded(p) || isCodeWrittenInput(p)) continue;
       try {
         const abs = resolve(workdir, p);
         if (!statSync(abs).isFile() || statSync(abs).size > 262144) continue;

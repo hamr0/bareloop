@@ -1,0 +1,12 @@
+== What earlier workers in this run did (facts from the record, written by code) ==
+Where earlier workers looked (2 files):
+- src/a.js (3 lines) · read 2x · lines 1-2
+- src/b.js (1 lines) · read 1x
+Edits made in this run:
+- output/steps/1.json: 1 lines changed
+    +{"results":[]}
+- src/a.js: 1 lines changed
+    @@ -2 +2,2 @@ export const a = 1;
+     export const b = 2;
+    +export const worker = true;
+    
