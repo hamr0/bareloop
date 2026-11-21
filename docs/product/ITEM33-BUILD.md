@@ -5537,3 +5537,47 @@ After the build: full suite (tell fwd), push, CI, one live round on the BUILT co
 names), then /code-review, /release.
 
 **Ruling 2026-11-21 (hamr, after his live walk): refusals at the draft.** His words: "a refusal for no branch shouldn't have started a run, a refusal for the job should be at draft, failure is red, refusal should be at the draft." His walk: a job with two tokens was refused in the panel only after "making worktree" and "installing packages (npm ci)"; a job `Review branch: no-such-branch for bugs` drafted a full card (AI calls spent) and on Sign & run made a run row that settled `refused before start` and shows red. Built: one helper `draftRefusal({repo, jobLines, review})` in `src/rangereview.js`, read by both doors (`src/panel/authorsession.js`, `src/authorrun.js`), refuses at the START of drafting at $0 (git only): more than one token, a range end or a branch that is not there. Before the worktree, `npm ci` and any model call. Two refusals need the review-or-change pick (an AI call) and stay right after it: a `range:` on a change job, and a review `branch:` with no `main` (a change job's `branch:` is legal without `main`). The pick is NOT moved earlier: it needs the provider, the repo kind read from the prepared copy and would spend a call on a draft the copy step may still refuse; reported to hamr as the one remaining late refusal. The run-start checks (`rangeAtRunStart`) stay as the safety net only. Scope: range/branch; PR refusals untouched. Ends may be tags, commit hashes (short or full) or branch names (pinned by test). The panel tip's second line is `range: v1.2..v1.3 or commit..commit   or   branch: my-feature`.
+
+### Result tab A + Job type everywhere (hamr 2026-11-21, "yes A, job type everywhere, write the spec")
+
+Why (his live walk): walk-branch (run mwqnkvx5) passed with 4 real findings in its .md report, but the Result tab said
+"no saved result to show". Cause: `getRunResult` (src/panel/server.js ~L1850) draws a shape line's grid only from a
+DELIVERED step file, and falls back to the judged file only on a red run. A repo review delivers only the .md, so a green
+review never shows its findings (Part 1, not Part 2). hamr: the Result must say clearly what the job was and how it ran,
+complement the .md, for review AND change, and must not need the run folder (it is cleaned up after Accept).
+
+Layout A (signed by hamr's pick, ASCII in the session): stacked sections, each folds open.
+- RESULT: status, money, time, saved file (as today).
+- THE JOB: first line `Job type: Review code` or `Job type: Change code`; then the numbered job lines with their `~`
+  rules; for a range/branch review one more line `covers A..B · N files changed` (N = files.txt count).
+- HOW IT RAN: the step chips the panel already draws (sign, name, ↻N retries), plus `N steps · N tries`.
+- Middle, by job type:
+  - Review: FINDINGS · N, with "each quote found in its file ✓" from the close's own cite row. One row per item:
+    file and the first line of its why; open it to see the full why and the quote. A failed item stays open.
+  - Change: WHAT CHANGED · N files +a −r, then the branch name. One row per file with +a −r; open it to see that file's
+    diff. Built from the existing `attempt-diff` records (`changedOf`), so it keeps the same "last edit only" and
+    "N lines cut" notes it has today.
+- CHECKS, NOT CHECKED, YOUR CALL, SAVED: as today (no row removed; every item the old view showed stays).
+
+No run folder needed:
+- Review findings: when the close passes a review line, code writes ONE report-only spine record
+  (`review-findings`: line, items {file, quote, why}; quote/why capped like attempt-diff, secrets masked with the one
+  inventory). The Result tab reads that record. It is not a verdict, and nothing grades from it. An older run without
+  the record falls back to today's path.
+- Change diff: from the spine's attempt-diff records (already there). The branch line uses `workOf`, which already
+  says when the branch is gone.
+
+Job type everywhere: ONE code-owned word pair, from the one source table (src/sourcedefaults.js, which already words
+"review (reads the code, changes none)"), read by every view: the draft card, the draft readout, the Job tab, the Result
+tab, the Audit header. Rubric (non-repo) jobs show no Job type line. No view spells it on its own.
+
+Tests (fail-first, real shapes):
+1. walk-branch's real record shape: a green repo review shows its N findings with no step file on disk.
+2. The `review-findings` record is written once per passed review line, capped and masked; a red line writes none.
+3. A change job's WHAT CHANGED shows per-file +a −r equal to `changedOf`'s totals.
+4. The Job type line is byte-equal on card, readout, Job tab, Result and Audit (one owner); absent on a rubric job.
+5. Old runs (no record) still render as today.
+Own screenshots of A for one review run and one change run, against the ASCII, before calling it done; phone width is
+hamr's DevTools. One live review run after the build to see it end to end.
+Not in this build: findings for a red run beyond today's judged-file path; a diff view for review jobs (the range's
+diffs stay as files); any change to verdicts, caps or the close.
