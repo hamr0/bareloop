@@ -32,25 +32,33 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { 
 async function assertGone(dir, what) {
   assert.ok(existsSync(join(dir, 'pids.json')), `the fake suite ran and wrote its pids (${what})`);
   const pids = JSON.parse(readFileSync(join(dir, 'pids.json'), 'utf8'));
-  for (let i = 0; i < 40 && pids.some(alive); i += 1) await new Promise((r) => { setTimeout(r, 50); });
+  for (let i = 0; i < 200 && pids.some(alive); i += 1) await new Promise((r) => { setTimeout(r, 50); });
   const left = pids.filter(alive);
   for (const p of left) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } }
   assert.deepEqual(left, [], `${what}: these test processes were still running after the stop`);
 }
+/** wait (a generous deadline, never a fixed delay) until the fake suite has started and written its pids: under load node can take seconds to boot */
+async function suiteStarted(dir, ms = 30_000) {
+  const t0 = Date.now();
+  while (!existsSync(join(dir, 'pids.json')) && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 25); });
+  return existsSync(join(dir, 'pids.json'));
+}
+/** the injected limit: long enough for node to boot and the suite to write its pids even on a loaded machine, far under the suite's own 60 s */
+const LIMIT_MS = 6000;
 const SUITE = { cmd: process.execPath, args: ['suite.mjs'], expectExit: 0 };
 
 test('at the limit the whole group is killed - a child that ignores SIGTERM too', async (t) => {
   const r = repo(t);
-  const row = await runStage({ name: 'tests', kind: 'command-exit', params: SUITE }, { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: 600 });
+  const row = await runStage({ name: 'tests', kind: 'command-exit', params: SUITE }, { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: LIMIT_MS });
   assert.equal(row.verdict, 'instrument-stop');
-  assert.match(row.gapLines.join('\n'), /did not finish inside 600ms/);
+  assert.match(row.gapLines.join('\n'), new RegExp(`did not finish inside ${LIMIT_MS}ms`));
   await assertGone(r.dir, 'limit');
 });
 
 test('count-not-worse: its measuring command is killed whole at the limit too', async (t) => {
   const r = repo(t);
   const row = await runStage({ name: 'count', kind: 'count-not-worse', params: { ...SUITE, parser: { lineMatch: 'total (\\d+)', capture: 1 }, scope: {}, direction: 'lower-is-better', baseline: 0 } },
-    { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: 600 });
+    { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: LIMIT_MS });
   assert.equal(row.verdict, 'instrument-stop');
   await assertGone(r.dir, 'count-not-worse');
 });
@@ -58,7 +66,8 @@ test('count-not-worse: its measuring command is killed whole at the limit too', 
 test('an abort signal (Abandon, Stop) kills the whole group at once, and the stop says it was stopped, not timed out', async (t) => {
   const r = repo(t);
   const ac = new AbortController();
-  setTimeout(() => ac.abort(), 500);
+  // abort only once the suite is really running (its pids on disk), never on a fixed delay
+  void suiteStarted(r.dir).then(() => ac.abort());
   const t0 = Date.now();
   const row = await runStage({ name: 'tests', kind: 'command-exit', params: SUITE }, { workdir: r.dir, seedRef: r.seed, gapKeep: '', signal: ac.signal });
   assert.ok(Date.now() - t0 < 10_000, 'it did not wait for the limit');
@@ -82,8 +91,7 @@ test('the process dying (a watchdog kill, ^C) takes the box with it: the test pr
     import { seedRead } from ${JSON.stringify(new URL('../src/kinds.js', import.meta.url).href)};
     await seedRead({ stages: [{ name: 'tests', kind: 'command-exit', params: ${JSON.stringify(SUITE)} }] }, { workdir: ${JSON.stringify(r.dir)}, seedRef: ${JSON.stringify(r.seed)}, gapKeep: '' });
   `], { stdio: 'ignore' });
-  for (let i = 0; i < 100 && !existsSync(join(r.dir, 'pids.json')); i += 1) await new Promise((res) => { setTimeout(res, 50); });
-  assert.ok(existsSync(join(r.dir, 'pids.json')), 'the owner started the suite');
+  assert.ok(await suiteStarted(r.dir), 'the owner started the suite');
   owner.kill('SIGTERM');
   await new Promise((res) => { owner.on('exit', res); });
   await assertGone(r.dir, 'owner killed');
@@ -245,7 +253,7 @@ test('runJob: a Stop during the FINAL declared close kills the check whole and e
 
 test('runJob: a check killed by its own TIMEOUT in the final close is NOT a stop - it keeps the close-red routing', async (t) => {
   const w = finalCloseWorld(t);
-  const outcome = await runFinal(w, { closeTimeoutMs: 1500 });
+  const outcome = await runFinal(w, { closeTimeoutMs: LIMIT_MS });
   const events = readSpine(w.spine);
   await assertGone(w.dir, 'final close timeout');
   assert.equal(outcome, 'close-red');
