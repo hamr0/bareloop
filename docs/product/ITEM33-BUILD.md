@@ -5482,3 +5482,56 @@ keyed by it. Nothing guesses.
    flag-threaded commits f05f9308..faf1fbc1 are NOT carried; their tests are reused only where they still fit the
    clean design, each rewritten to it. This spec addendum is committed first on the moved branch.
    Hiccup rule (hamr 2026-11-20): any problem in the build stops and comes back to hamr with facts and options.
+
+### Part 2 build spec: review by git range or branch (hamr 2026-11-21, "go"; POCs PASS)
+
+Evidence (scratch, not shipped): Part A $0 A1-A9 PASS; round B FAIL (quoted repo files, never a .diff), round C FAIL
+(big range not finished: no early write; a doomed "verify" step), write-often planner probe PASS (8/10 vs 4/10, $0.054),
+live round W PASS 4/4 green on v0.60.0..v0.61.0 (79 files), $0.52. Plans and results:
+`.claude/scratch/poc-range-plan.md`, `.claude/scratch/poc-range-write-often-plan.md`, `.claude/scratch/poc-range/RESULTS.md`.
+The spike (`poc-range/engine-e`, 8 files, ~+210) is a reference only; the build is a rewrite, each item one commit with
+a fail-first test on the real shape (real git on a real repo copy, never an authored fixture for diffs).
+
+Rulings (hamr 2026-11-20/21): a token lives in a job STEP line, exact typed `range: A..B` or `branch: NAME` (local
+branches only); ONE token per job, more = plain-words refusal; `range:` = review only (a change job with it is refused
+right after the review pick, before any run spend); `branch:` on a review = merge-base(main, NAME)..NAME (no `main` =
+refusal); `branch:` on a change job = the work branch starts at NAME's tip; a new range = a normal Reuse (fresh draft).
+Diffs live in `output/review-diff/` (files.txt + `<path>.diff`), written by code, never committed, never memo edits.
+
+Items (owner -> caller, each named):
+1. `src/rangereview.js` (new, one owner): `rangeTokens(jobLines)` (all exact tokens, every line), `manyTokensRefusal`,
+   `changeRefusal`, `resolveRange({repo, token})` (ends exist; branch -> merge-base..tip; plain-words refusals ending
+   "Nothing spent."), `writeRangeDiffs({repo, worktree, a, b})` (files.txt == `git diff --name-only`, each .diff ==
+   `git diff A..B -- path`, byte for byte), `rangeNoteOfSpec(spec)` (null without a token), `DIFF_DIR`.
+2. `src/prcheckout.js`: split the PR head checkout's last step into ONE `checkoutAt(sha)`; PR, range and branch call it.
+   `diff` joins the allow-listed read-only git (stripped env, no hooks); the `pr-checkout-pure` allow-list pin is
+   updated with it (the accepted widening).
+3. `src/reviewpick.js` `chooseRoad`: returns `refusal` for many tokens (before the pick) and for `range:` on a change
+   pick. Callers, BOTH doors: `src/panel/authorsession.js` (beside the other draft refusals) and `src/authorrun.js`
+   (the CLI door, same words). The spike wired the panel only.
+4. `src/userrun.js` run start, before the seed is read and before any token: a review range/branch puts the worktree
+   at the end/tip via checkoutAt (SEED = that sha); a change `branch:` starts the work branch at the tip; diffs are
+   written after the cold reset; a refusal settles the row at $0, exit 2, like the PR refusals.
+5. Resume of a range run (the spike did NOT handle it: a resume would hit the moved-HEAD gate): the run records the
+   range ends + end sha on its manifest; a resume returns to that sha and rewrites the diffs; a gone end = plain-words
+   stop. Fail-first test: a stopped range run resumes at the recorded end, diffs byte-identical.
+6. `src/planrun.js` planPrompt: one planner block from `rangeNoteOfSpec`, only with a token, words FROZEN from round W:
+   "This review covers <A..B>. The changed files are listed in output/review-diff/files.txt; each file's changes are in
+   output/review-diff/<path>.diff. Plan ONE step that reads and writes: write output/steps/1.json as soon as you have
+   your first finding, then add each new finding to it as you read. Do not plan a separate step that only re-checks
+   the answer." (`<A..B>` = the typed range, or `main..NAME` for a branch.) A change `branch:` job gets no block.
+7. `src/carrystore.js` `workingEdits`: code-written files under DIFF_DIR are inputs, never edits (both loops); reads of
+   them still listed. Test: round C pair 3's real record (committed as a fixture under tests/fixtures/) gives reads
+   listed and no review-diff edit; the old code gives 80 edits (fail-first).
+8. `src/repocite.js`: an item may name `output/review-diff/<path>.diff` of a file in files.txt; the cite reads only
+   named files (5 MB cap unchanged); a quote of a removed line passes through its .diff; one changed word reds.
+9. Panel job box grey sample text shows one `Review range:` line (the signed spec's ruling).
+10. `bareloop.context.md` + CHANGELOG [Unreleased]: the token syntax, the refusals, where diffs live.
+
+Invariants (each a test): code-close prompts, no-token review prompts and their signed rows byte-identical to the
+parent commit (golden captured at the parent, as 771e1aec did); non-range memos byte-identical.
+Not in this build: a final review step (parked; needs a "may change nothing" exit, arbiter territory); diff quotes are
+not forced (round W: 0 of 4 quoted a .diff; removed-line quotes are test-proven only, not seen live); remote or tag
+branches; phone width (hamr's DevTools).
+After the build: full suite (tell fwd), push, CI, one live round on the BUILT code (same job, frozen bar W, fresh
+names), then /code-review, /release.
