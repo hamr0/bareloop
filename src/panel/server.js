@@ -39,7 +39,8 @@ import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
-import { jobTypeLine } from '../sourcedefaults.js';
+import { jobTypeLine, sourceOf } from '../sourcedefaults.js';
+import { rangeTokens } from '../rangereview.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
@@ -1534,6 +1535,22 @@ function changedOf(records, writeScope) {
       }
     }
   }
+  // Result tab A: ONE row per file, +a −r summed over every edit (so the rows add up to the header's numbers), the diff of the file's LAST edit
+  /** @type {Map<string, {path: string, plus: number, minus: number, diff: string, cutNote: string|null, binary: boolean}>} */
+  const byPath = new Map();
+  for (const e of edits) {
+    for (const f of e.files) {
+      const row = byPath.get(f.path) ?? { path: f.path, plus: 0, minus: 0, diff: '', cutNote: null, binary: false };
+      for (const line of f.diff.split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) row.plus += 1;
+        else if (line.startsWith('-') && !line.startsWith('---')) row.minus += 1;
+      }
+      row.diff = f.diff;
+      row.cutNote = f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)`;
+      byPath.set(f.path, row);
+    }
+    for (const b of e.binary) if (!byPath.has(b)) byPath.set(b, { path: b, plus: 0, minus: 0, diff: '', cutNote: null, binary: true });
+  }
   const shown = paths.length > 4 ? `${paths.slice(0, 4).join(', ')} and ${paths.length - 4} more` : paths.join(', ');
   const head = `${paths.length} file${paths.length === 1 ? '' : 's'} · ${shown} · +${plus} −${minus} lines over ${edits.length} edit${edits.length === 1 ? '' : 's'}`;
   const last = edits[edits.length - 1];
@@ -1554,7 +1571,7 @@ function changedOf(records, writeScope) {
       : `only ${allowed} was allowed, but the run wrote ${outside.join(', ')}.`;
   }
   return {
-    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut,
+    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut, byFile: [...byPath.values()],
     last: { files: last.files.map((f) => ({ path: f.path, diff: f.diff })), note: note === '' ? null : `...(${note})` },
     all: edits.map((e) => ({ n: e.n, step: e.step, files: e.files.map((f) => ({ path: f.path, diff: f.diff, cutNote: f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)` })) })),
     foldWords: `show every edit of the run (${edits.length})`,
@@ -1690,6 +1707,58 @@ function ticketOfStart(start) {
   return { number: t.number, title: typeof t.title === 'string' ? t.title : null, url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null };
 }
 
+/** the words of the FINDINGS header's proof line, code-owned (the close's own cite row says each quote was found) */
+const RESULT_FINDINGS_CITE = 'each quote found in its file';
+
+/**
+ * Result tab A, FINDINGS: what the close passed, from the run's own `review-findings` records (src/reviewfindings.js; report only), never from the run folder.
+ * One entry per item in line order; `first` = the first line of its why. `cite` = the words of the close's own cite row when EVERY review line's cite row passed, else null. `null` when the run has no record (an older run, a red run): the page then draws today's tab.
+ * @param {any[]} records @param {any} spec
+ */
+function findingsOf(records, spec) {
+  /** @type {Map<number, any>} */
+  const byLine = new Map();
+  for (const r of records) if (r && r.type === 'review-findings' && Number.isInteger(r.line) && Array.isArray(r.items)) byLine.set(r.line, r);
+  if (byLine.size === 0) return null;
+  const lines = [...byLine.keys()].sort((a, b) => a - b);
+  const rowRes = rowResultsFromRecords(records, spec).results;
+  const items = lines.flatMap((n) => byLine.get(n).items.filter((/** @type {any} */ x) => x && typeof x.file === 'string').map((/** @type {any} */ x) => ({
+    line: n, file: x.file, quote: typeof x.quote === 'string' ? x.quote : '', why: typeof x.why === 'string' ? x.why : '', first: (typeof x.why === 'string' ? x.why : '').split('\n')[0],
+  })));
+  const total = lines.reduce((a, n) => a + (Number.isInteger(byLine.get(n).total) ? byLine.get(n).total : byLine.get(n).items.length), 0);
+  const cited = lines.every((n) => rowRes.get(`L${n}.$cited`)?.result === 'passed');
+  return { total, items, cut: total > items.length, cite: cited ? RESULT_FINDINGS_CITE : null };
+}
+
+/**
+ * Result tab A, THE JOB's extra line for a range or branch review: `covers A..B · N files changed`. The span is the typed one (a branch is diffed against main) when the signed job names it, else the run's recorded
+ * ends (short shas); the file count is the review-findings record's (code's own files.txt, read when the line passed). `null` when the run recorded no range on its manifest.
+ * @param {{ spine: string }} row @param {any} spec @param {any[]} records
+ */
+function coversOf(row, spec, records) {
+  const near = sourceNearSpine(row.spine);
+  let range = null;
+  if (near.sourceJsonPath) {
+    try { range = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8'))?.range ?? null; } catch { range = null; }
+  }
+  if (!range || typeof range.a !== 'string' || typeof range.b !== 'string') return null;
+  const t = rangeTokens(spec?.jobLines)[0];
+  const span = t ? (t.kind === 'range' ? `${t.a}..${t.b}` : `main..${t.name}`) : `${range.a.slice(0, 7)}..${range.b.slice(0, 7)}`;
+  const n = records.findLast((r) => r && r.type === 'review-findings' && Number.isInteger(r.files))?.files;
+  return `covers ${span}${Number.isInteger(n) ? ` \u00B7 ${n} file${n === 1 ? '' : 's'} changed` : ''}`;
+}
+
+/**
+ * Result tab A, HOW IT RAN: the step count and the try count in words, from the run's own step list (the page draws the chips from the same parts the Run tab's map does). `null` when no step ran.
+ * @param {any} detail the run's detail body
+ */
+function ranOf(detail) {
+  const steps = Array.isArray(detail?.steps) ? detail.steps.filter((/** @type {any} */ s) => s && s.synthetic !== true) : [];
+  if (steps.length === 0) return null;
+  const tries = steps.reduce((/** @type {number} */ a, /** @type {any} */ s) => a + Math.max(1, Array.isArray(s.attempts) ? s.attempts.length : 1), 0);
+  return { steps: steps.length, tries, line: `${steps.length} step${steps.length === 1 ? '' : 's'} \u00B7 ${tries} ${tries === 1 ? 'try' : 'tries'}` };
+}
+
 /**
  * The generic Result tab (R7b item 4; hamr signed the mockup 2026-11-07) for a run that ENDED and is not a rubric job: five boxes of facts read
  * from the run's own records, plus the ticket a ticket job read. The page draws it; it decides nothing.
@@ -1710,7 +1779,8 @@ function genericResultOf(runid, row, records, spec, opts) {
     runid,
     kind: 'generic',
     ...jobTypePart(spec),
-    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
+    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope, lines: Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string').map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rules: lineRules(l) })) : [] },
+    ran: ranOf(detail),
     ticket,
     changed: changedOf(records, writeScope),
     checks: repoRowChecks(checksOf(records, spec), row, records, spec, opts),
@@ -1946,9 +2016,14 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   }
   // the distinct web pages the results read, in line order: ONE = the page draws a single link at the top, 2+ = each line carries its own `page`
   const pages = [...new Set(lines.map((/** @type {any} */ l) => l.page).filter((/** @type {any} */ u) => typeof u === 'string'))];
+  // Result tab A (hamr 2026-11-21): what the run was and how it ran, and, for a review that passed, its findings from the spine's own record (no run folder)
+  const findings = sourceOf(spec?.closeDecl) === 'repo' ? findingsOf(records, spec) : null;
+  const covers = findings === null ? null : coversOf(row, spec, records);
   return {
     runid,
     ...jobTypePart(spec),
+    ...(findings === null ? {} : { ran: ranOf(getRunDetailBody(runid, opts)), findings }),
+    ...(covers === null ? {} : { covers }),
     lines,
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
