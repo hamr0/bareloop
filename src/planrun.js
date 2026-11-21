@@ -56,6 +56,7 @@ import {
   REVIEW_DOOR, doorOpens, mechanicalStages,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
+import { rangeNoteOfSpec } from './rangereview.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
 import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { isRateLimited, rateLimitWaitMs, statedWaitMs } from './ratelimit.js';
@@ -355,6 +356,12 @@ function hintsBlock(text) {
 
 /** The seed note (src/seednote.js), verbatim, in the planner's first-draft prompt; absent or empty renders '' (byte-identical to the prompt without it). */
 function seedNoteBlock(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  return `\n${text}\n`;
+}
+
+/** A range/branch review's block (src/rangereview.js `rangeNoteOfSpec`, words frozen from live round W), verbatim, after the seed note; absent or empty renders '' (byte-identical to the prompt without it). */
+function rangeNoteBlock(text) {
   if (typeof text !== 'string' || !text.trim()) return '';
   return `\n${text}\n`;
 }
@@ -742,8 +749,9 @@ THIS JOB'S OUTPUT IS ITS ANSWER FILES. The input is only READ, never written: no
  * @param {string|null} [hints] the cross-run learnings block (src/learn.js `renderHints`), verbatim; null/empty
  *   renders byte-identically to the prompt without it. Only ever passed for the draft and the first replan.
  * @param {string|null} [seedNote] the seed note (src/seednote.js), verbatim, after the hints; null/empty renders byte-identically to the prompt without it. First draft only.
+ * @param {string|null} [rangeNote] a range/branch review's block (src/rangereview.js `rangeNoteOfSpec`), verbatim, after the seed note; null renders byte-identically to the prompt without it. Every phase.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null, rangeNote = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -848,7 +856,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}${asSeenBlock(closeStages)}
-${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}${rangeNoteBlock(rangeNote)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -3352,7 +3360,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       replanCut = false;
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null, rangeNoteOfSpec(job)), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
         return '';
