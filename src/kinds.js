@@ -264,7 +264,7 @@ export function mechanicalStages(stages) {
  *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null}} Ctx
+ *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
  *   `humanRuling` is the SIGNER's answer at a hitl pause, carried in from the
@@ -276,6 +276,7 @@ export function mechanicalStages(stages) {
  *   `runJob`'s `emit` (the library reports, the shell prints).
  *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
  *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
+ *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
@@ -1279,20 +1280,30 @@ export function effectiveTimeoutMs(declared, ctx) {
  */
 async function runCmd(p, cwd, ctx) {
   const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
-  const r = await sh(p.cmd, p.args ?? [], {
-    cwd,
-    env: p.env ?? {},
-    timeoutMs: effectiveTimeoutMs(p.timeoutMs, ctx),
-    maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
-    onTick: ctx.onTick ?? null,
-    tickAfterMs: ctx.tickAfterMs,
-    tickEveryMs: ctx.tickEveryMs,
-    knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
-    group: true,
-    signal: ctx.signal ?? null,
-  });
-  if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
-  return r;
+  const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
+  const run = async () => {
+    const r = await sh(p.cmd, p.args ?? [], {
+      cwd,
+      env: p.env ?? {},
+      timeoutMs,
+      maxBuffer: ctx.maxBuffer ?? MAX_BUFFER,
+      onTick: ctx.onTick ?? null,
+      tickAfterMs: ctx.tickAfterMs,
+      tickEveryMs: ctx.tickEveryMs,
+      knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
+      group: true,
+      signal: ctx.signal ?? null,
+    });
+    if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
+    return r;
+  };
+  // ONCE PER CHECK PASS (hamr 2026-11-21): every stage reading the same command (same args, env, directory and limit) shares one run. The memo
+  // belongs to ONE pass (a seed read, a close run), so the next pass reads the tree again; nothing is shared across a tree change.
+  if (!ctx.cmdMemo) return run();
+  const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
+  let pending = ctx.cmdMemo.get(memoKey);
+  if (!pending) { pending = run(); ctx.cmdMemo.set(memoKey, pending); }
+  return pending;
 }
 
 /** @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>} */
@@ -1913,7 +1924,7 @@ async function runStageIn(stage, ctx) {
 export async function seedRead(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
-  const inner = { ...ctx, seedTrees, ...(declaration?.source ? { source: declaration.source } : {}) };
+  const inner = { ...ctx, seedTrees, cmdMemo: new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
   /** AFTER the stage completes, never before: a line saying a stage STARTED and
    * a line saying what it RETURNED are two different facts, and only the second
    * one can carry a verdict. The duration is measured around the call rather
@@ -1976,7 +1987,7 @@ export async function runDeclaredClose(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
   // the close's SIGNED source (`closeDecl.source`, src/sourcedefaults.js) rides into every stage; a stage reads it, never guesses it from the tree
-  const inner = { ...ctx, seedTrees, ...(declaration?.source ? { source: declaration.source } : {}) };
+  const inner = { ...ctx, seedTrees, cmdMemo: new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
   try {
     /** @type {StageResult[]} */
     const stages = [];

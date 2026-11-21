@@ -605,6 +605,8 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     ...(tickEveryMs !== undefined ? { tickEveryMs } : {}),
     ...(cmdTimes instanceof Map ? { cmdTimes } : {}),
     ...(signal ? { signal } : {}),
+    // ONE close run is ONE check pass: every stage reading the same command shares its single run (src/kinds.js `runCmd`)
+    cmdMemo: new Map(),
     seedTrees,
   };
   try {
