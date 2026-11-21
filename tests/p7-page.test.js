@@ -243,7 +243,7 @@ test('Part 2 item 9: the page carries the range/branch tip once, under The job, 
   assert.equal((PAGE.match(/<div[^>]*id="jf-range-tip"/g) || []).length, 1);
   const tip = PAGE.match(/<div class="hint" id="jf-range-tip"[^>]*>([\s\S]*?)<\/div>/);
   assert.ok(tip, 'tip is a .hint div');
-  assert.equal(tip[1].replace(/<br>/g, '\n').replace(/&nbsp;/g, ' ').trim(), 'Review only some changes? Add a line:\nrange: v1.2..v1.3   or   branch: my-feature');
+  assert.equal(tip[1].replace(/<br>/g, '\n').replace(/&nbsp;/g, ' ').trim(), 'Review only some changes? Add a line:\nrange: v1.2..v1.3 or commit..commit   or   branch: my-feature');
   assert.ok(PAGE.indexOf('id="jf-job-mir"') < PAGE.indexOf('id="jf-range-tip"') && PAGE.indexOf('id="jf-range-tip"') < PAGE.indexOf('for="jf-inputs"'), 'under The job box, before Inputs');
   assert.match(PAGE, /deterministic: "Fix the failing date tests in src\/date\.js\\n~ don't edit any test file\\nMake npm test pass"/);
 });
