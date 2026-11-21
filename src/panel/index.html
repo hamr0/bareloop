@@ -984,6 +984,7 @@
                 <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
               </div>
+              <div class="hint" id="jf-range-tip" data-testid="jf-range-tip">Review only some changes? Add a line:<br>range: v1.2..v1.3&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;branch: my-feature</div>
             </div>
             <div class="field">
               <label for="jf-inputs">Inputs <span class="req">required</span></label>
@@ -6361,6 +6362,8 @@
     function setJobPlaceholders(v){
       document.getElementById("jf-job").setAttribute("placeholder", JOB_PLACEHOLDERS[v === "rubric" ? "rubric" : "deterministic"]);
       document.getElementById("jf-inputs").setAttribute("placeholder", INPUTS_PLACEHOLDER);
+      // Part 2 item 9: the range/branch tip is for Deterministic (repo) jobs only
+      document.getElementById("jf-range-tip").hidden = (v === "rubric");
     }
     setJobPlaceholders("deterministic");
     // grow a text box with its text (a few rows, then it scrolls inside); ONE function for the ask box and the card boxes.
