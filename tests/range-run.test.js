@@ -3,8 +3,11 @@
 import assert from 'node:assert/strict';
 import { test, after } from 'node:test';
 import path from 'node:path';
-import { rangeSession, changeSession, runIt, cleanup, ANSWER_AT_END } from './range-run-world.mjs';
-import { gitInPatient } from './helpers.js';
+import { writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { rangeSession, changeSession, runIt, cleanup, tmp, ANSWER_AT_END } from './range-run-world.mjs';
+import { gitInPatient, reply } from './helpers.js';
+import { readRunList } from '../src/runlist.js';
+import { stopFilePath } from '../src/legs.js';
 
 after(cleanup);
 
@@ -41,7 +44,7 @@ test('a branch review is diffed against main: merge-base(main, feat)..feat-tip (
   assert.ok(seen.includes('+export const a = 3;') && seen.includes('-export const a = 1;'), 'the .diff is main..feat tip (a 1 to 3), not the last commit alone');
 });
 
-test('refusals at $0, exit 2, in plain words, the provider never called: a missing end, a missing branch, and a range on a change spec', async (t) => {
+test('refusals at $0, exit 2, in plain words, the provider never called: a missing end and a missing branch', async (t) => {
   const bad = await rangeSession(t, { lineText: 'Review range: v0..v9.9.9 for bugs' });
   const r1 = await runIt(bad, { script: [] });
   assert.equal(r1.rc, 2, r1.text);
@@ -67,4 +70,51 @@ test('a CHANGE job with `branch: feat`: the work branch starts at feat\'s tip (t
   const rr = await runIt(g, { script: [] });
   assert.equal(rr.rc, 2, rr.text);
   assert.match(rr.err, /Line 1 names a range to review, but this job changes code\. A range can only be reviewed, not changed\. Write it as a review, or take the range out\. Nothing spent\./);
+});
+
+test('RESUME of a stopped range run (Part 2 item 5): it returns to the recorded end (no moved-HEAD refusal), rewrites the diffs byte for byte, and finishes green; a gone end is a plain-words stop', async (t) => {
+  const f = await rangeSession(t, { lineText: 'Review range: v0..v1 for bugs' });
+  const home = tmp('range-resume-home-');
+  let calls = 0;
+  /** @type {string|null} */ let spine = null;
+  const leg1 = { name: 'queue', async generate() { calls += 1; if (calls === 3) { spine = readRunList({ home }).rows[0].spine; writeFileSync(stopFilePath(spine), ''); } return reply(calls === 1 ? { text: 'scout' } : calls === 2 ? { text: f.plan } : { text: 'thinking' }); } };
+  const r1 = await runIt(f, { provider: leg1, script: [], home });
+  assert.match(r1.out, /outcome\s+stopped/, r1.text);
+  assert.ok(spine);
+  const m = JSON.parse(readFileSync(path.join(f.into, 'source.json'), 'utf8'));
+  assert.deepEqual([m.seed, m.range], [f.c1, { a: f.c0, b: f.c1 }], 'the run recorded the range ends and the end sha');
+  const dir = path.join(f.prep.tree, 'output', 'review-diff');
+  assert.equal(readFileSync(path.join(dir, 'src', 'a.js.diff'), 'utf8'), gitInPatient(f.repo, ['diff', `${f.c0}..${f.c1}`, '--', 'src/a.js']));
+  // the diffs are lost / damaged between the legs
+  writeFileSync(path.join(dir, 'src', 'a.js.diff'), 'DAMAGED');
+  rmSync(path.join(dir, 'files.txt'));
+  const r2 = await runIt(f, { argv: ['--resume', /** @type {string} */ (spine)], home, script: [
+    { text: 'scout' }, { text: f.plan },
+    { toolCalls: [{ id: 'r2', name: 'shell_read', arguments: { path: path.join(dir, 'src', 'a.js.diff') } }] },
+    { toolCalls: [{ id: 'w1', name: 'shell_write', arguments: { path: path.join(f.prep.tree, 'output', 'steps', '1.json'), content: JSON.stringify(ANSWER_AT_END) } }] },
+    { text: 'wrote' },
+  ] });
+  assert.doesNotMatch(r2.err, /PATIENT REFUSED/, r2.text);
+  assert.match(r2.out, /outcome\s+green/, `${r2.text}\n${JSON.stringify(r2.spine.filter((e) => /red|plan/.test(e.type)))}`);
+  const seen = JSON.stringify(r2.provider.messagesLog.at(-1));
+  assert.ok(seen.includes('+export const a = 2;') && !seen.includes('DAMAGED'), 'the diff the resumed worker read is the rewritten one');
+  assert.equal(r2.provider.messagesLog.length > 0, true);
+});
+
+test('RESUME with a gone end: a plain-words stop, no worker call (a recorded end that is no longer a commit of the repo)', async (t) => {
+  const f = await rangeSession(t, { lineText: 'Review range: v0..v1 for bugs' });
+  const home = tmp('range-resume-home-');
+  let calls = 0;
+  /** @type {string|null} */ let spine = null;
+  const leg1 = { name: 'queue', async generate() { calls += 1; if (calls === 3) { spine = readRunList({ home }).rows[0].spine; writeFileSync(stopFilePath(spine), ''); } return reply(calls === 1 ? { text: 'scout' } : calls === 2 ? { text: f.plan } : { text: 'thinking' }); } };
+  await runIt(f, { provider: leg1, script: [], home });
+  assert.ok(spine);
+  const mf = path.join(f.into, 'source.json');
+  const m = JSON.parse(readFileSync(mf, 'utf8'));
+  m.range.a = 'a'.repeat(40);
+  writeFileSync(mf, JSON.stringify(m));
+  const r2 = await runIt(f, { argv: ['--resume', /** @type {string} */ (spine)], home, script: [{ text: 'never' }] });
+  assert.equal(r2.rc, 2, r2.text);
+  assert.match(r2.err, /Git could not list the changed files|is not a commit/);
+  assert.equal(r2.provider.messagesLog.length, 0, 'the provider was never called');
 });
