@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { spawnClose } from './ralph.js';
+import { readSourceManifest } from './source.js';
 import { prGitArgs, prGitEnv, firstReason, checkoutAt } from './prcheckout.js';
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -159,5 +160,13 @@ export function recordRangeOnManifest(into, r) {
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-/** the recorded range ends of a run's manifest (null when it names none) @param {any} manifest @returns {{a: string, b: string}|null} */
-export const rangeOfManifest = (manifest) => (SHA.test(String(manifest?.range?.a)) && SHA.test(String(manifest?.range?.b)) ? { a: manifest.range.a, b: manifest.range.b } : null);
+/**
+ * What a started range review recorded on its run's `source.json`: the person's repo and the range ends. null when the run is not a range review (nothing to rewrite).
+ * @param {string} into the prepared copy's folder @returns {Promise<{repo: string, range: {a: string, b: string}}|null>}
+ */
+export async function recordedRange(into) {
+  const m = await readSourceManifest(into);
+  if (m.stop !== null || !m.present) return null;
+  const { range, repo } = /** @type {any} */ (m.manifest);
+  return typeof repo === 'string' && SHA.test(String(range?.a)) && SHA.test(String(range?.b)) ? { repo, range: { a: range.a, b: range.b } } : null;
+}

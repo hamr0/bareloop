@@ -39,7 +39,7 @@ import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
 import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
-import { rangeAtRunStart, recordRangeOnManifest, rangeOfManifest, writeRangeDiffs } from './rangereview.js';
+import { rangeAtRunStart, recordRangeOnManifest, recordedRange, writeRangeDiffs } from './rangereview.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
@@ -1744,11 +1744,9 @@ async function execute(ctx) {
   }
   // Part 2: a review's per-file diffs (`output/review-diff/`) are written by CODE after the cold reset (which cleans untracked files), before any token: a fresh run, a rerun and a resume all stand on the manifest's recorded ends
   {
-    const m = await readSourceManifest(into);
-    const range = m.stop === null && m.present ? rangeOfManifest(m.manifest) : null;
-    const repoRoot = m.stop === null && m.present && typeof m.manifest?.repo === 'string' ? m.manifest.repo : null;
-    if (range !== null && repoRoot !== null) {
-      const wrote = await writeRangeDiffs({ repo: repoRoot, worktree: wd, a: range.a, b: range.b });
+    const rec = await recordedRange(into);
+    if (rec !== null) {
+      const wrote = await writeRangeDiffs({ repo: rec.repo, worktree: wd, a: rec.range.a, b: rec.range.b });
       if (!wrote.ok) {
         err(`${SELECTOR}: ${wrote.error}`);
         if (!dead) settleRefused(wrote.error);
