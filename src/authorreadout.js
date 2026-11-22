@@ -476,6 +476,11 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
     const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'look-asks-too-many')?.detail;
     if (detail) return `${redactSecrets(String(detail))}\nSpent so far: ${spent ?? 'unknown'}.`;
   }
+  // the Destination check's own stop (two wrong answers): the code's own sentence is the whole message
+  if (stop === 'destination-stop') {
+    const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'destination-stop')?.detail;
+    if (detail) return `${redactSecrets(String(detail))}\nSpent so far: ${spent ?? 'unknown'}.`;
+  }
   const heads = STOP_HEADS;
   const redList = Array.isArray(reds) ? reds : [];
   // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a

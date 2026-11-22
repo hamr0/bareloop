@@ -130,11 +130,17 @@ test('wiring: "no" keeps Destination as it is and drafting goes on with the old 
   assert.equal(s.state.card.destination, 'docs/');
 });
 
-test('wiring: a file already inside Destination, a made-up file, or a line that does not hold the path asks NOTHING', async (t) => {
-  for (const [destination, replyPoints] of [['src/', [point]], ['docs/', [{ ...point, file: 'src/ghost.js' }]], ['docs/', [{ ...point, line: 2 }]], ['docs/', []]]) {
-    const { s, got } = await session(t, { destination, replyPoints });
-    assert.deepEqual(await signedFence(s, got), [destination]);
+test('wiring: a file already inside Destination asks NOTHING; a made-up file, or a line that does not hold the path, is no point (the file question) and, with nothing named and Destination holding none of the scout\'s code, the CLOSED Destination question (hamr 2026-11-22) comes instead', async (t) => {
+  {
+    const { s, got } = await session(t, { destination: 'src/', replyPoints: [point] });
+    assert.deepEqual(await signedFence(s, got), ['src/']);
     assert.equal(s.state.messages.some((m) => /Destination to/.test(m.text)), false);
+  }
+  for (const replyPoints of [[{ ...point, file: 'src/ghost.js' }], [{ ...point, line: 2 }], []]) {
+    const { s } = await session(t, { destination: 'docs/', replyPoints });
+    assert.ok(await until(() => s.state.pendingAsk?.source === 'dest-point'), `no question (${s.state.phase} ${s.state.error})`);
+    assert.equal(s.state.pendingAsk.closed, true, 'not the file question: nothing was named');
+    assert.doesNotMatch(s.state.pendingAsk.question, /needs .* changed/);
   }
 });
 

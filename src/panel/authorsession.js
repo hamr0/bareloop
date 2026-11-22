@@ -67,7 +67,7 @@ import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
-import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
+import { runDestPoint, destQuestionText, yesNoOf, scoutCodePaths, destinationHoldsCode, destinationIsRoot, destFenceQuestion } from '../destpoint.js';
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
 import { jobTypeLineOf, JOB_TYPE_LABEL, CHANGE_JOB_TYPE } from '../sourcedefaults.js';
 import { draftRefusal } from '../rangereview.js';
@@ -1225,16 +1225,22 @@ export function createSession(card, deps = {}) {
     // R7b (3), hamr's option A: the drafting AI POINTS when a job line's file to change lies outside Destination; code checks the claim (src/destpoint.js) and asks ONE typed
     // yes/no question through the same `ask` as the fit check's "go on". "yes" sets the fence (below) AND this session's card Destination (the page re-fills its box from it);
     // "no" goes on unchanged. The fence and the draft are updated before the composer sees them, so the signed spec carries the answer. The caller's own card object is never mutated. A repo job only; failure is OPEN.
+    /** the committed tree and the job lines the pointing call named a file for: the Destination check after the scout reads both (null tree = no check) @type {readonly string[]|null} */
+    let destTree = null;
+    /** @type {number[]} */
+    let destNamed = [];
     if (!RUBRIC_FILES && isRepoLike) {
       const destFn = deps.destFn !== undefined ? deps.destFn : (deps.generate ? null : runDestPoint);
       const tracked = destFn ? repoTrackedFiles(prep.tree) : null;
       if (destFn && tracked !== null) {
+        destTree = tracked;
         const pointed = await destFn({
-          jobLines, files: tracked, destination: card.destination, change: jobTypeNow === `${JOB_TYPE_LABEL}: ${CHANGE_JOB_TYPE}`, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
           ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
         });
         if (abandoned) return;
-        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: pointed.point.file === null ? null : redactSecrets(pointed.point.file), folder: pointed.point.folder === null ? null : redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
+        destNamed = Array.isArray(pointed.named) ? pointed.named : (pointed.point ? [pointed.point.line] : []);
+        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
         if (pointed.state === 'point' && pointed.point) {
           const question = destQuestionText(pointed.point, card.destination);
           let said = null;
@@ -1245,9 +1251,9 @@ export function createSession(card, deps = {}) {
             // a typed Destination (the question box's own words, already checked at $0 by `send`) is taken as typed; buttons and old words say yes or no
             if (takeChoice() === 'path') { said = 'typed'; typedDest = String(a).trim(); break; }
             said = yesNoOf(a);
-            if (said === 'yes' && pointed.point.folder === null) { said = null; say('bot', 'Type a folder, or no to keep Destination.'); } else if (said === null) say('bot', pointed.point.folder === null ? 'Type a folder, or no.' : 'Type yes or no.');
+            if (said === null) say('bot', 'Type yes or no.');
           }
-          const newDest = said === 'typed' ? typedDest : (pointed.point.folder ?? card.destination);
+          const newDest = said === 'typed' ? typedDest : pointed.point.folder;
           appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
           if (said === 'yes' || said === 'typed') {
             card = { ...card, destination: newDest };
@@ -1346,6 +1352,54 @@ export function createSession(card, deps = {}) {
       ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
     }));
 
+    // The Destination check (hamr 2026-11-22), a Change code job's, run by `authorCloseForJob` right after the scout and by CODE alone (no model call): a job where no line names a file needs a Destination that
+    // holds some of the code or tests the scout found. Not held: ONE closed question (approve the scout's folders, or type a folder), two wrong answers and the draft stops in plain words.
+    // No tree, no scout paths (none, or none in the tree), or every line naming a file (that is the file check above): nothing is asked and drafting goes on.
+    const destCheck = !RUBRIC_FILES && isRepoLike && destTree !== null && jobTypeNow === `${JOB_TYPE_LABEL}: ${CHANGE_JOB_TYPE}`
+      ? async (/** @type {{facts: any}} */ { facts }) => {
+        const tree = /** @type {readonly string[]} */ (destTree);
+        const entries = scoutCodePaths(facts, tree);
+        // the file check above owns every job that names a file; this one is for a job where no line does (a line like "make the tests pass" is not a change to a file)
+        const unnamed = destNamed.length === 0 ? jobLines[0] : undefined;
+        if (entries.length === 0 || unnamed === undefined || destinationHoldsCode(card.destination, entries, tree)) return null;
+        const holds = (/** @type {string} */ d) => !destinationIsRoot(d) && destinationHoldsCode(d, entries, tree);
+        const proposal = entries.join(', ');
+        const no = Math.max(0, state.steps.length - 1);
+        const from = card.destination;
+        let wrong = 0;
+        for (;;) {
+          const a = await ask({ kind: 'answer', source: 'dest-point', closed: true, index: 1, total: 1, question: destFenceQuestion({ destination: card.destination, entries }), line: unnamed.n, folder: proposal, current: card.destination });
+          if (a === null) return { abandoned: true };
+          const via = takeChoice();
+          const typed = via === 'path' ? String(a).trim() : null;
+          if (typed === null && yesNoOf(a) === 'yes') {
+            appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'asked', line: unnamed.n, entries, answer: 'yes', from: redactSecrets(from), to: redactSecrets(proposal), at: new Date().toISOString() });
+            card = { ...card, destination: proposal };
+            writeScope = [...entries];
+            draft.writeScope = writeScope;
+            state.card = { ...state.card, destination: proposal };
+            say('bot', `Destination is now ${proposal}. Drafting.`);
+            return { writeScope };
+          }
+          if (typed !== null && holds(typed)) {
+            appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'asked', line: unnamed.n, entries, answer: 'typed', from: redactSecrets(from), to: redactSecrets(typed), at: new Date().toISOString() });
+            card = { ...card, destination: typed };
+            writeScope = typed.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+            draft.writeScope = writeScope;
+            state.card = { ...state.card, destination: typed };
+            say('bot', `Destination is now ${typed}. Drafting.`);
+            return { writeScope };
+          }
+          wrong += 1;
+          appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'wrong', line: unnamed.n, entries, answer: typed === null ? 'other' : 'typed', to: redactSecrets(typed ?? String(a)), at: new Date().toISOString() });
+          const shown = typed ?? String(a).trim();
+          const why = typed !== null && destinationIsRoot(typed) ? 'The whole repo (.) cannot be the place a job may change files; type a folder.' : `${shown === '' ? 'That' : shown} holds none of the code or tests (${proposal}).`;
+          if (wrong >= 2) return { stop: `Destination ${redactSecrets(card.destination.trim().replace(/\s*\n\s*/g, ', '))} still holds none of the code or tests (${proposal}) after two tries, so the draft stopped. Start a new draft with a Destination that holds the code or the tests.` };
+          say('bot', `${redactSecrets(why)} Approve ${proposal}, or type a folder that holds some of it.`);
+        }
+      }
+      : null;
+
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
@@ -1355,7 +1409,7 @@ export function createSession(card, deps = {}) {
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
       jobLines, inputs: INPUTS, source: road.review ? road.source : 'files',
-      writeScope, provider, generate,
+      writeScope, provider, generate, ...(destCheck ? { destCheck } : {}),
       ceilingUsd: card.capUsd,
       rates: draftPrice?.rates ?? null,
       draftThinking,

@@ -443,6 +443,7 @@ function composerRefusal(reds) {
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
+ *   destCheck?: ((o: {facts: any}) => Promise<{writeScope?: string[], stop?: string, abandoned?: boolean}|null>)|null,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
@@ -527,6 +528,9 @@ export async function authorCloseForJob({
   //                  shape matters here (a $0 language pick before the scout,
   //                  D7); every other kind leaves `lang` exactly as given.
   ask = null, confirmGenerate = null, isRepo = false, langResult = null,
+  // the Destination check (hamr 2026-11-22), a repo Change code job's, run by the caller right AFTER the scout: `destCheck({facts})` is code-only (it may `ask`); it answers null (go on),
+  // `{writeScope}` (the fence the draft now works under), `{stop}` (plain words: the draft ends) or `{abandoned: true}`. Absent = never run (every other caller)
+  destCheck = null,
   // P7 item 5 (fwdloop am24/25): the seam that can really ASK the person. Present = the last drafting try, and only after
   // the two before it both failed, may ask (`offerQuestions` below); the seam takes the machine-filtered questions, gets
   // each answer (required, no skip), and hands back the job lines with the answers added as `~` rules plus the matching
@@ -679,6 +683,16 @@ export async function authorCloseForJob({
     // and the fact count is the one number that says whether the ladder came
     // back with anything to author from.
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
+  }
+
+  // THE DESTINATION CHECK: a scout that came back with facts is the first moment code knows where the code and the tests are; no scout, no facts, nothing to check (fail-open, nothing invented)
+  if (typeof destCheck === 'function' && isRepo && survey?.state === 'PRESENT' && survey.facts && typeof survey.facts === 'object') {
+    const dc = await destCheck({ facts: survey.facts });
+    if (dc?.abandoned) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+    if (typeof dc?.stop === 'string') {
+      return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'destination-stop', path: 'destination', detail: dc.stop }], stop: 'destination-stop', cost: null };
+    }
+    if (Array.isArray(dc?.writeScope) && dc.writeScope.length) writeScope = dc.writeScope;
   }
 
   /**

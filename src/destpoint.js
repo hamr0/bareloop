@@ -20,31 +20,21 @@ export const DEST_CALL_LABEL = 'dest-point';
 
 export const DEST_SYSTEM = 'You read the numbered lines of a code job. You never invent words: every file path you name must be copied, character for character, from the job line that holds it.';
 
-const NAME_ONLY = 'Name ONLY a file the line asks to CHANGE (to fix, edit, write, add or remove). A file the line only says must pass, be read, be run or be checked (for example the tests it must make pass) is NOT a change: never name it. '
-  + 'For EACH job line, for each file it asks to change, give the line number, the file path copied exactly from that line, and the folder that holds that file (the folder part of the path, ending with /). '
-  + 'A line that names no file path to change is left out; never guess a path the line does not contain. ';
-
 /**
- * What the AI is told (the numbered job text only, no `~` rules) and the one rule, with a legal example. For a Change code job (`change`) the same call also asks, per job line, whether the
- * line can be done by changing only files inside the Destination (the reply then carries a `lines` list beside `points`); any other job gets the words it always had, byte for byte.
- * @param {{jobLines: {n: number, text: string}[], destination: string, change?: boolean}} o @returns {string}
+ * What the AI is told (the numbered job text only, no `~` rules) and the one rule, with a legal example.
+ * @param {{jobLines: {n: number, text: string}[], destination: string}} o @returns {string}
  */
-export function destPrompt({ jobLines, destination, change = false }) {
+export function destPrompt({ jobLines, destination }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}`).join('\n');
-  const head = `THE JOB:\n${job}\n\nDestination (the only place the job may change files): ${destination}\n\n${NAME_ONLY}`;
-  if (!change) {
-    return `${head}Reply with JSON only, no prose, no code fence: {"points":[{"line":<line number>,"file":"<path copied from the line>","folder":"<its folder>"}]}. `
-      + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests in test/sum.test.js pass" the reply is {"points":[{"line":1,"file":"src/sum.js","folder":"src/"}]}, and test/sum.test.js is not named because the line only needs those tests to pass; for "LINE 2: make npm test pass" it is {"points":[]}.';
-  }
-  return `${head}`
-    + 'ALSO, for EACH job line, answer whether the line can be done by changing only files inside the Destination. Answer "yes" when the work the line asks for can be done by changing only files inside the Destination. '
-    + 'Answer "no" when the line asks to change a file that is outside the Destination, or when the code that would have to change (for example the code behind a failing test or a bug) is not inside the Destination. '
-    + 'A file the line only says must pass, be read, be run or be checked is not a change. '
-    + 'Reply with JSON only, no prose, no code fence: {"points":[{"line":<line number>,"file":"<path copied from the line>","folder":"<its folder>"}],"lines":[{"line":<line number>,"inside":"yes"|"no"}]}, with one entry in "lines" for every job line. '
-    + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests in test/sum.test.js pass" the "points" are [{"line":1,"file":"src/sum.js","folder":"src/"}], and test/sum.test.js is not named because the line only needs those tests to pass; for "LINE 2: make npm test pass" the "points" are [].';
+  return `THE JOB:\n${job}\n\nDestination (the only place the job may change files): ${destination}\n\n`
+    + 'Name ONLY a file the line asks to CHANGE (to fix, edit, write, add or remove). A file the line only says must pass, be read, be run or be checked (for example the tests it must make pass) is NOT a change: never name it. '
+    + 'For EACH job line, for each file it asks to change, give the line number, the file path copied exactly from that line, and the folder that holds that file (the folder part of the path, ending with /). '
+    + 'A line that names no file path to change is left out; never guess a path the line does not contain. '
+    + 'Reply with JSON only, no prose, no code fence: {"points":[{"line":<line number>,"file":"<path copied from the line>","folder":"<its folder>"}]}. '
+    + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests in test/sum.test.js pass" the reply is {"points":[{"line":1,"file":"src/sum.js","folder":"src/"}]}, and test/sum.test.js is not named because the line only needs those tests to pass; for "LINE 2: make npm test pass" it is {"points":[]}.';
 }
 
-/** a file the line asks to change outside Destination, or (`file` and `folder` null) a line the AI says cannot be done inside Destination and that names no file @typedef {{line: number, file: string|null, folder: string|null}} DestPoint */
+/** a file the line asks to change outside Destination, and the Destination proposed for it (its folder, or for a file at the top of the repo the file itself) @typedef {{line: number, file: string, folder: string}} DestPoint */
 
 /** does `file` lie under the Destination (a folder, a file, a glob, or `.`)? @param {string} file @param {string} destination @returns {boolean} */
 export function destinationCovers(file, destination) {
@@ -69,13 +59,10 @@ export function destinationIsRoot(destination) {
  * Read the AI's reply and decide, all in code. Malformed (no repair): not JSON, not `{points:[...]}`, a point that is not an object with a whole line, a string file and a string folder.
  * A point survives only when its line is a job line, the file path is written in that line's own text, the file is in the repo's committed tree, the folder is a real parent folder
  * of that file, and the file is NOT under the Destination. The survivors are ordered by line.
- * A Change code job (`change`) also reads the reply's `lines`: a line the AI answers `inside: "no"` that the AI named no file for (no entry of `points` holds that line) becomes a point with no file
- * (`file`/`folder` null) when it is a real job line and Destination is not already the repo root. A line the AI did name a file for stays with the file check above (`inside` is ignored there);
- * a `lines` that is missing or odd is ignored (the file check alone), and for any job that is not Change code `lines` is never read.
- * @param {unknown} text @param {{jobLines: {n: number, text: string}[], files: readonly string[], destination: string, change?: boolean}} o
+ * @param {unknown} text @param {{jobLines: {n: number, text: string}[], files: readonly string[], destination: string}} o
  * @returns {{status: 'malformed'}|{status: 'ok', points: DestPoint[], dropped: number}}
  */
-export function decideDestPoint(text, { jobLines, files, destination, change = false }) {
+export function decideDestPoint(text, { jobLines, files, destination }) {
   /** @type {any} */
   let j;
   try { j = JSON.parse(String(text ?? '').trim()); } catch { return { status: 'malformed' }; }
@@ -85,10 +72,8 @@ export function decideDestPoint(text, { jobLines, files, destination, change = f
   /** @type {DestPoint[]} */
   const points = [];
   let dropped = 0;
-  const named = new Set();
   for (const p of j.points) {
     if (p === null || typeof p !== 'object' || Array.isArray(p) || !Number.isInteger(p.line) || typeof p.file !== 'string' || typeof p.folder !== 'string') return { status: 'malformed' };
-    named.add(p.line);
     const file = p.file.replace(/^(\.\/)+/, '');
     const folder = p.folder.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     const lineText = lines.get(p.line);
@@ -99,29 +84,69 @@ export function decideDestPoint(text, { jobLines, files, destination, change = f
     else if (base && folder !== '' && file.startsWith(`${folder}/`)) points.push({ line: p.line, file, folder: `${folder}/` });
     else dropped += 1;
   }
-  if (change && Array.isArray(j.lines) && !destinationIsRoot(destination)) {
-    const seen = new Set();
-    for (const e of j.lines) {
-      if (e === null || typeof e !== 'object' || e.inside !== 'no' || !Number.isInteger(e.line) || !lines.has(e.line) || named.has(e.line) || seen.has(e.line)) continue;
-      seen.add(e.line);
-      points.push({ line: e.line, file: null, folder: null });
-    }
-  }
   points.sort((a, b) => a.line - b.line);
   return { status: 'ok', points, dropped };
 }
 
+/**
+ * The job lines the AI named a real file for, inside Destination or not: the file is written in that line's own words and is in the committed tree. A reply that is not readable names none.
+ * @param {unknown} text @param {{jobLines: {n: number, text: string}[], files: readonly string[]}} o @returns {number[]}
+ */
+export function namedLines(text, { jobLines, files }) {
+  /** @type {any} */
+  let j;
+  try { j = JSON.parse(String(text ?? '').trim()); } catch { return []; }
+  if (j === null || typeof j !== 'object' || !Array.isArray(j.points)) return [];
+  const lines = new Map(jobLines.map((l) => [l.n, l.text]));
+  const tree = new Set(files);
+  /** @type {Set<number>} */
+  const named = new Set();
+  for (const p of j.points) {
+    if (p === null || typeof p !== 'object' || !Number.isInteger(p.line) || typeof p.file !== 'string') continue;
+    const lineText = lines.get(p.line);
+    if (lineText !== undefined && p.file !== '' && lineText.includes(p.file) && tree.has(p.file.replace(/^(\.\/)+/, ''))) named.add(p.line);
+  }
+  return [...named].sort((a, b) => a - b);
+}
+
+/**
+ * The code and test places the scout reported (`sourcePaths`, `testPaths`) that REALLY exist in the committed tree: a folder (given a trailing /) or a file, in the scout's order, each once, and none that another listed folder already covers (`tests/fixtures/` goes when `tests/` is there).
+ * A path that is not a string, is empty, `.`, absolute, climbs out (`..`), holds a glob, or is not in the tree is left out. Anything odd (no facts, a list that is not a list) is `[]`.
+ * @param {any} facts the scout's facts @param {readonly string[]} files the committed tree @returns {string[]}
+ */
+export function scoutCodePaths(facts, files) {
+  /** @type {string[]} */
+  const out = [];
+  for (const key of ['sourcePaths', 'testPaths']) {
+    const list = facts !== null && typeof facts === 'object' && Array.isArray(facts[key]) ? facts[key] : [];
+    for (const raw of list) {
+      if (typeof raw !== 'string') continue;
+      const e = raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+      if (e === '' || e === '.' || e.startsWith('/') || e.includes('\\') || /[*?]/.test(e) || e.split('/').includes('..')) continue;
+      const entry = files.includes(e) ? e : (files.some((f) => f.startsWith(`${e}/`)) ? `${e}/` : null);
+      if (entry !== null && !out.includes(entry)) out.push(entry);
+    }
+  }
+  // a path another entry already covers (a folder holding it) is not suggested twice: the parent stays; a file no listed folder covers stays as written
+  return out.filter((e) => !out.some((f) => f !== e && f.endsWith('/') && e.startsWith(f)));
+}
+
+/** does Destination cover at least one committed file under one of these scout paths (code or tests)? @param {string} destination @param {readonly string[]} entries from {@link scoutCodePaths} @param {readonly string[]} files @returns {boolean} */
+export const destinationHoldsCode = (destination, entries, files) => files.some((f) => entries.some((e) => f === e || f.startsWith(e)) && destinationCovers(f, destination));
+
+/** the closed question about a job where no line names a file and a Destination that holds none of the scout's code or tests, worded by code @param {{destination: string, entries: readonly string[]}} o @returns {string} */
+export const destFenceQuestion = ({ destination, entries }) => redactSecrets(
+  `No line of the job names a file, and Destination ${destination.trim().replace(/\s*\n\s*/g, ', ')} holds none of the code or tests (${entries.join(', ')}). Set Destination to ${entries.join(', ')}, or type a folder.${DEST_ANSWER_APPROVE}`,
+);
+
 /** the one question, worded by code @param {DestPoint} p @param {string} destination @returns {string} */
-export const destQuestionText = (p, destination) => {
-  const dest = destination.trim().replace(/\s*\n\s*/g, ', ');
-  return redactSecrets(p.file === null
-    ? `Line ${p.line} may need code changed outside Destination (${dest}).${DEST_ANSWER_FOLDER}`
-    : `Line ${p.line} needs ${p.file} changed, but Destination is ${dest}, so the job could not change it. Set Destination to ${p.folder}?${DEST_ANSWER}`);
-};
+export const destQuestionText = (p, destination) => redactSecrets(
+  `Line ${p.line} needs ${p.file} changed, but Destination is ${destination.trim().replace(/\s*\n\s*/g, ', ')}, so the job could not change it. Set Destination to ${p.folder}?${DEST_ANSWER}`,
+);
 /** the answer words the question ends with (said once, here; the panel's question box shows the question without them and has the buttons instead) */
 export const DEST_ANSWER = ' Type yes to set it, or no to keep it as it is.';
-/** the answer words of a question that names no file (so it has no yes: the person types a folder or keeps Destination) */
-export const DEST_ANSWER_FOLDER = ' Type a folder to set Destination to, or no to keep it as it is.';
+/** the answer words of the closed question about a line that names no file (the panel's box shows the question without them and has the button and the box instead) */
+export const DEST_ANSWER_APPROVE = ' Approve the folders above, or type a folder.';
 /** the answers (any case, a closing full stop allowed) @param {unknown} text @returns {'yes'|'no'|null} */
 export const yesNoOf = (text) => {
   const t = String(text ?? '').trim().replace(/\.$/, '').toLowerCase();
@@ -133,13 +158,14 @@ const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }
 
 /**
  * Run the pointing call: one call (one retry on a malformed reply, a transport failure or a 429). Never throws on a call casualty; every failure is `absent` (no question).
- * @param {{jobLines: {n: number, text: string}[], files: readonly string[], destination: string, change?: boolean, provider?: any, maxTokens?: number, ceilingUsd?: number|null,
+ * @param {{jobLines: {n: number, text: string}[], files: readonly string[], destination: string, provider?: any, maxTokens?: number, ceilingUsd?: number|null,
  *   callTimeoutMs?: number, onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: Function, rates?: {in: number, out: number}|null, callOptions?: Record<string, any>, sleep?: (ms: number) => Promise<void>}} o
- * @returns {Promise<{state: 'point'|'none'|'absent', point: DestPoint|null, reason: string|null, calls: {label: string, costUsd: number|null, unpricedRounds: number}[]}>}
+ * `named` = the job lines the AI named a real file for (see {@link namedLines}); `[]` when the call gave nothing readable.
+ * @returns {Promise<{state: 'point'|'none'|'absent', point: DestPoint|null, reason: string|null, calls: {label: string, costUsd: number|null, unpricedRounds: number}[], named: number[]}>}
  */
 export async function runDestPoint({
-  jobLines, files, destination, change = false, provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS,
+  jobLines, files, destination, provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS,
   onCall = () => {}, createLoop = defaultLoop, rates = null, callOptions = {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
   const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0 ? Math.min(Math.trunc(Number(callTimeoutMs)), AUTHOR_CALL_TIMEOUT_MS) : AUTHOR_CALL_TIMEOUT_MS;
@@ -153,8 +179,8 @@ export async function runDestPoint({
     const raw = scrubRaw({ label: DEST_CALL_LABEL, attempt: attempts, text: r?.text });
     onCall({ ...call, raw: raw.text, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
   };
-  const absent = (/** @type {string} */ reason) => ({ state: /** @type {'absent'} */ ('absent'), point: null, reason, calls });
-  const content = destPrompt({ jobLines, destination, change });
+  const absent = (/** @type {string} */ reason) => ({ state: /** @type {'absent'} */ ('absent'), point: null, reason, calls, named: /** @type {number[]} */ ([]) });
+  const content = destPrompt({ jobLines, destination });
   let malformed = 0;
   let transportRetried = false;
   let rateRetried = false;
@@ -180,8 +206,8 @@ export async function runDestPoint({
     record(r);
     if (isOutputCutOff(r)) return absent('the folder check answer was cut off');
     if (r?.error) return absent(`the folder check call failed: ${redactSecrets(String(r.error))}`);
-    const d = decideDestPoint(r?.text, { jobLines, files, destination, change });
-    if (d.status === 'ok') return { state: d.points.length > 0 ? 'point' : 'none', point: d.points[0] ?? null, reason: null, calls };
+    const d = decideDestPoint(r?.text, { jobLines, files, destination });
+    if (d.status === 'ok') return { state: d.points.length > 0 ? 'point' : 'none', point: d.points[0] ?? null, reason: null, calls, named: namedLines(r?.text, { jobLines, files }) };
     malformed += 1;
     if (malformed >= 2) return absent('the folder check answer was not readable twice');
   }
