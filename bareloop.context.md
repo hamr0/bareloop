@@ -3538,7 +3538,7 @@ key you want first (the panel picks the row by the Model menu).
   /api/author/:id/check-deps` is the install-gap's "Check again" (the main button's wording while waiting on an install) (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
   same worktree — the AGENT never installs; for a committed npm lock file the panel door first runs `npm ci --ignore-scripts` itself,
-  $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure, a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
+  then `npm rebuild` (so native packages such as better-sqlite3 get built; same stripped env and deadline), $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure (the install or the build step), a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
   stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts, and a check still running for the draft (a repo's own tests at drafting or at the signing gates) is killed whole (`ctx.signal`, see "The check limit");
   `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
@@ -4151,7 +4151,7 @@ the run's own scratch tree.
 prepared copy therefore never carries `node_modules`, and every close stage that needs a tool
 (`tsc`, a test runner) would instrument-stop with nothing telling the person why. bareloop
 NEVER runs an install itself for the agent or the CLI doors — the agent only touches gated primitives, never a shell-out to
-`npm`/`pnpm`/`yarn`/`bun` on the person's behalf (the one exception is the panel door's own pre-token `npm ci --ignore-scripts` for an
+`npm`/`pnpm`/`yarn`/`bun` on the person's behalf (the one exception is the panel door's own pre-token `npm ci --ignore-scripts` + `npm rebuild` for an
 npm lock file, P6 item 3, `src/npminstall.js`; it is never a verb the agent holds). `missingDependencies` is exported ($0,
 JS/TS only for now — other languages return `null`, M3b's job): it takes `(treeDir,
 sourceSubdir?)` and walks from `sourceSubdir` up to `treeDir` (the same nearest-manifest rule

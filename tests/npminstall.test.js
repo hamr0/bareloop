@@ -39,3 +39,47 @@ test('npmEnv keeps connection config, drops credentials by name, prefix and shap
   const e = npmEnv({ PATH: 'p', HTTPS_PROXY: 'x', FOO_API_KEY: '1', AWS_X: '2', MY_TOKEN: '3', PGHOST: 'h' });
   assert.deepEqual(Object.keys(e).sort(), ['HTTPS_PROXY', 'PATH', 'PGHOST']);
 });
+
+// The build step: `--ignore-scripts` leaves native packages (better-sqlite3) unbuilt; `npm rebuild` follows a good `npm ci`.
+const ok = { error: null, status: 0, signal: null, stdout: '', stderr: '' };
+/** @param {any[]} results @param {any[]} seen */
+const seqRun = (results, seen) => async (/** @type {any} */ cmd, /** @type {any} */ args, /** @type {any} */ o) => { seen.push({ cmd, args, o }); return results[seen.length - 1] ?? ok; };
+
+test('runNpmCi: after a good install `npm rebuild` runs in the same tree with the same stripped env and deadline', async () => {
+  const seen = [];
+  const env = { PATH: '/usr/bin', HOME: '/h', NPM_TOKEN: 't', ANTHROPIC_API_KEY: 'k' };
+  const r = await runNpmCi('/some/dir', { env, timeoutMs: 7000, run: seqRun([ok, ok], seen) });
+  assert.deepEqual(r, { ok: true });
+  assert.equal(seen.length, 2);
+  assert.deepEqual(seen[1].args, ['rebuild']);
+  assert.equal(seen[1].cmd, 'npm');
+  assert.equal(seen[1].o.cwd, '/some/dir');
+  assert.equal(seen[1].o.timeoutMs, 7000);
+  assert.equal(seen[1].o.env.NPM_TOKEN, undefined);
+  assert.deepEqual(seen[1].o.env, seen[0].o.env);
+});
+
+test('runNpmCi: a failing rebuild is ok:false in plain words with npm\'s last error line, secret-masked', async () => {
+  const seen = [];
+  const bad = { error: null, status: 1, signal: null, stdout: '', stderr: 'gyp info\nnpm error build failed sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\n' };
+  const r = await runNpmCi('/d', { run: seqRun([ok, bad], seen) });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /the build step \(npm rebuild\) of the packages failed: npm error build failed/);
+  assert.ok(!/abcdefghijklmnopqrstuvwxyz0123456789/.test(r.reason));
+});
+
+test('runNpmCi: a timed-out rebuild (killed by the spawn deadline) is ok:false and says the build step timed out', async () => {
+  const seen = [];
+  const to = { error: Object.assign(new Error('t'), { code: 'ETIMEDOUT' }), status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
+  const r = await runNpmCi('/d', { timeoutMs: 5000, run: seqRun([ok, to], seen) });
+  assert.deepEqual(r, { ok: false, reason: 'the build step (npm rebuild) of the packages timed out after 5s' });
+  assert.equal(seen[1].o.timeoutMs, 5000);
+});
+
+test('runNpmCi: a failed `npm ci` never runs the rebuild', async () => {
+  const seen = [];
+  const r = await runNpmCi('/d', { run: seqRun([{ error: null, status: 1, signal: null, stdout: '', stderr: 'npm error nope' }], seen) });
+  assert.equal(r.ok, false);
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0].args, ['ci', '--ignore-scripts']);
+});
