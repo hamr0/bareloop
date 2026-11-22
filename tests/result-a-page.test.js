@@ -32,14 +32,23 @@ test('FINDINGS: the header count, the close\'s own proof line with a tick, one C
   const rows = h.split('data-testid="result-finding"').slice(1);
   assert.equal(rows.length, 4);
   assert.equal(rows.some((r) => r.startsWith('" open')), false, 'a passed finding starts closed');
-  assert.match(strip(rows[0]), /^>src\/declaredclose\.js The `!== undefined` guard means a close that carries `source: null`/);
+  assert.match(strip(rows[0]), /^>declaredclose\.js The `!== undefined` guard means a close that…/, 'basename and the first 8 words, cut in code');
+  assert.match(rows[0], /<span class="k">file<\/span><span class="v">src\/declaredclose\.js<\/span>/, 'the opened row carries the full path');
   assert.match(rows[0], /<span class="k">why<\/span><span class="v" style="white-space:pre-wrap">The `!== undefined` guard[^]*still be signed\./);
   assert.match(rows[0], /<span class="k">quote<\/span><span class="v" style="white-space:pre-wrap">  if \(closeDecl\.source !== undefined &amp;&amp;/, 'the quote is escaped and keeps its spacing');
   assert.equal(h.includes('result-findings-cut'), false);
 });
 
+test('FINDINGS: the closed row reads basename:line when the payload has a line, the name alone when it has none', () => {
+  const it = { file: 'src/a/b.js', base: 'b.js', short: 'one two\u2026', why: 'one two three', quote: 'q' };
+  const h = fns.resultFindingsCard({ total: 2, cut: false, cite: null, items: [{ ...it, at: 88 }, { ...it, at: null }] });
+  const rows = h.split('data-testid="result-finding"').slice(1).map(strip);
+  assert.match(rows[0], /^>b\.js:88 one two…/);
+  assert.match(rows[1], /^>b\.js one two…/);
+});
+
 test('FINDINGS: a cut record says how many findings the saved report holds beyond what is shown; nothing injects markup', () => {
-  const h = fns.resultFindingsCard({ total: 5, cut: true, cite: null, items: [{ file: '<b>x</b>', first: 'a & b', why: 'a & b', quote: '<i>' }] });
+  const h = fns.resultFindingsCard({ total: 5, cut: true, cite: null, items: [{ file: '<b>x</b>', base: '<b>x</b>', at: null, short: 'a & b', why: 'a & b', quote: '<i>' }] });
   assert.equal(/<b>x|<i>/.test(h), false);
   assert.match(h, /data-testid="result-findings-cut">4 more are in the saved report</);
   assert.equal(h.includes('result-findings-cite'), false, 'no cite row passed: no proof line');

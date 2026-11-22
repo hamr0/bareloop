@@ -9,6 +9,7 @@ import { sourceOf } from './sourcedefaults.js';
 import { stepFileRel, STEP_MAX_BYTES } from './rubricstep.js';
 import { shapePartOf } from './shaperows.js';
 import { DIFF_DIR } from './rangereview.js';
+import { itemQuoteLine } from './repocite.js';
 import { ATTEMPT_DIFF_FILE_MAX, ATTEMPT_DIFF_EVENT_MAX } from './attemptdiff.js';
 
 /** the spine record's type */
@@ -37,10 +38,10 @@ async function coveredFiles(workdir) {
  * The `review-findings` records of a close that PASSED: one per review line (a rubric-step stage with a shape part, on a repo source) whose stage verdict is `satisfied`, read from the line's answer file in the run's tree.
  * `[]` for any other close (files source, a code close) or a line that did not pass.
  * @param {{closeDecl: any, stages: any[]|undefined, workdir: string, scrub: (s: string) => string}} o `stages` = the passed close verdict's `{name, verdict}` list
- * @returns {Promise<{line: number, total: number, items: {file: string, quote: string, why: string}[], cut: boolean, files: number|null}[]>}
+ * @returns {Promise<{line: number, total: number, items: {file: string, quote: string, why: string, at?: number}[], cut: boolean, files: number|null}[]>}
  */
 export async function reviewFindingsRecords({ closeDecl, stages, workdir, scrub }) {
-  /** @type {{line: number, total: number, items: {file: string, quote: string, why: string}[], cut: boolean, files: number|null}[]} */
+  /** @type {{line: number, total: number, items: {file: string, quote: string, why: string, at?: number}[], cut: boolean, files: number|null}[]} */
   const out = [];
   try {
     if (sourceOf(closeDecl) !== 'repo' || !Array.isArray(stages)) return out;
@@ -54,12 +55,15 @@ export async function reviewFindingsRecords({ closeDecl, stages, workdir, scrub 
       const obj = JSON.parse(await readFile(abs, 'utf8'));
       const results = obj !== null && typeof obj === 'object' && Array.isArray(obj.results) ? obj.results : null;
       if (results === null) continue;
-      /** @type {{file: string, quote: string, why: string}[]} */
+      /** @type {{file: string, quote: string, why: string, at?: number}[]} */
       const items = [];
       let bytes = 0;
       for (const r of results) {
         if (r === null || typeof r !== 'object' || typeof r.file !== 'string' || typeof r.quote !== 'string' || typeof r.why !== 'string') continue;
+        /** @type {{file: string, quote: string, why: string, at?: number}} */
         const item = { file: capBytes(scrub(r.file), REVIEW_FINDING_FIELD_MAX), quote: capBytes(scrub(r.quote), REVIEW_FINDING_FIELD_MAX), why: capBytes(scrub(r.why), REVIEW_FINDING_FIELD_MAX) };
+        const at = itemQuoteLine(workdir, r.file, r.quote); // the line the quote starts on, found by the cite's own matcher in the file the item names; absent when it cannot be found (never guessed)
+        if (at !== null) item.at = at;
         bytes += Buffer.byteLength(JSON.stringify(item));
         if (bytes > REVIEW_FINDINGS_EVENT_MAX) break;
         items.push(item);

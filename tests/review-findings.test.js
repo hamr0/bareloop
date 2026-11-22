@@ -25,7 +25,8 @@ test('a green review writes ONE review-findings record for its line: the items a
   assert.match(r.text, /outcome\s+green/, r.text);
   const got = recs(r.spine);
   assert.equal(got.length, 1, 'once per passed review line');
-  assert.deepEqual({ line: got[0].line, total: got[0].total, cut: got[0].cut, items: got[0].items, files: got[0].files }, { line: 1, total: 1, cut: false, items: [ITEM], files: 3 });
+  assert.deepEqual({ line: got[0].line, total: got[0].total, cut: got[0].cut, items: got[0].items, files: got[0].files }, { line: 1, total: 1, cut: false, items: [{ ...ITEM, at: 1 }], files: 3 });
+  // `at` = the line the quote starts on in src/a.js (line 1), found by code with the cite's own matcher; the worker never wrote it
   const at = types(r.spine);
   assert.ok(at.indexOf('outer-close') < at.indexOf('review-findings') && at.indexOf('review-findings') < at.indexOf('job-end'), at.join(' '));
   assert.equal(r.spine.findLast((e) => e.type === 'job-end').outcome, 'green', 'the record changed no verdict');

@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { quoteIn } from 'bareguard';
 import { DIFF_DIR } from './rangereview.js';
 
 /** bareguard's own source cap (its rubric reads one input of at most this many bytes), so the cite text is built within it or the item reds in plain words */
@@ -79,4 +80,37 @@ export function namedFilesText(dir, results) {
     return { text: '', reds, files: named };
   }
   return { text: readable.map((x) => readFileSync(x.abs, 'utf8')).join('\n'), reds, files: named };
+}
+
+/**
+ * The 1-based line a quote starts on in a text, found with the SAME matcher the cite check reads (bareguard's `quoteIn`: markdown marks and whitespace runs do not matter), so a line is given only where the cite's own match holds.
+ * The match ending first is the one located: the shortest prefix of lines that holds the quote, then the latest start line that still holds it. `null` when the quote is not found (or is empty).
+ * @param {string} text @param {string} quote @returns {number|null}
+ */
+export function quoteLineOf(text, quote) {
+  if (!quoteIn(quote, text).ok) return null;
+  const lines = text.split('\n');
+  const has = (/** @type {number} */ a, /** @type {number} */ b) => quoteIn(quote, lines.slice(a, b + 1).join('\n')).ok;
+  let lo = 0; let hi = lines.length - 1; // smallest end line whose prefix holds the quote
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (has(0, mid)) hi = mid; else lo = mid + 1; }
+  const end = lo;
+  let a = 0; let b = end; // largest start line whose lines to `end` still hold it
+  while (a < b) { const mid = (a + b + 1) >> 1; if (has(mid, end)) a = mid; else b = mid - 1; }
+  return a + 1;
+}
+
+/**
+ * The line an item's quote starts on, read from the file the item names in the run's tree (the same named-file rules as the cite: one regular file, within the cap). `null` for a per-file diff, a file that is not
+ * there, a link, or a quote not found: no line is ever guessed.
+ * @param {string} dir the run's tree @param {unknown} file the item's `file` @param {unknown} quote @returns {number|null}
+ */
+export function itemQuoteLine(dir, file, quote) {
+  try {
+    const path = itemPath(file);
+    if (path === '' || path.startsWith(`${DIFF_DIR}/`) || typeof quote !== 'string') return null;
+    const abs = join(dir, path);
+    const st = lstatSync(abs);
+    if (!st.isFile() || st.size > CITE_CAP_BYTES) return null;
+    return quoteLineOf(readFileSync(abs, 'utf8'), quote);
+  } catch { return null; }
 }

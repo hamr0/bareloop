@@ -4523,13 +4523,14 @@
     return '<div class="job-card" data-testid="result-ran"><h4>How it ran</h4>' + (boxes.length ? buildStepMapHTML(boxes) : "") +
       (data.ran ? '<div class="hint" data-testid="result-ran-line">' + escapeXml(data.ran.line) + '</div>' : "") + (more || "") + '</div>';
   }
-  // FINDINGS: the close's own proof line, one fold row per finding (file and the first line of its why; open for the full why and the quote)
+  // FINDINGS: the close's own proof line, one fold row per finding (basename:line and the first 8 words of its why, cut in code; open for the full path, the full why and the quote)
   function resultFindingsCard(f){
     var mark = '<span class="rs-ok">\u2713</span>';
     return '<div class="job-card" data-testid="result-findings"><h4>Findings \u00b7 ' + f.total + '</h4>' +
       (f.cite ? '<div class="hint" data-testid="result-findings-cite">' + escapeXml(f.cite) + ' ' + mark + '</div>' : "") +
       '<div class="sf-list" data-testid="result-findings-list">' + f.items.map(function(it){
-        return '<details class="sf-item" data-testid="result-finding"><summary><span class="sf-nm" title="' + escapeXml(it.file) + '"><b>' + escapeXml(it.file) + '</b> ' + escapeXml(it.first) + '</span><span class="sf-ar"></span></summary><div class="sf-fl">' +
+        return '<details class="sf-item" data-testid="result-finding"><summary><span class="sf-nm" title="' + escapeXml(it.file) + '"><b>' + escapeXml(it.base + (it.at ? ':' + it.at : "")) + '</b> ' + escapeXml(it.short) + '</span><span class="sf-ar"></span></summary><div class="sf-fl">' +
+          '<div><span class="k">file</span><span class="v">' + escapeXml(it.file) + '</span></div>' +
           '<div><span class="k">why</span><span class="v" style="white-space:pre-wrap">' + escapeXml(it.why) + '</span></div>' +
           '<div><span class="k">quote</span><span class="v" style="white-space:pre-wrap">' + escapeXml(it.quote) + '</span></div></div></details>';
       }).join("") + '</div>' +

@@ -24,6 +24,7 @@
 // silently tries another port (hamr's rule, restated across this codebase
 // for every cap/threshold: a shell never widens what it was asked to do).
 
+import { itemPath } from '../repocite.js';
 import { createServer } from 'node:http';
 import {
   readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
@@ -1710,9 +1711,26 @@ function ticketOfStart(start) {
 /** the words of the FINDINGS header's proof line, code-owned (the close's own cite row says each quote was found) */
 const RESULT_FINDINGS_CITE = 'each quote found in its file';
 
+/** how many words of a finding's why its closed row shows */
+const FINDING_SHORT_WORDS = 8;
+
+/**
+ * The words of a finding's CLOSED row, cut in code (never by CSS width): `base` = the file's basename; `at` = the line its quote starts on, from the record (found by code with the cite's own matcher when the run ended;
+ * absent on an older record, then the row shows the name alone); `short` = the first words of the why on a word boundary, then `…` only when words were cut.
+ * @param {any} x one record item @returns {{base: string, at: number|null, short: string}}
+ */
+function findingRowWords(x) {
+  const words = (typeof x.why === 'string' ? x.why : '').split(/\s+/).filter((w) => w !== '');
+  return {
+    base: itemPath(x.file).split('/').pop() || x.file,
+    at: Number.isInteger(x.at) && x.at > 0 ? x.at : null,
+    short: words.slice(0, FINDING_SHORT_WORDS).join(' ') + (words.length > FINDING_SHORT_WORDS ? '\u2026' : ''),
+  };
+}
+
 /**
  * Result tab A, FINDINGS: what the close passed, from the run's own `review-findings` records (src/reviewfindings.js; report only), never from the run folder.
- * One entry per item in line order; `first` = the first line of its why. `cite` = the words of the close's own cite row when EVERY review line's cite row passed, else null. `null` when the run has no record (an older run, a red run): the page then draws today's tab.
+ * One entry per item in line order; `base`/`at`/`short` = the closed row's words (`findingRowWords`). `cite` = the words of the close's own cite row when EVERY review line's cite row passed, else null. `null` when the run has no record (an older run, a red run): the page then draws today's tab.
  * @param {any[]} records @param {any} spec
  */
 function findingsOf(records, spec) {
@@ -1723,7 +1741,7 @@ function findingsOf(records, spec) {
   const lines = [...byLine.keys()].sort((a, b) => a - b);
   const rowRes = rowResultsFromRecords(records, spec).results;
   const items = lines.flatMap((n) => byLine.get(n).items.filter((/** @type {any} */ x) => x && typeof x.file === 'string').map((/** @type {any} */ x) => ({
-    line: n, file: x.file, quote: typeof x.quote === 'string' ? x.quote : '', why: typeof x.why === 'string' ? x.why : '', first: (typeof x.why === 'string' ? x.why : '').split('\n')[0],
+    line: n, file: x.file, quote: typeof x.quote === 'string' ? x.quote : '', why: typeof x.why === 'string' ? x.why : '', ...findingRowWords(x),
   })));
   const total = lines.reduce((a, n) => a + (Number.isInteger(byLine.get(n).total) ? byLine.get(n).total : byLine.get(n).items.length), 0);
   const cited = lines.every((n) => rowRes.get(`L${n}.$cited`)?.result === 'passed');
