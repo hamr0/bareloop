@@ -38,8 +38,8 @@ test('Reuse prefill: a plain-files job opens with the folder its origin run deli
   const home = keysHome();
   const notes = join(tmp('dc-in-'), 'n.txt');
   writeFileSync(notes, 'x\n');
-  const run = makeRun(home, { runid: 'r1', spec: specOf({ files: true, input: notes }), accepted: true });
-  writeFileSync(join(run.out, 'card.json'), JSON.stringify({ inputs: `notes: ${notes}`, destination: '/tw/delivered', model: 'claude-sonnet-5' }));
+  const run = makeRun(home, { runid: 'r1', spec: specOf({ files: true, input: notes }), accepted: true, destination: '/tw/delivered' });
+  writeFileSync(join(run.out, 'card.json'), JSON.stringify({ inputs: `notes: ${notes}`, model: 'claude-sonnet-5' }));
   const p = await panel({ home });
   const r = await p.get('/api/author/start-from?runid=r1');
   assert.equal(r.body.card.destination, '/tw/delivered');
