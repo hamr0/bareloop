@@ -721,6 +721,18 @@ function endedBase(summary, death, o) {
  * @param {any} summary `replayOne`'s summary
  * @param {{died: boolean, lastThing: string|null}} death
  */
+/**
+ * The newest `check-running` record's own text (code-written by src/kinds.js `checkRunningNote`, shown verbatim), or null. It stands only while the
+ * tests are running NOW: the tick must be the newest record of the whole spine — every record that ends a check (close-verdict, check-run,
+ * outer-close, check-preflight, close-precheck), a step (step-end) or the run (run-end, job-end, escalation) is written after it and so retires it,
+ * and so does anything else (a worker round, a new step): a stale line is the failure, a missing one is not.
+ * @param {any[]} records
+ */
+export function checkRunningOf(records) {
+  const last = records[records.length - 1];
+  return last && last.type === 'check-running' && typeof last.text === 'string' ? last.text : null;
+}
+
 /** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
 function lastJobEndTs(/** @type {any[]} */ records) {
   for (let i = records.length - 1; i >= 0; i -= 1) {
@@ -2381,6 +2393,9 @@ function getRunDetailBody(runid, opts) {
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
+    // hamr 2026-11-22: "Tests are still running (8 min so far), usually about 12 min." under the step map — only while the run is live and the
+    // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
+    checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,

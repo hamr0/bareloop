@@ -1171,7 +1171,7 @@
             <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
-            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-tests" data-testid="check-running" hidden></div></div>
             <div id="step-list"></div>
           </div>
         </section>
@@ -1599,6 +1599,13 @@
       '<span>\u21bbN = took N tries (dashed box)</span>' +
       (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
+  }
+  // hamr 2026-11-22: the one grey line under the map — the server's `checkRunning` string verbatim, present only while the tests are running now
+  function paintCheckRunning(detail){
+    var el = document.getElementById("map-tests");
+    var text = detail && typeof detail.checkRunning === "string" ? detail.checkRunning : "";
+    el.textContent = text;
+    el.hidden = text === "";
   }
   function renderStepMap(steps){
     var mount = document.getElementById("map-mount");
@@ -3087,6 +3094,7 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
+    paintCheckRunning(detail);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
 

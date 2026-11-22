@@ -3173,8 +3173,9 @@ pay for tests). A hand-written command close (`job.close`, `src/ralph.js` `runCl
   by `checkRunningNote({elapsedMs, knownMs})`: `Tests are still running (7 min so far).`, and `, usually about 12 min.` once the same
   command (command, args, env) has a measured time earlier in the draft or run (`ctx.cmdTimes`). Report-only: drafting hears it as
   `onPhase('check-running', {call, elapsedMs, knownMs, text})` (the panel shows it as the running step's line; the signing gates step
-  too), a run writes a `check-running` spine record `{elapsedMs, knownMs, text}` (no reader decides anything from it; the Run tab has
-  no live line for it yet).
+  too), a run writes a `check-running` spine record `{elapsedMs, knownMs, text}` (no reader decides anything from it). The Run tab shows it as one small grey line under the step map: the run detail's
+  `checkRunning` (`src/panel/server.js` `checkRunningOf`) is the newest record's `text` verbatim, only while the run is live and that tick is the
+  spine's newest record (a check, step or run end, or any later record, retires it), else `null`.
 - **The box.** A check's command (`command-exit`, `count-not-worse`) runs in its own process group; the limit, `ctx.signal` (an
   `AbortSignal`: the panel's Abandon, the run's Stop) and a dying owner (`exit`, SIGINT, SIGTERM, SIGHUP while a box is live) each kill
   the WHOLE group: SIGTERM, SIGKILL after 2 s, and SIGKILL again once the leader is gone (a child that ignores SIGTERM). A run's Stop is
