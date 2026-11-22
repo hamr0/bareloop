@@ -69,7 +69,7 @@ export async function runIt(/** @type {any} */ f, { script, argv = [], provider 
   const out = outl.join('\n'); const err = errl.join('\n');
   const spinePath = /^spine\s+(\S+)/m.exec(out)?.[1] ?? null;
   const spine = spinePath === null ? [] : readFileSync(spinePath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  return { rc, out, err, spine, text: `${err}\n${out}`, provider: p, home: h, branch: /final commit \w+ on (\S+?);/.exec(out)?.[1] ?? null };
+  return { rc, out, err, spine, text: `${err}\n${out}`, provider: p, home: h, branch: /(?:final commit \w+|nothing left to commit) on (\S+?);/.exec(out)?.[1] ?? null };
 }
 
 /** green only on code that has `src/new file.js` (added by feat's first commit; main does not have it): the close judges the TREE the run starts with */
