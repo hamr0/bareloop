@@ -98,3 +98,43 @@ test('the run-start precheck and preflight never read a signing result', async (
   // signing 1 + precheck 1 + preflight 1: the run never read the signing result
   assert.equal(runs().length, 3, `ran ${runs().length} times`);
 });
+
+// ── the session wiring: the drafting seed read and the signing gates of ONE panel draft session share the same map ─────────────────────
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { seedRead } from '../src/kinds.js';
+import { createSession } from '../src/panel/authorsession.js';
+import { makeRangeWorld } from './range-world.mjs';
+import { world, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
+
+test('a drafting seed read then a signing try in ONE panel session run the repo command once', async (t) => {
+  const w = await world(t, { serve: false });
+  const wr = makeRangeWorld(t);
+  const countFile = path.join(w.base, 'spawns.txt');
+  writeFileSync(path.join(wr.repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+  writeFileSync(path.join(wr.repo, 'counter.mjs'), `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(countFile)}, 'x\\n');\n`);
+  gitInPatient(wr.repo, ['add', '-A']);
+  gitInPatient(wr.repo, ['commit', '-q', '-m', 'pkg']);
+  const spawns = () => { try { return readFileSync(countFile, 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
+  const decl = { stages: [{ name: 'suite', kind: 'command-exit', params: { cmd: 'node', args: ['counter.mjs'], expectExit: 0 } }] };
+  const seams = draftSeams({});
+  const innerAuthor = seams.authorFn;
+  // the drafting path: authorClose spreads the session's `closeCtx` into the real seed read exactly like this
+  seams.authorFn = async (o) => {
+    await seedRead(decl, { gapKeep: '', ...o.closeCtx, workdir: o.workdir, seedRef: o.seedRef });
+    return innerAuthor(o);
+  };
+  /** @type {number|null} */ let afterDraft = null;
+  // the signing path: the REAL prepareSigning with what the session hands it, over the counter close
+  seams.prepareSigningFn = async (o) => {
+    afterDraft = spawns();
+    await prepareSigning({ ...o, spec: { ...jobOf([counter('suite', 'a')]), closeDecl: { genre: GENRE, lang: 'js', stages: [guards[0], { name: 'suite', kind: 'command-exit', params: { cmd: 'node', args: ['counter.mjs'], expectExit: 0 } }, guards[1]] } } });
+    return { ok: true, specHash: 'cafef00dbeef0123', seedRef: o.seedRef ?? 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: { declaration: { ok: true, grounded: true }, precheck: { ok: true, stops: [] }, seedVerdict: { ok: true, workRed: ['verdict'], redAtSeed: ['verdict'], greenAtSeed: [] }, calibration: null } };
+  };
+  const s = createSession(baseCard({ source: wr.repo }), { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(path.join(w.base, 'keys')), sessionsRoot: path.join(w.base, 's'), ...seams });
+  assert.ok(await until(() => s.state.pendingAsk?.kind === 'menu'), `${s.state.phase} ${s.state.error}`);
+  s.signPrepare();
+  assert.ok(await until(() => afterDraft !== null && s.state.phase !== 'signing-gates', 20000), `${s.state.phase} ${s.state.error}`);
+  assert.equal(afterDraft, 1, 'the drafting seed read ran the command');
+  assert.equal(spawns(), 1, `drafting + signing ran it ${spawns()} times`);
+});

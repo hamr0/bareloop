@@ -1447,7 +1447,7 @@ export function createSession(card, deps = {}) {
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
-      authorOpts: { closeCtx: { cmdTimes, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
+      authorOpts: { closeCtx: { cmdTimes, seedShare, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
     });
 
     if (!authored.ok) {
