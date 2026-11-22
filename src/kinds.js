@@ -264,7 +264,7 @@ export function mechanicalStages(stages) {
  *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>, seedShare?: Map<string, any>,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -279,6 +279,7 @@ export function mechanicalStages(stages) {
  *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
  *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
+ *   `seedShare` is a draft session's own map of COMPLETED seed-read command results (the signing gates' tries), keyed by command + seed tree (`sharedRun`).
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
@@ -1347,11 +1348,32 @@ async function runCmd(p, cwd, ctx) {
   };
   // ONCE PER CHECK PASS (hamr 2026-11-21): every stage reading the same command (same args, env, directory and limit) shares one run. The memo
   // belongs to ONE pass (a seed read, a close run), so the next pass reads the tree again; nothing is shared across a tree change.
-  if (!ctx.cmdMemo) return run();
+  if (!ctx.cmdMemo) return sharedRun(ctx, cwd, JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]), run);
   const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
   let pending = ctx.cmdMemo.get(memoKey);
-  if (!pending) { pending = run(); ctx.cmdMemo.set(memoKey, pending); }
+  if (!pending) { pending = sharedRun(ctx, cwd, memoKey, run); ctx.cmdMemo.set(memoKey, pending); }
   return pending;
+}
+
+/**
+ * ONE owner of what a draft session's signing-gate tries share (hamr 2026-11-22, run mwsblixt: four tries, four full suites on one unchanged seed).
+ * Only where the caller handed `ctx.seedShare` (the panel's session map; never the run-start precheck or preflight): a COMPLETED run of a command
+ * (any exit code) is kept under the command's own memo key + the seed's TREE id, and a later try reads it only while the directory is verifiably
+ * at that seed. A stopped result (timed out, killed, crashed) is never kept, so the next try runs fresh; a tree that differs is a fresh run.
+ * @param {Ctx} ctx @param {string} cwd @param {string} memoKey @param {() => Promise<any>} run
+ */
+async function sharedRun(ctx, cwd, memoKey, run) {
+  const share = ctx.seedShare;
+  if (!(share instanceof Map) || !ctx.seedRef) return run();
+  const at = await treeIsAtSeed(cwd, ctx.seedRef);
+  const tree = at.at ? await git(cwd, ['rev-parse', `${ctx.seedRef}^{tree}`]) : null;
+  const treeId = tree?.ok ? tree.out.trim() : '';
+  if (!/^[0-9a-f]{40,64}$/.test(treeId)) return run();
+  const key = `${treeId}\u0000${memoKey}`;
+  if (share.has(key)) return share.get(key);
+  const r = await run();
+  if (r.stop === null) share.set(key, r);
+  return r;
 }
 
 /** the typed `survivors` of a killed check, for a stop's detail (said in plain words only where it is shown) @param {any} r @returns {Record<string, any>} */
