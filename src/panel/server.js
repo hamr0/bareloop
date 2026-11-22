@@ -1239,7 +1239,7 @@ export function getAcceptContext(runid, opts = {}) {
 // ── PRD v1.107 Part 6: the Result tab (rubric jobs only) ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
+ * The files a run delivered: its own `destination-written` (and, for a review's report waiting for Accept, `report-staged`) spine records (userrun.js, on a minted green only), one per path, the last record of a
  * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
  * @param {any[]} records
  * @returns {{path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}[]}
@@ -1248,7 +1248,9 @@ export function deliveredOf(records) {
   /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}>} */
   const byPath = new Map();
   for (const r of records) {
-    if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    // `report-staged` (a review's report, under output/ until an honoured Accept) is read like a delivered file; the `destination-written` an Accept records names it in `staged` and replaces it
+    if (!r || (r.type !== 'destination-written' && r.type !== 'report-staged') || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    if (r.type === 'destination-written' && typeof r.staged === 'string') byPath.delete(r.staged);
     byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null, ...(typeof r.pairedTaken === 'string' && r.pairedTaken ? { pairedTaken: r.pairedTaken } : {}) });
   }
   return [...byPath.values()];

@@ -81,15 +81,13 @@ test('commitWork can leave a path out: the commit holds the report and not the s
   assert.ok(git(t2, ['show', '--name-only', '--pretty=', 'HEAD']).includes('output/draft-notes.md'));
 });
 
-test('RUN: a green review commits ONE commit on the work branch holding exactly the report, which is at Destination inside the repo', async () => {
-  const { rc, text, src, branch } = await runReview();
+test('RUN: a green review (door open) stages the report under output/ and commits nothing for it; the Destination write waits for an honoured Accept (tests/review-accept-report.test.js)', async () => {
+  const { rc, text, src, branch, prep } = await runReview();
   assert.equal(rc, 0, text);
   assert.match(text, /outcome\s+green/, text);
-  assert.match(text, /DESTINATION  written in the repo - /, text);
+  assert.match(text, /REPORT  ready for your Accept - /, text);
+  assert.doesNotMatch(text, /DESTINATION  written in the repo/, text);
   assert.ok(branch, text);
-  const files = git(src, ['diff', '--name-only', `main..${branch}`]).trim().split('\n').filter(Boolean);
-  assert.equal(files.length, 1, `the branch holds exactly the report: ${files}`);
-  assert.match(files[0], /^docs\/review-job-\d{4}-\d{2}-\d{2}\.md$/);
-  assert.equal(git(src, ['rev-list', '--count', `main..${branch}`]).trim(), '1', 'ONE commit on the work branch, no second commit');
-  assert.match(git(src, ['show', `${branch}:${files[0]}`]), /slow\.js|slow code|List the slow code/);
+  assert.equal(git(src, ['rev-list', '--count', `main..${branch}`]).trim(), '0', 'nothing is committed for the report before Accept');
+  assert.equal(existsSync(path.join(prep.tree, 'output', 'review-job.md')), true);
 });

@@ -1097,10 +1097,12 @@ async function listOutputFiles(dir, rel = '') {
  * carries `pairedTaken`, the basename it could not take (hamr 2026-11-18). It writes only inside this green-only door.
  * `inRepo` (REVIEW THE CODE, the repo source's row of src/sourcedefaults.js, `reportInRepo`): the delivery of a repo source. `tree` is the run's worktree of the person's repo and `destination` a path INSIDE it, proven contained before a byte is written
  * ({@link proveInRepoDestination}); ONLY the one report is written there (the step files are read to render it, never copied: `output/` is the worker's scratch), and the caller's normal green commit carries it. It is the same step as the files delivery, with a row per source.
- * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}, inRepo?: boolean}} o
+ * `stage` (with `inRepo`; the rule "bareloop never writes into the judged tree after the close"): the report is written to `<tree>/output/<name>.md`, INSIDE the fence the close judged, and NOTHING is written at Destination (the Destination is still proven). Its file entry is the staged copy;
+ * {@link landStagedReport} copies it to Destination at an honoured Accept.
+ * @param {{tree: string, into?: string, destination: string, amend?: (rel: string, buf: Buffer) => Buffer, report?: {name: string, render: (files: {rel: string, orig: Buffer, delivered: Buffer}[]) => string|null}, inRepo?: boolean, stage?: boolean}} o
  * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string, pairedTaken?: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, destination, amend, report, inRepo = false }) {
+export async function copyOut({ tree, into, destination, amend, report, inRepo = false, stage = false }) {
   /** @type {string} */
   let destAbs;
   if (inRepo) {
@@ -1148,6 +1150,15 @@ export async function copyOut({ tree, into, destination, amend, report, inRepo =
   const text = report !== undefined && stepFiles.length > 0 ? report.render(stepFiles.map(({ rel, orig, delivered: d }) => ({ rel, orig, delivered: d }))) : null;
   if (report !== undefined && text !== null && text.length > 0) {
     const name = report.name.replace(/[/\\\0]/g, '-').replace(/^\.+/, '') || 'report';
+    if (inRepo && stage) {
+      const staged = join(outputDir, `${name}.md`);
+      const stagedBuf = Buffer.from(text, 'utf8');
+      try { await writeFile(staged, stagedBuf); } catch (e) {
+        return refuse('destination-write-failed', `staging the report at ${staged} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+      }
+      delivered.push({ path: staged, bytes: stagedBuf.length, sha256: sha256Hex(stagedBuf) });
+      return { stop: null, files: delivered };
+    }
     // a files delivery pairs the report with its first step file's dated name; a repo source has no delivered step file, so it takes the next free dated name
     const paired = stepFiles[0].suffix === '' ? null : join(destAbs, `${name}${stepFiles[0].suffix}.md`);
     let mdPath = paired ?? '';
@@ -1168,6 +1179,26 @@ export async function copyOut({ tree, into, destination, amend, report, inRepo =
     return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);
   }
   return { stop: null, files: delivered };
+}
+
+/**
+ * An honoured Accept lands the staged report (`copyOut` with `stage`) at Destination inside the repo: the destination is proven again, the report takes the next free same-day name (`pickDelivery`, `-2`, `-3`) and is written with `wx`, never over a person's file.
+ * @param {{tree: string, destination: string, staged: string}} o `staged` the absolute path of the report under `<tree>/output/`
+ * @returns {Promise<{stop: null, file: {path: string, bytes: number, sha256: string}}|SourceRefusal>}
+ */
+export async function landStagedReport({ tree, destination, staged }) {
+  const proved = await proveInRepoDestination(tree, destination);
+  if (proved.stop !== null) return proved;
+  let buf;
+  try { buf = await readFile(staged); } catch (e) { return refuse('destination-output-missing', `the staged report ${staged} could not be read: ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
+  const pick = pickDelivery(join(proved.destAbs, basename(staged)));
+  if (pick.stop !== null) return pick;
+  await mkdir(proved.destAbs, { recursive: true });
+  try { await writeFile(pick.path, buf, { flag: 'wx' }); } catch (e) {
+    if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${pick.path} already exists — bareloop never overwrites a person's file`);
+    return refuse('destination-write-failed', `copying to ${pick.path} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+  }
+  return { stop: null, file: { path: pick.path, bytes: buf.length, sha256: sha256Hex(buf) } };
 }
 
 /** the places inside a repo a report may never land: git's own, bareloop's, and the worker's scratch (`output/`) */

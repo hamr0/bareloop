@@ -73,5 +73,5 @@ export async function runReview({ before = [], destination = 'docs/', answer = G
   /** @type {string[]} */ const outl = []; /** @type {string[]} */ const errl = [];
   const rc = await main(['--spec', specPath, '--approve', jobSpecHash(spec)], { provider, env: {}, out: (/** @type {any} */ s) => outl.push(String(s)), err: (/** @type {any} */ s) => errl.push(String(s)), runlistHome: home });
   const text = `${errl.join('\n')}\n${outl.join('\n')}`;
-  return { rc, text, src, prep, spec, home, dir, branch: /final commit \w+ on (\S+?);/.exec(text)?.[1] ?? null };
+  return { rc, text, src, prep, spec, home, dir, branch: /(?:final commit \w+|nothing left to commit) on (\S+?);/.exec(text)?.[1] ?? null, specPath, spine: /^spine\s+(\S+)/m.exec(text)?.[1] ?? null };
 }

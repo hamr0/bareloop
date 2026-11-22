@@ -99,6 +99,8 @@ export function engineRefusalWords(tail, kind, logFile, questionOf = () => null)
   for (const line of String(tail ?? '').split('\n').map((l) => l.trim())) {
     if (line !== '' && known.test(line) && !raw.test(line)) {
       // RULED 2026-10-16 (A): a refused Accept names each failed check by the panel's own plain question
+      const outside = kind === 'accept' ? outsideFilesOf(tail) : null;
+      if (outside !== null) return `Accept did not go through: ${outside}. Nothing was recorded.`;
       const asked = kind === 'accept' ? doorRedStages(tail).map((n) => questionOf(n)).filter((q) => typeof q === 'string' && q !== '') : [];
       if (asked.length > 0) {
         const shown = asked.slice(0, 3).map((q) => `"${q}"`).join('; ');
@@ -112,6 +114,23 @@ export function engineRefusalWords(tail, kind, logFile, questionOf = () => null)
   if (kind === 'rerun') return `Rerun did not start. Nothing was spent on it. The details are in ${logFile}.`;
   if (kind === 'pause') return `Pause did not go through. Nothing was recorded. The details are in ${logFile}.`;
   return `Accept did not go through. Nothing was recorded. The details are in ${logFile}.`;
+}
+
+/**
+ * The real gap of a files-changed refusal, in plain words from the stage's own gap lines (`N changed file(s) lie outside <prefixes>` then one `close:   <path>` per file, src/kinds.js runFilesChanged), or null
+ * when the refusal carries no such gap. No stage name is read: the gap's own words are the reason.
+ * @param {string} tail @returns {string|null}
+ */
+function outsideFilesOf(tail) {
+  for (const line of String(tail ?? '').split('\n')) {
+    const m = /(\d+) changed file\(s\) lie outside (\S+?(?:, \S+?)*)(?= close:\s)((?:\s+close:\s+\S[^ ]*)*)/.exec(line);
+    if (!m) continue;
+    const files = [...m[3].matchAll(/close:\s+(\S+)/g)].map((x) => x[1]);
+    const n = Number(m[1]);
+    const shown = files.length > 0 ? `: ${files.join(', ')}${n > files.length ? ` and ${n - files.length} more` : ''}` : '';
+    return `${n === 1 ? 'a file changed' : `${n} files changed`} outside ${m[2]}${shown}`;
+  }
+  return null;
 }
 
 /**

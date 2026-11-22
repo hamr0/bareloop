@@ -54,7 +54,7 @@ import { makeSpine } from './spine.js';
 // signed into the job spec — a job is a repeatable SHAPE, the source/
 // destination a per-run value, exactly like `bareloop run <bundle> --repo
 // <path>` varies the repo without touching the bundle's signature).
-import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, refreezeUrlInputs } from './source.js';
+import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -1338,6 +1338,29 @@ async function execute(ctx) {
           try { releaseRun({ home: cfgHome, runid: DOOR.includes('/') || DOOR.endsWith('.jsonl') ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR }); } catch (/** @type {any} */ e) { err(`WARNING: could not release this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}).`); }
         }
         out(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
+        // the review report staged under output/ at green lands at Destination NOW, after the re-run passed, and is committed on the work branch (nothing lands on a refusal or a pause)
+        // the spine as it stands now (the answer's own door-decision is on it), so this record's seq follows it
+        const nowRecords = parseSpineText(readFileSync(doorSpineFile, 'utf8')).records;
+        const doorEmit = makeSpine(doorSpineFile, { startSeq: nowRecords.at(-1)?.seq ?? 0 });
+        const staged = (doorEvents ?? []).findLast((e) => e?.type === 'report-staged' && typeof e.path === 'string') ?? null;
+        const landed = staged !== null && (doorEvents ?? []).some((e) => e?.type === 'destination-written' && e.staged === staged.path);
+        if (staged !== null && !landed) {
+          const man = (await readSourceManifest(into)); // parenthesised on purpose: tests/source.test.js pins the FIRST `const x = await readSourceManifest(into)` as the front door's read
+          if (man.stop === null && man.present && typeof man.manifest?.destination === 'string') {
+            const land = await landStagedReport({ tree: wd, destination: man.manifest.destination, staged: staged.path });
+            if (land.stop === null) {
+              doorEmit('destination-written', { path: land.file.path, declared: man.manifest.destination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
+              out(`\nDESTINATION  written in the repo - ${land.file.path} (${land.file.bytes}B, sha256 ${land.file.sha256.slice(0, 12)}...)`);
+              try {
+                const fin = commitWork(wd, `bareloop: ${spec.job} (run ${DOOR !== null && (DOOR.includes('/') || DOOR.endsWith('.jsonl')) ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR})`, { exclude: defaultsOf(sourceOf(spec.closeDecl)).commitExclude });
+                out(fin.committed ? `WORKTREE  report commit ${fin.sha} on the work branch` : 'WORKTREE  nothing left to commit');
+              } catch (/** @type {any} */ e) { err(`WORKTREE  the report commit failed (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the report is in the worktree at ${land.file.path}`); }
+            } else {
+              doorEmit('destination-refused', { code: land.code, detail: land.stop });
+              out(`\nDESTINATION  NOT written - ${land.code}: ${land.stop}`);
+            }
+          }
+        }
         out(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : ((ctx.registry ?? null) === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : (quarantinesCredit(spec.verdictType) ? 'nothing left to release — this row was already released by an earlier accept (a repeat answer records nothing new)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine'))}`);
         if (ans.note) out(`  note     ${ans.note}`);
       } else {
@@ -2177,9 +2200,16 @@ async function execute(ctx) {
     return n;
   };
   if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && typeof wtManifest?.destination === 'string') {
-    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
+    // ONE RULE: bareloop never writes into the judged tree after the close. With a review door open the report is STAGED under output/ (inside the fence the close judged) and lands at Destination only at an honoured Accept (below); with no door there is no Accept to wait for, so it lands now, as before.
+    const staging = doorHere !== null;
+    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
     if (co.stop === null) {
       for (const f of co.files) {
+        if (staging) {
+          emit('report-staged', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtManifest.destination} when you Accept`);
+          continue;
+        }
         emit('destination-written', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
         out(`\nDESTINATION  written in the repo - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...)`);
       }
