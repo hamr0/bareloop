@@ -887,6 +887,7 @@ question this interview used to ask separately, later, as "The FENCE"; that late
 GONE, and `draft.writeScope` is parsed straight out of the Destination answer. For every other
 kind (a plain folder, a single file, or a URL), Destination is an absolute DIRECTORY, re-asked
 in a loop (via `proveDestination`) until it is one the machine can actually write into. Either
+**One Destination:** its single home is `source.json`'s `destination` (every job kind has it). A Destination answer in the panel (Yes or typed) rewrites that record first, atomically; the card, the Job tab, the Reuse prefill, the schedule words, the review report landing and the signed repo-job fence (`writeScope`) are all read or built from it, and nothing shows `writeScope` as Destination (a review job keeps its `output/` fence, its Destination is the report folder). An old run keeps the record it was made with.
 way, the moment both are answered the script calls `prepareSource({source, into, destination})`
 itself — the SAME $0 freeze `scripts/prep-source.mjs` performs, under a fresh `into` scratch
 root nested inside `--out` — and everything downstream (the class's own questions, the job

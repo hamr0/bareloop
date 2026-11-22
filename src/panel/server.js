@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers, runNameOf } from '../runlist.js';
 import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
+import { readManifestDestination } from '../source.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
 import { jobTypeLine, sourceOf } from '../sourcedefaults.js';
@@ -3797,11 +3798,18 @@ export function getRunJob(runid, opts = {}) {
     const schedule = jobScheduleWords({
       trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
       model: spec && typeof spec.model === 'string' ? spec.model : null,
-      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
+      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : recordDestinationOfRun(rows.find((r) => r && r.runid === cur.originRunid))) : null,
       home: door.userHome, waiting: cur ? door.isWaiting(job) : false,
     });
     return { ...body, started, schedule };
   } catch { return body; }
+}
+
+/** The ONE Destination record of a run (its source.json `destination`); `null` = no record or none set. @param {any} row @returns {string|null} */
+function recordDestinationOfRun(row) {
+  if (!row || typeof row.spine !== 'string') return null;
+  const { sourceJsonPath } = sourceNearSpine(row.spine);
+  return sourceJsonPath ? readManifestDestination(sourceJsonPath) : null;
 }
 
 /**
@@ -4155,9 +4163,8 @@ export function getStartFrom(runid, opts = {}) {
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     // a card saved by P7 or later keeps the Inputs text the person typed
     inputs: typeof saved.inputs === 'string' && saved.inputs ? saved.inputs : '',
-    // a plain-files job delivers to an absolute folder the SPEC does not hold (its fence is `output/` inside the run's tree): the
-    // Destination opens with the folder the origin run was given, never with that fence
-    destination: [saved.destination, manifest?.destination].find((d) => typeof d === 'string' && /^(\/|[a-zA-Z]:[\\/])/.test(d)) ?? '',
+    // ONE Destination: the record (source.json) is the only place it is read from (a plain-files folder, a review's report folder, a repo job's fence); never the saved card or the signed fence
+    destination: manifest === null ? undefined : (typeof manifest.destination === 'string' ? manifest.destination : ''),
     jobName: row.job,
   });
   const key = workflowKey(spec);
@@ -4272,11 +4279,12 @@ export function listReuseJobs(opts = {}) {
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
- * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = an absolute per-run folder (a plain-files job), else the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
+ * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = the ONE Destination record's value (source.json); undefined only when the run has no record (a bundle import), then the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
  * @returns {Record<string, any>}
  */
 function reuseCardFromSpec(spec, extra) {
-  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+  // a bundle IMPORT has no source.json, so no record: its signed fence is the only Destination there is (a run with a record never reaches this)
+  const importFence = (Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : []).join(', ');
   return {
     jobName: typeof spec.job === 'string' && spec.job ? spec.job : extra.jobName,
     checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
@@ -4284,7 +4292,7 @@ function reuseCardFromSpec(spec, extra) {
     jobText: jobTextFromSpec(spec),
     thinking: spec.thinking === true,
     inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
-    destination: extra.destination || writeScope.join(', '),
+    destination: extra.destination ?? importFence,
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
     // piece 8: a job with an MCP shows its Flow type and server on the card; a plain job adds nothing (so its card is what it was)

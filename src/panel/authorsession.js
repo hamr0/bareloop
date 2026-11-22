@@ -26,7 +26,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo, repoTrackedFiles,
+  prepareSource, setManifestDestination, readManifestDestination, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo, repoTrackedFiles,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -378,8 +378,8 @@ export function jobBoxesChanged(card, origin) {
 export function buildReuseSpec(originSpec, card, rows) {
   const spec = JSON.parse(JSON.stringify(originSpec));
   // an ABSOLUTE Destination is a per-run output folder (a plain-files job): it is never part of the signed spec, and the spec's own
-  // fence (inside the run's tree) stays as signed. A repo job's Destination is the fence and is relative (an absolute one is refused).
-  if (!isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  // fence (inside the run's tree) stays as signed; a rubric/review job keeps its output/ fence (its Destination is a report folder, not a fence). A repo job's Destination is the fence and is relative (an absolute one is refused).
+  if (spec.verdictType !== 'soft-green' && !isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   const ip = cardInputs(card, { rubric: spec.verdictType === 'soft-green', flowType: flowTypeOf(spec) });
   if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
@@ -966,6 +966,22 @@ export function createSession(card, deps = {}) {
     }
     stepStart('check');
 
+    // ONE Destination (hamr 2026-11-22): its home is the record `source.json` (`prep.manifestPath`). A source that recorded none at prepare (a relative Destination on a non-repo code job) gets the card's value written once here;
+    // from then on `setDestination` is the only writer (record first, atomic), `card.destination` / `state.card.destination` are set ONLY from a read of the record, and the fence is built from it (`fenceFromRecord`).
+    const MANIFEST_PATH = /** @type {string} */ (prep.manifestPath);
+    if (card.checkType !== 'rubric' && readManifestDestination(MANIFEST_PATH) === null && String(card.destination ?? '').trim() !== '') {
+      try { await setManifestDestination(MANIFEST_PATH, card.destination); } catch (e) { refuse(`could not record the Destination (${/** @type {Error} */ (e).message})`); return; }
+    }
+    const scopeOfDestination = (/** @type {string} */ d) => d.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+    const fenceFromRecord = () => scopeOfDestination(readManifestDestination(MANIFEST_PATH) ?? card.destination);
+    const setDestination = async (/** @type {string} */ value) => {
+      await setManifestDestination(MANIFEST_PATH, value);
+      const recorded = readManifestDestination(MANIFEST_PATH) ?? value;
+      card = { ...card, destination: recorded };
+      state.card = { ...state.card, destination: recorded };
+      return recorded;
+    };
+
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
     let LANG = RUBRIC_FILES ? RUBRIC_LANG : 'none-detected';
     /** @type {any} */
@@ -1137,6 +1153,9 @@ export function createSession(card, deps = {}) {
         const rec = await recordSheetShas({ into: dirname(prep.tree), closeDecl: reused.closeDecl });
         if (!rec.ok) { refuse(rec.error); return; }
       }
+      // the fence is built from the record too: a relative Destination is the repo job's fence (an absolute one is a plain-files drop-off, never in the spec)
+      const recorded = readManifestDestination(MANIFEST_PATH);
+      if (reused.verdictType !== 'soft-green' && recorded !== null && !isAbsoluteDestination(recorded.trim())) reused.writeScope = scopeOfDestination(recorded);
       await finish(reused, null);
       return;
     }
@@ -1166,7 +1185,7 @@ export function createSession(card, deps = {}) {
 
     // a rubric job writes only inside the tree's own `output/` (a review's report is written by code); its Destination is a drop-off folder
     // (proven above, per run), never a fence
-    let writeScope = RUBRIC_FILES ? [...RUBRIC_FENCE] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    let writeScope = RUBRIC_FILES ? [...RUBRIC_FENCE] : fenceFromRecord();
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -1256,10 +1275,9 @@ export function createSession(card, deps = {}) {
           const newDest = said === 'typed' ? typedDest : pointed.point.folder;
           appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
           if (said === 'yes' || said === 'typed') {
-            card = { ...card, destination: newDest };
-            writeScope = said === 'typed' ? newDest.split(/[,\n]/).map((x) => x.trim()).filter(Boolean) : [newDest];
+            await setDestination(newDest);
+            writeScope = fenceFromRecord();
             draft.writeScope = writeScope;
-            state.card = { ...state.card, destination: newDest };
             say('bot', `Destination is now ${newDest}. Drafting.`);
           } else say('bot', 'Destination stays as it is. Drafting.');
         }
@@ -1374,19 +1392,17 @@ export function createSession(card, deps = {}) {
           const typed = via === 'path' ? String(a).trim() : null;
           if (typed === null && yesNoOf(a) === 'yes') {
             appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'asked', line: unnamed.n, entries, answer: 'yes', from: redactSecrets(from), to: redactSecrets(proposal), at: new Date().toISOString() });
-            card = { ...card, destination: proposal };
-            writeScope = [...entries];
+            await setDestination(proposal);
+            writeScope = fenceFromRecord();
             draft.writeScope = writeScope;
-            state.card = { ...state.card, destination: proposal };
             say('bot', `Destination is now ${proposal}. Drafting.`);
             return { writeScope };
           }
           if (typed !== null && holds(typed)) {
             appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'asked', line: unnamed.n, entries, answer: 'typed', from: redactSecrets(from), to: redactSecrets(typed), at: new Date().toISOString() });
-            card = { ...card, destination: typed };
-            writeScope = typed.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+            await setDestination(typed);
+            writeScope = fenceFromRecord();
             draft.writeScope = writeScope;
-            state.card = { ...state.card, destination: typed };
             say('bot', `Destination is now ${typed}. Drafting.`);
             return { writeScope };
           }

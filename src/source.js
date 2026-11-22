@@ -26,7 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile, rename, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename, isAbsolute } from 'node:path';
 import { git } from './kinds.js';
 import { addWorktree, hideBareloopDir } from './worktree.js';
@@ -833,6 +833,28 @@ export async function prepareSource({ source, into, destination, worktree, fetch
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return { stop: null, into: intoAbs, tree: treeDir, manifestPath, manifest };
+}
+
+/**
+ * The ONE Destination record (hamr 2026-11-22): `source.json`'s `destination`. A Destination answer (the dest-point and dest-fence questions, Yes or typed) rewrites it here
+ * first, atomically (temp file + rename, same JSON format); every card, screen and fence reads it back. Throws when the manifest cannot be read or written.
+ * @param {string} manifestPath @param {string} destination @returns {Promise<string>} the value now in the record
+ */
+export async function setManifestDestination(manifestPath, destination) {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.destination = destination;
+  const tmp = `${manifestPath}.tmp-${process.pid}`;
+  await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
+  await rename(tmp, manifestPath);
+  return destination;
+}
+
+/** The Destination record's value, read synchronously; `null` = no record or none set. @param {string} manifestPath @returns {string|null} */
+export function readManifestDestination(manifestPath) {
+  try {
+    const d = JSON.parse(readFileSync(manifestPath, 'utf8')).destination;
+    return typeof d === 'string' && d !== '' ? d : null;
+  } catch { return null; }
 }
 
 /**
