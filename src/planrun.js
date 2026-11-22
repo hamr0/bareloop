@@ -1824,8 +1824,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
+   * @param {Map<string, Promise<any>>} [cmdMemo] a caller-owned check pass (the preflight loop); absent = a fresh pass
    */
-  const runCloseStagesInner = async (stages) => {
+  const runCloseStagesInner = async (stages, cmdMemo) => {
     if (!declared) return runStages(stages, scrub, closeOpts);
     // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
     // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
@@ -1836,6 +1837,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return await runDeclaredStages(stages, scrub, {
       ...closeOpts,
       signal: stopChecks.signal,
+      ...(cmdMemo ? { cmdMemo } : {}),
       onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
       cmdTimes,
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
@@ -1890,15 +1892,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * exactly like `crashed`/`timed-out`/`killed` — a forbidden-zone outcome,
    * never retried, never fed back as a gap.
    * @param {any[]} stages
+   * @param {Map<string, Promise<any>>} [cmdMemo]
    */
-  const runCloseStages = async (stages) => {
+  const runCloseStages = async (stages, cmdMemo) => {
     const sig = checkStageByteSignature(stages, workdir);
     if (!sig.ok) {
       const r = sig.reds[0];
       const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
       return { verdict: 'close-tampered', stage: r?.stage, detail };
     }
-    return runCloseStagesInner(stages);
+    return runCloseStagesInner(stages, cmdMemo);
   };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -2293,8 +2296,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ? { hidden: stagedClose.filter((s2) => s2.offer === false).map((s2) => s2.name), meaning: 'a stage that cannot stand alone as a ruler (a precondition) is not offered — a partial menu is acceptable, never a failure' }
       : {}),
   });
+  // ONE check pass: the tree is unchanged through the whole preflight loop, so a command read by several menu stages runs once (hamr 2026-11-22,
+  // run mwsblixt). The memo lives only for this loop; the precheck, step exits and the final close each take a fresh pass.
+  const preflightMemo = new Map();
   for (const m of menu) {
-    const v = await runCloseStages(m.run);
+    const v = await runCloseStages(m.run, preflightMemo);
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
       if (seedNoteOn) seedReds.push({ stage: v.stage, kind: stagedClose.find((/** @type {any} */ s2) => s2?.name === v.stage)?.kind, gap: v.gap });

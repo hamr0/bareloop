@@ -3190,7 +3190,7 @@ pay for tests). A hand-written command close (`job.close`, `src/ralph.js` `runCl
   `{code: 'check-timed-out', limitMs, detail}`): no revise call, no declaration kept. At the signing gates the `broken-close` red carries
   `limitMs` and `signingStopText` says the same words. The drafting log's `try-refused` row carries `stops: [{stage, text, survivors?}]`.
 - **Once per pass.** Each command runs once per check pass (a seed read, a close run: `ctx.cmdMemo`); stages reading the same command
-  (args, env, directory and limit alike) share the result. Nothing is shared across passes.
+  (args, env, directory and limit alike) share the result. Nothing is shared across passes, except one case: the run-start preflight loop (one close run per offered stage, over an unchanged tree) is ONE pass, so `runPlan` hands every one of its `runDeclaredStages` calls one caller-owned `cmdMemo` (an optional `opts.cmdMemo`; absent = a fresh pass, as for every other caller). The precheck, step exits and the final close each take a fresh pass.
 
 #### `src/bundle.js` — pure, no provider/process calls
 

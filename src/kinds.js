@@ -1975,7 +1975,7 @@ async function runStageIn(stage, ctx) {
 export async function seedRead(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
-  const inner = { ...ctx, seedTrees, cmdMemo: new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
+  const inner = { ...ctx, seedTrees, cmdMemo: ctx.cmdMemo ?? new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
   /** AFTER the stage completes, never before: a line saying a stage STARTED and
    * a line saying what it RETURNED are two different facts, and only the second
    * one can carry a verdict. The duration is measured around the call rather
@@ -2038,7 +2038,7 @@ export async function runDeclaredClose(declaration, ctx) {
   const owned = !ctx.seedTrees;
   const seedTrees = ctx.seedTrees ?? makeSeedTrees();
   // the close's SIGNED source (`closeDecl.source`, src/sourcedefaults.js) rides into every stage; a stage reads it, never guesses it from the tree
-  const inner = { ...ctx, seedTrees, cmdMemo: new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
+  const inner = { ...ctx, seedTrees, cmdMemo: ctx.cmdMemo ?? new Map(), ...(declaration?.source ? { source: declaration.source } : {}) };
   try {
     /** @type {StageResult[]} */
     const stages = [];
