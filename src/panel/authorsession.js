@@ -69,7 +69,7 @@ import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, wri
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
-import { jobTypeLineOf } from '../sourcedefaults.js';
+import { jobTypeLineOf, JOB_TYPE_LABEL, CHANGE_JOB_TYPE } from '../sourcedefaults.js';
 import { draftRefusal } from '../rangereview.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
@@ -1230,11 +1230,11 @@ export function createSession(card, deps = {}) {
       const tracked = destFn ? repoTrackedFiles(prep.tree) : null;
       if (destFn && tracked !== null) {
         const pointed = await destFn({
-          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          jobLines, files: tracked, destination: card.destination, change: jobTypeNow === `${JOB_TYPE_LABEL}: ${CHANGE_JOB_TYPE}`, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
           ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
         });
         if (abandoned) return;
-        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
+        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: pointed.point.file === null ? null : redactSecrets(pointed.point.file), folder: pointed.point.folder === null ? null : redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
         if (pointed.state === 'point' && pointed.point) {
           const question = destQuestionText(pointed.point, card.destination);
           let said = null;
@@ -1245,9 +1245,9 @@ export function createSession(card, deps = {}) {
             // a typed Destination (the question box's own words, already checked at $0 by `send`) is taken as typed; buttons and old words say yes or no
             if (takeChoice() === 'path') { said = 'typed'; typedDest = String(a).trim(); break; }
             said = yesNoOf(a);
-            if (said === null) say('bot', 'Type yes or no.');
+            if (said === 'yes' && pointed.point.folder === null) { said = null; say('bot', 'Type a folder, or no to keep Destination.'); } else if (said === null) say('bot', pointed.point.folder === null ? 'Type a folder, or no.' : 'Type yes or no.');
           }
-          const newDest = said === 'typed' ? typedDest : pointed.point.folder;
+          const newDest = said === 'typed' ? typedDest : (pointed.point.folder ?? card.destination);
           appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
           if (said === 'yes' || said === 'typed') {
             card = { ...card, destination: newDest };
