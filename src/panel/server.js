@@ -3840,11 +3840,7 @@ function getRunJobBody(runid, opts) {
     if (typeof row.patient === 'string' && row.patient.length > 0) return row.patient;
     return 'not recorded';
   };
-  // ONE Destination record per repo CHANGE job: the signed spec's writeScope (the fence that binds the run). The manifest's own copy is written
-  // at prepare time and goes stale when a Destination question changes it, so it is never read for such a job. A review job (its writeScope is the
-  // report fence `output/`) and every plain-folder job keep the manifest's value (a per-run, never-signed drop-off).
-  const destDisplay = (/** @type {any} */ spec = null) => {
-    if (manifest?.kind === 'repo' && spec && spec.verdictType !== 'soft-green' && Array.isArray(spec.writeScope) && spec.writeScope.length > 0) return spec.writeScope.join(', ');
+  const destDisplay = () => {
     if (manifest && typeof manifest.destination === 'string' && manifest.destination.length > 0) return manifest.destination;
     return 'not recorded';
   };
@@ -3898,7 +3894,7 @@ function getRunJobBody(runid, opts) {
     budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
     source: sourceDisplay(),
-    destination: destDisplay(spec),
+    destination: destDisplay(),
     success: notRecorded(successFromSpec(spec)),
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
