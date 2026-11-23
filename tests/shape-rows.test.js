@@ -232,13 +232,15 @@ test('LIVE mwnbs3np: a rule whose truth check is refused when BUILT is a shape c
   b.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: [{ op: 'add', kind: 'count', line: 1, min: 4, max: 4 }] });
   b.reconcile();
   assert.equal(row(b, 'L1.~1')?.state, 'not-checked', 'precondition: the truth check is refused at build (live reason)');
-  assert.match(String(row(b, 'L1.~1')?.reason), /only 1 time/);
-  assert.deepEqual(b.shapeCandidates().map((x) => x.rule), [1, 2, 3], 'every rule no built check took is asked of the shape look');
+  // (was /only 1 time/ until the phrase alternatives: the fact now signs every word as one any-of fact, and a title ending in "?" is no word edge, so code refuses to sign it; still a refused truth check)
+  assert.match(String(row(b, 'L1.~1')?.reason), /code could not build a legal check from it/);
+  // rule 2 ("in progress", "closed", "finished") now signs as one any-of fact (phrase alternatives), so a built check takes it; rule 1's titles end in "?" (no word edge) and stay refused
+  assert.deepEqual(b.shapeCandidates().map((x) => x.rule), [1, 3], 'every rule no built check took is asked of the shape look');
   b.setShape(buildShapes({ lines, labels: ['tracker'], suggestions: JSON.parse(fx.shapeMapRaw).shapes, nameRules: NR }));
   b.reconcile();
   assert.equal(row(b, 'L1.~1')?.state, 'built');
   assert.equal(row(b, 'L1.~1')?.can?.how, 'shape');
   assert.equal(row(b, 'L1.~2')?.state, 'built');
-  assert.equal(row(b, 'L1.~2')?.can?.how, 'shape');
+  assert.equal(row(b, 'L1.~2')?.can?.how, 'fact');
   assert.equal(row(b, 'L1.~3')?.state, 'built');
 });
