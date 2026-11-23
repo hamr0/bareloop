@@ -1,5 +1,5 @@
 // Shape jobs (itemShape), clause 1 "Offer" as hamr ruled 2026-11-18 (2a): the shape is proposed by a pre-call LOOK before the asks (src/shapelook.js, the sibling of the sheet look), built by code (src/shapebuild.js) in
-// authorCloseForJob before `askRounds`, so "the rules or the shape could both fit" is one of the counted asks. The row-edit turn proposes no shape. Fake provider, $0, no bareguard itemShape (OFF unless shapeAvailable()).
+// authorCloseForJob before `askRounds`, so "the rules or the shape could both fit" is one of the counted asks. The row-edit turn proposes no shape. Fake provider, $0, no bareguard itemShape (no src file gates the shape look on shapeAvailable(); only tests call it).
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';

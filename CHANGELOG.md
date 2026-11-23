@@ -9,7 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Docs
 
-- README: the suite section is now a short map of the bare suite (Hands / Rails / Apps) plus what this pairs well with, linking the full list on github.com/hamr0.
+- README: the suite section is now a short map of the bare suite (Hands / Rails / Apps), a line naming the packages bareloop is built from, and a link to the full list on github.com/hamr0.
 
 ### Added
 
