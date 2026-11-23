@@ -1256,7 +1256,7 @@ export class CheckBlock {
   rowChoice(key, choice) {
     const r = this.rows.find((x) => x.key === key);
     if (!r) return { ok: false, why: 'there is no such check on the list' };
-    // a rule's own shape field (rules first: the rule had no truth check) can be dropped: that rule goes Not checked; to get it back, Revise
+    // a rule's own shape field (rules first: the rule had no truth check) can be dropped: that rule goes Not checked; to get it back, Add back (below) or Revise
     if (r.kind === 'rule' && r.can?.how === 'shape') {
       if (choice !== 'drop') return { ok: false, why: 'that check is already on the card' };
       this.shapeDrops.rules.add(`${r.line}:${r.rule}`);

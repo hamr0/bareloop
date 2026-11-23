@@ -151,9 +151,6 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
   return out;
 }
 
-/** the fields that say what a shape field IS: all but the names code gives it (the row's own key) — two drafts spell the same field alike @param {{name: string, kind: string, required?: boolean, bounds?: Record<string, any>}} f @returns {Record<string, any>} */
-export const shapeFieldBody = (f) => ({ name: f.name, kind: f.kind, required: f.required === true, bounds: f.bounds ?? {} });
-
 /** bareguard's own worked example item of `itemShape` (its address and values are bareguard's, not ours) @type {Record<string, any>} */
 const WORKED = /** @type {any} */ (rubricVocabulary).rules.itemShape.example.output.items[0];
 
