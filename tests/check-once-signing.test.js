@@ -59,9 +59,13 @@ test('two signing-gate tries on an unchanged seed share one run of the repo comm
   assert.ok(second.gates.seedVerdict, 'the shared try still judged every stage');
 });
 
+// the limit must outlast node's own startup under a loaded full suite (the spawn mark is written by node, and sh is on the close deny floor, so
+// a sh mark-first spawn is not expressible): 700 ms was shorter than node's startup under load, so the command was killed before it counted (0 runs)
+const TIMEOUT_MS = 4000;
+
 test('a timed-out command on try 1 is not kept: try 2 runs it fresh', async (t) => {
   const { dir, seed, runs } = makePatient(t);
-  const spec = jobOf([counter('slow', 'b', { sleepMs: 20_000, timeoutMs: 700 })]);
+  const spec = jobOf([counter('slow', 'b', { sleepMs: 20_000, timeoutMs: TIMEOUT_MS })]);
   const seedShare = new Map();
   await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: 30_000, seedShare });
   await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: 30_000, seedShare });
