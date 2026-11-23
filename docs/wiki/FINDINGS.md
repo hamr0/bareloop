@@ -16762,3 +16762,11 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 ### F392: Two suites at once pushed the load to 37 and slowed a signing check to 16+ min (2026-11-23)
 
 - fwd's suite and a live bareloop run overlapped. Peers announce suite starts and "done"; one full suite at a time.
+
+### F393: A check timeout at the start of a resumed leg ends the run close-red and takes Resume away (run mwtf8p8s, walk-stop, 2026-11-23)
+
+- Leg 1: Stop pressed during the step's full test check (15:40:39Z). The check-run was killed, escalation category stopped, job-end outcome stopped ($0.13). The F388 fix (90a93f9b) seen LIVE.
+- Leg 2 (resume 15:40:49Z): the resume start precheck's `npm test` did not finish inside 900000 ms (load ~20: our own refactor worker's full suite started at the same time, an orchestrator scheduling error, see F392). Spine: close-precheck timed-out, escalation close-timeout, job-end close-red, $0 for the leg.
+- `close-red` is not in CHECKPOINT_OUTCOMES (`src/reuse.js:148`: cap-halt, wall-halt, step-stalled, provider-red, stopped, human checkpoints), so the panel offered only Reuse, not Resume. The AI's step edit stayed on disk.
+- A timeout says nothing about the job (the check never answered), so it should be resumable like provider-red. Also noted: this start check's limit was 15 min (900000 ms) while CHECK_LIMIT_MS is 30 min; look at that in the same fix.
+- hamr: fix comes in the next branch after the release.
