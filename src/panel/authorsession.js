@@ -1197,7 +1197,12 @@ export function createSession(card, deps = {}) {
         appendDraftLog(outDir, { kind: 'ref-point', no: Math.max(0, state.steps.length - 1), guess: redactSecrets(refGuessToken(guess)), answer: said, at: new Date().toISOString() });
         if (said === 'yes') {
           const line = jobLines.find((l) => l.n === guess.line);
-          if (line) line.text = `${line.text} ${refGuessToken(guess)}`;
+          if (line) {
+            line.text = `${line.text} ${refGuessToken(guess)}`;
+            // the page's Job box follows state.card.jobText (syncJobBoxFromSession), as after a ~ answer (syncJobLines): box and plan card read the same line
+            state.card = { ...state.card, jobText: jobBoxText(jobLines) };
+            card = { ...card, jobText: state.card.jobText };
+          }
           if (road.review) {
             const late = await draftRefusal({ repo: rangeRepo, jobLines, review: true });
             if (late !== null) { refuse(late); return; }

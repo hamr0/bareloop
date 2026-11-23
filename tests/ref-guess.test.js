@@ -55,10 +55,13 @@ test('panel door: a change job whose line holds the word feat asks "Did you mean
   assert.deepEqual(yes.state.pendingAsk.box.choices.map((c) => c.choice), ['yes', 'no']);
   yes.send('yes');
   assert.deepEqual(await signedLines(yes), ['Fix the tests on feat branch: feat']);
+  // the page's Job box follows state.card.jobText: box and plan card must read the same line (hamr, seen live)
+  assert.match(yes.state.card.jobText, /^Fix the tests on feat branch: feat\n~ keep the API$/);
   const no = await session(t, 'Fix the tests on feat\n~ keep the API', 'change');
   assert.ok(await until(() => no.state.pendingAsk?.source === 'ref-point'));
   no.send('no');
   assert.deepEqual(await signedLines(no), ['Fix the tests on feat']);
+  assert.equal(no.state.card.jobText, 'Fix the tests on feat\n~ keep the API', 'No changes nothing');
 });
 
 test('panel door: a review job with a word v1..feat asks "Did you mean range: v1..feat?" and Yes writes `range: v1..feat`; a change job with the same word asks nothing about a range; a typed token asks nothing', async (t) => {
