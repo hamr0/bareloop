@@ -13,6 +13,7 @@ import { world, makeRepo, keysHome, draftSeams, until, baseCard } from './flowty
 
 const MANY = 'A job can name one range or one branch, and this one names 2 (range: v1..v2, branch: feat). Keep one. Nothing spent.';
 const CHANGE_RANGE = 'Line 1 names a range to review, but this job changes code. A range can only be reviewed, not changed. Write it as a review, or take the range out. Nothing spent.';
+const ruled = (/** @type {string} */ text) => [{ n: 1, text, rule: 'keep the API', rules: ['keep the API'] }];
 const lines = (/** @type {string[]} */ ...t) => t.map((text, i) => ({ n: i + 1, text }));
 const picker = (/** @type {string} */ answer) => { const calls = []; return Object.assign(async (/** @type {any} */ l) => { calls.push(l); return { answer, reason: null }; }, { calls }); };
 const road = (/** @type {any} */ jobLines, /** @type {any} */ pick) => chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines, pick });
@@ -22,11 +23,11 @@ test('chooseRoad: many tokens are refused BEFORE the pick (no call is made); a r
   assert.deepEqual(await road(lines('Review range: v1..v2 and branch: feat'), p1), { review: false, answer: null, reason: null, refusal: MANY });
   assert.equal(p1.calls.length, 0, 'refused before the AI is asked');
   assert.equal((await road(lines('Review range: v1..v2 for bugs'), picker('change'))).refusal, CHANGE_RANGE);
-  assert.deepEqual(await road(lines('Make branch: feat pass the tests'), picker('change')), { review: false, answer: 'change', reason: null }, 'branch on a change job: legal');
+  assert.deepEqual(await road(ruled('Make branch: feat pass the tests'), picker('change')), { review: false, answer: 'change', reason: null }, 'branch on a change job: legal');
   const rv = await road(lines('Review range: v1..v2 for bugs'), picker('review'));
   assert.equal(rv.review, true);
   assert.equal('refusal' in rv, false);
-  assert.deepEqual(await road(lines('fix the tests'), picker('change')), { review: false, answer: 'change', reason: null });
+  assert.deepEqual(await road(ruled('fix the tests'), picker('change')), { review: false, answer: 'change', reason: null });
 });
 
 // ── panel door

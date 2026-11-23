@@ -67,7 +67,7 @@ test('panel door: a review branch in a repo with no main is refused in the plain
   assert.equal(a.s.state.phase, 'refused');
   assert.equal(a.s.state.error, NO_MAIN);
   assert.equal(a.calls.author, 0);
-  const b = await panel(t, 'Make branch: feat pass the tests', 'change', noMain);
+  const b = await panel(t, 'Make branch: feat pass the tests\n~ keep the API', 'change', noMain);
   assert.notEqual(b.s.state.phase, 'refused', String(b.s.state.error));
 });
 

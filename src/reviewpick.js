@@ -19,6 +19,9 @@ import { rangeTokens, manyTokensRefusal, changeRefusal } from './rangereview.js'
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
 
+/** the one ask a Change code job with no `~` rule gets, in plain words from code */
+export const CHANGE_NEEDS_RULE_WORDS = 'Add at least one rule (~) for this job \u2014 for example what must stay true, or what must not change.';
+
 /** the label of the one paid call, as the drafting book sees it */
 export const REVIEW_CALL_LABEL = 'review-pick';
 
@@ -123,7 +126,10 @@ export async function chooseRoad({ verdictType, isRepoSource, jobLines, pick }) 
   const r = await pick(jobLines);
   if (r.answer !== 'review') {
     const range = rangeTokens(jobLines).find((x) => x.kind === 'range');
-    return range === undefined ? { review: false, answer: r.answer, reason: r.reason ?? null } : { review: false, answer: r.answer, reason: r.reason ?? null, refusal: changeRefusal(range) };
+    if (range !== undefined) return { review: false, answer: r.answer, reason: r.reason ?? null, refusal: changeRefusal(range) };
+    // hamr 2026-11-23: a CHANGE job needs at least one `~` rule. CODE counts the `~` lines (no model judges their quality); a pick that never answered stays the open D flow
+    if (r.answer === 'change' && !jobLines.some((l) => (Array.isArray(l.rules) ? l.rules.length > 0 : String(l.rule ?? '') !== ''))) return { review: false, answer: r.answer, reason: r.reason ?? null, refusal: CHANGE_NEEDS_RULE_WORDS };
+    return { review: false, answer: r.answer, reason: r.reason ?? null };
   }
   return { review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: RUBRIC_LANG, rubricFiles: true, writeScope: [...RUBRIC_FENCE], source: 'repo' };
 }
