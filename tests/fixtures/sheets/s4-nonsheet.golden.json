@@ -59,6 +59,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
     "factNames": [
      "section headings"
     ]
@@ -135,7 +140,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"section headings\" with the words \"Fixed\", \"Added\", \"Changed\""
+    "text": "! fact \"section headings\" with one of the words \"Fixed\", \"Added\", \"Changed\""
    },
    {
     "key": "L1.$cited",
@@ -181,7 +186,11 @@
          {
           "name": "section headings",
           "shape": "phrase",
-          "phrase": "Fixed"
+          "anyOf": [
+           "Fixed",
+           "Added",
+           "Changed"
+          ]
          },
          {
           "name": "Fixed",
@@ -311,7 +320,7 @@
   "plan": {
    "checkItems": [
     {
-     "text": "fact · section headings — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "text": "fact · section headings — phrase, with one of the words \"Fixed\", \"Added\", \"Changed\", quoted from \"Changelog\"",
      "fromLine": [
       1
      ],
@@ -461,6 +470,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Boston Logan International Airport",
+     "Boston",
+     "BOS"
+    ],
     "factNames": [
      "origin"
     ]
@@ -485,6 +499,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Chicago O'Hare International Airport",
+     "Chicago",
+     "ORD"
+    ],
     "factNames": [
      "destination"
     ]
@@ -564,7 +583,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"origin\" with the words \"Boston Logan International Airport\", \"Boston\", \"BOS\""
+    "text": "! fact \"origin\" with one of the words \"Boston Logan International Airport\", \"Boston\", \"BOS\""
    },
    {
     "key": "L1.fact.destination",
@@ -572,7 +591,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"destination\" with the words \"Chicago O'Hare International Airport\", \"Chicago\", \"ORD\""
+    "text": "! fact \"destination\" with one of the words \"Chicago O'Hare International Airport\", \"Chicago\", \"ORD\""
    },
    {
     "key": "L1.$cited",
@@ -643,12 +662,20 @@
          {
           "name": "origin",
           "shape": "phrase",
-          "phrase": "Boston Logan International Airport"
+          "anyOf": [
+           "Boston Logan International Airport",
+           "Boston",
+           "BOS"
+          ]
          },
          {
           "name": "destination",
           "shape": "phrase",
-          "phrase": "Chicago O'Hare International Airport"
+          "anyOf": [
+           "Chicago O'Hare International Airport",
+           "Chicago",
+           "ORD"
+          ]
          }
         ],
         "asSeen": {
@@ -816,7 +843,7 @@
      "key": "L1.~2"
     },
     {
-     "text": "fact · origin — phrase, must say \"Boston Logan International Airport\", quoted from \"flights\"",
+     "text": "fact · origin — phrase, with one of the words \"Boston Logan International Airport\", \"Boston\", \"BOS\", quoted from \"flights\"",
      "fromLine": [
       1
      ],
@@ -824,7 +851,7 @@
      "key": "L1.fact.origin"
     },
     {
-     "text": "fact · destination — phrase, must say \"Chicago O'Hare International Airport\", quoted from \"flights\"",
+     "text": "fact · destination — phrase, with one of the words \"Chicago O'Hare International Airport\", \"Chicago\", \"ORD\", quoted from \"flights\"",
      "fromLine": [
       1
      ],
@@ -1434,6 +1461,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Boston",
+     "BOS",
+     "Boston Logan International Airport"
+    ],
     "factNames": [
      "origin"
     ]
@@ -1458,6 +1490,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Chicago",
+     "ORD",
+     "Chicago O'Hare International Airport"
+    ],
     "factNames": [
      "destination"
     ]
@@ -1522,7 +1559,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"origin\" with the words \"Boston\", \"BOS\", \"Boston Logan International Airport\""
+    "text": "! fact \"origin\" with one of the words \"Boston\", \"BOS\", \"Boston Logan International Airport\""
    },
    {
     "key": "L1.fact.destination",
@@ -1530,7 +1567,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"destination\" with the words \"Chicago\", \"ORD\", \"Chicago O'Hare International Airport\""
+    "text": "! fact \"destination\" with one of the words \"Chicago\", \"ORD\", \"Chicago O'Hare International Airport\""
    },
    {
     "key": "L1.$cited",
@@ -1593,12 +1630,20 @@
          {
           "name": "origin",
           "shape": "phrase",
-          "phrase": "Boston"
+          "anyOf": [
+           "Boston",
+           "BOS",
+           "Boston Logan International Airport"
+          ]
          },
          {
           "name": "destination",
           "shape": "phrase",
-          "phrase": "Chicago"
+          "anyOf": [
+           "Chicago",
+           "ORD",
+           "Chicago O'Hare International Airport"
+          ]
          }
         ],
         "asSeen": {
@@ -1757,7 +1802,7 @@
      "key": "L1.~2"
     },
     {
-     "text": "fact · origin — phrase, must say \"Boston\", quoted from \"flights\"",
+     "text": "fact · origin — phrase, with one of the words \"Boston\", \"BOS\", \"Boston Logan International Airport\", quoted from \"flights\"",
      "fromLine": [
       1
      ],
@@ -1765,7 +1810,7 @@
      "key": "L1.fact.origin"
     },
     {
-     "text": "fact · destination — phrase, must say \"Chicago\", quoted from \"flights\"",
+     "text": "fact · destination — phrase, with one of the words \"Chicago\", \"ORD\", \"Chicago O'Hare International Airport\", quoted from \"flights\"",
      "fromLine": [
       1
      ],
@@ -2742,6 +2787,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
     "factNames": [
      "release bullet"
     ]
@@ -2805,7 +2855,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"release bullet\" with the words \"Fixed\", \"Added\", \"Changed\""
+    "text": "! fact \"release bullet\" with one of the words \"Fixed\", \"Added\", \"Changed\""
    },
    {
     "key": "L1.$cited",
@@ -2843,7 +2893,11 @@
          {
           "name": "release bullet",
           "shape": "phrase",
-          "phrase": "Fixed"
+          "anyOf": [
+           "Fixed",
+           "Added",
+           "Changed"
+          ]
          }
         ],
         "count": {
@@ -2993,7 +3047,7 @@
   "plan": {
    "checkItems": [
     {
-     "text": "fact · release bullet — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "text": "fact · release bullet — phrase, with one of the words \"Fixed\", \"Added\", \"Changed\", quoted from \"Changelog\"",
      "fromLine": [
       1
      ],
@@ -3419,6 +3473,11 @@
      "line": 1,
      "part": 0
     },
+    "oneOf": [
+     "Fixed",
+     "Added",
+     "Changed"
+    ],
     "factNames": [
      "release bullets"
     ]
@@ -3480,7 +3539,7 @@
     "by": "agent",
     "state": "built",
     "reason": null,
-    "text": "! fact \"release bullets\" with the words \"Fixed\", \"Added\", \"Changed\""
+    "text": "! fact \"release bullets\" with one of the words \"Fixed\", \"Added\", \"Changed\""
    },
    {
     "key": "L1.$cited",
@@ -3518,7 +3577,11 @@
          {
           "name": "release bullets",
           "shape": "phrase",
-          "phrase": "Fixed"
+          "anyOf": [
+           "Fixed",
+           "Added",
+           "Changed"
+          ]
          }
         ]
        }
@@ -3613,7 +3676,7 @@
   "plan": {
    "checkItems": [
     {
-     "text": "fact · release bullets — phrase, must say \"Fixed\", quoted from \"Changelog\"",
+     "text": "fact · release bullets — phrase, with one of the words \"Fixed\", \"Added\", \"Changed\", quoted from \"Changelog\"",
      "fromLine": [
       1
      ],
