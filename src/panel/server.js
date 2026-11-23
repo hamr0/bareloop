@@ -89,7 +89,7 @@ import { shapeResultModel } from '../shaperesult.js';
 import { shapeItemOfPlain } from '../shapewords.js';
 import { rowResultsOf } from '../rowresults.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
-import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
+import { factPartOf, factSentence, ruleWords, moneyAs, quotedWords } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec, auditChecksOf } from './jobplan.js';
 import { stageQuestionsByName } from '../stagewords.js';
@@ -2033,7 +2033,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
           quote,
           ...(proof ? { proof } : {}),
           // a money amount is shown the way the check read it off the page; without evidence (or nothing located) it is the fact's own spelling
-          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? String(f.phrase)
+          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? (Array.isArray(f.anyOf) ? `one of the words ${quotedWords(f.anyOf)}` : String(f.phrase))
             : ((f.shape === 'money' && proof ? moneyAsRead(ev, j) : null) ?? resultCell(f, values[f.name])))),
         };
       });
