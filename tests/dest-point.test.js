@@ -154,12 +154,12 @@ test('page: syncDestinationFromSession sets the Destination box from the session
   for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } }
   const box = { value: 'docs/' }; let fitted = 0;
   // eslint-disable-next-line no-new-func
-  const sync = new Function('document', 'fitCardBoxes', `${PAGE.slice(start, i + 1)}\nreturn syncDestinationFromSession;`)({ getElementById: (id) => (id === 'jf-dest' ? box : null) }, () => { fitted += 1; });
+  const sync = new Function('document', 'fitCardBoxes', `var sessionLive = true;\n${PAGE.slice(start, i + 1)}\nreturn syncDestinationFromSession;`)({ getElementById: (id) => (id === 'jf-dest' ? box : null) }, () => { fitted += 1; });
   sync({ card: { destination: 'src/' } });
   assert.deepEqual([box.value, fitted], ['src/', 1]);
   sync({ card: { destination: 'src/' } });
   assert.equal(fitted, 1, 'unchanged: no re-fit');
   sync({}); sync({ card: {} }); sync(null);
   assert.equal(box.value, 'src/');
-  assert.match(PAGE, /function renderActions\(state\)\{[\s\S]{0,400}syncDestinationFromSession\(state\)/, 'renderActions calls it on every poll');
+  assert.match(PAGE, /function renderActions\(state\)\{[\s\S]{0,1200}syncDestinationFromSession\(state\)/, 'renderActions calls it on every poll');
 });

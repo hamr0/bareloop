@@ -9,6 +9,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The Destination box no longer reverts to a refused draft's Destination.** The page re-filled Destination from the session card on every poll, even after the session ended (e.g. refused for having no `~` rule), so a new typed Destination was overwritten. It now follows the session only while the session is live (as the Job box already did); a refused or ended session leaves the boxes to the person.
+
 - **A Stop pressed while a step's exit check is running now ends the run as stopped (resumable, same step), instead of being misread as an OOM or external kill (`close-killed`).** A check killed with no stop request is still `close-killed`. (Another builder's commit 90a93f9b.)
 
 - **After Yes to "Did you mean branch: X?" the Job box shows the line with the token.** The session appended `branch: X` (or `range: ...`) to its job line but left `state.card.jobText` as typed, so the page's Job box and the plan card disagreed. Yes now rebuilds `state.card.jobText` from the session's lines (`jobBoxText`, as a `~` answer does); the page already follows that field. No answer = No changes nothing.

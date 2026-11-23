@@ -6476,10 +6476,11 @@
       }
     });
 
-    // R7b (3): "yes" to the folder question changes the SESSION's Destination; the box is locked while a session is live, so the page re-fills it from the session's own card
+    // R7b (3): "yes" to the folder question changes the SESSION's Destination; the box is locked while a session is live, so the page re-fills it from the session's own card.
+    // Only while the session is live (as the Job box): a refused or ended session leaves the boxes open, and what the person types there wins (hamr 2026-11-23: Destination reverted to the refused draft's)
     function syncDestinationFromSession(state){
       var d = state && state.card && state.card.destination;
-      if(typeof d !== "string") return;
+      if(!sessionLive || typeof d !== "string") return;
       var box = document.getElementById("jf-dest");
       if(box && box.value !== d){ box.value = d; fitCardBoxes(); }
     }
@@ -6528,7 +6529,6 @@
     }
     function renderActions(state){
       lastState = state;
-      syncDestinationFromSession(state);
       // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";
@@ -6538,6 +6538,7 @@
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
       refreshStartEnabled();
+      syncDestinationFromSession(state);
       syncJobBoxFromSession(state);
       // hamr 2026-10-05: while the session is live and the list changed, bring the newest progress line into view.
       // Never moves keyboard focus, and an unchanged poll tick never scrolls.
