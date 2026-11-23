@@ -1171,7 +1171,7 @@
             <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
-            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-tests" data-testid="check-running" hidden></div></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-tests" data-testid="check-running" hidden></div><div class="map-key map-tests" id="map-reused" data-testid="check-reused" hidden></div></div>
             <div id="step-list"></div>
           </div>
         </section>
@@ -1604,6 +1604,13 @@
   function paintCheckRunning(detail){
     var el = document.getElementById("map-tests");
     var text = detail && typeof detail.checkRunning === "string" ? detail.checkRunning : "";
+    el.textContent = text;
+    el.hidden = text === "";
+  }
+  // hamr 2026-11-23: the grey line for a start pass that took a saved check result — the server's `checkReused` string verbatim
+  function paintCheckReused(detail){
+    var el = document.getElementById("map-reused");
+    var text = detail && typeof detail.checkReused === "string" ? detail.checkReused : "";
     el.textContent = text;
     el.hidden = text === "";
   }
@@ -3095,6 +3102,7 @@
     var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
     paintCheckRunning(detail);
+    paintCheckReused(detail);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
 

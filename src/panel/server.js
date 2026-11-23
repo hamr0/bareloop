@@ -734,6 +734,15 @@ export function checkRunningOf(records) {
   return last && last.type === 'check-running' && typeof last.text === 'string' ? last.text : null;
 }
 
+/**
+ * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. Unlike the running tick it stays true for the whole run: it says the start pass took a saved check result.
+ * @param {any[]} records
+ */
+export function checkReusedOf(records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) if (records[i]?.type === 'check-reused' && typeof records[i].text === 'string') return records[i].text;
+  return null;
+}
+
 /** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
 function lastJobEndTs(/** @type {any[]} */ records) {
   for (let i = records.length - 1; i >= 0; i -= 1) {
@@ -2399,6 +2408,8 @@ function getRunDetailBody(runid, opts) {
     // hamr 2026-11-22: "Tests are still running (8 min so far), usually about 12 min." under the step map — only while the run is live and the
     // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
     checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
+    // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one
+    checkReused: row.via !== 'import' ? checkReusedOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
