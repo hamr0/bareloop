@@ -21,7 +21,7 @@ const LINE_KINDS = ['rule', 'fact', 'phrase', 'count', 'cited', 'numbers', 'note
 /**
  * @typedef {{key: string, result: 'passed'|'failed'|'unread', why?: string}} RowResult
  * @param {any[]|null|undefined} list the signed list (`closeDecl.list`) @param {{step: number, parts: any[]}} params the rubric-step stage's params
- * @param {{verdict?: string, rawGaps?: any[], extraGaps?: string[], citeGaps?: string[], detail?: Record<string, any>}} graded `gradeStep`'s answer
+ * @param {{verdict?: string, rawGaps?: any[], extraGaps?: string[], citeGaps?: string[], ruleCounts?: Record<number, {min?: number, max?: number}>, detail?: Record<string, any>}} graded `gradeStep`'s answer
  * @returns {{rows: RowResult[], unclaimed: string[], items?: string[]}}
  */
 export function rowResultsOf(list, params, graded) {
@@ -55,6 +55,16 @@ export function rowResultsOf(list, params, graded) {
       const shape = shapePartOf(params);
       const defaults = rows.filter((r) => r.kind === 'shape' && r.key === shapeDefaultKey(n));
       const raw = g.kind === 'item-shape' && Array.isArray(g.items) ? g.items : null;
+      // fwdloop v0.37.0 (M19 am11 item 4): a count gap (`count-under`, `count-over`) is on the row of the `~` rule that set that bound: a rule row that points at the shape part and is no field's rule. With several such rules the bound the gap
+      // names (`limit`) picks the one whose own bound it is (`graded.ruleCounts`, rule number -> {min?, max?}); a gap no rule owns is never put on a guessed row.
+      if (raw === null && (g.kind === 'count-under' || g.kind === 'count-over')) {
+        const si = Array.isArray(params.parts) ? params.parts.indexOf(shape) : -1;
+        const fieldRules = new Set((shape?.fields ?? []).map((/** @type {any} */ f) => f.rule));
+        const own = rows.filter((r) => r.kind === 'rule' && isRec(r.part) && r.part.part === si && !fieldRules.has(r.rule));
+        const bound = g.kind === 'count-under' ? 'min' : 'max';
+        const owners = own.length === 1 ? own : own.filter((r) => graded.ruleCounts?.[r.rule]?.[bound] === g.limit);
+        if (owners.length > 0) { for (const r of owners) hit(r, plain()); continue; }
+      }
       if (raw === null) { if (defaults.length === 0) unclaimed.push(plain()); else for (const r of defaults) hit(r, plain()); continue; }
       for (const it of raw) {
         items.push(String(it));
