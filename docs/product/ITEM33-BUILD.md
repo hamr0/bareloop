@@ -5581,3 +5581,35 @@ Own screenshots of A for one review run and one change run, against the ASCII, b
 hamr's DevTools. One live review run after the build to see it end to end.
 Not in this build: findings for a red run beyond today's judged-file path; a diff view for review jobs (the range's
 diffs stay as files); any change to verdicts, caps or the close.
+
+## Addendum 2026-11-23: resume reuses the last completed check; four guardrail items (chore/barebrowse-031)
+
+Appended only; nothing above is rewritten. Findings: F381-F392 in `docs/wiki/FINDINGS.md`.
+
+### Resume reuse (spec of record; hamr: option A, go)
+
+Problem (F382): run mwsfq0pi legs 2 and 3 re-ran the whole suite in the precheck (11-13 min) and again in the preflight, so the remaining wall went to re-reading a tree leg 1 had already read.
+
+Hamr's framing, which replaced the spec's first idea of a sibling results file: save the last completed command result with the run state that already persists, tagged with a tree identity; on the next pass compare the tree. No difference: read the saved result. Any difference: run fresh. No guessing which tests to run.
+
+Build, in two pieces:
+1. Share ONE memo across the run-start precheck and the preflight loop (237351cf; reverses the "precheck takes a fresh pass" line of 469d4c24 on hamr's word).
+2. Reuse (73571770):
+   - Tree identity (`treeIdentity`, `src/kinds.js`): sha256 over HEAD tree id, `git diff --binary HEAD`, and each untracked non-ignored file's path and `git hash-object`; arbiter books excluded as `changedSet` excludes them. Read-only git, writes no objects. Gitignored files and the node version are not covered; accepted and said in plain words.
+   - Record: when a command completes in a close pass (`runCmd`, the one spawn site), if it was not timed out, killed, crashed or stopped, and the tree id is equal before and after, save `{key, treeId, code, out (scrubbed by the run's one scrub), ms, at}` in `.smoke/carry/state.json` (`keepCheck` / `savedChecks` in `src/carrystore.js`). Key is command + args + env + limit, never the folder (a seed baseline runs in a random tmpdir). Latest per key; over 8 MB not kept. One spine record `check-result-kept`.
+   - Read: on a resumed leg, one current tree id; every saved entry with an equal id pre-fills the shared start memo. Stage parsers, baselines and rows then run unchanged on the reused output.
+   - Guard: a precheck that would come back satisfied with any reused entry is thrown away and judged again fresh. A reading may stand in for a red or inconclusive start, never for a green.
+   - Only the start pass reuses. Step exits, `runCheck`, the fix-loop judge and the final close never see the map. The close-script byte signature is still checked first on every pass. Trend record sites, strike ladder, variance and caps are unchanged.
+   - Said once in plain words (spine `check-reused`, Run tab one grey line, `checkReusedOf` in `src/panel/server.js`, 039570e5).
+- Not covered: autocrlf/filemode not tried; a flaky suite's reused number repeats leg 1's; identity cost measured on one repo only.
+
+POC (throwaway full copy, bar frozen in `.claude/scratch/poc-resume-reuse/BAR.md` before any data): P1 PASS (identity unchanged across a real `npm test`, exit 0), P2 PASS (seven reads: repeat, touch, edit, revert, untracked add and remove), P3 PASS (median 122 ms against a 2 s bar). P4 archive read: about half of 8 archived resumes had no write after the last check, so reuse could fire on about half. Detail in FINDINGS F382.
+
+Status: test-proven; reuse not seen in a live resume.
+
+### The four items, as built
+
+1. Failing test names reach the AI (328a33be; F384): one code-owned constant per language. Node: `not ok N - title` plus its YAML lines up to `  ...`, bounded per failure. Python: `FAILED` plus `E   ` lines. Other languages unchanged. Appended to a red declared stage's gap, scrubbed, bounded by the existing gap cap; not signed; verdicts unchanged.
+2. A `~` rule on every job (460c130c, 057e510c; F387): code counts at $0 at the start of both doors, before any AI call; with none, one code-written ask. No AI judges prompt quality.
+3. "Did you mean branch: X?" / "Did you mean range: A..B?" (0c275690, d5233224; F385): `src/refguess.js`, panel only; range stays review-only; not counted in the 3-ask cap; the Job box shows the token.
+4. Run tab reused line (039570e5): the `check-reused` text as one grey line.

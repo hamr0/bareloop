@@ -2432,3 +2432,17 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 ### Phrase alternatives keep only the first word, waiting for fwd (2026-11-20)
 
 - Phrase fact with alternative words keeps only the first (`src/inputlook.js:173`) — waiting for fwd's fix, copy from fwd's tag, build nothing here (hamr 2026-11-20); see the fix ledger bullet for `src/inputlook.js`.
+
+### Next branch first: open items from chore/barebrowse-031 (2026-11-23) — RULED by hamr
+
+Hamr's rule: anything not confirmed, walked, or still open goes first into the next branch.
+
+- [ ] Resume reuse line not seen live (test-proven only). F382; build doc "Addendum 2026-11-23".
+- [ ] Stop during a step check is test-proven only; no live walk. F388.
+- [ ] Sign & run early-click fix is not proven live. F390.
+- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
+- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389.
+- [ ] Rubric report: cumulative page dumps, no answer section. F391.
+- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered.
+- [ ] Copy from fwd's v0.37.0 tag: am11 count fix and phrase alternatives (`src/inputlook.js:173`).
+- [ ] NEW, signed by hamr 2026-11-23: drafting and run progress timer. No ticking clock: one progress line updated every 30 s. Finished drafting steps show their time (e.g. "installing packages ✓ 0:42"); the running step shows elapsed (every 30 s) and "Drafting so far: M:SS"; the "usually about N min" estimate is dropped; the plan card shows one line "Drafted in M:SS · $X"; the Run tab's still-running check line uses the same 30 s elapsed form; the Audit drafting row shows total draft time only, no per-step details. Display only, from times already recorded (draft-log step-start/step-end `at`; `src/draftspend.js` wallMs), $0.
