@@ -2068,8 +2068,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
 
   /** the close, as ONE verdict: every stage in order, first red wins */
-  const judgeClose = async () => {
-    const v = await runCloseStages(stagedClose);
+  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) */
+  const judgeClose = async (cmdMemo) => {
+    const v = await runCloseStages(stagedClose, cmdMemo);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
@@ -2238,7 +2239,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
-  const pre = await judgeClose();
+  // ONE start pass (hamr 2026-11-23, run mwsfq0pi): the precheck and the preflight loop below read the same unchanged tree back to back in this
+  // process, so they share ONE memo and a command the precheck ran is not run again. The precheck is the memo's first user, so it is itself fresh.
+  const startMemo = new Map();
+  const pre = await judgeClose(startMemo);
   emit('close-precheck', { ...pre });
   // …and if a signer's `accept` is what greened the human stage, it is PAID FOR:
   // the answer was applied to the tree they were shown, and no later leg may hold
@@ -2296,9 +2300,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ? { hidden: stagedClose.filter((s2) => s2.offer === false).map((s2) => s2.name), meaning: 'a stage that cannot stand alone as a ruler (a precondition) is not offered — a partial menu is acceptable, never a failure' }
       : {}),
   });
-  // ONE check pass: the tree is unchanged through the whole preflight loop, so a command read by several menu stages runs once (hamr 2026-11-22,
-  // run mwsblixt). The memo lives only for this loop; the precheck, step exits and the final close each take a fresh pass.
-  const preflightMemo = new Map();
+  // ONE check pass: the tree is unchanged through the whole start (precheck + this loop), so a command read by several stages runs once (hamr
+  // 2026-11-22 run mwsblixt; 2026-11-23 run mwsfq0pi). The memo lives only for the start; step exits, the fix-loop judge and the final close take fresh passes.
+  const preflightMemo = startMemo;
   for (const m of menu) {
     const v = await runCloseStages(m.run, preflightMemo);
     if (v.verdict === 'needs_revision') {

@@ -45,8 +45,10 @@ const jobOf = (counters) => ({
   tools: ['read', 'write', 'edit'], escalation: { mode: 'decision-ready' },
 });
 
-async function runIt(t, counters) {
+async function runIt(t, counters, { dirty = false } = {}) {
   const { dir, spine, runs } = makePatient(t);
+  // a tree already changed from its seed (what a resume starts on): the precheck gets past changed-from-seed and reaches the commands
+  if (dirty) { mkdirSync(join(dir, 'src'), { recursive: true }); writeFileSync(join(dir, 'src', 'fix.js'), '// started\n'); }
   const job = jobOf(counters);
   const provider = scriptedProvider([
     { text: 'scout' },
@@ -64,7 +66,17 @@ test('three stages reading one command: the preflight loop runs it ONCE; each st
   const pf = events.filter((e) => e.type === 'check-preflight');
   for (const n of ['one', 'two', 'three']) assert.equal(pf.find((e) => e.name === n)?.verdict, 'satisfied', `${n} keeps its own verdict`);
   assert.equal(pf.filter((e) => ['one', 'two', 'three'].includes(e.name)).length, 3, 'one check-preflight record per stage');
-  // precheck 1 + preflight 1 (not 3): the precheck is its own fresh pass, so the preflight runs the command again (2, never 1)
+  // a clean seed: the precheck stops at its first red (changed-from-seed) before any command, so: preflight 1 (not 3) + final close 1
+  assert.equal(runs.length, 2, `ran ${runs.length} times`);
+});
+
+test('a tree already changed from seed: the precheck and the preflight share ONE pass - the command runs once there, then once in the final close', async (t) => {
+  const { outcome, events, runs } = await runIt(t, [counter('one', 'a'), counter('two', 'a')], { dirty: true });
+  assert.equal(outcome, 'green', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  const pre = events.find((e) => e.type === 'close-precheck');
+  assert.equal(pre?.stage, 'verdict', 'the precheck got past the counters and reddened at the verdict stage, so it did read the command');
+  for (const n of ['one', 'two']) assert.equal(events.find((e) => e.type === 'check-preflight' && e.name === n)?.verdict, 'satisfied', `${n} keeps its own preflight verdict`);
+  // before: precheck 1 + preflight 1 + final 1 = 3
   assert.equal(runs.length, 2, `ran ${runs.length} times`);
 });
 
