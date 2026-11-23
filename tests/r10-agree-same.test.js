@@ -56,7 +56,7 @@ test('agree to different words REPLACES the rule: one rule in the job text, the 
   const { leg, session } = await draftWith('under 80 words');
   assert.deepEqual(leg.jobLines[0].rules, ['at most 80 words']);
   assert.equal(leg.jobLines[0].rule, 'at most 80 words');
-  assert.equal(session.state.card.jobText, '1. Summarise the latest release\n~ at most 80 words');
+  assert.equal(session.state.card.jobText, 'Summarise the latest release\n~ at most 80 words');
   const rows = leg.block.rows.filter((r) => r.kind === 'rule');
   assert.deepEqual(rows.map((r) => [r.line, r.rule, r.text, r.pick ?? null]), [[1, 1, 'at most 80 words', { rule: 'maxWords', value: 80 }]]);
   assert.deepEqual(leg.block.signedRows().filter((r) => r.kind === 'rule').map((r) => [r.rule, r.state]), [[1, 'built']]);

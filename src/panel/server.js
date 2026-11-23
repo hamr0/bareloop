@@ -24,6 +24,7 @@
 // silently tries another port (hamr's rule, restated across this codebase
 // for every cap/threshold: a shell never widens what it was asked to do).
 
+import { itemPath } from '../repocite.js';
 import { createServer } from 'node:http';
 import {
   readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
@@ -37,8 +38,11 @@ import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers, runNameOf } from '../runlist.js';
 import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
+import { readManifestDestination } from '../source.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
+import { jobTypeLine, sourceOf } from '../sourcedefaults.js';
+import { rangeTokens } from '../rangereview.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
@@ -718,6 +722,27 @@ function endedBase(summary, death, o) {
  * @param {any} summary `replayOne`'s summary
  * @param {{died: boolean, lastThing: string|null}} death
  */
+/**
+ * The newest `check-running` record's own text (code-written by src/kinds.js `checkRunningNote`, shown verbatim), or null. It stands only while the
+ * tests are running NOW: the tick must be the newest record of the whole spine — every record that ends a check (close-verdict, check-run,
+ * outer-close, check-preflight, close-precheck), a step (step-end) or the run (run-end, job-end, escalation) is written after it and so retires it,
+ * and so does anything else (a worker round, a new step): a stale line is the failure, a missing one is not.
+ * @param {any[]} records
+ */
+export function checkRunningOf(records) {
+  const last = records[records.length - 1];
+  return last && last.type === 'check-running' && typeof last.text === 'string' ? last.text : null;
+}
+
+/**
+ * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. Unlike the running tick it stays true for the whole run: it says the start pass took a saved check result.
+ * @param {any[]} records
+ */
+export function checkReusedOf(records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) if (records[i]?.type === 'check-reused' && typeof records[i].text === 'string') return records[i].text;
+  return null;
+}
+
 /** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
 function lastJobEndTs(/** @type {any[]} */ records) {
   for (let i = records.length - 1; i >= 0; i -= 1) {
@@ -1224,7 +1249,7 @@ export function getAcceptContext(runid, opts = {}) {
 // ── PRD v1.107 Part 6: the Result tab (rubric jobs only) ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
+ * The files a run delivered: its own `destination-written` (and, for a review's report waiting for Accept, `report-staged`) spine records (userrun.js, on a minted green only), one per path, the last record of a
  * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
  * @param {any[]} records
  * @returns {{path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}[]}
@@ -1233,7 +1258,9 @@ export function deliveredOf(records) {
   /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null, pairedTaken?: string}>} */
   const byPath = new Map();
   for (const r of records) {
-    if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    // `report-staged` (a review's report, under output/ until an honoured Accept) is read like a delivered file; the `destination-written` an Accept records names it in `staged` and replaces it
+    if (!r || (r.type !== 'destination-written' && r.type !== 'report-staged') || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    if (r.type === 'destination-written' && typeof r.staged === 'string') byPath.delete(r.staged);
     byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null, ...(typeof r.pairedTaken === 'string' && r.pairedTaken ? { pairedTaken: r.pairedTaken } : {}) });
   }
   return [...byPath.values()];
@@ -1486,6 +1513,12 @@ function resultKindOf(row, records, spec) {
   return records.some((r) => r && r.type === 'job-end') ? 'generic' : null;
 }
 
+/** the Job type line of a payload, from the ONE owner (src/sourcedefaults.js `jobTypeLine`): `{jobType}` or nothing (a rubric job on files, no spec) @param {any} spec @returns {{jobType?: string}} */
+function jobTypePart(spec) {
+  const line = jobTypeLine(spec);
+  return line === null ? {} : { jobType: line };
+}
+
 /** the words of the work box and the diff box, code-owned (one spelling) */
 const RESULT_WORK_NOTE = 'shown as text; the merge is yours, no button runs it.';
 
@@ -1527,6 +1560,22 @@ function changedOf(records, writeScope) {
       }
     }
   }
+  // Result tab A: ONE row per file, +a −r summed over every edit (so the rows add up to the header's numbers), the diff of the file's LAST edit
+  /** @type {Map<string, {path: string, plus: number, minus: number, diff: string, cutNote: string|null, binary: boolean}>} */
+  const byPath = new Map();
+  for (const e of edits) {
+    for (const f of e.files) {
+      const row = byPath.get(f.path) ?? { path: f.path, plus: 0, minus: 0, diff: '', cutNote: null, binary: false };
+      for (const line of f.diff.split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) row.plus += 1;
+        else if (line.startsWith('-') && !line.startsWith('---')) row.minus += 1;
+      }
+      row.diff = f.diff;
+      row.cutNote = f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)`;
+      byPath.set(f.path, row);
+    }
+    for (const b of e.binary) if (!byPath.has(b)) byPath.set(b, { path: b, plus: 0, minus: 0, diff: '', cutNote: null, binary: true });
+  }
   const shown = paths.length > 4 ? `${paths.slice(0, 4).join(', ')} and ${paths.length - 4} more` : paths.join(', ');
   const head = `${paths.length} file${paths.length === 1 ? '' : 's'} · ${shown} · +${plus} −${minus} lines over ${edits.length} edit${edits.length === 1 ? '' : 's'}`;
   const last = edits[edits.length - 1];
@@ -1547,7 +1596,7 @@ function changedOf(records, writeScope) {
       : `only ${allowed} was allowed, but the run wrote ${outside.join(', ')}.`;
   }
   return {
-    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut,
+    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut, byFile: [...byPath.values()],
     last: { files: last.files.map((f) => ({ path: f.path, diff: f.diff })), note: note === '' ? null : `...(${note})` },
     all: edits.map((e) => ({ n: e.n, step: e.step, files: e.files.map((f) => ({ path: f.path, diff: f.diff, cutNote: f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)` })) })),
     foldWords: `show every edit of the run (${edits.length})`,
@@ -1683,6 +1732,75 @@ function ticketOfStart(start) {
   return { number: t.number, title: typeof t.title === 'string' ? t.title : null, url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null };
 }
 
+/** the words of the FINDINGS header's proof line, code-owned (the close's own cite row says each quote was found) */
+const RESULT_FINDINGS_CITE = 'each quote found in its file';
+
+/** how many words of a finding's why its closed row shows */
+const FINDING_SHORT_WORDS = 8;
+
+/**
+ * The words of a finding's CLOSED row, cut in code (never by CSS width): `base` = the file's basename; `at` = the line its quote starts on, from the record (found by code with the cite's own matcher when the run ended;
+ * absent on an older record, then the row shows the name alone); `short` = the first words of the why on a word boundary, then `…` only when words were cut.
+ * @param {any} x one record item @returns {{base: string, at: number|null, short: string}}
+ */
+function findingRowWords(x) {
+  const words = (typeof x.why === 'string' ? x.why : '').split(/\s+/).filter((w) => w !== '');
+  return {
+    base: itemPath(x.file).split('/').pop() || x.file,
+    at: Number.isInteger(x.at) && x.at > 0 ? x.at : null,
+    short: words.slice(0, FINDING_SHORT_WORDS).join(' ') + (words.length > FINDING_SHORT_WORDS ? '\u2026' : ''),
+  };
+}
+
+/**
+ * Result tab A, FINDINGS: what the close passed, from the run's own `review-findings` records (src/reviewfindings.js; report only), never from the run folder.
+ * One entry per item in line order; `base`/`at`/`short` = the closed row's words (`findingRowWords`). `cite` = the words of the close's own cite row when EVERY review line's cite row passed, else null. `null` when the run has no record (an older run, a red run): the page then draws today's tab.
+ * @param {any[]} records @param {any} spec
+ */
+function findingsOf(records, spec) {
+  /** @type {Map<number, any>} */
+  const byLine = new Map();
+  for (const r of records) if (r && r.type === 'review-findings' && Number.isInteger(r.line) && Array.isArray(r.items)) byLine.set(r.line, r);
+  if (byLine.size === 0) return null;
+  const lines = [...byLine.keys()].sort((a, b) => a - b);
+  const rowRes = rowResultsFromRecords(records, spec).results;
+  const items = lines.flatMap((n) => byLine.get(n).items.filter((/** @type {any} */ x) => x && typeof x.file === 'string').map((/** @type {any} */ x) => ({
+    line: n, file: x.file, quote: typeof x.quote === 'string' ? x.quote : '', why: typeof x.why === 'string' ? x.why : '', ...findingRowWords(x),
+  })));
+  const total = lines.reduce((a, n) => a + (Number.isInteger(byLine.get(n).total) ? byLine.get(n).total : byLine.get(n).items.length), 0);
+  const cited = lines.every((n) => rowRes.get(`L${n}.$cited`)?.result === 'passed');
+  return { total, items, cut: total > items.length, cite: cited ? RESULT_FINDINGS_CITE : null };
+}
+
+/**
+ * Result tab A, THE JOB's extra line for a range or branch review: `covers A..B · N files changed`. The span is the typed one (a branch is diffed against main) when the signed job names it, else the run's recorded
+ * ends (short shas); the file count is the review-findings record's (code's own files.txt, read when the line passed). `null` when the run recorded no range on its manifest.
+ * @param {{ spine: string }} row @param {any} spec @param {any[]} records
+ */
+function coversOf(row, spec, records) {
+  const near = sourceNearSpine(row.spine);
+  let range = null;
+  if (near.sourceJsonPath) {
+    try { range = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8'))?.range ?? null; } catch { range = null; }
+  }
+  if (!range || typeof range.a !== 'string' || typeof range.b !== 'string') return null;
+  const t = rangeTokens(spec?.jobLines)[0];
+  const span = t ? (t.kind === 'range' ? `${t.a}..${t.b}` : `main..${t.name}`) : `${range.a.slice(0, 7)}..${range.b.slice(0, 7)}`;
+  const n = records.findLast((r) => r && r.type === 'review-findings' && Number.isInteger(r.files))?.files;
+  return `covers ${span}${Number.isInteger(n) ? ` \u00B7 ${n} file${n === 1 ? '' : 's'} changed` : ''}`;
+}
+
+/**
+ * Result tab A, HOW IT RAN: the step count and the try count in words, from the run's own step list (the page draws the chips from the same parts the Run tab's map does). `null` when no step ran.
+ * @param {any} detail the run's detail body
+ */
+function ranOf(detail) {
+  const steps = Array.isArray(detail?.steps) ? detail.steps.filter((/** @type {any} */ s) => s && s.synthetic !== true) : [];
+  if (steps.length === 0) return null;
+  const tries = steps.reduce((/** @type {number} */ a, /** @type {any} */ s) => a + Math.max(1, Array.isArray(s.attempts) ? s.attempts.length : 1), 0);
+  return { steps: steps.length, tries, line: `${steps.length} step${steps.length === 1 ? '' : 's'} \u00B7 ${tries} ${tries === 1 ? 'try' : 'tries'}` };
+}
+
 /**
  * The generic Result tab (R7b item 4; hamr signed the mockup 2026-11-07) for a run that ENDED and is not a rubric job: five boxes of facts read
  * from the run's own records, plus the ticket a ticket job read. The page draws it; it decides nothing.
@@ -1702,7 +1820,9 @@ function genericResultOf(runid, row, records, spec, opts) {
   return {
     runid,
     kind: 'generic',
-    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
+    ...jobTypePart(spec),
+    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope, lines: Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string').map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rules: lineRules(l) })) : [] },
+    ran: ranOf(detail),
     ticket,
     changed: changedOf(records, writeScope),
     checks: repoRowChecks(checksOf(records, spec), row, records, spec, opts),
@@ -1938,8 +2058,14 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   }
   // the distinct web pages the results read, in line order: ONE = the page draws a single link at the top, 2+ = each line carries its own `page`
   const pages = [...new Set(lines.map((/** @type {any} */ l) => l.page).filter((/** @type {any} */ u) => typeof u === 'string'))];
+  // Result tab A (hamr 2026-11-21): what the run was and how it ran, and, for a review that passed, its findings from the spine's own record (no run folder)
+  const findings = sourceOf(spec?.closeDecl) === 'repo' ? findingsOf(records, spec) : null;
+  const covers = findings === null ? null : coversOf(row, spec, records);
   return {
     runid,
+    ...jobTypePart(spec),
+    ...(findings === null ? {} : { ran: ranOf(getRunDetailBody(runid, opts)), findings }),
+    ...(covers === null ? {} : { covers }),
     lines,
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
@@ -2251,6 +2377,8 @@ function getRunDetailBody(runid, opts) {
     goal: summary.goal,
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
+    // the Audit header's Job type line (hamr 2026-11-21): the ONE owner, src/sourcedefaults.js `jobTypeLine`; absent on a rubric job on files
+    ...jobTypePart(specForParts),
     model: summary.model,
     provider: summary.provider,
     budgetUsd: summary.budgetUsd,
@@ -2277,6 +2405,11 @@ function getRunDetailBody(runid, opts) {
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
+    // hamr 2026-11-22: "Tests are still running (8 min so far), usually about 12 min." under the step map — only while the run is live and the
+    // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
+    checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
+    // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one
+    checkReused: row.via !== 'import' ? checkReusedOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
@@ -3676,11 +3809,18 @@ export function getRunJob(runid, opts = {}) {
     const schedule = jobScheduleWords({
       trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
       model: spec && typeof spec.model === 'string' ? spec.model : null,
-      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
+      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : recordDestinationOfRun(rows.find((r) => r && r.runid === cur.originRunid))) : null,
       home: door.userHome, waiting: cur ? door.isWaiting(job) : false,
     });
     return { ...body, started, schedule };
   } catch { return body; }
+}
+
+/** The ONE Destination record of a run (its source.json `destination`); `null` = no record or none set. @param {any} row @returns {string|null} */
+function recordDestinationOfRun(row) {
+  if (!row || typeof row.spine !== 'string') return null;
+  const { sourceJsonPath } = sourceNearSpine(row.spine);
+  return sourceJsonPath ? readManifestDestination(sourceJsonPath) : null;
 }
 
 /**
@@ -4034,9 +4174,8 @@ export function getStartFrom(runid, opts = {}) {
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     // a card saved by P7 or later keeps the Inputs text the person typed
     inputs: typeof saved.inputs === 'string' && saved.inputs ? saved.inputs : '',
-    // a plain-files job delivers to an absolute folder the SPEC does not hold (its fence is `output/` inside the run's tree): the
-    // Destination opens with the folder the origin run was given, never with that fence
-    destination: [saved.destination, manifest?.destination].find((d) => typeof d === 'string' && /^(\/|[a-zA-Z]:[\\/])/.test(d)) ?? '',
+    // ONE Destination: the record (source.json) is the only place it is read from (a plain-files folder, a review's report folder, a repo job's fence); never the saved card or the signed fence
+    destination: manifest === null ? undefined : (typeof manifest.destination === 'string' ? manifest.destination : ''),
     jobName: row.job,
   });
   const key = workflowKey(spec);
@@ -4151,11 +4290,12 @@ export function listReuseJobs(opts = {}) {
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
- * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = an absolute per-run folder (a plain-files job), else the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
+ * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = the ONE Destination record's value (source.json); undefined only when the run has no record (a bundle import), then the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
  * @returns {Record<string, any>}
  */
 function reuseCardFromSpec(spec, extra) {
-  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+  // a bundle IMPORT has no source.json, so no record: its signed fence is the only Destination there is (a run with a record never reaches this)
+  const importFence = (Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : []).join(', ');
   return {
     jobName: typeof spec.job === 'string' && spec.job ? spec.job : extra.jobName,
     checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
@@ -4163,7 +4303,7 @@ function reuseCardFromSpec(spec, extra) {
     jobText: jobTextFromSpec(spec),
     thinking: spec.thinking === true,
     inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
-    destination: extra.destination || writeScope.join(', '),
+    destination: extra.destination ?? importFence,
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
     // piece 8: a job with an MCP shows its Flow type and server on the card; a plain job adds nothing (so its card is what it was)

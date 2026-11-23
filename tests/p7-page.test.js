@@ -186,7 +186,8 @@ test('Job tab: renderJob paints the plan, numbered Inputs, Destination, caps and
 
 test('the Check type radio switches the empty-box examples (placeholders); a typed value is never touched by it', () => {
   const attrs = {};
-  const els = { 'jf-job': { setAttribute: (k, v) => { attrs.job = v; } }, 'jf-inputs': { setAttribute: (k, v) => { attrs.inputs = v; } } };
+  const tip = { hidden: true };
+  const els = { 'jf-job': { setAttribute: (k, v) => { attrs.job = v; } }, 'jf-inputs': { setAttribute: (k, v) => { attrs.inputs = v; } }, 'jf-range-tip': tip };
   // eslint-disable-next-line no-new-func
   const setJobPlaceholders = new Function('document', 'JOB_PLACEHOLDERS', 'INPUTS_PLACEHOLDER', `${fnSrc('setJobPlaceholders')}\nreturn setJobPlaceholders;`)(
     { getElementById: (id) => els[id] }, { deterministic: 'DET', rubric: 'RUB' }, 'INP',
@@ -197,6 +198,12 @@ test('the Check type radio switches the empty-box examples (placeholders); a typ
   assert.equal(attrs.job, 'DET');
   setJobPlaceholders('reuse');
   assert.equal(attrs.job, 'DET');
+  // Part 2 item 9: the range/branch tip under The job shows for Deterministic and is hidden for rubric
+  assert.equal(tip.hidden, false, 'deterministic shows the tip');
+  setJobPlaceholders('rubric');
+  assert.equal(tip.hidden, true, 'rubric hides the tip');
+  setJobPlaceholders('deterministic');
+  assert.equal(tip.hidden, false);
   assert.match(fnSrc('onVerdictChange'), /setJobPlaceholders\(v\)/);
 });
 
@@ -230,4 +237,13 @@ test('renderJobPlan: each `~` rule is its own marked row under its numbered line
   assert.match(h, /class="sub">~ every version quoted from the changelog<\/div><div class="sub">~ under 120 words<\/div>/);
   assert.equal((h.match(/class="num"/g) ?? []).length, 1, 'only the job line carries a gutter number');
   assert.doesNotMatch(h, /~ every version quoted from the changelog; under/, 'not joined');
+});
+
+test('Part 2 item 9: the page carries the range/branch tip once, under The job, with the two ruled lines; the sample placeholder is unchanged', () => {
+  assert.equal((PAGE.match(/<div[^>]*id="jf-range-tip"/g) || []).length, 1);
+  const tip = PAGE.match(/<div class="hint" id="jf-range-tip"[^>]*>([\s\S]*?)<\/div>/);
+  assert.ok(tip, 'tip is a .hint div');
+  assert.equal(tip[1].replace(/<br>/g, '\n').replace(/&nbsp;/g, ' ').trim(), 'Review only some changes? Add a line:\nrange: v1.2..v1.3 or commit..commit   or   branch: my-feature');
+  assert.ok(PAGE.indexOf('id="jf-job-mir"') < PAGE.indexOf('id="jf-range-tip"') && PAGE.indexOf('id="jf-range-tip"') < PAGE.indexOf('for="jf-inputs"'), 'under The job box, before Inputs');
+  assert.match(PAGE, /deterministic: "Fix the failing date tests in src\/date\.js\\n~ don't edit any test file\\nMake npm test pass"/);
 });

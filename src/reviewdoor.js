@@ -281,7 +281,7 @@ async function proveMechanically({ job, workdir, events, closeTimeoutMs, closeDi
     if (!seedRef) {
       return { ok: false, detail: 'this run left no seed on its spine (`close-decl.seedRef`), and a declared close measures against a seed — re-proving against a guessed baseline would grade a tree nobody chose', reading: { ran: 0, verdict: null, stage: null, stages: [] } };
     }
-    v = await runDeclaredStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, seedRef, list: Array.isArray(job.closeDecl?.list) ? job.closeDecl.list : null });
+    v = await runDeclaredStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, seedRef, list: Array.isArray(job.closeDecl?.list) ? job.closeDecl.list : null, source: job.closeDecl?.source ?? null, lang: job.closeDecl?.lang ?? null });
   } else {
     v = await runStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir });
   }

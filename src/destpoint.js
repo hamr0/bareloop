@@ -34,7 +34,7 @@ export function destPrompt({ jobLines, destination }) {
     + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests in test/sum.test.js pass" the reply is {"points":[{"line":1,"file":"src/sum.js","folder":"src/"}]}, and test/sum.test.js is not named because the line only needs those tests to pass; for "LINE 2: make npm test pass" it is {"points":[]}.';
 }
 
-/** @typedef {{line: number, file: string, folder: string}} DestPoint */
+/** a file the line asks to change outside Destination, and the Destination proposed for it (its folder, or for a file at the top of the repo the file itself) @typedef {{line: number, file: string, folder: string}} DestPoint */
 
 /** does `file` lie under the Destination (a folder, a file, a glob, or `.`)? @param {string} file @param {string} destination @returns {boolean} */
 export function destinationCovers(file, destination) {
@@ -48,6 +48,11 @@ export function destinationCovers(file, destination) {
     } else if (file === t || file.startsWith(`${t}/`)) return true;
   }
   return false;
+}
+
+/** is the Destination already the whole repo (a piece that is `.` or empty after trimming, as `destinationCovers` reads it)? @param {string} destination @returns {boolean} */
+export function destinationIsRoot(destination) {
+  return destination.split(/[,\n]/).some((raw) => raw.trim() !== '' && raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '') in { '': 1, '.': 1 });
 }
 
 /**
@@ -72,12 +77,67 @@ export function decideDestPoint(text, { jobLines, files, destination }) {
     const file = p.file.replace(/^(\.\/)+/, '');
     const folder = p.folder.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     const lineText = lines.get(p.line);
-    const ok = lineText !== undefined && file !== '' && lineText.includes(p.file) && tree.has(file) && folder !== '' && file.startsWith(`${folder}/`) && !destinationCovers(file, destination);
-    if (ok) points.push({ line: p.line, file, folder: `${folder}/` }); else dropped += 1;
+    const base = lineText !== undefined && file !== '' && lineText.includes(p.file) && tree.has(file) && !destinationCovers(file, destination);
+    // a file at the top of the repo has no folder to name (`.` cannot be signed as a write fence), so the Destination proposed for it is the file itself
+    const topFile = !file.includes('/') && (folder === '' || folder === '.');
+    if (base && topFile) points.push({ line: p.line, file, folder: file });
+    else if (base && folder !== '' && file.startsWith(`${folder}/`)) points.push({ line: p.line, file, folder: `${folder}/` });
+    else dropped += 1;
   }
   points.sort((a, b) => a.line - b.line);
   return { status: 'ok', points, dropped };
 }
+
+/**
+ * The job lines the AI named a real file for, inside Destination or not: the file is written in that line's own words and is in the committed tree. A reply that is not readable names none.
+ * @param {unknown} text @param {{jobLines: {n: number, text: string}[], files: readonly string[]}} o @returns {number[]}
+ */
+export function namedLines(text, { jobLines, files }) {
+  /** @type {any} */
+  let j;
+  try { j = JSON.parse(String(text ?? '').trim()); } catch { return []; }
+  if (j === null || typeof j !== 'object' || !Array.isArray(j.points)) return [];
+  const lines = new Map(jobLines.map((l) => [l.n, l.text]));
+  const tree = new Set(files);
+  /** @type {Set<number>} */
+  const named = new Set();
+  for (const p of j.points) {
+    if (p === null || typeof p !== 'object' || !Number.isInteger(p.line) || typeof p.file !== 'string') continue;
+    const lineText = lines.get(p.line);
+    if (lineText !== undefined && p.file !== '' && lineText.includes(p.file) && tree.has(p.file.replace(/^(\.\/)+/, ''))) named.add(p.line);
+  }
+  return [...named].sort((a, b) => a - b);
+}
+
+/**
+ * The code and test places the scout reported (`sourcePaths`, `testPaths`) that REALLY exist in the committed tree: a folder (given a trailing /) or a file, in the scout's order, each once, and none that another listed folder already covers (`tests/fixtures/` goes when `tests/` is there).
+ * A path that is not a string, is empty, `.`, absolute, climbs out (`..`), holds a glob, or is not in the tree is left out. Anything odd (no facts, a list that is not a list) is `[]`.
+ * @param {any} facts the scout's facts @param {readonly string[]} files the committed tree @returns {string[]}
+ */
+export function scoutCodePaths(facts, files) {
+  /** @type {string[]} */
+  const out = [];
+  for (const key of ['sourcePaths', 'testPaths']) {
+    const list = facts !== null && typeof facts === 'object' && Array.isArray(facts[key]) ? facts[key] : [];
+    for (const raw of list) {
+      if (typeof raw !== 'string') continue;
+      const e = raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+      if (e === '' || e === '.' || e.startsWith('/') || e.includes('\\') || /[*?]/.test(e) || e.split('/').includes('..')) continue;
+      const entry = files.includes(e) ? e : (files.some((f) => f.startsWith(`${e}/`)) ? `${e}/` : null);
+      if (entry !== null && !out.includes(entry)) out.push(entry);
+    }
+  }
+  // a path another entry already covers (a folder holding it) is not suggested twice: the parent stays; a file no listed folder covers stays as written
+  return out.filter((e) => !out.some((f) => f !== e && f.endsWith('/') && e.startsWith(f)));
+}
+
+/** does Destination cover at least one committed file under one of these scout paths (code or tests)? @param {string} destination @param {readonly string[]} entries from {@link scoutCodePaths} @param {readonly string[]} files @returns {boolean} */
+export const destinationHoldsCode = (destination, entries, files) => files.some((f) => entries.some((e) => f === e || f.startsWith(e)) && destinationCovers(f, destination));
+
+/** the closed question about a job where no line names a file and a Destination that holds none of the scout's code or tests, worded by code @param {{destination: string, entries: readonly string[]}} o @returns {string} */
+export const destFenceQuestion = ({ destination, entries }) => redactSecrets(
+  `No line of the job names a file, and Destination ${destination.trim().replace(/\s*\n\s*/g, ', ')} holds none of the code or tests (${entries.join(', ')}). Set Destination to ${entries.join(', ')}, or type a folder.${DEST_ANSWER_APPROVE}`,
+);
 
 /** the one question, worded by code @param {DestPoint} p @param {string} destination @returns {string} */
 export const destQuestionText = (p, destination) => redactSecrets(
@@ -85,6 +145,8 @@ export const destQuestionText = (p, destination) => redactSecrets(
 );
 /** the answer words the question ends with (said once, here; the panel's question box shows the question without them and has the buttons instead) */
 export const DEST_ANSWER = ' Type yes to set it, or no to keep it as it is.';
+/** the answer words of the closed question about a line that names no file (the panel's box shows the question without them and has the button and the box instead) */
+export const DEST_ANSWER_APPROVE = ' Approve the folders above, or type a folder.';
 /** the answers (any case, a closing full stop allowed) @param {unknown} text @returns {'yes'|'no'|null} */
 export const yesNoOf = (text) => {
   const t = String(text ?? '').trim().replace(/\.$/, '').toLowerCase();
@@ -99,7 +161,8 @@ const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }
  * @param {{jobLines: {n: number, text: string}[], files: readonly string[], destination: string, provider?: any, maxTokens?: number, ceilingUsd?: number|null,
  *   callTimeoutMs?: number, onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: Function, rates?: {in: number, out: number}|null, callOptions?: Record<string, any>, sleep?: (ms: number) => Promise<void>}} o
- * @returns {Promise<{state: 'point'|'none'|'absent', point: DestPoint|null, reason: string|null, calls: {label: string, costUsd: number|null, unpricedRounds: number}[]}>}
+ * `named` = the job lines the AI named a real file for (see {@link namedLines}); `[]` when the call gave nothing readable.
+ * @returns {Promise<{state: 'point'|'none'|'absent', point: DestPoint|null, reason: string|null, calls: {label: string, costUsd: number|null, unpricedRounds: number}[], named: number[]}>}
  */
 export async function runDestPoint({
   jobLines, files, destination, provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS,
@@ -116,7 +179,7 @@ export async function runDestPoint({
     const raw = scrubRaw({ label: DEST_CALL_LABEL, attempt: attempts, text: r?.text });
     onCall({ ...call, raw: raw.text, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
   };
-  const absent = (/** @type {string} */ reason) => ({ state: /** @type {'absent'} */ ('absent'), point: null, reason, calls });
+  const absent = (/** @type {string} */ reason) => ({ state: /** @type {'absent'} */ ('absent'), point: null, reason, calls, named: /** @type {number[]} */ ([]) });
   const content = destPrompt({ jobLines, destination });
   let malformed = 0;
   let transportRetried = false;
@@ -144,7 +207,7 @@ export async function runDestPoint({
     if (isOutputCutOff(r)) return absent('the folder check answer was cut off');
     if (r?.error) return absent(`the folder check call failed: ${redactSecrets(String(r.error))}`);
     const d = decideDestPoint(r?.text, { jobLines, files, destination });
-    if (d.status === 'ok') return { state: d.points.length > 0 ? 'point' : 'none', point: d.points[0] ?? null, reason: null, calls };
+    if (d.status === 'ok') return { state: d.points.length > 0 ? 'point' : 'none', point: d.points[0] ?? null, reason: null, calls, named: namedLines(r?.text, { jobLines, files }) };
     malformed += 1;
     if (malformed >= 2) return absent('the folder check answer was not readable twice');
   }

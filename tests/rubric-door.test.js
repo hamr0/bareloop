@@ -121,7 +121,7 @@ test('authorCloseForJob: a language that is neither a code genre nor text (cobol
 test('a rubric card on a local FILE needs no examples (there are none any more)', () => {
   const file = changelogCopy();
   const card = (inputs) => ({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-card-test', jobText: '1. Summarize the unreleased changes',
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-card-test', jobText: '1. Summarize the unreleased changes\n~ under 120 words',
     inputs, destination: '/tmp/out', capUsd: 1,
   });
   assert.equal(validateJobCard(card(`Changelog: ${file}`)).ok, true);
@@ -186,7 +186,7 @@ test('R10 end check, panel door: a draft whose check block built no check (a tex
   copyFileSync(join(HERE, '..', 'README.md'), file2);
   let gatesReached = false;
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note', inputs: `Changelog: ${file}\nReadme: ${file2}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note\n~ under 120 words', inputs: `Changelog: ${file}\nReadme: ${file2}`, destination: join(tmp(), 'delivered'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
     lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }, { n: 2, label: 'Readme' }], look: { facts: [], prose: [], notFound: [], dropped: [] } } }),
@@ -208,7 +208,7 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
   const file = changelogCopy();
   const cm = confirmModel(PLAN);
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-protections', jobText: '1. Summarize\n2. List the fixes', inputs: `Changelog: ${file}`,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-protections', jobText: '1. Summarize\n~ under 120 words\n2. List the fixes', inputs: `Changelog: ${file}`,
     destination: join(tmp(), 'out'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
@@ -238,7 +238,7 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
 test('createSession: a search line, and a web address that cannot be read, stop at $0 in the exact plain words; a relative Destination is refused before anything is copied', async () => {
   const file = changelogCopy();
   const run = async (inputs, destination, fetchUrl) => {
-    const s = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-web', jobText: '1. Summarize', inputs, destination, capUsd: 1 }, {
+    const s = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-web', jobText: '1. Summarize\n~ under 120 words', inputs, destination, capUsd: 1 }, {
       ...(fetchUrl ? { fetchUrl } : {}), env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
       generate: async () => { throw new Error('no model call'); },
     });

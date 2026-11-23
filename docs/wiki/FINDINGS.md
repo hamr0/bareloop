@@ -16658,3 +16658,115 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 **Not covered.** OpenHands, SWE-agent, Devin, Factory, CrewAI, AutoGen, DSPy, DeepEval, Braintrust, NeMo Guardrails, Pydantic-AI docs; "AI employee" products; small 2026 GitHub projects. No evidence either way.
 
 **Consequence.** The README makes no "first" or "only" claim. The common gap seen: no one pairs an agent-designed flow with code-decided verification, a Not checked list for the human, and reuse across runs.
+
+### F376: Shape on D POC rounds v1-v3 failed; the failures were the harness's, not the worker's (2026-11-19/20, $1.88)
+
+- v1 (plan sha a696bd90) stopped at step 0 for $0: a code close may not carry `rubric-step` (src/authoring.js RUBRIC_ONLY_KINDS), the step file had no home in the repo listing, and "at least N" had no shape form.
+- v2 (sha 66fcfd17, amendment 81097cbb, one switch at the crossroads) FAIL, $0.25: the AI picked "review" 5 of 5; no `.md` report reached `reports/` (copyOut runs only with a front door); the shape look was empty in 8 of 14 drafts; the text battery drops `no-suppressions` (hamr then ruled it is not needed on a review: no code changes).
+- v3 (sha e4d53d78) FAIL, $1.63: the hack put "quotes the slow code" on a page-job text fact (value at most 200 characters and found inside the quote), so the worker's good assessments were refused 39 times (runs mwo3a4ak, mwo3p5od); it glued the whole repo's code into one cite text (6.1 MB, over bareguard's 5 MB source cap), dropped files, and refused a REAL quote of src/thinking.js:85-90 (run mwo3p5od).
+- Correction: the operator first told hamr this red "caught a made-up quote". That was wrong and was withdrawn after comparing the quote to the file.
+- The workers never wrote a code file in any round (run_id-scoped gate audits).
+
+### F377: Shape on D round 3 (plan v4, sha 941c3dff) PASS, n=5, UNDERPOWERED; four live defects for the build (2026-11-20, $0.38)
+
+- Flow: a Part A [default] form (file, quote, why) plus a [default] cite over only the files the items name; the rest of the shape from the job.
+- Bars: pick "review" 5 of 5; drafts signed 5 of 5; 4 of 5 runs green with the `.md` on the work branch (runs mwooga1d, mwooiyar, mwoopj82, mwoot6w9); run mwoon0cj died plan-red (exit-illegal after a first scope-escape); no code file written; no false cite red, all 19 items' quotes verified real. A made-up quote red was shown only at $0, never live.
+- Operator quality read: 3 runs sane and specific (for example, five readers re-read the same draft log, true at src/draftspend.js:222-307; per-file NUL sniff awaited one by one, true at src/source.js:316); 1 run weak (only "lower this limit" ideas).
+- Live defects for the build: a `~` rule covered by Part A still showed Not checked (3 of 5); the shape look added fields that duplicate Part A (3 of 5); the planner's first plan escaped the fence in 5 of 5 (a src/ file in an exit path); a worker scratch file (`output/draft-notes.md`) was delivered as a second report; the report clips each item's text in table cells.
+- The hack bypassed the report containment check and committed twice; the build must do both properly.
+
+### F378: Diff size on bareloop's own history, for review by range or branch (2026-11-20, $0)
+
+- v0.60.0..v0.61.0: 0.75 MB, 79 files. v0.57.0..v0.61.0: 2.8 MB, 265 files. v0.50.0..v0.61.0: 8.1 MB, 621 files.
+- The biggest single-file diff in all three is 0.44 MB.
+- So a whole diff can pass bareguard's 5 MB cite cap, but one file's diff is far under it: hamr ruled per-file diffs (piecemeal), never a block.
+
+### F379: Hermes Agent's self-improving skills, read against bareloop's learnings: nothing to take (2026-11-21, $0 source read)
+
+- Read: github.com/nousresearch/hermes-agent at HEAD (`agent/background_review.py`, `agent/curator.py`, `agent/learn_prompt.py`, `tools/skill_usage.py`, `tools/skill_ledger.py`, `tools/skill_manager_guards.py`), not only the README.
+- How it learns: after a turn, a forked copy of the agent rereads the chat and decides itself what to save as a skill or a memory, then writes it. The prompt pushes action ("a pass that does nothing is a missed learning opportunity"). No test or verdict checks a lesson; the AI grades its own work.
+- Its curator: skills go active, then stale after 14 days unused, then archived at 30; never deleted; pinned skills are never touched; the curator edits only skills the agent itself made; every edit lands in a JSONL ledger with rollback.
+- Its "do not save" list: setup failures, "tool X is broken" claims, one-off tasks, and failed attempts dressed up as the method.
+- Against bareloop: our cross-run learnings are code only, no LLM (POC-B and D/D2 failed: the AI made up fixes and folded wrongly, PRD ruling 2026-10-22). Reds DO teach here, and that is proven: the seed note's start failure moved big-file workers to write (F262), the carry memo hands earlier failures to every step and fix worker, and cards keep what failed and its outcome as facts, never as advice. So their "do not save" worry is already met.
+- Correction: the operator first said "a run teaches only when it goes red to green". That was wrong and was withdrawn (hamr pointed to F262).
+- Hermes is a personal chat agent with a person at every turn, so self-graded lessons fit there; bareloop runs jobs unattended with an outside close, so they do not.
+- Open idea, LEFT by hamr: retire a hint by use (shown, then the run passed) rather than by age only (56 days). Not seen live; nothing to build.
+
+### F380: Terraform-style plan/apply and YAML, read against bareloop: already covered, nothing to take (2026-11-21, $0 code read)
+
+- YAML: not used by the product. A grep of `src/`, `bin/` and `package.json` finds YAML only in comments and the `pnpm-lock.yaml` file name. Jobs, plans and settings are JSON (the signed `resolved-spec.json`, `config.json`), and the AI fills a fixed-form tool call that code validates, so the "AI breaks YAML indentation" problem cannot happen.
+- The `.claude/agents/*.md` files have YAML headers, but they are Claude Code helper agents, not bareloop.
+- Terraform's loop maps onto what bareloop already has: desired state = the drafted plan (fixed kinds, never code); validate = `validatePlan` plus the $0 seed checks; plan a person approves = the signed plan hash; policy gate = bareguard caps, the write fence and the close, none of which the agent can author; apply = the run on its own work branch or hidden git copy; state file = the spine plus git; drift check = place rules re-read before spend plus the seed check; safe retry = step-level Resume; self-healing = carry memo, fix tries, two strikes, then replan.
+- Why not Terraform itself: it tracks long-lived cloud resources, while bareloop changes files git already tracks; it would add a heavy tool and a new language against the one-dependency rule; and its pattern lets a policy auto-approve, while here the agent never touches its judge and merge stays human.
+- The "gap" first named, then withdrawn: Terraform shows the exact `+ / ~ / -` changes before apply because a program computes them from a human-written state. In bareloop the AI writes the edits during the run, so they cannot exist before it. What can be known up front (write fence, Destination, guards) is already shown by code; the real edits show at Accept, and nothing reaches the repo until the person merges. Nothing to do.
+
+### F381: Repo test checks ran the full suite three times before the AI did anything (run mwsblixt, 2026-11-22)
+
+- On change-repo2 the same suite command was run by the precheck, the preflight loop and the signing gates, each on a tree that had not changed. The run was eaten by test waits.
+- Fixed as check-once: the preflight loop is one pass (469d4c24), signing gates of one draft share finished results by command and seed tree (6f90d804), the drafting seed read shares them too (d3910fbf), and the run-start precheck and preflight share one pass (237351cf, which reverses 469d4c24's "precheck takes a fresh pass" line on hamr's word).
+- Seen live: signing in change-repo3 took 14 min on try 1 and 1 s and 3 s on tries 2 and 3.
+
+### F382: A resume ran the suite twice and used up the whole wall (run mwsfq0pi legs 2 and 3, 2026-11-23)
+
+- Leg 2 spent 11 min in the precheck and then started the suite again in the preflight; the wall left at resume was about 19 min, so no AI work happened. Leg 3 spent 13 min in the precheck. The tree was the same one leg 1's last check had read.
+- Fixed: a resumed leg's start pass reuses the saved check result when the tree is identical (73571770); the result rides in `.smoke/carry/state.json`, a precheck that would come back green is rerun fresh, and only the start pass reuses.
+- Test-proven only: the "reused" line has not been seen in a live resume. Gitignored files and the node version are not part of the tree comparison (accepted limit). Spec and POC in the build doc, "Addendum 2026-11-23".
+
+### F383: The seed baseline was re-measured on every check, 10.4 min once (run mwsfq0pi leg 3, tests-kept-executed, 2026-11-23)
+
+- A count check against the seed ran the suite again in a seed copy on every pass, so one stage cost 10.4 min.
+- Fixed: measured once per run and across legs (872956ef), keyed on the check and the seed tree, never on the folder.
+
+### F384: Declared count checks dropped the failing test names, so the AI guessed blind (run mwsfq0pi, 2026-11-23)
+
+- The AI edited `src/pagefetch.js` (79 lines) and the fail count stayed at 1: the gap said a number, not which test.
+- The earlier claim that older checks already rescue `not ok` names was wrong and was withdrawn: the gap keep list is operator-supplied, authored jobs set it empty.
+- Fixed: the failing-test lines are quoted into a red declared stage's gap, one code-owned constant per language, scrubbed and bounded (328a33be); verdicts unchanged, nothing signed.
+- Seen live in run mwt92ze1: `not ok 1004 - codeVersion() ...` reached the gap; the run went green for $0.17.
+
+### F385: A vague one-line job never read its prose branch (2026-11-23)
+
+- Job: "Fix any failing test on the branch chore/barebrowse-031". The branch word in prose is not read; the run landed on the right branch only because the copied patient happened to be on it.
+- Fixed: when the job word exactly equals a real local branch, the panel asks "Did you mean branch: X?" (0c275690); review jobs also get "Did you mean range: A..B?". The Job box now shows the token (d5233224). Seen live: the box did not update before that fix.
+- The CLI door has no yes/no ask, so this is panel only. A word like "main" will ask.
+
+### F386: A 700 ms limit made a test flaky under load (2026-11-23)
+
+- The check-once signing test's timed-out case used a 700 ms limit; node start-up under load went past it. `sh` is on the close deny floor, so marking the start through `sh` was not possible. Limit raised to 4000 ms (7176580e).
+
+### F387: A Change job with no `~` rule is lazy prompting; every new job now needs at least one (2026-11-23)
+
+- Fixed: a job with no `~` rule is refused with one code-written ask, in both doors, before any AI judges the text (460c130c, then 057e510c for all kinds, counted by code at $0 before any AI call). No AI judges prompt quality.
+- Seen live refusing an R url job and a D review job.
+
+### F388: Stop pressed during a step's exit check was read as an out-of-memory kill (run mwt89eey leg 2, 12:30:36Z, 2026-11-23)
+
+- The run ended `close-killed` instead of `stopped`. Fixed: Stop during a step check is told from an external kill (90a93f9b).
+- Test-proven only; no live walk of Stop mid-check yet.
+
+### F389: The drafter's note said a `~` rule had no stage, while the file fence enforced only src/ (run mwt89eey, 2026-11-23)
+
+- The `~` rule "do not change any file in tests/" had no stage of its own; the drafter-filled files-changed `allowPrefixes` enforced `src/` only. The card said unchecked, which is true to the stage but reads odd beside the fence.
+- Predates this branch; ledgered, not fixed.
+
+### F390: Two panel defects found on a live walk (2026-11-23)
+
+- The Destination box reverted to a refused draft's Destination on every poll while the person typed (fixed 8df64f7a).
+- An early click on Sign & run showed the raw "no plan is waiting for a decision right now" (run mwt92ze1 draft). Now unclickable while its first click is in flight, and an early click gets plain words (c2203bf5). Cause from source; the click was not reproduced, so the fix is not proven live.
+
+### F391: The rubric page job report is a cumulative dump with no answer section (run mwtc0mol, walk-r-rule, 2026-11-23)
+
+- File: `/home/hamr/bareloop-out/walk-r-rule-2026-11-23.md`, 22 KB. Each Result is a raw page-snapshot dump, cumulative (Result 10 repeats all 10 versions), and there is no AI answer section. The run passed by code.
+- Predates this branch: the self-review found `src/resultmd.js` stepSection path unchanged. Parked for the next branch.
+
+### F392: Two suites at once pushed the load to 37 and slowed a signing check to 16+ min (2026-11-23)
+
+- fwd's suite and a live bareloop run overlapped. Peers announce suite starts and "done"; one full suite at a time.
+
+### F393: A check timeout at the start of a resumed leg ends the run close-red and takes Resume away (run mwtf8p8s, walk-stop, 2026-11-23)
+
+- Leg 1: Stop pressed during the step's full test check (15:40:39Z). The check-run was killed, escalation category stopped, job-end outcome stopped ($0.13). The F388 fix (90a93f9b) seen LIVE.
+- Leg 2 (resume 15:40:49Z): the resume start precheck's `npm test` did not finish inside 900000 ms (load ~20: our own refactor worker's full suite started at the same time, an orchestrator scheduling error, see F392). Spine: close-precheck timed-out, escalation close-timeout, job-end close-red, $0 for the leg.
+- `close-red` is not in CHECKPOINT_OUTCOMES (`src/reuse.js:148`: cap-halt, wall-halt, step-stalled, provider-red, stopped, human checkpoints), so the panel offered only Reuse, not Resume. The AI's step edit stayed on disk.
+- A timeout says nothing about the job (the check never answered), so it should be resumable like provider-red. Also noted: this start check's limit was 15 min (900000 ms) while CHECK_LIMIT_MS is 30 min; look at that in the same fix.
+- hamr: fix comes in the next branch after the release.

@@ -30,11 +30,20 @@ export function shapeMenuLines() {
 }
 
 /**
+ * The note about the item fields the job's SOURCE already adds to every item (`have`: their names, from the source's row in src/sourcedefaults.js): they exist, a `~` rule about one of them is mapped onto it, and no second field is
+ * made for the same thing. Said only when the table has default fields, never by a flag: none = nothing is said and the prompt is byte-identical to a job without them.
+ * @param {readonly string[]} have @returns {string}
+ */
+export const haveWords = (have) => (have.length === 0 ? '' : `Every item already has these fields, made by code: ${have.map((n) => `"${n}"`).join(', ')}. To say that a ~ rule is about one of them, `
+  + 'give a field with exactly that name, kind text, required true, and that rule\'s number as "fromRule"; its bounds only from that rule\'s own words.\n'
+  + `Do not add a second field for what ${have.join(', ')} already hold. An extra field only for something else the job asks for.\n`);
+
+/**
  * What the AI is told: the job (its `~` rules numbered per line), the inputs (bounded), the kind menu and the answer form.
- * @param {{jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], texts: Record<string, string>, left?: {line: number, rules: number[]}[]}} o `lineNums` the lines a shape can be offered for, `left` the rules still without a check
+ * @param {{jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], texts: Record<string, string>, left?: {line: number, rules: number[]}[], have?: readonly string[]}} o `lineNums` the lines a shape can be offered for, `left` the rules still without a check, `have` the item fields the source already adds
  * @returns {string}
  */
-export function shapeLookPrompt({ jobLines, lineNums, texts, left = [] }) {
+export function shapeLookPrompt({ jobLines, lineNums, texts, left = [], have = [] }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}${lineRules(l).map((r, i) => `\n~ rule ${i + 1}: ${r}`).join('')}`).join('\n');
   const inputs = Object.entries(texts).map(([label, t]) => `Input "${label}"${t.length > SHAPE_SHOWN_CHARS ? ` (first ${SHAPE_SHOWN_CHARS} of ${t.length} characters)` : ''}:\n<<<\n${t.slice(0, SHAPE_SHOWN_CHARS)}\n>>>`).join('\n\n');
   // only when code left some `~` rules without a check: say which, so the AI gives a field for those and no other (injected only IF the case happens)
@@ -42,13 +51,15 @@ export function shapeLookPrompt({ jobLines, lineNums, texts, left = [] }) {
   return `THE JOB (each ~ rule applies to the line above it):\n${job}\n\nTHE INPUTS:\n${inputs}\n\n`
     + `A job line whose answer is a LIST OF ITEMS with named fields (for example one item per flight, per resume or per research topic) gets a shape. The lines a shape can be offered for: ${lineNums.join(', ')}. A line whose answer is not such a list gets none.\n`
     + needs
+    + haveWords(have)
     + '- "extraFields": any other field you think would help (none is fine); its "fromRule" is null and code shows it to the person as a suggestion.\n'
     + '- "kind" is one of the kinds below; "bounds" holds only the bounds that kind accepts, taken from that field\'s own rule. A yes/no rule ("the flight is nonstop") is kind boolean with "equals": true.\n'
     + '- "itemCountFrom": the labels of the inputs that give exactly one item each, only when the person wrote it ("one blurb per resume"); otherwise [].\n'
+    + '- "countFromRule": the number of the ~ rule on the line that says how FEW items the list must have ("at least 3 issues"), only when a rule says it with a number; otherwise null. A rule that limits a field (words or characters in one field) is not it.\n'
     + `- A field name is at most ${NAME_MAX_CHARS} characters and holds none of . : [ ] ; a list field writes its entries as "of": {"kind": "text", ...bounds}.\n\n`
     + `The field kinds (and the bounds each kind accepts):\n${shapeMenuLines().join('\n')}\n\n`
     + 'Return ONLY a JSON object, no prose, no code fence, with "shapes" empty when no line is a list of items:\n'
-    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[]}]}';
+    + '{"shapes":[{"line":1,"fields":[{"name":"...","kind":"...","required":true,"bounds":{},"fromRule":1}],"extraFields":[{"name":"...","kind":"...","required":false,"bounds":{},"fromRule":null}],"itemCountFrom":[],"countFromRule":null}]}';
 }
 
 /**
@@ -62,6 +73,7 @@ export function parseShapeAnswer(text) {
   if (m === null || typeof m !== 'object' || Array.isArray(m) || !Array.isArray(m.shapes)) return { ok: false };
   for (const s of m.shapes) {
     if (s === null || typeof s !== 'object' || Array.isArray(s) || !Number.isInteger(s.line)) return { ok: false };
+    if (s.countFromRule !== undefined && s.countFromRule !== null && !Number.isInteger(s.countFromRule)) return { ok: false };
     for (const k of ['fields', 'extraFields', 'itemCountFrom']) if (s[k] !== undefined && s[k] !== null && !Array.isArray(s[k])) return { ok: false };
   }
   return { ok: true, shapes: m.shapes };
@@ -69,7 +81,7 @@ export function parseShapeAnswer(text) {
 
 /**
  * Run the shape look: ONE call for the job. The same call / book / retry / spend plumbing as `runSheetLook` (src/sheetlook.js).
- * @param {{texts: Record<string, string>, inputs?: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], left?: {line: number, rules: number[]}[],
+ * @param {{texts: Record<string, string>, have?: readonly string[], inputs?: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[], lineNums: number[], left?: {line: number, rules: number[]}[],
  *   provider?: any, maxTokens?: number, ceilingUsd?: number|null, callTimeoutMs?: number, priorCalls?: {costUsd: number|null, unpricedRounds: number}[],
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: (o: {system: string, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
@@ -77,7 +89,7 @@ export function parseShapeAnswer(text) {
  * @returns {Promise<{state: 'PRESENT'|'ABSENT', shapes: Record<string, any>[], reason: string|null, cause: string|null, raws: ReturnType<typeof scrubRaw>[], calls: {label: string, costUsd: number|null, unpricedRounds: number}[], budgetStop: 'cap-halt'|'pricing-red'|null}>}
  */
 export async function runShapeLook({
-  texts, jobLines, lineNums, left = [], provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS, priorCalls = [],
+  texts, jobLines, lineNums, left = [], have = [], provider = null, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null, callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS, priorCalls = [],
   onCall = () => {}, createLoop = defaultLoop, rates = null, callOptions = {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 }) {
   const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0 ? Math.min(Math.trunc(Number(callTimeoutMs)), AUTHOR_CALL_TIMEOUT_MS) : AUTHOR_CALL_TIMEOUT_MS;
@@ -94,7 +106,7 @@ export async function runShapeLook({
     onCall({ ...call, raw: raw.text, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
   };
   const absent = (/** @type {string} */ reason, /** @type {string} */ cause, /** @type {'cap-halt'|'pricing-red'|null} */ budgetStop = null) => ({ state: /** @type {'ABSENT'} */ ('ABSENT'), shapes: [], reason, cause, raws, calls, budgetStop });
-  const content = shapeLookPrompt({ jobLines, lineNums, texts, left });
+  const content = shapeLookPrompt({ jobLines, lineNums, texts, left, have });
   let transportRetried = false;
   let rateRetried = false;
   let attempts = 0;

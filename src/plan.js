@@ -28,6 +28,7 @@ import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu, flowTypeOf } from './j
 import { declaredStages } from './declaredclose.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
 import { READ_SHIM_CAP, readShimArm } from './readshim.js';
+import { RUBRIC_LANG } from './authoring.js';
 
 /** the closed exit menu (PRD v1.12 §3 + decision 1's `check-passes`): the
  * shell evaluates every form with its own fixed code, never a command — the
@@ -40,6 +41,11 @@ export const MAX_EXITS_PER_STEP = 2;
  * appended to the missing-required exit red, so a redraft sees a legal shape,
  * not only the rule (F254: `exit` is required on EVERY step) */
 export const EXIT_EXAMPLE = 'Legal exit examples: a read-only look-around step (tools read, grep) uses [{"type":"artifact-written","path":"<an existing file the step reads>"}]; a step that changes files and has no check uses [{"type":"artifact-written","path":"<its target>"},{"type":"tree-changed","scope":"<an offered scope>"}]; a step with a check uses [{"type":"tree-changed","scope":"<an offered scope>"},{"type":"check-passes","name":"<a check name>"}].';
+/** the same example without its read-only clause: on a text close (the rubric road) the input is only read, so no step may name it in an exit */
+const EXIT_EXAMPLE_TEXT = EXIT_EXAMPLE.replace(/a read-only look-around step \(tools read, grep\) uses \[[^\]]*\]; /, '');
+/** the ONE chooser of the exit example by road: every place that shows it (planner prompt, missing-required red) calls this; a code close gets EXIT_EXAMPLE byte for byte
+ * @param {any} job the signed job (its closeDecl names the road) @returns {string} */
+export const exitExampleFor = (job) => (job?.closeDecl?.lang === RUBRIC_LANG ? EXIT_EXAMPLE_TEXT : EXIT_EXAMPLE);
 /** plan size bound — per-step rounds bound the spend, but an unbounded step
  * COUNT is still an unbounded claim on the wallet; same 8 as loop.maxIterations */
 export const MAX_PLAN_STEPS = 8;
@@ -500,7 +506,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
         red('step-scope-escape', `${at}.target`, `"${s.target}" is inside the signed fence but outside this step's own scope "${stepScope}" — the step's gate is built from that narrowed prefix, so every write to this target would be denied`);
       }
 
-      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite: i === lastWriteIdx });
+      validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite: i === lastWriteIdx, exitExample: exitExampleFor(spec) });
     });
 
     // R2c (piece 6), the generic-job half of fwd's findMcpPlanRed: a generic MCP job (flowType 'mcp') exists to call its tools, so at least one step must
@@ -542,17 +548,18 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
  * @param {Record<string, any>} s the step
  * @param {string} at step path prefix
  * @param {(code: string, path: string, detail?: string) => void} red
- * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean, seedRedNames: string[], isFinalWrite: boolean }} ctx
+ * @param {{ checkNames: string[], fence: string[], insideFence: (p: string) => boolean, writeStep: boolean, toolsParsed: boolean, scopeMenu: string[], stepScope: string|null, overlapsStepScope: (p: string) => boolean, seedRedNames: string[], isFinalWrite: boolean, exitExample: string }} ctx
  *   `stepScope`/`overlapsStepScope` (W3): the step's OWN narrowed fence when it
  *   declared a legal `scope`, null/always-true otherwise. Exits are OBSERVATIONS,
  *   not writes, so only `tree-changed` is constrained by it and only against
  *   DISJOINTness — see the arm for the measured semantics.
+ *   `exitExample`: the road's legal-example sentence (exitExampleFor), appended to the missing-required red.
  *   `seedRedNames`/`isFinalWrite` (Rule A-v2): the preflight-red check names and
  *   whether THIS step is the plan's final write step — see the check-passes arm.
  */
-function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite }) {
+function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite, exitExample }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
-    red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate — ${EXIT_EXAMPLE}`);
+    red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate — ${exitExample}`);
     return;
   }
   if (s.exit.length > MAX_EXITS_PER_STEP) {

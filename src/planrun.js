@@ -28,7 +28,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE, mcpToolsExample } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, exitExampleFor, mcpToolsExample } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -43,6 +43,7 @@ import { createCarryStore } from './carrystore.js';
 import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
+import { reviewFindingsRecords, REVIEW_FINDINGS } from './reviewfindings.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact, rateSourceFields } from './text.js';
 import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
@@ -53,10 +54,12 @@ import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
-  REVIEW_DOOR, doorOpens, mechanicalStages,
+  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote, treeIdentity,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
+import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
+import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { isRateLimited, rateLimitWaitMs, statedWaitMs } from './ratelimit.js';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature, checkCloseDirRequired } from './close-integrity.js';
@@ -354,6 +357,12 @@ function hintsBlock(text) {
 
 /** The seed note (src/seednote.js), verbatim, in the planner's first-draft prompt; absent or empty renders '' (byte-identical to the prompt without it). */
 function seedNoteBlock(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  return `\n${text}\n`;
+}
+
+/** A range/branch review's block (src/rangereview.js `rangeNoteOfSpec`, words frozen from live round W), verbatim, after the seed note; absent or empty renders '' (byte-identical to the prompt without it). */
+function rangeNoteBlock(text) {
   if (typeof text !== 'string' || !text.trim()) return '';
   return `\n${text}\n`;
 }
@@ -693,6 +702,16 @@ export function boundedNote(bounded, rounds) {
 }
 
 /**
+ * The PLANNER's note on the rubric road, for EVERY text close (a rubric job on files or on a repo): the input is read, never written, and every check is on the answer file. Round 3 of the review POC: the planner's first plan put an input
+ * file in an exit path in 5 of 5 drafts (a fence escape), and 8 of 53 archived file-job runs did the same. Source-neutral words, injected on a text close only (a code close's prompt is byte-identical to before).
+ * @param {number[]} lines the job lines (each has one answer file, `output/steps/<n>.json`) @returns {string}
+ */
+export const answerFilesWords = (lines, source = 'files') => `
+You are ${defaultsOf(source).role}. Read what you need, then write your ${defaultsOf(source).answer} to ${lines.map((n) => `output/steps/${n}.json`).join(', ')}. That ${defaultsOf(source).answer} file is the only file you write; every exit and every check goes on it.
+THIS JOB'S OUTPUT IS ITS ANSWER FILES. The input is only READ, never written: no step may write or edit an input file, and no step's "target" or exit "path" may be one. The only file a step writes is the answer file
+(${lines.map((n) => `output/steps/${n}.json`).join(', ')}); give each write step that file as its "target", and put every exit (artifact-written, json-valid, tree-changed under output/) and every check-passes on that answer file. A step that only reads and greps the input first is fine.`;
+
+/**
  * The plan-drafting prompt: a schema DESCRIPTION built from the live validator
  * menus — never a copyable example (the drafter must author, not echo; the
  * run.js draftPrompt precedent). Check NAMES only: a check's command is
@@ -731,8 +750,9 @@ export function boundedNote(bounded, rounds) {
  * @param {string|null} [hints] the cross-run learnings block (src/learn.js `renderHints`), verbatim; null/empty
  *   renders byte-identically to the prompt without it. Only ever passed for the draft and the first replan.
  * @param {string|null} [seedNote] the seed note (src/seednote.js), verbatim, after the hints; null/empty renders byte-identically to the prompt without it. First draft only.
+ * @param {string|null} [rangeNote] a range/branch review's block (src/rangereview.js `rangeNoteOfSpec`), verbatim, after the seed note; null renders byte-identically to the prompt without it. Every phase.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null, rangeNote = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -776,6 +796,10 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   returns only its next 24KB, and those two verbs are the only way to read a symbol in
   full. A step that grants "read" without both is rejected.`
     : '';
+  // the rubric road's note (a text close only): its answer files are the only thing written
+  const answerLaw = job?.closeDecl?.lang === 'text'
+    ? answerFilesWords((Array.isArray(job.closeDecl?.stages) ? job.closeDecl.stages : []).filter((/** @type {any} */ st) => st?.kind === 'rubric-step' && Number.isInteger(st?.params?.step)).map((/** @type {any} */ st) => st.params.step), sourceOf(job.closeDecl) ?? 'files')
+    : '';
   const doc = `DRAFT-PLAN
 You are planning how to accomplish a goal in a repository, as an ordered list of bounded
 steps (schema "plan-v1"). The plan is pure declarative JSON validated by a strict schema;
@@ -803,7 +827,7 @@ strictly in array order. Each step (no other fields exist):
   it character for character. No other name exists, and you cannot add one.
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
-  ${EXIT_EXAMPLE}
+  ${exitExampleFor(job)}
   A check-passes may ONLY appear on a step whose tools include write or edit: a
   failing check is reported back to THAT step's worker for another attempt, so
   the step must be able to act on the report. Do not plan a separate read-only
@@ -815,7 +839,7 @@ strictly in array order. Each step (no other fields exist):
   write an action that forbids editing other in-scope files (e.g. "do not
   modify any file outside X"): a step ordered to leave a file alone while its
   exit reds on that file can never finish, on any attempt.${seedRedLaw}${priorChecksLaw}
-  Reference checks by NAME only; you cannot author or modify one.
+  Reference checks by NAME only; you cannot author or modify one.${answerLaw}
 
 The worker has NO SHELL. It cannot run a command, a compiler, a linter, or a test suite,
 and it cannot execute a script it writes: its only verbs are the tools you grant that step
@@ -833,7 +857,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}${asSeenBlock(closeStages)}
-${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}${rangeNoteBlock(rangeNote)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -887,6 +911,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
  *   the runner sets it, the plan cannot express it, and no step may tighten or raise
  *   it.
+ * @param {{afterMs: number, everyMs: number}|null} [opts.checkNote] TEST SEAM ONLY: when the still-running note starts and how often it repeats (production: kinds.js CHECK_NOTE_*)
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory).
  *   OPTIONAL as of PRD item 27/M3: absent, this run autosets it from a $0 seed
  *   timing pass (or the spec's own signed `closeTimeoutMs` override) — an
@@ -1086,7 +1111,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, checkNote = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1299,6 +1324,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // a close stage a test or an operator deliberately made slow/hanging would
   // then block for up to 10 minutes for no purpose. "Guesstimate only when no
   // rate is given" is the same doctrine F113 already applies to pricing.
+  /** the close timeout's source: 'check-limit' = an AI-drafted check under the one code-owned limit (never compared to the Time cap) */
+  let closeTimeoutSource = 'estimated';
   {
     const explicitOverride = typeof closeTimeoutMs === 'number' && Number.isFinite(closeTimeoutMs) ? closeTimeoutMs : null;
     if (explicitOverride !== null) {
@@ -1308,6 +1335,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // `scripts/run-u.mjs` and `src/cli.js` both leave this call site
       // nothing to autoset from but the autoset/signed-override tiers below).
       closeTimeoutMs = explicitOverride;
+      closeTimeoutSource = 'explicit';
       emit('close-timing', { perStage: [], slowestMs: null, slowestName: null, ceilingMs: closeTimeoutMs, source: 'explicit' });
       console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: 'explicit' }));
     } else {
@@ -1329,6 +1357,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         return 'close-timing-red';
       }
       closeTimeoutMs = /** @type {number} */ (resolved.closeTimeoutMs);
+      closeTimeoutSource = resolved.source;
       emit('close-timing', { ...(resolved.timing ?? { perStage: [], slowestMs: null, slowestName: null, anyTimedOut: false }), ceilingMs: closeTimeoutMs, source: resolved.source });
       console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: resolved.source, slowestMs: resolved.timing?.slowestMs, slowestName: resolved.timing?.slowestName }));
     }
@@ -1341,7 +1370,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // run start, so the honest shape is a run-start check, never a silent
   // clamp (a budget under one close cannot fund its own close, verbatim the
   // reasoning `maxWallMs`'s own validator red already states).
-  if (typeof job.maxWallMs === 'number' && job.maxWallMs < closeTimeoutMs) {
+  if (closeTimeoutSource !== 'check-limit' && typeof job.maxWallMs === 'number' && job.maxWallMs < closeTimeoutMs) {
     emit('escalation', {
       category: 'wall-under-close-timeout', decisionReady: true,
       decision: `maxWallMs (${job.maxWallMs}ms) is under the effective close timeout (${closeTimeoutMs}ms) — a budget under one close cannot fund its own close, so nothing was run and nothing was spent.`,
@@ -1771,7 +1800,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'abandon the task',
   ];
 
+  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words), and each
+  // command's measured time is kept for the run's later passes ("usually about N min"). Nothing reads either back to decide anything.
+  /** @type {Map<string, number>} */
+  const cmdTimes = new Map();
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
+  /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
+  /** the run's seed-baseline readings (hamr 2026-11-23): loaded from the carry memo file (an earlier leg's), kept there as they complete, handed to EVERY close pass */
+  const seedBaseMap = new Map(carry.savedChecks().filter((c) => c.seed === true).map((c) => [c.key, c]));
+  const seedBase = { get: (/** @type {string} */ k) => seedBaseMap.get(k), keep: (/** @type {any} */ rec) => { try { const full = { ...rec, out: scrub(rec.out), at: new Date().toISOString() }; seedBaseMap.set(rec.key, full); carry.keepCheck(full); } catch { /* never breaks a run */ } } };
+  const cmdKeep = (rec) => { try { carry.keepCheck({ ...rec, out: scrub(rec.out), at: new Date().toISOString() }); } catch { /* never breaks a run */ } };
+  /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
+  const stopChecks = new AbortController();
+  /** the Stop landed inside a close (the callers that can end `stopped` read it) */
+  let stoppedInClose = false;
+  const STOP_POLL_MS = 1000;
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
   /** @type {{seedRef: string}|null} */
@@ -1786,10 +1829,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
+   * @param {Map<string, Promise<any>>} [cmdMemo] a caller-owned check pass (the preflight loop); absent = a fresh pass
+   * @param {Map<string, any>} [cmdSaved] RESUME REUSE: saved results for this very tree, handed to the start pass ONLY
    */
-  const runCloseStagesInner = (stages) => (declared
-    ? runDeclaredStages(stages, scrub, {
+  const runCloseStagesInner = async (stages, cmdMemo, cmdSaved) => {
+    if (!declared) return runStages(stages, scrub, closeOpts);
+    // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
+    // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
+    // consumed here and the stop recorded; the caller routes a close that was stopped (the precheck and the preflight end `stopped`).
+    const poll = stopFile === null ? null : setInterval(() => { if (existsSync(stopFile)) stopChecks.abort(); }, STOP_POLL_MS);
+    poll?.unref();
+    try {
+      return await runDeclaredStages(stages, scrub, {
       ...closeOpts,
+      signal: stopChecks.signal,
+      ...(cmdMemo ? { cmdMemo } : {}),
+      ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
+      cmdKeep,
+      seedBase,
+      onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
+      cmdTimes,
+      ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
       // the signer's answer reaches the human stage the same way every other
       // arbiter-owned fact reaches a stage: through the ctx, never through the
@@ -1797,6 +1857,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       humanRuling: liveRuling,
       // the signed one check list: each stage entry of the close's records carries a RESULT PER ROW (report-only; no verdict reads it)
       list: Array.isArray(job.closeDecl?.list) ? job.closeDecl.list : null,
+      // the close's SIGNED source (src/sourcedefaults.js): where a rubric step reads its input from
+      source: job.closeDecl?.source ?? null,
+      // the close's language: which failing-test lines a red count stage quotes of its command's own output (src/authoring.js)
+      lang: job.closeDecl?.lang ?? null,
       // REPORT-ONLY: what a rubric-step stage's cited checks read (bareguard `full.evidence`), recorded as `rubric-evidence` for the Result
       // tab's highlights. No verdict, gap, governor or money path reads it. Masked HERE with the run's one `scrub`: the `text` is a quote from
       // the frozen page record, and the spine is append-only. Masking moves offsets, so an entry whose text changed keeps NO spans.
@@ -1811,8 +1875,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }),
         ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
       }),
-    })
-    : runStages(stages, scrub, closeOpts));
+      });
+    } finally {
+      if (poll) clearInterval(poll);
+      if (stopChecks.signal.aborted && !stoppedInClose) {
+        stoppedInClose = true;
+        if (stopFile !== null) { try { unlinkSync(stopFile); } catch { /* already consumed */ } }
+        emit('stop-requested', { phase: 'close', meaning: 'the person asked to stop; the check that was running was killed, with everything it started' });
+      }
+    }
+  };
   /**
    * PRD item 27/M2 — the re-verify that runs before EVERY close run, precheck
    * included: `runCloseStagesInner` is the ONE seam every close execution in
@@ -1831,15 +1903,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * exactly like `crashed`/`timed-out`/`killed` — a forbidden-zone outcome,
    * never retried, never fed back as a gap.
    * @param {any[]} stages
+   * @param {Map<string, Promise<any>>} [cmdMemo]
+   * @param {Map<string, any>} [cmdSaved]
    */
-  const runCloseStages = async (stages) => {
+  const runCloseStages = async (stages, cmdMemo, cmdSaved) => {
     const sig = checkStageByteSignature(stages, workdir);
     if (!sig.ok) {
       const r = sig.reds[0];
       const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
       return { verdict: 'close-tampered', stage: r?.stage, detail };
     }
-    return runCloseStagesInner(stages);
+    return runCloseStagesInner(stages, cmdMemo, cmdSaved);
   };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -1996,9 +2070,19 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     });
   };
 
+  /**
+   * REPORT ONLY ("Result tab A", hamr 2026-11-21): when the final close PASSED a review line, what its answer said (`review-findings`, src/reviewfindings.js), so the Result tab lists the findings without the run folder.
+   * Called right after the verdict is minted and never before; nothing reads it back into a verdict, a cap or a fence, a red line writes none, and it can fail without anyone knowing (it only ever returns records).
+   * @param {any} v the satisfied close verdict
+   */
+  const emitReviewFindings = async (v) => {
+    for (const rec of await reviewFindingsRecords({ closeDecl: job.closeDecl, stages: v?.stages, workdir, scrub })) emit(REVIEW_FINDINGS, rec);
+  };
+
   /** the close, as ONE verdict: every stage in order, first red wins */
-  const judgeClose = async () => {
-    const v = await runCloseStages(stagedClose);
+  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {Map<string, any>} [cmdSaved] the start pass's saved results (resume) */
+  const judgeClose = async (cmdMemo, cmdSaved) => {
+    const v = await runCloseStages(stagedClose, cmdMemo, cmdSaved);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
@@ -2167,8 +2251,40 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
 
   // ── 0a. close precheck (close-first, F17): already-green is a DISTINCT
   // record, zero tokens; a forbidden-zone verdict escalates before any spend
-  const pre = await judgeClose();
+  // ONE start pass (hamr 2026-11-23, run mwsfq0pi): the precheck and the preflight loop below read the same unchanged tree back to back in this
+  // process, so they share ONE memo and a command the precheck ran is not run again. The precheck is the memo's first user, so it is itself fresh.
+  const startMemo = new Map();
+  // RESUME REUSE (hamr 2026-11-23): on a resumed leg, a check result saved by an earlier leg for EXACTLY these files stands in for a run of the same command
+  // in this start pass (precheck + preflight). The tree identity is read once here; no match = the command runs fresh. Nothing else ever takes a saved result.
+  /** @type {Map<string, any>} */
+  const startSaved = new Map();
+  if (resuming && declared) {
+    const saved = carry.savedChecks();
+    const here = saved.length ? await treeIdentity(workdir) : null;
+    if (here) for (const c of saved) if (c.seed !== true && c.treeId === here) startSaved.set(c.key, { ...c });
+  }
+  const startEntries = [...startSaved.values()];
+  let pre = await judgeClose(startMemo, startSaved);
+  // THE ONE SAFETY RULE: a pass never comes from a saved result. A satisfied precheck that leaned on one drops those entries and is judged again fresh.
+  if (pre.verdict === 'satisfied' && startEntries.some((e) => e.used)) {
+    for (const e of startEntries) if (e.used) { startMemo.delete(e.memoKey); e.used = false; }
+    startSaved.clear();
+    pre = await judgeClose(startMemo);
+  }
+  let reuseTold = false;
+  /** ONE plain line, code-written, when a saved result was used (a spine record: the Audit and the run's records show it) */
+  const tellReuse = () => {
+    if (reuseTold) return;
+    const used = startEntries.filter((e) => e.used);
+    if (!used.length) return;
+    reuseTold = true;
+    const at = used.map((e) => e.at).sort().at(-1);
+    const d = new Date(at);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    emit('check-reused', { commands: used.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
+  };
   emit('close-precheck', { ...pre });
+  tellReuse();
   // …and if a signer's `accept` is what greened the human stage, it is PAID FOR:
   // the answer was applied to the tree they were shown, and no later leg may hold
   // it over a tree they have not seen (F102's persistence must never become a
@@ -2193,6 +2309,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // exactly this question. No `planExecuted` — there is no plan yet, and an empty
   // one on the spine would be a record of work nobody did.
   if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
+  if (stoppedInClose) return 'stopped';
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
   if (preFault) {
     emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
@@ -2224,8 +2341,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ? { hidden: stagedClose.filter((s2) => s2.offer === false).map((s2) => s2.name), meaning: 'a stage that cannot stand alone as a ruler (a precondition) is not offered — a partial menu is acceptable, never a failure' }
       : {}),
   });
+  // ONE check pass: the tree is unchanged through the whole start (precheck + this loop), so a command read by several stages runs once (hamr
+  // 2026-11-22 run mwsblixt; 2026-11-23 run mwsfq0pi). The memo lives only for the start; step exits, the fix-loop judge and the final close take fresh passes.
+  const preflightMemo = startMemo;
   for (const m of menu) {
-    const v = await runCloseStages(m.run);
+    const v = await runCloseStages(m.run, preflightMemo, startSaved);
+    tellReuse();
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
       if (seedNoteOn) seedReds.push({ stage: v.stage, kind: stagedClose.find((/** @type {any} */ s2) => s2?.name === v.stage)?.kind, gap: v.gap });
@@ -2247,6 +2368,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       if (!runTrend.report().stages.some((s) => s.stage === v.stage)) runTrend.record(closeGrade(v));
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
+    if (stoppedInClose) return 'stopped';
     const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
     if (f) {
       emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });
@@ -2438,7 +2560,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // before). bareguard's allowlist is exclusive for EVERY action and matches the action TYPE (`read`/`write`/`edit`/`ctx_stash`..., see toolAction), so it
       // lists the granted verbs' types plus the signed bridge names (src/stepmcp.js, proven against the real Gate): an unsigned bridge tool is denied by name.
       tools: {
-        denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] },
+        denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN, REVIEW_DIFF_WRITE_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN, REVIEW_DIFF_WRITE_PATTERN] },
         ...(mcpRun ? { allowlist: mcpAllowlist(granted, mcpRun.server, mcpRun.mcpTools, workdir) } : {}),
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 1e-4) },
@@ -3335,7 +3457,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       replanCut = false;
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null, rangeNoteOfSpec(job)), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
         return '';
@@ -3714,6 +3836,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       /** @type {any} */
       let evaled;
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
+      // THE PERSON'S STOP landed inside this step's check (the poll killed it): not a verdict and not an instrument fault. ralph files it as the
+      // same `stopped` escalation a round-boundary stop gets, so the step loop ends the leg `stopped` and a resume re-enters this step.
+      if (stoppedInClose) return { verdict: 'stopped' };
       const { pass, results: raw } = evaled;
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
@@ -4149,9 +4274,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // still red → the escalation ralph already emitted stands.
   const post = await judgeClose();
   emit('outer-close', { ...post });
+  // THE PERSON'S STOP landed inside this close (the poll killed the check): the same `stopped` terminal and records as a Stop at a round boundary
+  // (`stop-requested` was written by the poll; `relay` files the `stopped` escalation). Only a kill CAUSED by the stop routes here; a timeout or
+  // any other killed close keeps the close-fault routing below. No grade is minted and nothing is discarded.
+  if (stoppedInClose) {
+    planExecuted();
+    return relay(Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' }), 'close');
+  }
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
     planExecuted();
+    await emitReviewFindings(post);
     await emitReviewDoor('green', post);
     return 'green';
   }
@@ -4468,6 +4601,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // case the trend instrument is blind.
       middle, judge: async () => {
         const v = await judgeClose();
+        // a Stop inside a fix-loop close: ends through `relay` below, like a round-boundary stop in the fix phase
+        if (stoppedInClose) throw Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' });
         carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
         return v;
       }, ladder: fixGovernor, emit: emitL, redact: scrub,
@@ -4533,7 +4668,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // work for is exactly as much a green as one the close minted first time, and a
   // door that opened on only one of them would be a door that quietly graded how
   // the verdict was arrived at.
-  if (fixOutcome === 'green') await emitReviewDoor('green', lastCloseVerdict);
+  if (fixOutcome === 'green') { await emitReviewFindings(lastCloseVerdict); await emitReviewDoor('green', lastCloseVerdict); }
   return fixOutcome === 'green' ? 'green' : 'escalated';
   } finally {
     // Emitted on EVERY exit (return or throw) — `finally` fires exactly once,

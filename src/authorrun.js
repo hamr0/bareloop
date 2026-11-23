@@ -119,6 +119,8 @@ import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
+import { chooseRoad, makePick, needsRuleRefusal, REVIEW_CALL_LABEL } from './reviewpick.js';
+import { draftRefusal } from './rangereview.js';
 import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
 import { FENCE_POINT_SYSTEM } from './fencepointcall.js';
@@ -152,6 +154,7 @@ class ExitSignal extends Error {
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
  * @property {string} [keysHome] P4a — test seam: load this home's `.env` keys file even when `env` is injected.
+ * @property {(jobLines: any[]) => Promise<{answer: string, reason?: string|null}>} [reviewPick] test seam: replaces the crossroads' change-or-review question (the panel door has the same one); absent = the real call.
  * @property {NodeJS.ReadStream} [stdin]
  * @property {NodeJS.WritableStream} [stdout]
  * @property {NodeJS.WritableStream} [stderr]
@@ -293,7 +296,7 @@ export async function main(argv, deps = {}) {
   // full `VERDICT_CLASSES` (so an off-menu pick reaches the pipeline's counted
   // refusal rather than dying here as a typo); the PRINTED text names only the
   // menu (item 34 L19: nothing customer-facing names an off-menu class).
-  const VERDICT = /** @type {string} */ (verdictArg);
+  let VERDICT = /** @type {string} */ (verdictArg);
   if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
   if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
@@ -390,7 +393,7 @@ export async function main(argv, deps = {}) {
   const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
   // PART 1a: a soft-green job whose source froze the person's own local FILES (`proveRubricInputs` left `inputs` in the
   // manifest) is NOT the plain-folder stop below: it is authored against the hidden tree with the text genre, no scout.
-  const RUBRIC_FILES = !IS_REPO_SOURCE && VERDICT === 'soft-green' && isRubricFilesManifest(manifestRead.manifest);
+  let RUBRIC_FILES = !IS_REPO_SOURCE && VERDICT === 'soft-green' && isRubricFilesManifest(manifestRead.manifest);
 
   // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
   // $0, no provider, run BEFORE the API key is even read — this script must
@@ -632,6 +635,26 @@ export async function main(argv, deps = {}) {
   /** @type {[string, () => void][]} */
   let sigHandlers = [];
   try {
+    // Part 2 (hamr 2026-11-21, "refusal should be at the draft"): the job-text range/branch refusals git alone can decide, at the START, $0, before the pick and any model call. The panel door reads the SAME helper (src/rangereview.js `draftRefusal`), so the words are one.
+    const rangeRepo = IS_REPO_SOURCE && VERDICT === 'green' && typeof manifestRead.manifest?.repo === 'string' ? manifestRead.manifest.repo : null;
+    const draftLines = Array.isArray(draft.jobLines) ? draft.jobLines : null;
+    if (rangeRepo !== null) {
+      const early = await draftRefusal({ repo: rangeRepo, jobLines: draftLines });
+      if (early !== null) {
+        err(early);
+        emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+        throw new ExitSignal(2);
+      }
+    }
+    // hamr 2026-11-23: EVERY new draft needs at least one `~` rule; code counts them, $0, before the pick and any model call (the panel door reads the SAME function)
+    {
+      const noRule = needsRuleRefusal(draftLines);
+      if (noRule !== null) {
+        err(noRule);
+        emit('author-end', { outcome: 'not-authored', stop: 'rule-missing' });
+        throw new ExitSignal(2);
+      }
+    }
     // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
   //
   // Everything below reports; nothing below governs. The ceiling is enforced where
@@ -810,6 +833,36 @@ export async function main(argv, deps = {}) {
    * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
    * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
    * prompt: reusing `generate` would run the wrong system prompt silently. */
+  // REVIEW THE CODE (docs/product/ITEM33-BUILD.md "Addendum 2026-11-20 (b)", item 1): the CROSSROADS of a Deterministic repo job, ONE function for both doors (src/reviewpick.js `chooseRoad`; the panel calls the same one) and the
+  // WRITER of the signed source. The drafter is asked ONE binary question: change the code, or review it? Change = the D flow below, untouched. Review = the rubric road (soft-green, the text close) over the repo, signed as
+  // `closeDecl.source` by `authorCloseForJob`. Failure is OPEN (the D flow).
+  /** @type {'files'|'repo'} */
+  let SOURCE_KIND = 'files';
+  {
+    const road = await chooseRoad({
+      verdictType: VERDICT, isRepoSource: IS_REPO_SOURCE, jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
+      pick: deps.reviewPick !== undefined ? deps.reviewPick : makePick({ provider, ceilingUsd: CEILING_USD, onCall, ...(authorPrice?.rates ? { rates: authorPrice.rates } : {}) }),
+    });
+    // Part 2: a range/branch token the job cannot use is refused in plain words, the same words as the panel door, before any further spend
+    if (typeof road.refusal === 'string') {
+      err(road.refusal);
+      emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+      throw new ExitSignal(2);
+    }
+    if (road.review && rangeRepo !== null) { // a review branch needs `main` (a change job's branch does not): known only now
+      const late = await draftRefusal({ repo: rangeRepo, jobLines: draftLines, review: true });
+      if (late !== null) {
+        err(late);
+        emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+        throw new ExitSignal(2);
+      }
+    }
+    if (road.answer !== null) emit(REVIEW_CALL_LABEL, { answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}) });
+    if (road.review) {
+      SOURCE_KIND = road.source; draft.writeScope = road.writeScope; VERDICT = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles;
+      out(`review    this job reads the code and reports; it changes none (verdict ${VERDICT}, text close)`);
+    }
+  }
   const confirmGenerate = makeLoopGenerate(provider, { system: confirmSystemFor(LANG), rates: authorPrice?.rates ?? null });
 
   // ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
@@ -873,6 +926,7 @@ export async function main(argv, deps = {}) {
       // P7: the person's numbered job lines and inputs ride the draft; the drafter tags every stage with a line
       jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
       inputs: Array.isArray(draft.inputs) ? draft.inputs : null,
+      source: SOURCE_KIND,
       provider,
       generate: makeLoopGenerate(provider, { rates: authorPrice?.rates ?? null }),
       rates: authorPrice?.rates ?? null,

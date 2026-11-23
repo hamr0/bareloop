@@ -154,7 +154,7 @@ test('Start route: Inputs lines 2+ are proven at $0 before a session — a miss 
   const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('p7-sess-') });
   t.after(() => close());
   const post = (body) => fetch(`http://127.0.0.1:${port}/api/author/start`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
-  const card = { checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'p7-route-job', jobText: 'Fix it', destination: 'src/', capUsd: 1 };
+  const card = { checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'p7-route-job', jobText: 'Fix it\n~ keep it small', destination: 'src/', capUsd: 1 };
   const miss = await post({ ...card, inputs: `repo: ${repo}\nspec: docs/missing.md` });
   assert.equal(miss.status, 400);
   assert.match((await miss.json()).error, /Inputs, line 2: docs\/missing\.md does not exist in the repo/);

@@ -5322,3 +5322,294 @@ Branch feat/shape-jobs, not pushed. Findings F369-F374 in `docs/wiki/FINDINGS.md
 - A text-only line with a built maxWords keeps the `$` prose row Not checked on the card while the report heading reads "The answer".
 - A facts+shape line may show 2 cards in Result (mock had 1); not re-checked after the fold change.
 - Full suite not run since the morning; not pushed; flights-page job (no shape call) still to be walked.
+
+## Addendum 2026-11-20: Review the code (Deterministic repo jobs) + review by git range or branch
+
+Status: SIGNED by hamr 2026-11-20 ("signed"). Being built on chore/barebrowse-031, Part 1 first.
+Build method replaced 2026-11-20 by "Addendum 2026-11-20 (b): Review the code, clean" (below).
+POC: plans v1-v4 in `.claude/scratch/poc-shape-on-d-plan*.md`; v1-v3 FAIL, v4 (round 3) PASS, n=5, UNDERPOWERED,
+$2.2 in all. Findings F376-F378 (below).
+
+### Part 1: Review the code
+
+Rulings (hamr 2026-11-19/20): the radios stay D and R. On a D repo job, the drafter's injected text asks ONE binary
+question: is this job changing the code or reviewing it? Change = today's D flow, untouched. Review = the rubric
+road's own rules, with no code changes and one `.md` report inside the repo at Destination. The shape check is allowed
+on a D close when the job is a review ("it's our rule, allow it"). The readout's first line says which one.
+
+The flow (round 3, proven):
+- Part A, `[default]` on every review: a list of items, each with `file`, `quote` and `why` (required, non-empty, no
+  other limits), plus the `[default]` cite: each quote is found word for word in the repo files the items name (code
+  reads only those files, whole; over 5 MB is a plain-words red).
+- Part B, open: `~` rules get a truth or shape check where code can build one, else Not checked; the shape look may
+  add `[agent]` fields from the job's words (Suggested with Add); "at least N" gives `minItems N`.
+- Quality stays Not checked, for the person at Accept.
+
+Build items:
+1. The crossroads: one switch where the rubric road is chosen (panel door `src/panel/authorsession.js` and CLI door
+   `src/authorrun.js:393`, ONE shared function, not two copies): a D repo job the drafter picks as "review" takes the
+   rubric road with the text close. The binary question is one prompt register (`src/reviewpick.js`), labelled.
+2. The gate: a D close may carry `rubric-step` when the job is a review (`src/authoring.js` kind filter).
+3. Part A rows added by CheckBlock (one owner, like the `$` rows); the cite source for a review is the named files
+   (`src/repocite.js`), read from the run's worktree; `readFrozenInputs` and `runRubricStep` read the repo when there
+   is no `source.json`.
+4. Report: the rubric report lands at Destination inside the repo and is committed on the work branch in the run's
+   ONE commit (no second commit, no containment bypass: `copyOut` gets a real in-repo door). Only the report is
+   delivered, never the worker's scratch files under `output/` (round 3 delivered `draft-notes.md`).
+5. Fence: a review's write scope is `output/` + Destination; every code file is refused.
+6. "at least N" gives `minItems N` with no `maxItems` (shapebuild/shaperows).
+
+Fixes found live in round 3 (each one change, each test-proven, then one live run):
+7. A `~` rule that a Part A row covers shows that row's check, not Not checked (3 of 5 drafts said "quotes the slow
+   code — Not checked" while the cite checked it). Code maps it; the shape look is told the Part A fields.
+8. No duplicate fields: the shape look's prompt names Part A's fields as already present (`slowCode` beside `quote`
+   in 3 of 5 drafts).
+9. The planner's first plan escaped the fence in 5 of 5 drafts (it put a `src/` file in an exit path); 4 recovered.
+   Fix: the planner's injected text for a review says code is read, never written, and checks are on the answer file.
+10. Report readability: a review's report prints each item's full `why` and `quote` (as a block per item), not a
+    clipped table cell.
+
+Tests: fail-first per item; the full suite; one live run per fix (DeepSeek flash), then a fresh 5-pair run against
+the round 3 bar before release.
+
+### Part 2: Review by git range or branch (hamr 2026-11-20, "important")
+
+Today it does not work: the worker has no shell (`run` is locked forever) and only reads the worktree's files.
+
+Rulings (hamr 2026-11-20):
+- The range or branch is written in a job STEP line, not in a `~` guardrail and not as an input line:
+  `1. Review range: <sha>..<sha> for ...` or `1. Review branch: <name> for ...`. Code reads only these exact typed
+  tokens (`range: A..B`, `branch: NAME`); it never guesses intent from other words. The job box's grey sample text
+  shows one such line.
+- A branch is diffed against main: merge-base(main, branch)..branch tip. A repo with no `main` branch is refused at
+  $0 in plain words.
+- The cite cap stays 5 MB.
+- Big diffs are taken piecemeal, never blocked: code writes ONE diff file per changed file (`review-diff/<path>.diff`,
+  next to the run, never in the repo). The worker reads the ones it needs; an item names the per-file diff (or the
+  repo file) it quotes, and the cite check reads only the named files, as in Part 1. Measured on bareloop's own
+  history ($0, 2026-11-20): one release's diff is 0.75 MB (79 files); four releases 2.8 MB; eleven releases 8.1 MB
+  (621 files), over 5 MB as one file, but the biggest single-file diff in all three is 0.44 MB. So one file's diff over
+  5 MB is not expected; if it happens, that item reds in plain words, the run is not blocked.
+
+The flow:
+- At run start, before any token, code (not the worker) runs read-only git (the `src/prcheckout.js` allow-list
+  style, plus `diff`): it checks both ends exist, puts the worktree at the range's END (or the branch tip), and writes
+  the per-file diffs plus a list of changed files.
+- The worker reads the list, the per-file diffs and any repo file. A quote of a removed line is checkable through the
+  per-file diff it names.
+- Review only: a `range:`/`branch:` token on a "change the code" job is refused at $0 in plain words.
+- POC first ($0 git part, then 5 paid pairs on a copy of bareloop over a real past range, e.g. v0.60.0..v0.61.0),
+  frozen bar before data.
+
+### Order on this branch
+
+1. Part 1 build items 1-6, then fixes 7-10, each one commit with a test.
+2. Part 2: POC (frozen), then build.
+3. Full suite, push, CI, `/code-review`, `/release` (with the barebrowse bump and the wording change already here).
+
+## Addendum 2026-11-20 (b): Review the code, clean — one rubric road, two sources
+
+Status: SIGNED by hamr 2026-11-20 ("sign and go"). Replaces the build method of "Addendum 2026-11-20: Review the code" Part 1 (its rulings,
+flow and fixes 7-10 stand; the flag-threaded build f05f9308..faf1fbc1 is reworked, not stacked on).
+Why: hamr 2026-11-20 rejected the flag-threaded build ("no patch-up work ... the clean way"). A `review` flag was
+passed through ~15 files and got one patch per problem.
+POC: `.claude/scratch/poc-clean-review-plan.md` (sha 4211081d, frozen before data), $0, VERDICT PASS (A1-A8), results
+`.claude/scratch/poc-clean/RESULTS.md`, spike `.claude/scratch/poc-clean/spike.diff` (a reference, never copied:
+graduation is a rewrite).
+
+### The one idea
+
+A review is the EXISTING rubric road. The only new thing is where it reads from: a repo instead of input files.
+So the one variable is the SOURCE, signed once: `closeDecl.source` = `files` | `repo` (absent on a text close =
+`files`; a code close has none). Every place that asked "is this a review?" reads that field, or the one table
+keyed by it. Nothing guesses.
+
+### Build items
+
+1. The field. `closeDecl.source`, validated (only `files`|`repo`, only on a text close). Written by the crossroads
+   (`chooseRoad`, src/reviewpick.js — it runs before any spec, so it is the writer, never a reader). It must reach
+   every place a close runs, drafting included (POC: the two draft-time seed reads also need it).
+2. The table. One small module (`src/sourcedefaults.js`): per source, the `[default]` item fields
+   (`files`: none; `repo`: file, quote, why) and the cite source (`repo`: the files the items name, read from the
+   run's tree, 5 MB plain-words red). CheckBlock, the shape builder and the shape look read the table; the
+   `reviewLines`/`setReview`/`reviewA`/`review:` threading is deleted.
+   The signed shape part's `cite: 'repo'` is the table's output written at signing; the validator refuses a part
+   whose `cite` differs from `defaultsOf(source).cite` (one truth, checked, never two that can disagree).
+3. Reading inputs. `readFrozenInputs`, `runRubricStep` and kinds.js read the signed source; the ENOENT / no-inputs
+   sniffs are deleted. A review stage with no signed source is an instrument stop, never a guess.
+4. Fence. The worker's write scope on the rubric road is `output/` for both sources. The report is written by code.
+   `reviewWriteScope`, `reviewWriteDeny` and ruling 2A's ".md under Destination" are deleted (hamr 2026-11-20: rec
+   1 accepted). POC A2: in 5 live runs every worker write was under `output/`.
+5. Delivery. One delivery step, a row per source (POC A3 corrected my premise): `files` delivers every file under
+   `output/` plus the report to the person's folder outside the tree, as today; `repo` writes only the report into
+   `<worktree>/<Destination>`, and the run's normal green commit carries it (`output/` left out of that commit).
+   No second commit, no containment bypass.
+6. Prompt text belongs to the road, not to "review". The planner line "write only your answer files
+   `output/steps/<n>.json`; every exit is on them" goes to EVERY text-close planner (file jobs had the same first-plan
+   fence escape, 8 of 53 archived runs). This changes released file-job planner prompts (hamr: rec 2 accepted, with
+   one live file-job run). The shape look's "these fields already exist" is said only when the table has default
+   fields (repo today), never by a flag. POC A6: a repo and a files planner prompt differ only by the listing.
+7. The readout's first line comes from the road and the source.
+8. "1. 1." (POC A8: not a review bug). The one owner is `parseJobBlock` (src/jobblock.js:47): it keeps the typed
+   text and numbers by position, and 9 renderers add `n. `. Fix at the owner: a typed leading `<n>.` that equals the
+   line's own position is read as the person's line marker and not kept in the text (hamr: 4A). Any other leading
+   number stays as typed.
+
+### Tests and proof
+
+- Fail-first per item; the POC's mutations are the floor (widened fence reds, commit exclusion removed reds,
+  source not stamped reds, sniff restored reds).
+- Signed rows of the recorded draft smwozq1c7sp8i identical to live; the 4 green runs' answers replay to the same
+  row results; planted negatives (one changed quote word, an untracked file, an empty `why`) red in plain words.
+- Full suite. Then live (DeepSeek flash): one file-job rubric run (item 6), then a fresh 5-pair review run against
+  the round 3 bar.
+
+### Part 2 changes (range/branch), from POC A7
+
+- Reuse the PR path: split `checkoutPrHead`'s last step into one `checkoutAt(sha)`; a range or branch rev-parses both
+  ends and calls the same `checkoutAt`. One checkout path.
+- `diff` joins the allow-listed read-only git (hamr: rec 3 accepted). Code runs it, never the worker.
+- Part 2's own POC (frozen) still comes first, as signed.
+
+### Decided by hamr 2026-11-20
+
+9. (Q1 A) A red for a file name that is not tracked (or a file over 5 MB) is owned by the cite row: that row reads
+   `failed` with the plain-words reason, never every row `passed` beside a red verdict (pre-existing: the red rode
+   `extraReds`, which no row owns). Fail-first test on the live shape.
+10. (Q2 A, then branch A) Rebuild clean on the SAME branch (hamr: one branch): tag the current tip faf1fbc1 as
+   `backup/review-flag` (local, never pushed), then move chore/barebrowse-031 back to 761b7c0a (the signed spec,
+   before any flag code). Only commits up to 9b1e914e were ever pushed and all stay, so no force-push. The
+   flag-threaded commits f05f9308..faf1fbc1 are NOT carried; their tests are reused only where they still fit the
+   clean design, each rewritten to it. This spec addendum is committed first on the moved branch.
+   Hiccup rule (hamr 2026-11-20): any problem in the build stops and comes back to hamr with facts and options.
+
+### Part 2 build spec: review by git range or branch (hamr 2026-11-21, "go"; POCs PASS)
+
+Evidence (scratch, not shipped): Part A $0 A1-A9 PASS; round B FAIL (quoted repo files, never a .diff), round C FAIL
+(big range not finished: no early write; a doomed "verify" step), write-often planner probe PASS (8/10 vs 4/10, $0.054),
+live round W PASS 4/4 green on v0.60.0..v0.61.0 (79 files), $0.52. Plans and results:
+`.claude/scratch/poc-range-plan.md`, `.claude/scratch/poc-range-write-often-plan.md`, `.claude/scratch/poc-range/RESULTS.md`.
+The spike (`poc-range/engine-e`, 8 files, ~+210) is a reference only; the build is a rewrite, each item one commit with
+a fail-first test on the real shape (real git on a real repo copy, never an authored fixture for diffs).
+
+Rulings (hamr 2026-11-20/21): a token lives in a job STEP line, exact typed `range: A..B` or `branch: NAME` (local
+branches only); ONE token per job, more = plain-words refusal; `range:` = review only (a change job with it is refused
+right after the review pick, before any run spend); `branch:` on a review = merge-base(main, NAME)..NAME (no `main` =
+refusal); `branch:` on a change job = the work branch starts at NAME's tip; a new range = a normal Reuse (fresh draft).
+Diffs live in `output/review-diff/` (files.txt + `<path>.diff`), written by code, never committed, never memo edits.
+
+Items (owner -> caller, each named):
+1. `src/rangereview.js` (new, one owner): `rangeTokens(jobLines)` (all exact tokens, every line), `manyTokensRefusal`,
+   `changeRefusal`, `resolveRange({repo, token})` (ends exist; branch -> merge-base..tip; plain-words refusals ending
+   "Nothing spent."), `writeRangeDiffs({repo, worktree, a, b})` (files.txt == `git diff --name-only`, each .diff ==
+   `git diff A..B -- path`, byte for byte), `rangeNoteOfSpec(spec)` (null without a token), `DIFF_DIR`.
+2. `src/prcheckout.js`: split the PR head checkout's last step into ONE `checkoutAt(sha)`; PR, range and branch call it.
+   `diff` joins the allow-listed read-only git (stripped env, no hooks); the `pr-checkout-pure` allow-list pin is
+   updated with it (the accepted widening).
+3. `src/reviewpick.js` `chooseRoad`: returns `refusal` for many tokens (before the pick) and for `range:` on a change
+   pick. Callers, BOTH doors: `src/panel/authorsession.js` (beside the other draft refusals) and `src/authorrun.js`
+   (the CLI door, same words). The spike wired the panel only.
+4. `src/userrun.js` run start, before the seed is read and before any token: a review range/branch puts the worktree
+   at the end/tip via checkoutAt (SEED = that sha); a change `branch:` starts the work branch at the tip; diffs are
+   written after the cold reset; a refusal settles the row at $0, exit 2, like the PR refusals.
+5. Resume of a range run (the spike did NOT handle it: a resume would hit the moved-HEAD gate): the run records the
+   range ends + end sha on its manifest; a resume returns to that sha and rewrites the diffs; a gone end = plain-words
+   stop. Fail-first test: a stopped range run resumes at the recorded end, diffs byte-identical.
+6. `src/planrun.js` planPrompt: one planner block from `rangeNoteOfSpec`, only with a token, words FROZEN from round W:
+   "This review covers <A..B>. The changed files are listed in output/review-diff/files.txt; each file's changes are in
+   output/review-diff/<path>.diff. Plan ONE step that reads and writes: write output/steps/1.json as soon as you have
+   your first finding, then add each new finding to it as you read. Do not plan a separate step that only re-checks
+   the answer." (`<A..B>` = the typed range, or `main..NAME` for a branch.) A change `branch:` job gets no block.
+7. `src/carrystore.js` `workingEdits`: code-written files under DIFF_DIR are inputs, never edits (both loops); reads of
+   them still listed. Test: round C pair 3's real record (committed as a fixture under tests/fixtures/) gives reads
+   listed and no review-diff edit; the old code gives 80 edits (fail-first).
+8. `src/repocite.js`: an item may name `output/review-diff/<path>.diff` of a file in files.txt; the cite reads only
+   named files (5 MB cap unchanged); a quote of a removed line passes through its .diff; one changed word reds.
+9. Panel job box grey sample text shows one `Review range:` line (the signed spec's ruling).
+10. `bareloop.context.md` + CHANGELOG [Unreleased]: the token syntax, the refusals, where diffs live.
+
+Invariants (each a test): code-close prompts, no-token review prompts and their signed rows byte-identical to the
+parent commit (golden captured at the parent, as 771e1aec did); non-range memos byte-identical.
+Not in this build: a final review step (parked; needs a "may change nothing" exit, arbiter territory); diff quotes are
+not forced (round W: 0 of 4 quoted a .diff; removed-line quotes are test-proven only, not seen live); remote or tag
+branches; phone width (hamr's DevTools).
+After the build: full suite (tell fwd), push, CI, one live round on the BUILT code (same job, frozen bar W, fresh
+names), then /code-review, /release.
+
+**Ruling 2026-11-21 (hamr, after his live walk): refusals at the draft.** His words: "a refusal for no branch shouldn't have started a run, a refusal for the job should be at draft, failure is red, refusal should be at the draft." His walk: a job with two tokens was refused in the panel only after "making worktree" and "installing packages (npm ci)"; a job `Review branch: no-such-branch for bugs` drafted a full card (AI calls spent) and on Sign & run made a run row that settled `refused before start` and shows red. Built: one helper `draftRefusal({repo, jobLines, review})` in `src/rangereview.js`, read by both doors (`src/panel/authorsession.js`, `src/authorrun.js`), refuses at the START of drafting at $0 (git only): more than one token, a range end or a branch that is not there. Before the worktree, `npm ci` and any model call. Two refusals need the review-or-change pick (an AI call) and stay right after it: a `range:` on a change job, and a review `branch:` with no `main` (a change job's `branch:` is legal without `main`). The pick is NOT moved earlier: it needs the provider, the repo kind read from the prepared copy and would spend a call on a draft the copy step may still refuse; reported to hamr as the one remaining late refusal. The run-start checks (`rangeAtRunStart`) stay as the safety net only. Scope: range/branch; PR refusals untouched. Ends may be tags, commit hashes (short or full) or branch names (pinned by test). The panel tip's second line is `range: v1.2..v1.3 or commit..commit   or   branch: my-feature`.
+
+### Result tab A + Job type everywhere (hamr 2026-11-21, "yes A, job type everywhere, write the spec")
+
+Why (his live walk): walk-branch (run mwqnkvx5) passed with 4 real findings in its .md report, but the Result tab said
+"no saved result to show". Cause: `getRunResult` (src/panel/server.js ~L1850) draws a shape line's grid only from a
+DELIVERED step file, and falls back to the judged file only on a red run. A repo review delivers only the .md, so a green
+review never shows its findings (Part 1, not Part 2). hamr: the Result must say clearly what the job was and how it ran,
+complement the .md, for review AND change, and must not need the run folder (it is cleaned up after Accept).
+
+Layout A (signed by hamr's pick, ASCII in the session): stacked sections, each folds open.
+- RESULT: status, money, time, saved file (as today).
+- THE JOB: first line `Job type: Review code` or `Job type: Change code`; then the numbered job lines with their `~`
+  rules; for a range/branch review one more line `covers A..B · N files changed` (N = files.txt count).
+- HOW IT RAN: the step chips the panel already draws (sign, name, ↻N retries), plus `N steps · N tries`.
+- Middle, by job type:
+  - Review: FINDINGS · N, with "each quote found in its file ✓" from the close's own cite row. One row per item:
+    file and the first line of its why; open it to see the full why and the quote. A failed item stays open.
+  - Change: WHAT CHANGED · N files +a −r, then the branch name. One row per file with +a −r; open it to see that file's
+    diff. Built from the existing `attempt-diff` records (`changedOf`), so it keeps the same "last edit only" and
+    "N lines cut" notes it has today.
+- CHECKS, NOT CHECKED, YOUR CALL, SAVED: as today (no row removed; every item the old view showed stays).
+
+No run folder needed:
+- Review findings: when the close passes a review line, code writes ONE report-only spine record
+  (`review-findings`: line, items {file, quote, why}; quote/why capped like attempt-diff, secrets masked with the one
+  inventory). The Result tab reads that record. It is not a verdict, and nothing grades from it. An older run without
+  the record falls back to today's path.
+- Change diff: from the spine's attempt-diff records (already there). The branch line uses `workOf`, which already
+  says when the branch is gone.
+
+Job type everywhere: ONE code-owned word pair, from the one source table (src/sourcedefaults.js, which already words
+"review (reads the code, changes none)"), read by every view: the draft card, the draft readout, the Job tab, the Result
+tab, the Audit header. Rubric (non-repo) jobs show no Job type line. No view spells it on its own.
+
+Tests (fail-first, real shapes):
+1. walk-branch's real record shape: a green repo review shows its N findings with no step file on disk.
+2. The `review-findings` record is written once per passed review line, capped and masked; a red line writes none.
+3. A change job's WHAT CHANGED shows per-file +a −r equal to `changedOf`'s totals.
+4. The Job type line is byte-equal on card, readout, Job tab, Result and Audit (one owner); absent on a rubric job.
+5. Old runs (no record) still render as today.
+Own screenshots of A for one review run and one change run, against the ASCII, before calling it done; phone width is
+hamr's DevTools. One live review run after the build to see it end to end.
+Not in this build: findings for a red run beyond today's judged-file path; a diff view for review jobs (the range's
+diffs stay as files); any change to verdicts, caps or the close.
+
+## Addendum 2026-11-23: resume reuses the last completed check; four guardrail items (chore/barebrowse-031)
+
+Appended only; nothing above is rewritten. Findings: F381-F392 in `docs/wiki/FINDINGS.md`.
+
+### Resume reuse (spec of record; hamr: option A, go)
+
+Problem (F382): run mwsfq0pi legs 2 and 3 re-ran the whole suite in the precheck (11-13 min) and again in the preflight, so the remaining wall went to re-reading a tree leg 1 had already read.
+
+Hamr's framing, which replaced the spec's first idea of a sibling results file: save the last completed command result with the run state that already persists, tagged with a tree identity; on the next pass compare the tree. No difference: read the saved result. Any difference: run fresh. No guessing which tests to run.
+
+Build, in two pieces:
+1. Share ONE memo across the run-start precheck and the preflight loop (237351cf; reverses the "precheck takes a fresh pass" line of 469d4c24 on hamr's word).
+2. Reuse (73571770):
+   - Tree identity (`treeIdentity`, `src/kinds.js`): sha256 over HEAD tree id, `git diff --binary HEAD`, and each untracked non-ignored file's path and `git hash-object`; arbiter books excluded as `changedSet` excludes them. Read-only git, writes no objects. Gitignored files and the node version are not covered; accepted and said in plain words.
+   - Record: when a command completes in a close pass (`runCmd`, the one spawn site), if it was not timed out, killed, crashed or stopped, and the tree id is equal before and after, save `{key, treeId, code, out (scrubbed by the run's one scrub), ms, at}` in `.smoke/carry/state.json` (`keepCheck` / `savedChecks` in `src/carrystore.js`). Key is command + args + env + limit, never the folder (a seed baseline runs in a random tmpdir). Latest per key; over 8 MB not kept. One spine record `check-result-kept`.
+   - Read: on a resumed leg, one current tree id; every saved entry with an equal id pre-fills the shared start memo. Stage parsers, baselines and rows then run unchanged on the reused output.
+   - Guard: a precheck that would come back satisfied with any reused entry is thrown away and judged again fresh. A reading may stand in for a red or inconclusive start, never for a green.
+   - Only the start pass reuses. Step exits, `runCheck`, the fix-loop judge and the final close never see the map. The close-script byte signature is still checked first on every pass. Trend record sites, strike ladder, variance and caps are unchanged.
+   - Said once in plain words (spine `check-reused`, Run tab one grey line, `checkReusedOf` in `src/panel/server.js`, 039570e5).
+- Not covered: autocrlf/filemode not tried; a flaky suite's reused number repeats leg 1's; identity cost measured on one repo only.
+
+POC (throwaway full copy, bar frozen in `.claude/scratch/poc-resume-reuse/BAR.md` before any data): P1 PASS (identity unchanged across a real `npm test`, exit 0), P2 PASS (seven reads: repeat, touch, edit, revert, untracked add and remove), P3 PASS (median 122 ms against a 2 s bar). P4 archive read: about half of 8 archived resumes had no write after the last check, so reuse could fire on about half. Detail in FINDINGS F382.
+
+Status: test-proven; reuse not seen in a live resume.
+
+### The four items, as built
+
+1. Failing test names reach the AI (328a33be; F384): one code-owned constant per language. Node: `not ok N - title` plus its YAML lines up to `  ...`, bounded per failure. Python: `FAILED` plus `E   ` lines. Other languages unchanged. Appended to a red declared stage's gap, scrubbed, bounded by the existing gap cap; not signed; verdicts unchanged.
+2. A `~` rule on every job (460c130c, 057e510c; F387): code counts at $0 at the start of both doors, before any AI call; with none, one code-written ask. No AI judges prompt quality.
+3. "Did you mean branch: X?" / "Did you mean range: A..B?" (0c275690, d5233224; F385): `src/refguess.js`, panel only; range stays review-only; not counted in the 3-ask cap; the Job box shows the token.
+4. Run tab reused line (039570e5): the `check-reused` text as one grey line.

@@ -200,9 +200,9 @@ export function sheetNumberedView(text, rowStarts) {
 
 // ── (iii) code does the math ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** @param {number} n @param {number} d @returns {string} n with `d` decimals and thousands marks */
 /** A strict plain number: optional sign, digits (commas only as thousands groups of three), optional decimals. `12,50`, `1e3`, `0x10` are not numbers (F356). */
 const PLAIN_CELL_NUMBER = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+/** @param {number} n @param {number} d @returns {string} n with `d` decimals and thousands marks */
 const fmt = (n, d) => Number(n.toFixed(d)).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 /**

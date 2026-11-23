@@ -5,7 +5,7 @@ import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { lineRules, proseNotCheckedItems, refusedOf } from './rubricstep.js';
 import { shapePartOfLine } from './shaperows.js';
-import { shapeResultModel, shapeMarkdown } from './shaperesult.js';
+import { shapeResultModel, shapeMarkdown, citedItemsMarkdown } from './shaperesult.js';
 
 const SCALAR = ['string', 'number', 'boolean'];
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -178,7 +178,8 @@ export function renderRunMd({ job, runNo, now, closeDecl, jobLines, steps }) {
       const results = isRec(obj) ? /** @type {Record<string, any>} */ (obj).results : null;
       if (!Array.isArray(results) || results.length === 0) continue;
       const head = [`## ${s.n}. ${jl && typeof jl.text === 'string' && jl.text ? jl.text : `Line ${s.n}`}`, ...(jl ? lineRules(jl) : []).map((r) => `Rule: ${r}`)].join('\n');
-      sections.push([head, shapeMarkdown(shapeResultModel({ part: shape, results, rules: jl ? lineRules(jl) : [] }))].join('\n\n'));
+      // a list whose items are cited (the signed part's `cite`, the source table's): a block per item with the full why and quote, never a clipped table cell
+      sections.push([head, typeof shape.cite === 'string' ? citedItemsMarkdown(results) : shapeMarkdown(shapeResultModel({ part: shape, results, rules: jl ? lineRules(jl) : [] }))].join('\n\n'));
       continue;
     }
     const sec = stepSection(obj, stepClaimWords(closeDecl, s.n), report);

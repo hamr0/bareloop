@@ -21,6 +21,9 @@ import { SHAPE_KINDS, ENTRY_KINDS, GROUNDED_BOUNDS, UPPER_BOUNDS, COUNT_BOUNDS, 
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** why a `~` rule no field holds is Not checked, when no field named it (judged at Accept, not at an Ask) */
+/** "at least N" in a rule's own words: the digits are the floor of the item count (read only for the rule the AI pointed at) */
+const AT_LEAST_RE = /\bat least (\d+)\b/i;
+
 export const NO_FIELD_WHY = 'No field was picked for it, so you judge it at Accept.';
 
 /** why a rule whose field carries no limit from its own words stays Not checked: a field with no bound checks nothing the person asked for (hamr 2026-11-19) */
@@ -47,9 +50,9 @@ const norm = (/** @type {unknown} */ s) => String(s).toLowerCase().replace(/\b0(
 const words = (/** @type {unknown} */ s) => String(s).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
 /**
- * @typedef {{name: string, kind: string, required: boolean, bounds: Record<string, any>, rule: number|null, by: 'you'|'agent', held: boolean, why?: string}} ShapeField
+ * @typedef {{name: string, kind: string, required: boolean, bounds: Record<string, any>, rule: number|null, by: 'you'|'agent'|'default', held: boolean, why?: string}} ShapeField
  * @typedef {{rule: number, text: string, state: 'built'|'not-checked', reason: string|null, name: string|null}} ShapeRule
- * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number}|null, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
+ * @typedef {{line: number, ok: boolean, fields: ShapeField[], itemCount: {labels: string[], n: number, atLeast?: boolean, rule?: number}|null, rows: ShapeRule[], refused: {helper: string, why: string}[], reservedChecked: boolean}} LineShape
  */
 
 /**
@@ -159,10 +162,11 @@ function buildBounds({ kind, bounds, required, ruleText, refuse, top = true }) {
 
 /**
  * Build the shape of ONE job line from the AI's suggestion, or refuse each part with its plain reason.
- * @param {{line: {n: number, text?: string, rules?: string[], rule?: string}, labels: string[], suggestion: unknown, nameRules?: ReturnType<typeof shapeNameRules>}} o
+ * `defaultFields` (the SOURCE's row, src/sourcedefaults.js): fields code adds to the line whatever the AI suggested (`[default]`, never dropped). A rule the AI mapped onto one of them (its `fromRule` with exactly that field's name) is carried by THAT field.
+ * @param {{line: {n: number, text?: string, rules?: string[], rule?: string}, labels: string[], suggestion: unknown, nameRules?: ReturnType<typeof shapeNameRules>, defaultFields?: readonly {name: string, kind: string, required: boolean, bounds: Record<string, any>}[]}} o
  * @returns {LineShape}
  */
-export function buildShapeLine({ line, labels, suggestion, nameRules = shapeNameRules() }) {
+export function buildShapeLine({ line, labels, suggestion, nameRules = shapeNameRules(), defaultFields = [] }) {
   const rules = lineRules(line);
   const said = wordsSaidOn({ text: line.text, rules });
   const jobWords = new Set(words(said));
@@ -174,6 +178,7 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
   /** @type {ShapeField[]} */
   const fields = [];
   const seen = new Set();
+  for (const d of defaultFields) { fields.push({ name: d.name, kind: d.kind, required: d.required, bounds: { ...d.bounds }, rule: null, by: 'default', held: false }); seen.add(d.name); }
   const lists = /** @type {[string, unknown][]} */ ([['fields', s.fields], ['extraFields', s.extraFields]]);
   for (const [listName, arr] of lists) {
     for (const f of Array.isArray(arr) ? arr : []) {
@@ -183,6 +188,17 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
       if (!isRec(f)) { refuse('schema', `an entry of ${listName} is not an object`); continue; }
       const nameBad = nameWhy(nm, nameRules);
       if (nameBad !== null) { refuse('name', nameBad); continue; }
+      // a rule the AI mapped onto one of the source's own default fields (it gave that field's name with `fromRule`) is carried by THAT field: the rule's own row shows the field's check. Only a text field, only a rule no field holds
+      // yet, and only when every bound the AI gave is grounded in the rule's own words (a refused bound leaves the rule Not checked, never shown as checked by a field that does not say it)
+      if (rule !== null && !fields.some((x) => x.rule === rule)) {
+        const def = fields.find((x) => x.name === nm && x.by === 'default' && x.rule === null);
+        if (def && f.kind === 'text') {
+          const before = refused.length;
+          const bounds = buildBounds({ kind: 'text', bounds: f.bounds, required: true, ruleText: rules[rule - 1] ?? null, refuse });
+          if (refused.length === before) { def.bounds = { ...bounds, minChars: bounds.minChars ?? 1 }; def.rule = rule; }
+          continue;
+        }
+      }
       if (seen.has(nm)) { refuse('name', `the name "${nm}" is used twice`); continue; }
       if (f.kind === 'object') { refuse('menu', 'a nested object field is not offered yet'); continue; }
       if (typeof f.kind !== 'string' || !Object.hasOwn(SHAPE_KINDS, f.kind)) { refuse('menu', `${String(f.kind)} is not a field kind on the menu`); continue; }
@@ -202,9 +218,9 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
     }
   }
   // the rule fields in rule order first, then the agent's, in the order sent
-  const ordered = [...fields.filter((x) => x.by === 'you').sort((a, b) => /** @type {number} */ (a.rule) - /** @type {number} */ (b.rule)), ...fields.filter((x) => x.by === 'agent')];
+  const ordered = [...fields.filter((x) => x.by === 'default'), ...fields.filter((x) => x.by === 'you').sort((a, b) => /** @type {number} */ (a.rule) - /** @type {number} */ (b.rule)), ...fields.filter((x) => x.by === 'agent')];
   // R4: the item count
-  /** @type {{labels: string[], n: number}|null} */
+  /** @type {{labels: string[], n: number, atLeast?: boolean, rule?: number}|null} */
   let itemCount = null;
   const pick = s.itemCountFrom;
   if (Array.isArray(pick) && pick.length > 0) {
@@ -216,24 +232,34 @@ export function buildShapeLine({ line, labels, suggestion, nameRules = shapeName
       else refused.push({ helper: 'itemCount', why: 'the count is not in your words (say "per" or "each" and the input, e.g. "one summary per resume")' });
     }
   }
+  // "at least N": the AI POINTS at the rule that sets the list's floor (`countFromRule`); code only checks that the rule is the line's own, that no field holds it, and that its own words give the number as digits after "at least"
+  // (no unit word list). No pointing = no count from code. The result is `minItems N` alone (the person gave no ceiling).
+  if (itemCount === null && Number.isInteger(s.countFromRule) && s.countFromRule >= 1 && s.countFromRule <= rules.length && !ordered.some((x) => x.rule === s.countFromRule)) {
+    const m = AT_LEAST_RE.exec(rules[s.countFromRule - 1]);
+    if (m && Number(m[1]) >= 1) itemCount = { labels: [], n: Number(m[1]), atLeast: true, rule: s.countFromRule };
+    else refused.push({ helper: 'itemCount', why: `rule ${s.countFromRule} gives no "at least <number>" in its own words` });
+  }
   /** @type {ShapeRule[]} */
   const rows = rules.map((text, i) => {
     const n = i + 1;
     const f = ordered.find((x) => x.rule === n);
+    // a rule the item count's floor carries has no field: its row is built, and the line's `[default]` count row says it
+    if (!f && itemCount?.rule === n) return { rule: n, text, state: /** @type {const} */ ('built'), reason: null, name: null };
     return f ? { rule: n, text, state: /** @type {const} */ ('built'), reason: null, name: f.name } : { rule: n, text, state: /** @type {const} */ ('not-checked'), reason: refusedFor.get(n) ?? NO_FIELD_WHY, name: null };
   });
-  const ok = ordered.some((x) => x.by === 'you');
+  const ok = ordered.some((x) => x.by === 'you' || x.by === 'default');
   if (!ok && fields.length === 0 && refused.length === 0 && !isRec(suggestion)) refused.push({ helper: 'schema', why: 'no shape was suggested for the line' });
   return { line: line.n, ok, fields: ordered, itemCount, rows, refused, reservedChecked: nameRules.reserved !== null };
 }
 
 /**
  * Build the shape of every candidate line from the reply's suggestions, each routed to its job line by its own `line`. A suggestion naming no candidate line, or not an object, is refused and listed.
- * @param {{lines: {n: number, text?: string, rules?: string[], rule?: string}[], labels: string[], suggestions: unknown[], nameRules?: ReturnType<typeof shapeNameRules>}} o
+ * `defaultFields` (the source's row): given, EVERY line is built, even one the shape look suggested nothing for (its `[default]` fields stand alone).
+ * @param {{lines: {n: number, text?: string, rules?: string[], rule?: string}[], labels: string[], suggestions: unknown[], nameRules?: ReturnType<typeof shapeNameRules>, defaultFields?: readonly {name: string, kind: string, required: boolean, bounds: Record<string, any>}[]}} o
  * @returns {{built: Record<number, LineShape>, notChecked: Record<string, string>, refused: {line: number|null, helper: string, why: string}[]}}
  * `built` holds only the lines whose shape stands (at least one field from a `~` rule); `notChecked`: `line N: "rule"` -> why, for each rule of a built line no field holds
  */
-export function buildShapes({ lines, labels, suggestions, nameRules = shapeNameRules() }) {
+export function buildShapes({ lines, labels, suggestions, nameRules = shapeNameRules(), defaultFields = [] }) {
   /** @type {Record<number, LineShape>} */
   const built = {};
   /** @type {Record<string, string>} */
@@ -250,10 +276,11 @@ export function buildShapes({ lines, labels, suggestions, nameRules = shapeNameR
   }
   for (const line of lines) {
     const mine = byLine.get(line.n) ?? [];
+    if (mine.length === 0 && defaultFields.length > 0) mine.push({ line: line.n });
     if (mine.length === 0) continue;
     // one shape per line: the first suggestion stands, a second is refused
     if (mine.length > 1) refused.push({ line: line.n, helper: 'line', why: 'more than one shape was suggested for the line; the first is used' });
-    const r = buildShapeLine({ line, labels, suggestion: mine[0], nameRules });
+    const r = buildShapeLine({ line, labels, suggestion: mine[0], nameRules, defaultFields });
     for (const x of r.refused) refused.push({ line: line.n, ...x });
     if (!r.ok) continue;
     built[line.n] = r;

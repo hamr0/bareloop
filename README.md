@@ -171,23 +171,13 @@ bareloop runs locally, as you. Secrets load from the environment and never enter
 the run's records. It reduces exposure but it is not a sandbox: the code your job writes runs
 with your permissions, so give bareloop a repo you would let an agent touch.
 
-## The bare ecosystem
+## bare suite
 
-Local-first, composable agent infrastructure. Same API patterns throughout. Mix and match,
-each module works standalone. bareloop is the suite's flagship consumer: it exercises every
-package, and gaps get fixed upstream rather than shimmed.
+- **Hands** · [barebrowse](https://github.com/hamr0/barebrowse) · [baremobile](https://github.com/hamr0/baremobile) · [beeperbox](https://github.com/hamr0/beeperbox)
+- **Rails** · [bareagent](https://github.com/hamr0/bareagent) · [bareguard](https://github.com/hamr0/bareguard) · [barebox](https://github.com/hamr0/barebox) · [litectx](https://github.com/hamr0/litectx)
+- **Apps** · [fwdloop](https://github.com/hamr0/fwdloop) · **bareloop**
 
-**Core** — the brain, the gate, the memory.
-
-- **[bareagent](https://npmjs.com/package/bare-agent)** — the think→act→observe loop. *Goal in → coordinated actions out.* Replaces LangChain, CrewAI, AutoGen.
-- **[bareguard](https://npmjs.com/package/bareguard)** — the single gate every action passes through. *Action in → allow / deny / ask-a-human out.* Replaces hand-rolled allowlists and scattered policy code.
-- **[litectx](https://npmjs.com/package/litectx)** — tree-sitter code + memory graph with activation decay, plus lightweight context engineering (write · select · compress · isolate). *Query in → ranked context out.*
-
-**Optional reach** — give the agent hands.
-
-- **[barebrowse](https://npmjs.com/package/barebrowse)** — a real browser for agents. *URL in → pruned snapshot out.* Replaces Playwright, Selenium, Puppeteer.
-- **[baremobile](https://npmjs.com/package/baremobile)** — Android + iOS device control. *Screen in → pruned snapshot out.* Replaces Appium, Espresso, XCUITest.
-- **[beeperbox](https://github.com/hamr0/beeperbox)** — 50+ messaging networks via one MCP server. *Chat in → unified message stream out.* Replaces Twilio, per-platform bot APIs.
+Built from [bareagent](https://github.com/hamr0/bareagent), [barebrowse](https://github.com/hamr0/barebrowse), [bareguard](https://github.com/hamr0/bareguard) and [litectx](https://github.com/hamr0/litectx). → [The whole suite](https://github.com/hamr0)
 
 ## Background
 

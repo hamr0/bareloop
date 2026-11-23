@@ -152,15 +152,16 @@ const NOT_WORK_GLOB = ':(exclude,glob)**/node_modules/**';
  * Throws on a git failure — the caller must not remove a worktree whose work is not safely on the branch.
  * @param {string} dir the worktree
  * @param {string} message
+ * @param {{exclude?: readonly string[]}} [opts] `exclude`: more paths the commit leaves out (the repo source's row of src/sourcedefaults.js: the worker's scratch `output/`, so only its report goes on the branch)
  * @returns {{committed: boolean, sha: string}}
  */
-export function commitWork(dir, message) {
+export function commitWork(dir, message, { exclude = [] } = {}) {
   const run = (/** @type {string[]} */ args) => execFileSync('git', ['-C', dir, ...COMMIT_CONFIG, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   // `git add` exits 1 when an exclude names a path that exists AND is gitignored (it prints "paths are ignored").
   // An ignored path is never staged without -f, so its exclude is redundant: only exclude what git would otherwise add.
   // check-ignore: 0 = ignored, 1 = not ignored, anything else = a real failure (execFileSync throws on 128).
   const ignored = (/** @type {string} */ p) => { try { run(['check-ignore', '-q', '--', p]); return true; } catch (e) { if (/** @type {any} */ (e)?.status === 1) return false; throw e; } };
-  const excludes = NOT_WORK_PATHS.filter((p) => !ignored(p)).map((p) => `:(exclude)${p}`);
+  const excludes = [...NOT_WORK_PATHS, ...exclude].filter((p) => !ignored(p)).map((p) => `:(exclude)${p}`);
   run(['add', '-A', '--', '.', ...excludes, NOT_WORK_GLOB]);
   const staged = run(['diff', '--cached', '--name-only']).trim();
   if (staged !== '') run(['commit', '-q', '-m', message]);

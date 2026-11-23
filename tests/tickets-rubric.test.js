@@ -69,7 +69,7 @@ test('drafting reads the NEWEST unrun ticket and freezes its text as the one inp
   const asked = [];
   const PLAN = { goal: 'Read the ticket.', checks: [], questions: [], notChecked: [] };
   const seen = [];
-  const session = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'tix-rubric', jobText: '1. Quote the ticket title', inputs: `repo: ${repo}\nTickets: ${LIST}`, destination: join(tmp('tix-rubric-out-'), 'out'), capUsd: 1, flowType: 'tickets', mcp: 'github' }, {
+  const session = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'tix-rubric', jobText: '1. Quote the ticket title\n~ quote it exactly', inputs: `repo: ${repo}\nTickets: ${LIST}`, destination: join(tmp('tix-rubric-out-'), 'out'), capUsd: 1, flowType: 'tickets', mcp: 'github' }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'), flow: { flowType: 'tickets', pick: MCP },
     newestUnrunTicket: async (o) => { asked.push(['newest', o.mcp, o.inputs.map((i) => [i.n, i.label])]); return { ok: true, number: 19 }; },
     readTicketFn: async (row) => { asked.push(['read', row.number, row.listUrl]); return { ok: true, ticket: { text: TEXT, url: `${LIST}/19`, number: 19 } }; },
@@ -88,7 +88,7 @@ test('drafting reads the NEWEST unrun ticket and freezes its text as the one inp
 test('the card: rubric on a repo is refused, but a Tickets + rubric card (the repo line is not its input) is accepted', () => {
   const repo = makeRepo();
   const rows = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
-  const card = { checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'tix-rubric-card', jobText: 'Quote the ticket title', inputs: `repo: ${repo}\nTickets: ${LIST}`, destination: '/tmp/out', capUsd: 1 };
+  const card = { checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'tix-rubric-card', jobText: 'Quote the ticket title\n~ quote it exactly', inputs: `repo: ${repo}\nTickets: ${LIST}`, destination: '/tmp/out', capUsd: 1 };
   assert.equal(validateJobCard(card, { rows }).error, 'A repo job uses a Deterministic check.');
   assert.deepEqual(validateJobCard({ ...card, flowType: 'tickets', mcp: 'github' }, { rows }), { ok: true });
 });

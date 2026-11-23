@@ -84,6 +84,8 @@ export const PROMPT_REGISTERS = Object.freeze([
 
   // src/planrun.js — the native-surface read-truncation strategy line
   Object.freeze({ file: 'src/planrun.js', name: 'NATIVE_READ_STRATEGY' }),
+  // src/planrun.js — the planner's rubric-road note: the answer files are the only thing a text close's steps write (every text close, either source)
+  Object.freeze({ file: 'src/planrun.js', name: 'answerFilesWords()' }),
   // src/planrun.js — the fix loop's facts-only close-grade history line
   // (F198 item 2), built inline inside `middle` and appended to `w.ask([...])`
   Object.freeze({ file: 'src/planrun.js', name: 'middle()\'s facts-only "The close\'s own numbers so far" block (inline template, not a const)' }),
@@ -92,6 +94,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/fencepointcall.js', name: 'FENCE_POINT_SYSTEM' }),
   Object.freeze({ file: 'src/fencepointcall.js', name: 'FENCE_POINT_SCHEMA (property descriptions)' }),
   Object.freeze({ file: 'src/fencepointcall.js', name: 'fencePointUserText() (inline template, not a const)' }),
+
+  // src/reviewpick.js - the crossroads of a Deterministic repo job (Review the code, item 1): the ONE binary question, change the code or review it
+  Object.freeze({ file: 'src/reviewpick.js', name: 'REVIEW_PICK_SYSTEM' }),
+  Object.freeze({ file: 'src/reviewpick.js', name: 'reviewPickPrompt() (inline template, not a const)' }),
 
   // src/checklist.js — the one check list of a rubric job: the list call's system text and schema descriptions, the drafter's list block, the code-written refusal words
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SYSTEM' }),

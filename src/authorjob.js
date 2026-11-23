@@ -105,7 +105,7 @@ import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import {
-  GENRE_LANGUAGES, RUBRIC_LANG, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
@@ -122,6 +122,7 @@ import { buildShapes } from './shapebuild.js';
 import { isSheetInput } from './inputlook.js';
 import { sheetLineNumbers } from './sheetrows.js';
 import { CheckBlock, REASON } from './checkblock.js';
+import { defaultsOf } from './sourcedefaults.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
 import { askNotes } from './noteask.js';
 import { renderJobLines } from './jobblock.js';
@@ -432,7 +433,7 @@ function composerRefusal(reds) {
  * model reached for (the catalogue's own counted-demand red, carried up). D13's
  * one-genre-at-a-time law is untouched.
  *
- * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
+ * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string, source?: 'files'|'repo',
  *   jobLines?: {n: number, text: string, rule?: string, rules?: string[]}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
@@ -442,6 +443,7 @@ function composerRefusal(reds) {
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
+ *   destCheck?: ((o: {facts: any}) => Promise<{writeScope?: string[], stop?: string, abandoned?: boolean}|null>)|null,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
@@ -457,6 +459,8 @@ export async function authorCloseForJob({
   // P7: the person's numbered job lines and numbered inputs (src/jobblock.js). Absent = every caller that predates the
   // job block (no line tagging, no coverage rule).
   jobLines = null, inputs = null,
+  // the rubric road's SOURCE (src/sourcedefaults.js): where the input is read from. The crossroads (src/reviewpick.js) writes it; absent = files. Signed into `closeDecl.source` (a repo only) and handed to every close this draft runs
+  source = 'files',
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
   rates = null,
@@ -524,6 +528,9 @@ export async function authorCloseForJob({
   //                  shape matters here (a $0 language pick before the scout,
   //                  D7); every other kind leaves `lang` exactly as given.
   ask = null, confirmGenerate = null, isRepo = false, langResult = null,
+  // the Destination check (hamr 2026-11-22), a repo Change code job's, run by the caller right AFTER the scout: `destCheck({facts})` is code-only (it may `ask`); it answers null (go on),
+  // `{writeScope}` (the fence the draft now works under), `{stop}` (plain words: the draft ends) or `{abandoned: true}`. Absent = never run (every other caller)
+  destCheck = null,
   // P7 item 5 (fwdloop am24/25): the seam that can really ASK the person. Present = the last drafting try, and only after
   // the two before it both failed, may ask (`offerQuestions` below); the seam takes the machine-filtered questions, gets
   // each answer (required, no skip), and hands back the job lines with the answers added as `~` rules plus the matching
@@ -634,7 +641,7 @@ export async function authorCloseForJob({
   if (survey == null && lang === RUBRIC_LANG) {
     const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
     const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
-      ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
+      ? await readFrozenInputs(workdir, inputList.map((i) => i.label), source) : null;
     if (frozen !== null && frozen.ok) ledgerTexts = frozen.texts;
     if (frozen !== null && !frozen.ok) {
       survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
@@ -676,6 +683,16 @@ export async function authorCloseForJob({
     // and the fact count is the one number that says whether the ladder came
     // back with anything to author from.
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
+  }
+
+  // THE DESTINATION CHECK: a scout that came back with facts is the first moment code knows where the code and the tests are; no scout, no facts, nothing to check (fail-open, nothing invented)
+  if (typeof destCheck === 'function' && isRepo && survey?.state === 'PRESENT' && survey.facts && typeof survey.facts === 'object') {
+    const dc = await destCheck({ facts: survey.facts });
+    if (dc?.abandoned) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+    if (typeof dc?.stop === 'string') {
+      return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'destination-stop', path: 'destination', detail: dc.stop }], stop: 'destination-stop', cost: null };
+    }
+    if (Array.isArray(dc?.writeScope) && dc.writeScope.length) writeScope = dc.writeScope;
   }
 
   /**
@@ -724,11 +741,11 @@ export async function authorCloseForJob({
   let carried = null;
   if (lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines) && ledgerTexts) {
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
-    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
+    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, source, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
     // S4: the rules of a line that reads a sheet are the sheet checks' alone: no pick question, no page path (src/sheetrows.js `sheetLineNumbers`, the row-edit turn's own rule)
     block.setSheetLines(sheetLineNumbers({ inputs, texts: ledgerTexts, jobLines }));
-    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
+    block.setGuards(classGuards({ verdictType: picked, lang }).map((g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : [...RUBRIC_FENCE]);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     // S1: a `~` rule whose word is no column of its CSV is asked once (the sheet look's column question; Agree rewrites the rule's own words in place)
     block.addSheetAsks(Array.isArray(look?.sheetAsks) ? look.sheetAsks : []);
@@ -792,24 +809,34 @@ export async function authorCloseForJob({
     // by checkability, no word lists). A job whose rules are all checkable makes no shape call and its rows, card and prompts stay byte-identical. The AI only suggests; code builds or refuses each field (src/shapebuild.js) and
     // `matchRule` gives a field only to a rule no truth check took. A shape look that fails never stops the draft (its spend stays booked): it goes on without a shape.
     const left = block.shapeCandidates();
-    if (left.length > 0 && typeof shapeFn === 'function') {
+    /** the item fields the SOURCE's row adds to every shape line (src/sourcedefaults.js): none for files */
+    const defaultFields = defaultsOf(source).fields;
+    const asked = left.length > 0 && typeof shapeFn === 'function';
+    /** what the shape look suggested; null = it was not asked or did not answer @type {any[]|null} */
+    let suggested = null;
+    if (asked) {
       const lineNums = [...new Set(left.map((x) => x.line))].sort((a, b) => a - b);
       const shapeCallOptions = provider ? thinkingCallOptions(provider, draftThinking) : {};
-      const got = await shapeFn({
-        texts: ledgerTexts, jobLines, lineNums, left: lineNums.map((n) => ({ line: n, rules: left.filter((x) => x.line === n).map((x) => x.rule) })), provider, ceilingUsd, onCall, priorCalls: survey?.calls ?? [],
+      const got = await /** @type {Function} */ (shapeFn)({
+        texts: ledgerTexts, jobLines, lineNums, ...(defaultFields.length > 0 ? { have: defaultFields.map((d) => d.name) } : {}), left: lineNums.map((n) => ({ line: n, rules: left.filter((x) => x.line === n).map((x) => x.rule) })), provider, ceilingUsd, onCall, priorCalls: survey?.calls ?? [],
         ...(rates ? { rates } : {}), ...(Object.keys(shapeCallOptions).length ? { callOptions: shapeCallOptions } : {}),
       });
       survey.calls = [...(survey.calls ?? []), ...got.calls];
       survey.raws = [...(survey.raws ?? []), ...got.raws];
       if (got.state !== 'PRESENT') onPhase('shape-skipped', { reason: got.reason });
-      else if (got.shapes.length > 0) {
-        const shapes = buildShapes({ lines: jobLines.filter((l) => lineRules(l).length > 0 && !(/** @type {import("./checkblock.js").CheckBlock} */ (block)).isSheetLine(l.n)), labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: got.shapes });
-        block.setShape(shapes);
-        if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
-        onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
-      }
-      block.reconcile();
+      else suggested = got.shapes;
     }
+    // a source with default item fields builds a shape on every line whatever the look said (code's own `[default]` rows); every other job builds a shape only from what the look suggested
+    if ((suggested !== null && suggested.length > 0) || defaultFields.length > 0) {
+      const blk = /** @type {import("./checkblock.js").CheckBlock} */ (block);
+      const shapes = buildShapes({
+        lines: jobLines.filter((l) => (defaultFields.length > 0 || lineRules(l).length > 0) && !blk.isSheetLine(l.n)), labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), suggestions: suggested ?? [], defaultFields,
+      });
+      block.setShape(shapes);
+      if (Array.isArray(carriedShapeDropped)) block.carryShapeDropped(carriedShapeDropped);
+      onPhase('shape-built', { lines: Object.keys(shapes.built).map(Number), refused: shapes.refused });
+    }
+    if (asked || defaultFields.length > 0) block.reconcile();
   }
 
   // A repo job runs through the SAME check block (hamr 2026-11-15: "same flow as rubric, no exceptions; only the TYPE of checks varies"): its `$` rows are known now (the confirm card draws them); its `~` rule rows
@@ -946,7 +973,7 @@ export async function authorCloseForJob({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
-    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
+    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs, source,
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
@@ -970,7 +997,7 @@ export async function authorCloseForJob({
       answers: stageAnswers, questions: questions ?? questionsFor(picked),
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
-      confirmed, jobLines, inputs,
+      confirmed, jobLines, inputs, source,
       ...(block ? { block, editGenerate, carriedSheetDropped, carriedShapeDropped } : {}),
       ...authorOpts,
       offerQuestions: false,
@@ -1009,6 +1036,7 @@ export async function authorCloseForJob({
   let closeDecl = {
     genre: genreForLang(lang),
     lang,
+    ...(lang === RUBRIC_LANG && source !== 'files' ? { source } : {}),
     stages: authored.declaration.stages,
     ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),
     // `notes` is the one FREE-TEXT field the model writes straight into the
@@ -1239,12 +1267,15 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
  * comes back is the resolved spec, its hash, and the evidence to sign against.
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
- *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function}} o
+ *   timeoutMs?: number, onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, cmdTimes?: Map<string, number>, signal?: AbortSignal|null,
+ *   seedShare?: Map<string, any>, seedFn?: Function, listingFn?: Function, seedReadFn?: Function}} o
+ *   `onTick`/`cmdTimes`: the still-running note's REPORT-ONLY seam and the map of each command's measured time (src/kinds.js)
+ *   `seedShare`: a draft session's map of completed seed-read command results, so a later signing try on the same seed tree does not rerun them (src/kinds.js `sharedRun`)
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
 export async function prepareSigning({
-  spec, workdir, seedRef = null, shellCapUsd, timeoutMs,
+  spec, workdir, seedRef = null, shellCapUsd, timeoutMs, onTick = null, cmdTimes = undefined, signal = null, seedShare = undefined,
   seedFn = seedAtHead, listingFn = seedListing, seedReadFn = runSeedRead,
 }) {
   /** @type {any} */
@@ -1323,7 +1354,7 @@ export async function prepareSigning({
   try {
     rows = await seedReadFn(
       { stages: spec.closeDecl.stages },
-      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }) },
+      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(spec.closeDecl.source ? { source: spec.closeDecl.source } : {}), ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }), ...(onTick ? { onTick } : {}), ...(cmdTimes ? { cmdTimes } : {}), ...(seedShare ? { seedShare } : {}), ...(signal ? { signal } : {}) },
     );
   } finally {
     await seedTrees.cleanup();
@@ -1340,6 +1371,9 @@ export async function prepareSigning({
     baseline: r.baseline ?? null,
     baselineSource: r.baselineSource ?? null,
     guard: guardSet.has(r.stage),
+    // a check that hit the limit carries the limit that bound it (typed on the row, never read out of the stop's prose)
+    ...(r.detail?.fault === 'timed-out' && typeof r.detail?.limitMs === 'number' ? { limitMs: r.detail.limitMs } : {}),
+    ...(Array.isArray(r.detail?.survivors) && r.detail.survivors.length ? { survivors: r.detail.survivors } : {}),
     // the gap is what the user READS to decide whether the close measures their
     // job — scrubbed here, at the emission boundary, exactly like every other
     // close output (M1 deliberately does not scrub; the caller does)
@@ -1357,6 +1391,8 @@ export async function prepareSigning({
     const reds = stops.map((s) => ({
       code: 'broken-close',
       ...(rubricJob ? { rubricJob: true } : {}),
+      ...(typeof s.limitMs === 'number' ? { limitMs: s.limitMs } : {}),
+      ...(Array.isArray(s.survivors) ? { survivors: s.survivors } : {}),
       path: `closeDecl.stages.${s.stage}`,
       detail: s.gap.join('\n') || `stage "${s.stage}" rendered no judgment`,
     }));

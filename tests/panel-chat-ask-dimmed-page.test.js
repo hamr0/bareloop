@@ -22,7 +22,7 @@ function renderMainWith(state) {
   const mainBtn = { textContent: '', disabled: false };
   const mainHint = { textContent: '' };
   const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('reviseButtonFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
-    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var chatRowEl = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();\nreturn mainAction;';
+    + 'var signBusy = false; var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var chatRowEl = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();\nreturn mainAction;';
   // eslint-disable-next-line no-new-func
   new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', src)(
     msg, mainBtn, mainHint, state.sessionLive, state.lastState, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) });
@@ -33,7 +33,7 @@ function rowHiddenWith(state) {
   const msg = { value: '', disabled: false, style: {}, scrollHeight: 10, offsetHeight: 0, clientHeight: 0 };
   const row = { hidden: null };
   const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('reviseButtonFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
-    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();';
+    + 'var signBusy = false; var sched = null; var whenLocked = false; var mainAction = "none"; var reopenBtn = { hidden: true }; var revisesLeftEl = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();';
   // eslint-disable-next-line no-new-func
   new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', 'chatRowEl', src)(
     msg, { textContent: '', disabled: false }, { textContent: '' }, state.sessionLive, state.lastState, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) }, row);

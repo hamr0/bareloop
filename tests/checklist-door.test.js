@@ -29,7 +29,7 @@ test('panel door: the list is built once with its call, every row is in the draf
     facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], prose: [], notFound: [], dropped: [] } } };
   /** @type {string[]} */ const drafterPrompts = [];
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'checklist-door-job', jobText: '1. Find the latest release heading',
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'checklist-door-job', jobText: '1. Find the latest release heading\n~ quote the heading',
     inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot,
@@ -95,7 +95,7 @@ test('panel door Add/Drop: a Suggested phrase brings the line back to a facts li
     facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], prose: [], notFound: [], dropped: [] } } };
   /** @type {string[]} */ const drafterPrompts = [];
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'checklist-door-job', jobText: '1. Find the latest release heading',
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'checklist-door-job', jobText: '1. Find the latest release heading\n~ quote the heading',
     inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot,

@@ -1,0 +1,37 @@
+{
+ "F1": {
+  "job": "Fix any failing test on branch: chore/barebrowse-031",
+  "destination": "docs/",
+  "raw": "{\"points\":[],\"lines\":[{\"line\":1,\"inside\":\"no\"}]}"
+ },
+ "F2": {
+  "job": "Fix the bug where the panel crashes on an empty job",
+  "destination": "docs/",
+  "raw": "{\"points\":[],\"lines\":[{\"line\":1,\"inside\":\"no\"}]}"
+ },
+ "F3": {
+  "job": "Update the install steps in README.md",
+  "destination": "src/",
+  "raw": "{\"points\":[{\"line\":1,\"file\":\"README.md\",\"folder\":\"\"}],\"lines\":[{\"line\":1,\"inside\":\"no\"}]}"
+ },
+ "P1": {
+  "job": "Fix any failing test on branch: chore/barebrowse-031",
+  "destination": ".",
+  "raw": "{\"points\":[],\"lines\":[{\"line\":1,\"inside\":\"yes\"}]}"
+ },
+ "P2": {
+  "job": "Fix the bug where the panel crashes on an empty job",
+  "destination": "src/",
+  "raw": "{\"points\":[],\"lines\":[{\"line\":1,\"inside\":\"no\"}]}"
+ },
+ "P3": {
+  "job": "Add a section on scheduling to docs/wiki/scheduling.md",
+  "destination": "docs/",
+  "raw": "{\"points\":[{\"line\":1,\"file\":\"docs/wiki/scheduling.md\",\"folder\":\"docs/wiki/\"}],\"lines\":[{\"line\":1,\"inside\":\"yes\"}]}"
+ },
+ "P4": {
+  "job": "Bump the version in package.json",
+  "destination": ".",
+  "raw": "{\"points\":[{\"line\":1,\"file\":\"package.json\",\"folder\":\"\"}],\"lines\":[{\"line\":1,\"inside\":\"yes\"}]}"
+ }
+}

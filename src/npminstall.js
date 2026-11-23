@@ -3,7 +3,8 @@
 // `npm-shrinkwrap.json` -> `npm ci --ignore-scripts`. It is the panel door's own step, never a verb the
 // agent is granted (the tool menu is untouched): the agent never sees, asks for, or triggers it.
 // Anything else (another lock file, no lock file, npm missing, a failure, a timeout) returns `ok:false`
-// and the caller falls back to the install-needed wait with the real command.
+// and the caller falls back to the install-needed wait with the real command. After the install it runs
+// `npm rebuild` (same env, same deadline) so native packages are built despite `--ignore-scripts`.
 
 import { existsSync } from 'node:fs';
 import { spawnClose, CLOSE_ENV_DENY } from './ralph.js';
@@ -35,21 +36,39 @@ export function npmEnv(base) {
 }
 
 /**
- * Run `npm ci --ignore-scripts` in `cwd`. Async (never blocks the panel's event loop); argv array, no shell.
+ * Run `npm ci --ignore-scripts` in `cwd`, then `npm rebuild` in the same tree. Async (never blocks the panel's
+ * event loop); argv array, no shell. `--ignore-scripts` leaves native packages (better-sqlite3 ...) unbuilt, and a
+ * repo's own tests then fail on "Could not locate the bindings file" - failures no worker can fix. So the build step
+ * runs here, with the SAME stripped env and the same deadline; a failed or timed-out rebuild is `ok:false` (the
+ * caller's manual install ask), never a silent continue. This is the ONE install function every door calls.
  * @param {string} cwd the directory holding package.json + the lock file
  * @param {{timeoutMs?: number, env?: NodeJS.ProcessEnv, run?: typeof spawnClose}} [o] `run` is the test seam
  * @returns {Promise<{ok: true}|{ok: false, reason: string}>}
  */
 export async function runNpmCi(cwd, { timeoutMs = NPM_CI_TIMEOUT_MS, env = process.env, run = spawnClose } = {}) {
-  const r = await run('npm', ['ci', '--ignore-scripts'], { env: npmEnv(env), cwd, timeoutMs });
+  const stripped = npmEnv(env);
+  const ci = await runStep(run, ['ci', '--ignore-scripts'], cwd, stripped, timeoutMs, '');
+  if (!ci.ok) return ci;
+  return runStep(run, ['rebuild'], cwd, stripped, timeoutMs, 'the build step (npm rebuild) of the packages ');
+}
+
+/**
+ * One npm call mapped to plain words. `what` prefixes the failure ('' for the install itself).
+ * @param {typeof spawnClose} run @param {string[]} args @param {string} cwd @param {NodeJS.ProcessEnv} env
+ * @param {number} timeoutMs @param {string} what
+ * @returns {Promise<{ok: true}|{ok: false, reason: string}>}
+ */
+async function runStep(run, args, cwd, env, timeoutMs, what) {
+  const r = await run('npm', args, { env, cwd, timeoutMs });
   if (r.error) {
     const code = r.error.code;
-    if (code === 'ETIMEDOUT') return { ok: false, reason: `timed out after ${Math.round(timeoutMs / 1000)}s` };
+    if (code === 'ETIMEDOUT') return { ok: false, reason: `${what}timed out after ${Math.round(timeoutMs / 1000)}s` };
     if (code === 'ENOENT') return existsSync(cwd) ? { ok: false, reason: 'npm was not found' } : { ok: false, reason: 'the install folder does not exist' };
-    return { ok: false, reason: redactSecrets(String(r.error.message ?? r.error)).slice(0, 200) };
+    return { ok: false, reason: `${what}${redactSecrets(String(r.error.message ?? r.error))}`.slice(0, 200) };
   }
   if (r.status === 0) return { ok: true };
   const lines = String(r.stderr || r.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const last = redactSecrets(lines[lines.length - 1] ?? '').slice(0, 200);
-  return { ok: false, reason: last || (r.status === null ? `killed by ${r.signal ?? 'a signal'}` : `exit ${r.status}`) };
+  const tail = last || (r.status === null ? `killed by ${r.signal ?? 'a signal'}` : `exit ${r.status}`);
+  return { ok: false, reason: what ? `${what}failed: ${tail}` : tail };
 }

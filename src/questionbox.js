@@ -4,7 +4,7 @@
 // panel shows for a pending question and of which choices a question offers (the page draws it, never works it out). The CLI (src/authorrun.js) is a sibling caller of the same
 // questions and keeps typing words; the stored question text never changes, only the panel's copy of it is cut.
 import { DROP_IT } from './pagemap.js';
-import { DEST_ANSWER } from './destpoint.js';
+import { DEST_ANSWER, DEST_ANSWER_APPROVE } from './destpoint.js';
 
 /** the door's refusals, word for word (fwd am31); a refusal leaves the question open and writes nothing */
 export const CHOICE_SAYS = Object.freeze({
@@ -37,7 +37,9 @@ export function offersOf(q) {
  */
 export function panelQuestionText(q) {
   const text = String(q.question);
-  if (q.source === 'dest-point') return text.endsWith(DEST_ANSWER) ? text.slice(0, text.length - DEST_ANSWER.length) : text;
+  if (q.source === 'dest-point') {
+    for (const tail of [DEST_ANSWER, DEST_ANSWER_APPROVE]) if (text.endsWith(tail)) return text.slice(0, text.length - tail.length);
+  }
   return text;
 }
 
@@ -55,7 +57,7 @@ export function answerEffectWords(step) {
 /**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
  * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
- * @param {{kind: string, source?: string, ask?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean, columns?: string[]}, folder?: string, current?: string, replaces?: string, adds?: boolean}} step
+ * @param {{kind: string, source?: string, ask?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean, columns?: string[]}, folder?: string, closed?: boolean, current?: string, replaces?: string, adds?: boolean}} step
  * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], columns?: string[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
@@ -65,9 +67,13 @@ export function boxFor(step) {
   if (step.source === 'dest-point') {
     return {
       head: 'A question before drafting', line: Number.isInteger(step.line) ? `About job line ${step.line}` : '', text: panelQuestionText(/** @type {any} */ (step)),
-      choices: [{ choice: 'yes', label: `Yes, set it to ${step.folder ?? ''}` }, { choice: 'no', label: `No, keep ${String(step.current ?? '').trim().replace(/\s*\n\s*/g, ', ')}` }],
+      choices: [{ choice: 'yes', label: `Yes, set it to ${step.folder ?? ''}` }, ...(step.closed === true ? [] : [{ choice: 'no', label: `No, keep ${String(step.current ?? '').trim().replace(/\s*\n\s*/g, ', ')}` }])],
       orLabel: 'Or type a different Destination:', sendChoice: 'path',
     };
+  }
+  // "Did you mean branch: X?" (src/refguess.js): yes / no buttons, no box
+  if (step.source === 'ref-point') {
+    return { head: 'A question before drafting', line: Number.isInteger(step.line) ? `About job line ${step.line}` : '', text: String(step.question), choices: [{ choice: 'yes', label: 'Yes' }, { choice: 'no', label: 'No' }], orLabel: null, sendChoice: 'yes' };
   }
   /** @type {{choice: string, label: string}[]} */
   const choices = [];
@@ -89,16 +95,16 @@ export function boxFor(step) {
 }
 
 /** the choices each kind of question's answer may name: a check question has its buttons only (hamr 2026-11-15); the drafter's own question and the Destination question keep typed words */
-const CHOICES = { look: ['agree', 'drop', 'rule', 'column'], 'dest-point': ['yes', 'no', 'path'], typed: ['rule'] };
+const CHOICES = { look: ['agree', 'drop', 'rule', 'column'], 'dest-point': ['yes', 'no', 'path'], 'ref-point': ['yes', 'no'], typed: ['rule'] };
 
 /**
  * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
  * `column` (a tie's pick) is allowed only with the name of one of the question's own columns in `text`.
- * @param {{kind: string, source?: string, ask?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean, columns?: string[]}}} step @param {unknown} choice @param {unknown} [text] @returns {string|null}
+ * @param {{kind: string, source?: string, ask?: string, rule?: unknown, closed?: boolean, offers?: {agree: boolean, drop: boolean, columns?: string[]}}} step @param {unknown} choice @param {unknown} [text] @returns {string|null}
  */
 export function refuseChoice(step, choice, text) {
   if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
-  const own = step.source === 'dest-point' ? CHOICES['dest-point'] : step.source === 'look' ? CHOICES.look : CHOICES.typed;
+  const own = step.source === 'dest-point' ? CHOICES['dest-point'] : step.source === 'ref-point' ? CHOICES['ref-point'] : step.source === 'look' ? CHOICES.look : CHOICES.typed;
   if (typeof choice !== 'string' || !own.includes(choice)) return CHOICE_SAYS.bad;
   // the box's own words are for a READING question only; a proposed check has its buttons
   if (choice === 'rule' && step.source === 'look' && step.ask !== 'reading') return CHOICE_SAYS.notOffered;
@@ -108,7 +114,8 @@ export function refuseChoice(step, choice, text) {
     if (choice === 'column' && !(typeof text === 'string' && step.offers.columns.includes(text))) return CHOICE_SAYS.pickColumn;
   }
   if (choice === 'column' && !Array.isArray(step.offers?.columns)) return CHOICE_SAYS.notOffered;
-  if (step.source === 'dest-point') return null;
+  if (step.source === 'ref-point') return null;
+  if (step.source === 'dest-point') return choice === 'no' && step.closed === true ? CHOICE_SAYS.notOffered : null;
   if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
   if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;
   return null;

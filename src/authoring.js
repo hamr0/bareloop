@@ -533,12 +533,52 @@ export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type c
 export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
 
 /**
+ * THE FAILING-TEST LINES a count stage hands the worker when it is red (run mwsfq0pi): the stage's own "term 0 /^# fail (\d+)$/ ... # fail 1" named no
+ * test and no error, so the worker guessed and edited the wrong file. ONE table, keyed by the job's language (`closeDecl.lang`), the owner of which
+ * raw-output lines of the command a red count stage quotes. It only QUOTES the command's own output (never a culprit of the close's own naming), it
+ * is not a signed field, and it moves no verdict, value or baseline. A language with no row (text, or one not admitted) quotes nothing.
+ */
+const FAILURE_LINES_PER_FAILURE_MAX = 12;
+const FAILURE_LINES = Object.freeze({
+  /** node's TAP: each `not ok N - title` line and the indented YAML block under it, up to its `...` end, at most 12 lines a failure */
+  js: (/** @type {string[]} */ lines) => {
+    /** @type {string[]} */
+    const out = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!/^\s*not ok \d+/.test(lines[i])) continue;
+      let n = 1;
+      out.push(lines[i]);
+      if (i + 1 < lines.length && /^\s+---\s*$/.test(lines[i + 1])) {
+        for (let j = i + 1; j < lines.length && n < FAILURE_LINES_PER_FAILURE_MAX; j += 1) {
+          out.push(lines[j]); n += 1;
+          if (/^\s+\.\.\.\s*$/.test(lines[j])) break;
+        }
+      }
+    }
+    return out;
+  },
+  /** pytest: its `FAILED ...` summary lines and its `E   ...` error lines */
+  python: (/** @type {string[]} */ lines) => lines.filter((l) => /^FAILED /.test(l) || /^E {3}/.test(l)),
+});
+
+/**
+ * @param {unknown} lang the close's language @param {string} out the command's raw output
+ * @returns {string[]} the lines to quote (empty for an unknown language or no failing test)
+ */
+export function failureLinesOf(lang, out) {
+  const pick = typeof lang === 'string' && Object.hasOwn(FAILURE_LINES, lang) ? /** @type {Record<string, Function>} */ (FAILURE_LINES)[lang] : null;
+  return pick ? pick(String(out).split('\n').map((l) => l.replace(/\r$/, ''))) : [];
+}
+
+/**
  * PART 1a: the "language" of a RUBRIC job on local text files. It is not a code language and carries no suppression
  * battery, no environment and no instruments — it only lets such a close declare which genre-shaped guards apply to it
  * (`classGuards`) without pretending the file is JavaScript. `GENRE_LANGUAGES` stays the code-language menu (it is what a
  * repo job's language detection and the confirm turn offer); this is the one extra value a close may DECLARE.
  */
 export const RUBRIC_LANG = 'text';
+/** the rubric road's worker write fence: the tree's own `output/` and nothing else. ONE truth; sites spread a fresh copy (`[...RUBRIC_FENCE]`). Lives beside `RUBRIC_LANG` (every site already imports from here, no cycle). */
+export const RUBRIC_FENCE = Object.freeze(['output/']);
 /** the genre label a close over local text files carries (`closeDecl.genre`); the code languages' is `TYPES_GENRE.name`. Never the other's. */
 export const TEXT_GENRE = 'TEXT';
 /** @param {unknown} lang @returns {string} the genre a close of this language is authored under */
@@ -1219,7 +1259,8 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
+ *   verdictType?: string|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null, engineDirs?: readonly string[]}} [opts]
+ *   `engineDirs` — directories the ENGINE makes in the run's tree (the source's own row, src/sourcedefaults.js): they select without being in `listing`. A code close has none.
  *   `inputLabels` — the labels of the person's inputs (Part 1a). Present, a rubric-step `cited` part must name one of them.
  *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
  *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
@@ -1240,7 +1281,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, jobLines = null, inputLabels = null,
+    verdictType = null, jobLines = null, inputLabels = null, engineDirs = [],
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1424,7 +1465,7 @@ export function validateDeclaration(declaration, opts = {}) {
 
     checkKind({ kind: s.kind, params: p, at, red, scoped, label, populations, envOwned: owned ?? [], envInjected: injected });
     checkEnvComplete({ params: p, at, red, kind: s.kind, catalogue, envInjected: injected });
-    checkPaths({ spec, params: p, at, red, idx, haveListing });
+    checkPaths({ spec, params: p, at, red, idx, haveListing, engineDirs });
   });
 
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
@@ -1757,9 +1798,9 @@ function canonicalScope(sc) {
  * selects — it names the whole tree, which exists.
  * @param {{spec: KindSpec, params: any, at: string,
  *   red: (c: string, p: string, d: string, e?: object) => void,
- *   idx: {files: Set<string>, dirs: Set<string>}, haveListing: boolean}} o
+ *   idx: {files: Set<string>, dirs: Set<string>}, haveListing: boolean, engineDirs?: readonly string[]}} o `engineDirs`: the engine's own directories, which select without being listed
  */
-function checkPaths({ spec, params: p, at, red, idx, haveListing }) {
+function checkPaths({ spec, params: p, at, red, idx, haveListing, engineDirs = [] }) {
   if (!haveListing) return; // already redded once, at the top; not twice per path
   for (const dotted of spec.pathParams) {
     const value = readPath(p, dotted);
@@ -1768,7 +1809,7 @@ function checkPaths({ spec, params: p, at, red, idx, haveListing }) {
       if (!isNonEmptyString(raw)) return;
       const wantsDir = /(?:\/|\/\*\*?)$/.test(raw.trim());
       const norm = normPrefix(raw);
-      if (isRoot(norm)) return;
+      if (isRoot(norm) || engineDirs.includes(norm)) return;
       const path = `${at}.params.${dotted}[${i}]`;
       const isFile = idx.files.has(norm);
       const isDir = idx.dirs.has(norm);

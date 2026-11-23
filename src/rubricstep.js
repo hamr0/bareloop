@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { repoListingText } from './repocite.js';
 import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote, tableSha } from 'bareguard';
@@ -137,7 +138,7 @@ export function lineBriefs(closeDecl) {
     if (sp) {
       const fields = sp.fields.filter(isRec);
       const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
-      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : 'one item for every one you find';
+      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : Number.isInteger(sp.minItems) && sp.maxItems === undefined ? `at least ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}, one for every one you find` : 'one item for every one you find';
       out.push({
         line: n,
         text: [
@@ -148,6 +149,8 @@ export function lineBriefs(closeDecl) {
           ...fields.map((/** @type {any} */ f) => `    - ${f.name}: ${shapeFieldSentence(f.spec)}${f.spec.required === true ? '' : ' (optional)'}`),
           `  One example item: ${JSON.stringify(shapeExampleItem(fields))}`,
           '  Write each value as plain text or a plain number or yes/no (true or false) as the field says, never as a sentence about the value.',
+          // a shape part with a cite: what "file" and "quote" mean, and that code checks every quote against the files named
+          ...(typeof sp.cite === 'string' ? ['  "file" is the path of ONE file of the repo, written as the repo lists it (for example src/example.js), nothing else. "quote" is copied exactly, word for word, from that file (a few lines at most). Code checks every quote against the files you name.'] : []),
         ].join('\n'),
       });
       continue;
@@ -265,7 +268,7 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen', 'checks', 'fields', 'minItems', 'maxItems']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample', 'asSeen', 'checks', 'fields', 'minItems', 'maxItems', 'cite']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -312,6 +315,7 @@ export function rubricStepShapeReds(p, at) {
     }
     if (Object.hasOwn(part, 'asSeen') && part.class !== 'fact') red('invalid-value', `${w}.asSeen`, 'only a fact part carries the as-seen example');
     if (Object.hasOwn(part, 'checks') && part.class !== 'sheet') red('invalid-value', `${w}.checks`, 'only a sheet part carries sheet checks');
+    if (Object.hasOwn(part, 'cite') && part.class !== 'shape') red('invalid-value', `${w}.cite`, 'only a shape part (a list of items whose quotes are found in the source) carries the label its quotes are found under');
     for (const k of ['fields', 'minItems', 'maxItems']) if (Object.hasOwn(part, k) && part.class !== 'shape') red('invalid-value', `${w}.${k}`, 'only a shape part carries the fields and the item count of a list of items');
     if (part.class === 'shape') { shapeShapeReds(part, w, (c, path, d) => red(c, path, d), p.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'fact') ?? null); return; }
     if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
@@ -356,7 +360,7 @@ export function rubricStepShapeReds(p, at) {
 /** the labels of the inputs a step's `cited` parts name (each once, in order) @param {any} params @returns {string[]} */
 export function citedLabels(params) {
   const parts = Array.isArray(params?.parts) ? params.parts : [];
-  return [...new Set(parts.filter((/** @type {any} */ x) => isRec(x) && ((x.class === 'countable' && x.check === 'cited') || x.class === 'fact')).map((/** @type {any} */ x) => String(x.source)))];
+  return [...new Set(parts.filter((/** @type {any} */ x) => isRec(x) && ((x.class === 'countable' && x.check === 'cited') || x.class === 'fact' || (x.class === 'shape' && typeof x.cite === 'string'))).map((/** @type {any} */ x) => String(x.class === 'shape' ? x.cite : x.source)))];
 }
 
 /**
@@ -383,6 +387,8 @@ export function buildStepSpec(params, inputShas) {
     if (part.class === 'shape') {
       // shape jobs (clause 6): ONE bareguard `itemShape` check over the answer's `results` list: the item count and every signed field
       checks.push(shapeItemCheck(part, `p${i + 1}-shape`, factPartOf(params)));
+      // a shape part with a `cite` (the source table's, src/sourcedefaults.js): each item's quote is found word for word in the source named by the label (the same `cited` check; its claims are built by code, `flattenStep`)
+      if (typeof part.cite === 'string') checks.push({ id: `p${i + 1}-cite`, rule: 'cited', claims: `cites:${part.cite}`, source: part.cite });
       return;
     }
     if (part.class === 'sheet') {
@@ -504,6 +510,8 @@ export function flattenStep(obj, countLabels = [], factPart = null, asWritten = 
   if (isRec(obj.cites) && !factPart) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
   if (isRec(obj.claims)) for (const name of sheetClaimNames) if (Object.hasOwn(obj.claims, name)) fields[name] = obj.claims[name];
   if (shapePart && Object.hasOwn(obj, 'results')) fields.results = obj.results;
+  // a shape part with a `cite` reads each item's own `quote`: code writes the claim (no numbers in it, so none can red), the worker writes none
+  if (shapePart && typeof shapePart.cite === 'string') fields[`cites:${shapePart.cite}`] = (Array.isArray(obj.results) ? obj.results : []).map((/** @type {any} */ r) => ({ claim: 'the item quotes its source', quote: isRec(r) && typeof r.quote === 'string' ? r.quote : '' }));
   return fields;
 }
 
@@ -552,6 +560,11 @@ export function plainStepGap(step, why, g, params = null) {
       ? `${at}: only ${g.measured ?? 0} claim(s) are listed under "${label}" in "cites", at least ${g.limit} are required`
       : `${at}: ${g.measured} claims are listed under "${label}" in "cites", at most ${g.limit} are allowed`;
   }
+  if (g.check === 'cited' && params && shapePartOf(params)?.cite !== undefined) {
+    // a shape part's cite names the ITEM (bareguard's `#<n>` is the 0-based item) and what to do
+    if (g.kind === 'unsupported') return (g.items ?? []).map((/** @type {string} */ it) => { const m = /^#(\d+)/.exec(it); return `${at}: item ${m ? Number(m[1]) + 1 : '?'}: its quote is not found word for word in the files the items name - copy the quote exactly from the file the item names`; }).join('\n');
+    return `${at}: the items' quotes cannot be checked (${g.kind})`;
+  }
   if (g.check === 'cited') {
     const label = String(g.field ?? '').replace(/^cites:/, '');
     if (g.kind === 'missing') return `${at}: "cites" has nothing under "${label}" — list each claim with a quote copied from that input`;
@@ -566,7 +579,8 @@ export function plainStepGap(step, why, g, params = null) {
  * Grade ONE step: build the rubric, run it over the step file's fields, and say what happened in the close's own terms.
  * Pure of the filesystem (the runner in src/kinds.js reads the files). `stopped` = the instrument failed (never a red).
  * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>,
- *   factQuotes?: Record<number, string[]>, factMissing?: number[], tables?: Record<string, {header: string[], rows: any[]}>}} o
+ *   factQuotes?: Record<number, string[]>, factMissing?: number[], tables?: Record<string, {header: string[], rows: any[]}>, extraReds?: string[]}} o
+ *   `extraReds`: code's own plain-words reds (src/repocite.js: an item's file that is no file of the repo, a named-files text over the cap), each counted as one red and listed with the tie's lines
  *   `tables` (S3) maps each sheet role a `sheet` part reads to bareguard's table of the run's FROZEN csv; `inputShas[role]` is the `tableSha` recorded at the run's start, and bareguard stops the check if the table no longer gives it
  *   `factQuotes` maps an earlier fact line's number to the quotes its (already checked) step file holds — what a prose step's numbers are tied to
  *   `factMissing` lists the earlier fact lines whose step file is not there (yet): a normal red, never an instrument fault
@@ -577,7 +591,7 @@ export function plainStepGap(step, why, g, params = null) {
  *   rawGaps?: any[], extraGaps?: string[], evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
  *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
-export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [], tables = {} }, inputShas) {
+export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [], tables = {}, extraReds = [] }, inputShas) {
   let rubric;
   try { rubric = createRubric(buildStepSpec(params, inputShas)); } catch (e) {
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
@@ -607,6 +621,9 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   /** @type {string[]} */
   const extra = [];
   let extraCount = 0;
+  /** the cite's own plain-words reds (src/repocite.js): owned by the line's `$cited` row, never by the numbers tie @type {string[]} */
+  const citeLines = [...extraReds];
+  extraCount += citeLines.length;
   const tie = params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
   if (tie) {
     for (const n of factMissing) {
@@ -631,7 +648,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     r = { ...r, gaps: r.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)), full: { ...r.full, gaps: r.full.gaps.filter((/** @type {any} */ g) => !sheetIds.has(g.id)) } };
   }
   const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : g.check === 'itemShape' ? shapeGapCount(g) : 1), 0);
-  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
+  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 || citeLines.length > 0 ? { redCount } : {}) };
   if (r.verdict === 'stopped') {
     // S3: a sheet that no longer gives the table the run recorded at its start is named by its input, before any other word
     const moved = sheetRolesOfParams(params).filter((role) => !isRec(tables[role]) || tableSha(tables[role]) !== inputShas[role]);
@@ -643,9 +660,9 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
   };
   // bareguard's own structured gaps (id, check, field, kind, items) and the tie's own lines: what the per-row results (src/rowresults.js) read; no verdict or sentence is derived from them here
-  const raw = { rawGaps: r.full.gaps, extraGaps: extra };
-  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
-  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
+  const raw = { rawGaps: r.full.gaps, extraGaps: extra, ...(citeLines.length > 0 ? { citeGaps: citeLines } : {}) };
+  if (r.verdict === 'green' && extra.length === 0 && citeLines.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
+  return { verdict: 'red', gapLines: [...citeLines, ...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -1213,7 +1230,7 @@ export function checksOfClose(closeDecl, jobLines = null) {
     .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key }));
   // shape jobs (clause 8): a shape line's part is one plan row per field (a `[you]` rule row's, an `[agent]` row's) and the line's `[default]` row, in code's words (src/shaperows.js `shapeRowsOf`)
   const shapeItems = (/** @type {number} */ line) => shapeRowsOf({ stages: stages.filter((/** @type {any} */ st) => isRec(st) && isRec(st.params) && st.params.step === line) }, jobLines)
-    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key, shape: /** @type {const} */ (true) }));
+    .filter((x) => x.by !== 'default' || list.some((/** @type {any} */ r) => r.key === x.key)).map((x) => ({ line, text: x.text, by: x.by, key: x.key, ...(x.truth ? {} : { shape: /** @type {const} */ (true) }) }));
   return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (isRec(p) && p.class === 'sheet') return sheetItems(st.params.step);
@@ -1319,14 +1336,24 @@ export function planMatchesClose(shown, closeDecl, jobLines = null) {
   return { ok: false, error: `The checks you were shown do not match the checks the signed close would run (${parts.join(' | ')}). Nothing was signed — draft again.` };
 }
 
+/** a repo source's drafting-time texts: every asked label reads the repo's tracked-path listing (paths only, never file contents). Never throws @param {string} workdir @param {string[]} labels @returns {{ok: true, texts: Record<string, string>}|{ok: false, why: string}} */
+function repoTexts(workdir, labels) {
+  /** @type {string} */
+  let listing;
+  try { listing = repoListingText(workdir); } catch (e) { return { ok: false, why: `the repo's files could not be listed: ${/** @type {Error} */ (e).message.split('\n')[0]}` }; }
+  return { ok: true, texts: Object.fromEntries(labels.map((l) => [l, listing])) };
+}
+
 /**
  * The frozen TEXT of the named inputs, read the way the runner reads them: the source door's record (`source.json`, one level
  * above the tree) names each input's file and sha256, and a file whose bytes no longer match is not returned. Used at DRAFTING
  * (the drafter reads the input, the early tests run on it) and at run start (the backstop). Never throws.
- * @param {string} workdir the frozen tree @param {string[]} labels
+ * `source` is the SIGNED one (src/sourcedefaults.js): `repo` reads the repo's tracked-path listing instead of a frozen input record. It is read, never sniffed: a files source with no record is a refusal.
+ * @param {string} workdir the frozen tree @param {string[]} labels @param {string} [source]
  * @returns {Promise<{ok: true, texts: Record<string, string>}|{ok: false, why: string}>}
  */
-export async function readFrozenInputs(workdir, labels) {
+export async function readFrozenInputs(workdir, labels, source = 'files') {
+  if (source === 'repo') return repoTexts(workdir, labels);
   /** @type {any} */
   let manifest;
   try { manifest = JSON.parse(await readFile(join(dirname(workdir), 'source.json'), 'utf8')); } catch (e) {

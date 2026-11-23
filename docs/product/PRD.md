@@ -2278,6 +2278,8 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 **Backlog (PARKED, discussed 2026-11-17, not to build now): A sheet as a list of same-shape jobs** — one signed job shape, many rows: the job names fields (e.g. from, to, price) and each sheet row fills them; ONE ROW = ONE SEPARATE RUN of the same signed workflow (hamr 2026-11-17), each with its own verdict, Resume and Rerun, plus a combined row-by-row view. The sheet's columns are values only, never new rules (a row wanting "nonstop only" is a different job). At $0 before spend: the sheet must carry every field the job uses, else nothing runs; a row with a missing or unreadable field is refused by row number while the others run. The card shows the total ceiling (rows × cap) before signing; the monthly limit applies. Builds on Reuse workflow (signed shape), place rules (code swaps a value in before spend, stops at $0 if missing) and folder triggers (N items = N runs back to back). Limit: a row that needs a fresh web search per row is search-as-input, still PARKED after POCs v3-v5 failed. Related: F347 (mixed page + sheet job, a line not tied to an input). Build only after the sheet (CSV) jobs ship, with a spec and a POC first.
 
+**Backlog (PARKED, hamr 2026-11-21): Release bench** — `docs/logs/BENCH.md` was run once (v0.19.1) and never since; its jobs are old repo type-fix jobs with hand-written check scripts and cover none of today's job kinds (pages, sheets, review, panel fix jobs). Reviving it means new rows for today's job kinds; not before hamr's word. **Add (hamr 2026-11-21): a model column.** The same signed job runs once per chosen model (models are the Settings key rows, same $ and time caps each, back to back like a folder trigger), and one table shows per model: passed or not, tries, cost, wall time. The plan is drafted and signed once and reused, so only the model changes. n=1 per model is anecdote: 3 runs per model before any pick. Use: find the cheapest model that still passes. Inspired by the "compare models per task set" box in Warp's Factories stack talk.
+
 ### Rubric vs deterministic: PASS/FAIL, calibration and fit check removed; Tickets + rubric on the check list (v1.134 — 2026-11-14)
 
 - [x] PASS/FAIL judge examples removed (panel and CLI); a `~ PASS:`/`~ FAIL:` line is refused at $0 in plain words. The `~ ! $` check list covers it.
@@ -2404,6 +2406,8 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 - [ ] Negating rules ("no nonstop") never take a shape; negations stay with the human. F360.
 - [ ] Scope rounds 3-5: the shape look prompt names the limit a field needs; round 5 PASS, UNDERPOWERED. Detail in `docs/product/ITEM33-BUILD.md` ("Scope rounds 3-5"). F366-F368.
 - [ ] Shape on D (repo) report jobs: same flow, lift the repo block, D-shaped look text; POC first; next after feat/shape-jobs. Pointer: ITEM33-BUILD Addendum 2026-11-19 (shape on D).
+- [ ] Review the code (D repo jobs) + review by git range/branch: SIGNED 2026-11-20, being built on chore/barebrowse-031. POC round 3 PASS (n=5, underpowered). Pointer: ITEM33-BUILD "Addendum 2026-11-20: Review the code"; F376-F378.
+- [ ] Review by git range or branch (hamr 2026-11-20, "important"): now Part 2 of the signed addendum above, same branch, POC first.
 - [x] Number-then-marker prices ("€216 total", "1.299,00 €") are already read (F251); POC 1 ran, premise stale, nothing to build. Why block A of the scope harness left those rules Not checked is unexplained, under investigation. F365.
 - [ ] Next on this branch: fwd v0.36.0's report-heading rule (`### The answer` only when code checked the line's own text), copied from fwd's released tag.
 - Status: rulings given, being built.
@@ -2411,7 +2415,7 @@ Ruled by hamr 2026-11-19. Detail in `docs/product/ITEM33-BUILD.md` (addendum "sh
 
 ### Next after feat/shape-jobs ships: barebrowse bump (2026-11-19)
 
-- [ ] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse").
+- [x] Bump barebrowse ^0.25.0 to ^0.31.0 on its own branch after this release. The only change for bareloop's library flow (connect, goto, waitForNetworkIdle, snapshot) is the Firefox goto() status fix (0.30.1: no status 0 on big streamed pages, final page reported after a redirect); connect() and Page are unchanged. Prove on a real page fetch before release. Ruled by hamr 2026-11-19 ("prd next bump barebrowse"). Done on `chore/barebrowse-031`: proof is two real page fetches through `src/pagefetch.js` with no browser left behind, also after kill -9, plus the full gate (details in the branch commit message).
 
 ### Future ideas, parked (2026-11-19) — not for today
 
@@ -2424,3 +2428,23 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 5. Headless, other agents hire bareloop: a coding agent hands bareloop a small job and gets back a verdict plus a receipt (the run record). Fits the identity line: they build the harness ("does it run"), bareloop is the judge ("was it good").
 
 - README "hire" framing ("Hire an agent for a job, not a task") is being drafted for this release, pending hamr's sign-off.
+
+### Phrase alternatives keep only the first word, waiting for fwd (2026-11-20)
+
+- Phrase fact with alternative words keeps only the first (`src/inputlook.js:173`) — waiting for fwd's fix, copy from fwd's tag, build nothing here (hamr 2026-11-20); see the fix ledger bullet for `src/inputlook.js`.
+
+### Next branch first: open items from chore/barebrowse-031 (2026-11-23) — RULED by hamr
+
+Hamr's rule: anything not confirmed, walked, or still open goes first into the next branch.
+
+- [ ] Resume reuse line not seen live (test-proven only). F382; build doc "Addendum 2026-11-23".
+- [x] Stop during a step check: seen live 2026-11-23, leg 1 ended stopped and Resume was offered (F388, F393).
+- [ ] Sign & run early-click fix is not proven live. F390.
+- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
+- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389.
+- [ ] Rubric report: cumulative page dumps, no answer section. F391.
+- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered.
+- [ ] Copy from fwd's v0.37.0 tag: am11 count fix and phrase alternatives (`src/inputlook.js:173`).
+- [ ] NEW, signed by hamr 2026-11-23: drafting and run progress timer. No ticking clock: one progress line updated every 30 s. Finished drafting steps show their time (e.g. "installing packages ✓ 0:42"); the running step shows elapsed (every 30 s) and "Drafting so far: M:SS"; the "usually about N min" estimate is dropped; the plan card shows one line "Drafted in M:SS · $X"; the Run tab's still-running check line uses the same 30 s elapsed form; the Audit drafting row shows total draft time only, no per-step details. Display only, from times already recorded (draft-log step-start/step-end `at`; `src/draftspend.js` wallMs), $0.
+- [ ] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch.
+- [ ] NEW, signed by hamr 2026-11-23 (option 1): a NOW row in the Run tab's ENDED / NEXT / SCHEDULE block, shown only while the run is live: "Running your tests · M:SS", "AI working · M:SS", or drafting. Time updated every 30 s (same rule as the progress timer item). It replaces the grey "Tests are still running (N min so far)" line under the map; it disappears when the run ends and ENDED fills in.

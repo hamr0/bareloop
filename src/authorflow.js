@@ -77,10 +77,10 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute, dirname } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, STOP_FAULTS, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
-  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
+  GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
@@ -89,6 +89,7 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
+import { defaultsOf } from './sourcedefaults.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { sheetTable, parseCsv } from './csv.js';
 import { isSheetInput } from './inputlook.js';
@@ -2420,7 +2421,7 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null, source?: 'files'|'repo',
  *   offerQuestions?: boolean, ticket?: boolean, block?: CheckBlock|null, editGenerate?: Function|null, carriedSheetDropped?: any[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
@@ -2448,6 +2449,8 @@ export async function authorClose({
   // P7: the person's numbered job lines and inputs (src/jobblock.js). ABSENT = every caller that predates the job block:
   // no tagging order in the prompt, and no coverage rule in the validator.
   jobLines = null, inputs = null,
+  // the rubric road's signed SOURCE (src/sourcedefaults.js): every close this drafting runs (the seed reads) is told it
+  source = 'files',
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -2642,18 +2645,18 @@ export async function authorClose({
   /** @type {string[]|null} */
   let labelLists = null;
   if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
-    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
+    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label), source);
     if (frozen.ok) { inputTexts = frozen.texts; labelLists = labelListsFor(frozen.texts, facts?.look ?? null); }
   }
   // every rubric job drafts through the check block (src/authorjob.js builds it, with the person's answers applied); a caller that brings none (a direct authorClose call) gets the block of the look alone, nobody to ask
   if (block === null && lang === RUBRIC_LANG && inputTexts !== null && Array.isArray(jobLines)) {
-    block = new CheckBlock({ texts: inputTexts, labels: (inputs ?? []).map((/** @type {any} */ i) => i.label), asks: false });
+    block = new CheckBlock({ texts: inputTexts, labels: (inputs ?? []).map((/** @type {any} */ i) => i.label), asks: false, source });
     block.fromJob(jobLines);
     block.addLook(Array.isArray(facts?.look?.facts) ? facts.look.facts : [], Array.isArray(facts?.look?.dropped) ? facts.look.dropped : []);
     block.reconcile();
   }
   // the mandatory guards are job-level `$` rows of the signed list (piece 2): the block that signs knows their names, whoever built it
-  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : ['output/']);
+  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name), Array.isArray(writeScope) && writeScope.length ? writeScope : [...RUBRIC_FENCE]);
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;
   const draftGenerate = rowEdits && editGenerate ? editGenerate : generate;
@@ -2664,7 +2667,7 @@ export async function authorClose({
     const refused = /** @type {CheckBlock} */ (block).refusedView(jobLines, c.stages);
     const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
-    const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
+    const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : [...RUBRIC_FENCE];
     return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
   // S2: with a CSV input the row-edit turn also offers the optional `sheetChecks` (typed suggestions; code builds or refuses each: src/sheetbuild.js). The tables are the drafting copy's table of each CSV input, by its label;
@@ -2689,7 +2692,7 @@ export async function authorClose({
   // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
   // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
   const checkDraft = (/** @type {any} */ d) => {
-    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs) });
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, jobLines, inputLabels: inputLabelsOf(inputs), engineDirs: defaultsOf(source).engineDirs });
     if (r.ok && lang === RUBRIC_LANG) {
       const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
       if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };
@@ -2770,6 +2773,8 @@ export async function authorClose({
   let questionLines = null;
   /** per try: null = it passed (validated AND was measured with a work stage red); else the job lines its failure named @type {({lines: number[]}|null)[]} */
   const tryFails = [];
+  /** each command's measured time across this draft's tries (the still-running note's "usually about N min") @type {Map<string, number>} */
+  const cmdTimes = closeCtx.cmdTimes instanceof Map ? closeCtx.cmdTimes : new Map();
   /** @type {{line: number, question: string}[]} */
   let askedQuestions = [];
   /** P7 item 5: may the try AFTER try `i` ask? Only the last try of a full ladder, and only when try 1 and try `i` both failed. */
@@ -2971,11 +2976,31 @@ export async function authorClose({
         // it is the runner's own reporting channel, not a knob a caller's close
         // context may quietly redirect.
         const rows = await seedReadFn(injected.declaration, {
-          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees,
+          gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees, ...(lang === RUBRIC_LANG ? { source } : {}),
           onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
+          // REPORT-ONLY (hamr 2026-11-21): a check running past 5 minutes says so, in code's own words, once a minute; the map keeps each
+          // command's measured time for the next try of this draft ("usually about N min")
+          onTick: (/** @type {any} */ t) => onPhase('check-running', { call: label, ...t, text: checkRunningNote(t) }),
+          cmdTimes,
         });
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
+        // A STARTING CHECK THAT HIT THE LIMIT stops the draft at once (hamr 2026-11-21): the AI did not cause it and cannot fix it by revising,
+        // so no revise call is paid and no declaration is kept. The stop is the plain words (src/authorreadout.js `checkTimedOutText`); the red
+        // carries the real stop text and the limit that bound the check.
+        const timedOutRows = rows.filter((/** @type {any} */ r) => r?.verdict === 'instrument-stop' && r?.detail?.fault === STOP_FAULTS.TIMED_OUT);
+        if (timedOutRows.length > 0) {
+          const first = timedOutRows[0];
+          fatal = [{ code: 'check-timed-out', path: `closeDecl.stages.${String(first.stage)}`, detail: redactSecrets(String(first.detail?.stop ?? '')), limitMs: first.detail?.limitMs, ...(Array.isArray(first.detail?.survivors) ? { survivors: first.detail.survivors } : {}) }];
+          stop = 'check-timed-out';
+          iter.validation = { ok: false, reds: fatal.map(scrubRed), scoped: v.scoped };
+          onPhase('author-try-failed', {
+            call: label, i, of: revisionCap, declaration: ask.declaration,
+            reason: checkTimedOutText(Number(first.detail?.limitMs)),
+            stops: timedOutRows.map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? ''), ...(Array.isArray(r.detail?.survivors) ? { survivors: r.detail.survivors } : {}) })),
+          });
+          break;
+        }
         accepted = injected.declaration;
         acceptedTicketFilter = proposedFilter;
         acceptedSheet = sheetSuggested;
@@ -2994,6 +3019,8 @@ export async function authorClose({
             reason: stoppedNames.length
               ? `a check could not run at the starting point (${stoppedNames.join(', ')})`
               : 'no check was failing at the starting point, so none of them could tell a finished job from an unfinished one',
+            // the real stop text of each check that could not run (the reason above names them, it never said why)
+            stops: rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => ({ stage: String(r.stage), text: String(r.detail?.stop ?? (r.gapLines ?? [])[0] ?? ''), ...(Array.isArray(r.detail?.survivors) ? { survivors: r.detail.survivors } : {}) })),
           });
         }
       }

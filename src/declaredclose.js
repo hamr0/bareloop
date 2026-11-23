@@ -70,8 +70,9 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
 import { guardKeyOf } from './rubricstep.js';
+import { SOURCES, defaultsOf } from './sourcedefaults.js';
 import {
-  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
+  validateDeclaration, classGuards, genreOwnedEnvNames, failureLinesOf, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 import { stageGap } from './ralph.js';
@@ -100,7 +101,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'fenceKept', 'picks', 'list', 'genreEnv', 'source']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
 export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts', 'fence']);
@@ -342,6 +343,20 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     red('invalid-value', `${at}.genre`, `menu: ${DECLARED_GENRES.join('|')} — a close's genre follows its language (${genreForLang(closeDecl.lang)} for "${String(closeDecl.lang)}"), `
       + 'and a genre with no guard battery must refuse rather than author a close without the guards it cannot supply');
   }
+  // the ONE signed source of a rubric-road close (src/sourcedefaults.js): where its input comes from. Only the text close has one; absent = files
+  if (closeDecl.source !== undefined && !(SOURCES.includes(closeDecl.source) && closeDecl.lang === 'text')) red('invalid-value', `${at}.source`, `menu: ${SOURCES.join('|')}, on the text close only (a code close has no source)`);
+  // a shape part's `cite` is the source table's output written at signing (src/sourcedefaults.js): it must be the signed source's own, so the part and the source are one truth, checked, never two that can disagree
+  if (closeDecl.lang === 'text' && Array.isArray(closeDecl.stages)) {
+    const wantCite = defaultsOf(closeDecl.source).cite ?? null;
+    closeDecl.stages.forEach((/** @type {any} */ st, /** @type {number} */ i) => {
+      if (!isObj(st) || st.kind !== 'rubric-step' || !isObj(st.params) || !Array.isArray(st.params.parts)) return;
+      st.params.parts.forEach((/** @type {any} */ part, /** @type {number} */ j) => {
+        if (isObj(part) && part.class === 'shape' && (part.cite ?? null) !== wantCite) {
+          red('invalid-value', `${at}.stages[${i}].params.parts[${j}].cite`, wantCite === null ? 'a shape part of a close whose source has no cite carries none' : `a shape part of a "${closeDecl.source}" close carries cite "${wantCite}"`);
+        }
+      });
+    });
+  }
   const langOk = DECLARABLE_LANGUAGES.includes(closeDecl.lang);
   if (!langOk) {
     red('invalid-value', `${at}.lang`, `menu: ${DECLARABLE_LANGUAGES.join('|')} — the language selects the genre's guard `
@@ -423,6 +438,8 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     verdictType: picked,
     jobLines,
     inputLabels,
+    // the directories the engine makes in the run's tree (the SIGNED source's row): a repo's own listing never holds them
+    engineDirs: defaultsOf(closeDecl.source).engineDirs,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
@@ -538,14 +555,18 @@ function translate(r, redact) {
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
- *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null}} [opts]
+ *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null, lang?: string|null,
+ *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   cmdKeep?: Function, cmdSaved?: Map<string, any>, seedBase?: any}} [opts]
+ *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
+ *   `lang` = the close's language (`closeDecl.lang`): which failing-test lines a red count stage quotes (`failureLinesOf`)
  *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null,
+    onRubricEvidence = null, list = null, source = null, lang = null, onTick = null, tickAfterMs, tickEveryMs, cmdTimes, signal = null, cmdMemo, cmdKeep, cmdSaved, seedBase,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -579,6 +600,22 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // REPORT-ONLY seam: what a rubric-step stage's cited checks read (bareguard `full.evidence`); the runner records it, nothing here reads it
     onRubricEvidence,
     ...(Array.isArray(list) ? { list } : {}),
+    ...(source ? { source } : {}),
+    // what a RED count stage quotes of its command's own output (src/authoring.js `failureLinesOf`); it tells the worker, it decides nothing
+    ...(typeof lang === 'string' ? { failureLines: (/** @type {string} */ out) => failureLinesOf(lang, out) } : {}),
+    // REPORT-ONLY: the still-running note for a long check, and the map of each command's measured time (src/kinds.js)
+    ...(typeof onTick === 'function' ? { onTick } : {}),
+    ...(tickAfterMs !== undefined ? { tickAfterMs } : {}),
+    ...(tickEveryMs !== undefined ? { tickEveryMs } : {}),
+    ...(cmdTimes instanceof Map ? { cmdTimes } : {}),
+    ...(signal ? { signal } : {}),
+    // ONE close run is ONE check pass: every stage reading the same command shares its single run (src/kinds.js `runCmd`)
+    // (a caller whose passes are one unchanged tree - the run-start preflight loop - passes its own memo and owns its life)
+    cmdMemo: cmdMemo instanceof Map ? cmdMemo : new Map(),
+    // RESUME REUSE seams (src/kinds.js `runCmd`): keep each completed command's result; the start pass alone is handed saved ones
+    ...(typeof cmdKeep === 'function' ? { cmdKeep } : {}),
+    ...(cmdSaved instanceof Map ? { cmdSaved } : {}),
+    ...(seedBase && typeof seedBase.get === 'function' ? { seedBase } : {}),
     seedTrees,
   };
   try {

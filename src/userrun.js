@@ -39,12 +39,14 @@ import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
 import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
+import { rangeAtRunStart, recordRangeOnManifest, recordedRange, writeRangeDiffs } from './rangereview.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { freezeSheets, sheetReportLines, deliveredAmender } from './sheetrun.js';
 import { deliveredReporter } from './resultmd.js';
 import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
+import { sourceOf, defaultsOf } from './sourcedefaults.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
 import { makeSpine } from './spine.js';
 // PRD item 33/M2 — the source front door. `readSourceManifest` finds the
@@ -52,7 +54,7 @@ import { makeSpine } from './spine.js';
 // signed into the job spec — a job is a repeatable SHAPE, the source/
 // destination a per-run value, exactly like `bareloop run <bundle> --repo
 // <path>` varies the repo without touching the bundle's signature).
-import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, refreezeUrlInputs } from './source.js';
+import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -1336,6 +1338,29 @@ async function execute(ctx) {
           try { releaseRun({ home: cfgHome, runid: DOOR.includes('/') || DOOR.endsWith('.jsonl') ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR }); } catch (/** @type {any} */ e) { err(`WARNING: could not release this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}).`); }
         }
         out(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
+        // the review report staged under output/ at green lands at Destination NOW, after the re-run passed, and is committed on the work branch (nothing lands on a refusal or a pause)
+        // the spine as it stands now (the answer's own door-decision is on it), so this record's seq follows it
+        const nowRecords = parseSpineText(readFileSync(doorSpineFile, 'utf8')).records;
+        const doorEmit = makeSpine(doorSpineFile, { startSeq: nowRecords.at(-1)?.seq ?? 0 });
+        const staged = (doorEvents ?? []).findLast((e) => e?.type === 'report-staged' && typeof e.path === 'string') ?? null;
+        const landed = staged !== null && (doorEvents ?? []).some((e) => e?.type === 'destination-written' && e.staged === staged.path);
+        if (staged !== null && !landed) {
+          const man = (await readSourceManifest(into)); // parenthesised on purpose: tests/source.test.js pins the FIRST `const x = await readSourceManifest(into)` as the front door's read
+          if (man.stop === null && man.present && typeof man.manifest?.destination === 'string') {
+            const land = await landStagedReport({ tree: wd, destination: man.manifest.destination, staged: staged.path });
+            if (land.stop === null) {
+              doorEmit('destination-written', { path: land.file.path, declared: man.manifest.destination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
+              out(`\nDESTINATION  written in the repo - ${land.file.path} (${land.file.bytes}B, sha256 ${land.file.sha256.slice(0, 12)}...)`);
+              try {
+                const fin = commitWork(wd, `bareloop: ${spec.job} (run ${DOOR !== null && (DOOR.includes('/') || DOOR.endsWith('.jsonl')) ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR})`, { exclude: defaultsOf(sourceOf(spec.closeDecl)).commitExclude });
+                out(fin.committed ? `WORKTREE  report commit ${fin.sha} on the work branch` : 'WORKTREE  nothing left to commit');
+              } catch (/** @type {any} */ e) { err(`WORKTREE  the report commit failed (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the report is in the worktree at ${land.file.path}`); }
+            } else {
+              doorEmit('destination-refused', { code: land.code, detail: land.stop });
+              out(`\nDESTINATION  NOT written - ${land.code}: ${land.stop}`);
+            }
+          }
+        }
         out(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : ((ctx.registry ?? null) === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : (quarantinesCredit(spec.verdictType) ? 'nothing left to release — this row was already released by an earlier accept (a repeat answer records nothing new)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine'))}`);
         if (ans.note) out(`  note     ${ans.note}`);
       } else {
@@ -1647,6 +1672,15 @@ async function execute(ctx) {
         } else fresh = { ok: false, error: co.error };
       }
     }
+    // Part 2 (review by git range or branch): a `range:`/`branch:` token in a step line of the signed spec puts the worktree at the range's end (a review) or the branch's tip (a change job's work branch starts there), before the seed is read
+    if (fresh.ok && prIn === undefined) {
+      const read = await readSourceManifest(ctx.into);
+      const repoRoot = read.stop === null && read.present && typeof read.manifest?.repo === 'string' ? read.manifest.repo : null;
+      const rr = repoRoot === null ? null : await rangeAtRunStart({ spec, repo: repoRoot, worktree: wd });
+      if (rr !== null) {
+        if (rr.ok) { recordRangeOnManifest(ctx.into, rr); SEED = rr.sha; } else fresh = { ok: false, error: rr.error };
+      }
+    }
     if (!fresh.ok) {
       const words = /did not start|Nothing spent\.$/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
       err(`${SELECTOR}: ${fresh.error}`);
@@ -1730,6 +1764,19 @@ async function execute(ctx) {
     // audit already in the tree it resumes into is that SAME run's prior leg.
     const preFile = moveStaleGateAudit(wd, spineDir, runid);
     if (preFile) out(`gate audit — a stale file was already sitting in the patient tree (not this run's); moved aside to ${preFile}`);
+  }
+  // Part 2: a review's per-file diffs (`output/review-diff/`) are written by CODE after the cold reset (which cleans untracked files), before any token: a fresh run, a rerun and a resume all stand on the manifest's recorded ends
+  {
+    const rec = await recordedRange(into);
+    if (rec !== null) {
+      const wrote = await writeRangeDiffs({ repo: rec.repo, worktree: wd, a: rec.range.a, b: rec.range.b });
+      if (!wrote.ok) {
+        err(`${SELECTOR}: ${wrote.error}`);
+        if (!dead) settleRefused(wrote.error);
+        throw new ExitSignal(2);
+      }
+      out(`range review - ${wrote.files.length} changed file(s), one diff each in output/review-diff/`);
+    }
   }
 
   const approvals = [{ specHash, signer: ctx.bundle ? 'bundle' : (env.USER ?? 'human'), ts: new Date().toISOString() }];
@@ -2142,12 +2189,41 @@ async function execute(ctx) {
   /** @type {string | null} */
   let worktreeLine = null;
   const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  // the ONE delivery step has a row per source (src/sourcedefaults.js): a repo source writes ONLY its report at Destination INSIDE the worktree, before the final commit below, so the run's one commit carries it (and leaves the worker's scratch `output/` out).
+  // A refused delivery is reported beside the green it could not deliver and never changes `outcome`.
+  const delivery = defaultsOf(sourceOf(spec.closeDecl));
+  /** the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title @returns {number|null} */
+  const runNoOfThisRun = () => {
+    /** @type {number|null} */
+    let n = null;
+    for (const home of [deps.runlistHome, cfgHome]) { try { n = n ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    return n;
+  };
+  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && typeof wtManifest?.destination === 'string') {
+    // ONE RULE: bareloop never writes into the judged tree after the close. With a review door open the report is STAGED under output/ (inside the fence the close judged) and lands at Destination only at an honoured Accept (below); with no door there is no Accept to wait for, so it lands now, as before.
+    const staging = doorHere !== null;
+    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
+    if (co.stop === null) {
+      for (const f of co.files) {
+        if (staging) {
+          emit('report-staged', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtManifest.destination} when you Accept`);
+          continue;
+        }
+        emit('destination-written', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+        out(`\nDESTINATION  written in the repo - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...)`);
+      }
+    } else {
+      emit('destination-refused', { code: co.code, detail: co.stop });
+      out(`\nDESTINATION  NOT written - ${co.code}: ${co.stop}`);
+    }
+  }
   if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
     if (outcome === 'green' || outcome === 'already-green') {
       const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
       try {
         // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door
-        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
+        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`, { exclude: delivery.commitExclude });
         // an already-green COLD run never made a work branch (the close passed before any work): nothing to name
         const done = fin.committed ? `final commit ${fin.sha}` : (wb ? 'nothing left to commit' : 'nothing was changed (the close already passed)');
         const onBranch = wb?.branch ?? 'the work branch';
@@ -2320,10 +2396,7 @@ async function execute(ctx) {
       if (!rep.ok) out(`\nSHEET TOTALS  not added to the report - ${rep.error}`);
       else if (Object.keys(rep.byRel).length > 0) amend = deliveredAmender(rep.byRel);
     } catch (e) { out(`\nSHEET TOTALS  not added to the report - ${/** @type {Error} */ (e)?.message ?? String(e)}`); }
-    // the ONE markdown report's `run-N`: the panel's own number (`runNumbers`, the one owner) read from the run list this run's row was appended to at its start; a run list that cannot be read leaves the number off the title
-    /** @type {number|null} */
-    let runNo = null;
-    for (const home of [deps.runlistHome, cfgHome]) { try { runNo = runNo ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
+    const runNo = runNoOfThisRun();
     const co = await copyOut({ tree: wd, into, destination: frontDoor.destination, ...(amend ? { amend } : {}), report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo }) } });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its

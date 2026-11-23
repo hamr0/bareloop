@@ -44,7 +44,7 @@ const settled = (s) => ['prepared', 'refused', 'error', 'confirm', 'drafting'].i
 function fresh({ source, ...card }, calls, extra = {}) {
   return createSession({
     inputs: `repo: ${source}`,
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'absdest-job', jobText: 'g', capUsd: 2, ...card,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'absdest-job', jobText: 'g\n~ keep it small', capUsd: 2, ...card,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: home(), sessionsRoot: tmp('absdest-sess-'),
     generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },
@@ -149,7 +149,7 @@ test('the same single FILE with Rubric picked is NOT refused with the file messa
   const dir = tmp('nonrepo-file-rubric-'); const file = join(dir, 'digest.txt'); writeFileSync(file, 'one line of text\n');
   const calls = { n: 0 };
   const s = createSession({
-    inputs: `tracker: ${file}`, checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-file-job', jobText: 'List the lines', capUsd: 2, destination: tmp('nonrepo-out-'),
+    inputs: `tracker: ${file}`, checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-file-job', jobText: 'List the lines\n~ at least 3 lines', capUsd: 2, destination: tmp('nonrepo-out-'),
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: home(), sessionsRoot: tmp('absdest-sess-'),
     generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },

@@ -1,0 +1,75 @@
+{
+ "prompts": {
+  "agree-follower/resolved-spec.json": {
+   "plain": "d6a8060078a9cd488c9a058550aea6738400d4ba06e3d7fdef544c1efe5b4645",
+   "knobs": "a0b57edb9e39491eb9a2a1094c1d768b15472ed0674762d365330903d67cca6f"
+  },
+  "audit-checks-fixloop-mwg3pov1/resolved-spec.json": {
+   "plain": "5c385d0681a04e3b771df02d0aaf3b90859cc8b806ea3ea9f1fc14e152a3c099",
+   "knobs": "6cdd3c00c37f05cfca2bed1cfaa1090ce277ae379c9a966223954b5492ba01e5"
+  },
+  "audit-checks-mwenvde5/resolved-spec.json": {
+   "plain": "10a894d2c9269a54eb59dda101593c48fea24102862eedea92754b9633fd9296",
+   "knobs": "0014aa52faf535cf965f88f84b2b57eff775eb87e402cbdab61c1f72152dbcbc"
+  },
+  "audit-grid/mvtatlxw.resolved-spec.json": {
+   "plain": "b83929529c2c15c95d55de78accfc34f21e2990bc3851091778125b8d664bca0",
+   "knobs": "5da50bf2ce2ea63bd034d32dd0c1666ec61cc77daf7f9f9db2e58cd518d18e22"
+  },
+  "audit-lines-mwndngl5/resolved-spec.json": {
+   "plain": "f5bad65194af56be79f5f89cc22ca6926f87103ebe69aac8ce4304306ec8c044",
+   "knobs": "31e676f5ab575896e7fba7debad92d8a14822397cc32efb69d359ffd487f8bd8"
+  },
+  "check-list-live-mwc2u3yh/resolved-spec.json": {
+   "plain": "8699a4c5b7ec4405675b2c75f8f7438b769863ad05b87b0ab865920ef079c2fe",
+   "knobs": "a24c405ad4a890ade06ebec31eaa7e19ffee84ad687d51f40077ee04bf80cf18"
+  },
+  "idea-a/mvdg1xo3.resolved-spec.json": {
+   "plain": "495d3507b0a6ba100eec185fa79e6a0489a2cbf1097c3f14f2755ab6fd26097a",
+   "knobs": "b1330146e61e0dd25dfec35f1a81df0b3782a413b643c05d3f30eb073bc9029d"
+  },
+  "idea-a/smv73148pw343.resolved-spec.json": {
+   "plain": "8d969ede853ec04da0374b5092bc1969540499de384807f8c00696348b7003eb",
+   "knobs": "1d23e380360144bc488089d43ac9decee24de3c92edf167ab2f0f7ce24fe9ab4"
+  },
+  "mv5bk400-resolved-spec.json": {
+   "plain": "d57957197185a04ed125a10e2af9d7d7225dfd507c10c734c8cc029948d76857",
+   "knobs": "07510bda33592a71c565b229127737b2d57ef9ab77934eb3e89a722b09fd2f63"
+  },
+  "part5/mvdg1xo3.resolved-spec.json": {
+   "plain": "495d3507b0a6ba100eec185fa79e6a0489a2cbf1097c3f14f2755ab6fd26097a",
+   "knobs": "b1330146e61e0dd25dfec35f1a81df0b3782a413b643c05d3f30eb073bc9029d"
+  },
+  "part5/mve5y8fa.resolved-spec.json": {
+   "plain": "9a4b9370639d9bf7f64a9fbc897800c99d0efe6218d10cfb498be1c7342bc09d",
+   "knobs": "8a15bba4f8d2c9b96e6cf996ca9599021ffc80907450ba5d2d2fd164de198d33"
+  },
+  "result-a/mwqnkvx5.resolved-spec.json": {
+   "plain": "82796aab63ef40180841e1c7ba82399d6d33b7d823ca9543c8f5bcb99b536c53",
+   "knobs": "5e9d9fb56fe68a509267a17235e91c852d1bdbbb1075a47dbf1926fa816a8cf7"
+  },
+  "result-tab/mvkj03w7.resolved-spec.json": {
+   "plain": "4c23dcd4e88d8900d08851c788d33832f8425e01abe095cc20d4d1a9839950d0",
+   "knobs": "f66c02d11dc6df38527d400dfcf5d7afbe73706f0f99cb9cb4c20bea4a704553"
+  },
+  "result-tab/mvy0cx24.resolved-spec.json": {
+   "plain": "4c23dcd4e88d8900d08851c788d33832f8425e01abe095cc20d4d1a9839950d0",
+   "knobs": "f66c02d11dc6df38527d400dfcf5d7afbe73706f0f99cb9cb4c20bea4a704553"
+  },
+  "result-tab/mw1zse2m.resolved-spec.json": {
+   "plain": "d2d9588d27563ba38c73330fd622d77944d19b4ff2652a395131a11b0d8b9fca",
+   "knobs": "d450e90b187ee37a36c632baf4a1d482d7ac77355596394680def452954b610b"
+  },
+  "ticket-grid/mw3gso0m.resolved-spec.json": {
+   "plain": "5852d985293ca9b2a28cb5860f1dafb18e218cfcdf40de1874de05e4b73f6cf5",
+   "knobs": "7ec9b0e064029c969da7a7723af6b3ff687d02ab6ec33ac0e024e52858be0db3"
+  },
+  "ticket-grid/mw6lmvdg.resolved-spec.json": {
+   "plain": "4e22a3cbcd7df0b6030ed1d1be41d50abdd94c9629319e34074ce913b4bfbc8d",
+   "knobs": "6b8589009b4be098c4a948157e102649f809464ef534fee90c8091cd9c5740f7"
+  }
+ },
+ "reviewNoToken": {
+  "prompt": "DRAFT-PLAN\nYou are planning how to accomplish a goal in a repository, as an ordered list of bounded\nsteps (schema \"plan-v1\"). The plan is pure declarative JSON validated by a strict schema;\nANY unknown field, wrong enum value, or out-of-bounds number is rejected. Output ONLY the\nJSON object, no fences, no commentary.\n\nShape: { \"schema\": \"plan-v1\", \"steps\": [ ... 1..8 steps ... ] } — steps run\nstrictly in array order. Each step (no other fields exist):\n- \"id\": kebab-case slug, unique\n- \"action\": the step's task, precise enough for a worker that sees ONLY this step\n- \"tools\": non-empty unique subset of [\"read\",\"grep\",\"write\",\"edit\",\"recall\",\"get\",\"impact\",\"related\",\"recent\",\"compress\",\"peek\",\"stash\",\"remember\",\"forget\"] (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)\n- \"rounds\": integer 1..6 — the step's per-attempt tool-round bound\n- \"target\": the step's deliverable path (REQUIRED when tools include write/edit), inside [\"output/\"]\n- \"scope\" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.\n  A narrowed \"scope\" is the ONLY ground this step can write: its \"target\" must sit\n  inside it, and a \"tree-changed\" exit's scope must not be disjoint from it (one that\n  CONTAINS it is fine) — otherwise every write the step could make is denied, or the\n  exit can never pass, on every attempt.\n- \"exit\": REQUIRED on EVERY step — 1..2 form checks that ALL must pass (AND), each one of:\n    {\"type\":\"artifact-written\",\"path\":\"...\",\"pattern\":\"optional regex\"}\n    {\"type\":\"tree-changed\",\"scope\":\"<copy one value from the offered scopes below>\"}\n    {\"type\":\"json-valid\",\"path\":\"...\"}\n    {\"type\":\"check-passes\",\"name\":\"<copy one name from the check menu below>\"}\n  Check menu — a check-passes \"name\" is exactly one of [\"changed-from-seed\",\"line-1\"]; copy\n  it character for character. No other name exists, and you cannot add one.\n  A check-passes on a write-granted step MUST be paired with a tree-changed exit\n  (the repository starts green — a lone check would pass on the untouched tree).\n  Legal exit examples: a step that changes files and has no check uses [{\"type\":\"artifact-written\",\"path\":\"<its target>\"},{\"type\":\"tree-changed\",\"scope\":\"<an offered scope>\"}]; a step with a check uses [{\"type\":\"tree-changed\",\"scope\":\"<an offered scope>\"},{\"type\":\"check-passes\",\"name\":\"<a check name>\"}].\n  A check-passes may ONLY appear on a step whose tools include write or edit: a\n  failing check is reported back to THAT step's worker for another attempt, so\n  the step must be able to act on the report. Do not plan a separate read-only\n  \"verify\" step — attach the check to the step that does the fixing; the final\n  verification after your plan is not yours to author.\n  A check judges the WHOLE goal, never just this step's deliverable: its report\n  can name files beyond the step's target. A step carrying a check-passes exit\n  must therefore be free to edit every file the check can report on — never\n  write an action that forbids editing other in-scope files (e.g. \"do not\n  modify any file outside X\"): a step ordered to leave a file alone while its\n  exit reds on that file can never finish, on any attempt.\n  Reference checks by NAME only; you cannot author or modify one.\nYou are reviewing the code. Read what you need, then write your review to output/steps/1.json. That review file is the only file you write; every exit and every check goes on it.\nTHIS JOB'S OUTPUT IS ITS ANSWER FILES. The input is only READ, never written: no step may write or edit an input file, and no step's \"target\" or exit \"path\" may be one. The only file a step writes is the answer file\n(output/steps/1.json); give each write step that file as its \"target\", and put every exit (artifact-written, json-valid, tree-changed under output/) and every check-passes on that answer file. A step that only reads and greps the input first is fine.\n\nThe worker has NO SHELL. It cannot run a command, a compiler, a linter, or a test suite,\nand it cannot execute a script it writes: its only verbs are the tools you grant that step\nin \"tools\". The check named in a \"check-passes\" exit is the ONLY execution in this run —\nthe shell runs it after each attempt and hands the worker its raw output. So write every\n\"action\" for a worker that locates its work by READING and GREPPING files and by reading\nthe check output it is given. Never tell it to run, execute, re-run, or verify by running\nanything (an action that opens with \"Run `<command>`…\" costs the whole step: the worker\nhas no way to obey it and spends its rounds hunting by hand).\n\nOffered \"scope\" values for tree-changed — copy ONE of these exactly, character for\ncharacter. No other value is accepted, and patterns of your own (like \"src/*.js\")\nare not accepted:\n  \"output/**\"\n\nGoal:\ng\n\nRepository survey (from a read-only scout):\n{}\n\nYour previous plan was REJECTED with these reds (code:path):\n[]\nFix every red. Output ONLY the corrected JSON object."
+ }
+}

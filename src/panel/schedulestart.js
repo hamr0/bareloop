@@ -28,10 +28,12 @@ export const CHILD_GRACE_MS = 1500;
 
 /**
  * The Destination a fire's session is given: the one the schedule was signed with (a plain-files job's per-run folder, which the
- * spec does not hold), else the spec's own fence. @param {any} schedule @param {any} spec @param {string|undefined} fallback
+ * spec does not hold), else the ONE Destination record's value (`fallback`: the Reuse prefill reads it from source.json). @param {any} schedule @param {any} spec @param {string|undefined} fallback
  */
 function destinationOf(schedule, spec, fallback) {
   if (typeof schedule.destination === 'string' && schedule.destination !== '') return schedule.destination;
+  if (typeof fallback === 'string' && fallback !== '') return fallback;
+  // no record exists yet (a by-hand start of a job that never ran: its schedule was signed on the card): the signed fence is what the new run's record is CREATED from, never shown as Destination
   return Array.isArray(spec.writeScope) ? spec.writeScope.join(', ') : fallback;
 }
 
@@ -108,6 +110,12 @@ export function createStarter(deps) {
     } catch { return ''; }
   }
 
+  /** A by-hand start has no card of its own: its Destination is still the ONE record's value, read through the schedule's origin run ('' when that run is gone). @param {any} schedule @returns {string} */
+  function recordDestinationOf(schedule) {
+    const origin = deps.startFrom(schedule.originRunid);
+    return origin && origin.ok && typeof origin.card?.destination === 'string' ? origin.card.destination : '';
+  }
+
   /** @param {any} schedule @param {any} cause @returns {{ok: true, spec: any, hash: string}|{ok: false, why: string}} */
   function resolveFire(schedule, cause) {
     return perFireSpec(schedule, cause.kind === 'file' ? { kind: 'file', path: cause.path } : cause.kind === 'ticket' ? { kind: 'ticket' } : { kind: 'clock' });
@@ -143,7 +151,7 @@ export function createStarter(deps) {
       if (!fire.ok) return fire;
       // the origin run's saved job is still readable (the start reads it). A by-hand start (R7, am3) runs the signed schedule's own spec: there is no good run yet
       const byHand = cause.kind === 'ticket' && cause.byHand === true;
-      const pre = byHand ? { ok: true, card: { destination: '' } } : deps.startFrom(schedule.originRunid);
+      const pre = byHand ? { ok: true, card: { destination: recordDestinationOf(schedule) } } : deps.startFrom(schedule.originRunid);
       if (!pre || !pre.ok) return { ok: false, why: "The good run this schedule was made from is gone from the list, so its saved job cannot be read. Nothing started." };
       // THE session start's Destination check (authorsession.js), on the card the start would build: before any session exists
       const inputsText = cause.kind === 'file'
@@ -193,7 +201,7 @@ export function createStarter(deps) {
         if (!fire.ok) return { ok: false, why: fire.why, consumed };
         const byHand = cause.kind === 'ticket' && cause.byHand === true;
         // a by-hand start (R7, am3) has no good run to read the saved job from yet: the card is made from the signed spec itself
-        const pre = byHand ? { ok: true, card: { jobName: String(fire.spec.job), checkType: fire.spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic', thinking: fire.spec.thinking === true, jobText: '', destination: '' } } : deps.startFrom(schedule.originRunid);
+        const pre = byHand ? { ok: true, card: { jobName: String(fire.spec.job), checkType: fire.spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic', thinking: fire.spec.thinking === true, jobText: '', destination: recordDestinationOf(schedule) } } : deps.startFrom(schedule.originRunid);
         if (!pre || !pre.ok) return { ok: false, why: "The good run this schedule was made from is gone from the list, so its saved job cannot be read. Nothing started.", consumed };
         const spec = fire.spec;
         const rows = deps.rowsFor();

@@ -33,7 +33,7 @@ export const NAME_MAX_CHARS = Number(IS.nameMaxLength);
 export const NAME_FORBIDDEN = Object.freeze(IS.nameForbiddenChars.map(String));
 
 /**
- * Does the bareguard this package runs carry `itemShape`? Read from the vocabulary at call time (true from bareguard 0.37); the shape look and everything after it is OFF where it is false.
+ * Does the bareguard this package runs carry `itemShape`? Read from the vocabulary at call time (true from bareguard 0.37). Only tests call it today; no src file gates the shape look on it.
  * @returns {boolean}
  */
 export function shapeAvailable() {

@@ -19,6 +19,7 @@ import { SHAPE_HEAD, SHAPE_TRUTH_WORDS } from '../shaperows.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
+import { jobTypeLine } from '../sourcedefaults.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
@@ -26,7 +27,7 @@ import { checksOfClose, carriesOneList, FENCE_KEY, guardKeyOf, stageKeyOf, guard
 /** `fence` = a repo job's `~` rule the write fence keeps (its result is the gate's record of the run, like the fence row's) */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string, fence?: true, shape?: true, kind?: 'truth'|'shape'|'file'}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, restorable?: {key: string, line: number, text: string}[], ncRows?: NcRow[]}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, shapeHead?: string, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean, restorable?: {key: string, line: number, text: string}[], ncRows?: NcRow[], jobType?: string}} JobPlan */
 /** a Not checked row of the signed look (hamr 2026-11-19): `line` 0 = no one line owns it, `why` = the code-owned reason, drawn behind "why" */
 /** @typedef {{line: number, text: string, why?: string, by?: 'agent'|'you'|'default', addBack?: string}} NcRow */
 
@@ -67,6 +68,12 @@ function finishPlan(plan) {
     if (n) n.addBack = x.key;
   }
   return { ...plan, lines: plan.lines.map((l) => ({ ...l, checks: l.checks.map(withKind) })), loose: plan.loose.map(withKind), ncRows };
+}
+
+/** the Job type line of the draft card and the Job tab, from the ONE owner (src/sourcedefaults.js `jobTypeLine`); absent on a rubric job on files @param {any} spec @returns {{jobType?: string}} */
+function jobTypePart(spec) {
+  const line = jobTypeLine(spec);
+  return line === null ? {} : { jobType: line };
 }
 
 /** the one heading of a shape line's rows, code's words, only when some line has a shape row (hamr 2026-11-18) @param {PlanLine[]} lines @returns {{shapeHead?: string}} */
@@ -138,7 +145,7 @@ export function planFromSpec(spec, ledger = null) {
         n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '', rules: [],
         checks: stages.map((s) => ({ name: s.name, cls: s.cls })), refused: [],
       }],
-      loose: [], notChecked: notes, readNotes, alwaysOn: [], older: true, ...filterPart(spec?.ticketFilter),
+      loose: [], notChecked: notes, readNotes, alwaysOn: [], older: true, ...jobTypePart(spec), ...filterPart(spec?.ticketFilter),
     });
   }
   /** @type {PlanLine[]} */
@@ -193,14 +200,14 @@ export function planFromSpec(spec, ledger = null) {
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return finishPlan({ lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) });
+  return finishPlan({ lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...jobTypePart(spec), ...shapeHeadPart(lines), ...(Object.keys(notCheckedBy).length ? { notCheckedBy } : {}), ...(summary ? { goal: summary } : {}), ...(suggested.length ? { suggested } : {}), ...filterPart(spec?.ticketFilter) });
 }
 
 /**
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], restorable?: {key: string, line: number, text: string}[], editable?: boolean}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, key?: string}[], jobType?: string, checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[], notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], restorable?: {key: string, line: number, text: string}[], editable?: boolean}} plan
  * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
@@ -229,7 +236,7 @@ export function planFromConfirm(jobLines, plan) {
     if (line && typeof x.text === 'string') (line.picked ??= []).push(x.text);
   }
   return finishPlan({
-    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...shapeHeadPart(lines), ...filterPart(plan?.ticketFilter),
+    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...(typeof plan?.jobType === 'string' ? { jobType: plan.jobType } : {}), ...shapeHeadPart(lines), ...filterPart(plan?.ticketFilter),
     ...(plan?.notCheckedBy && typeof plan.notCheckedBy === 'object' && Object.keys(plan.notCheckedBy).length ? { notCheckedBy: plan.notCheckedBy } : {}),
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),

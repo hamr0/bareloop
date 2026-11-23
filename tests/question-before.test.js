@@ -28,7 +28,7 @@ async function destSession(t) {
   const inner = seams.authorFn;
   seams.authorFn = async (o) => { got.writeScope = o.writeScope; return inner(o); };
   const destFn = (o) => runDestPoint({ ...o, createLoop: loopOf([reply([point])]) });
-  const card = baseCard({ source: repo, jobName: 'qb-dest', jobText: 'Fix the bug in src/mod.js so the tests pass\ntsc clean', destination: 'docs/' });
+  const card = baseCard({ source: repo, jobName: 'qb-dest', jobText: 'Fix the bug in src/mod.js so the tests pass\ntsc clean\n~ keep it small', destination: 'docs/' });
   const s = createSession(card, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(path.join(w.base, 'keys')), sessionsRoot: path.join(w.base, 's'), ...seams, destFn });
   const log = () => readFileSync(path.join(w.base, 's', readdirSync(path.join(w.base, 's'))[0], DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   return { s, got, log };

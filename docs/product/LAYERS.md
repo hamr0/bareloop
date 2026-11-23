@@ -3,6 +3,7 @@
 > What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08. Updated 2026-10-24: cross-run learnings, the thinking rule,
 > rubric jobs on pages (page-word map, fit check, asks, Result tab), the launcher.
 > Updated 2026-11-15: the one check list (`~` you, `!` agent, `$` default) for rubric and repo jobs; the fit check and calibration are gone (see "One list, one flow").
+> Updated 2026-11-23: shape jobs, review-the-code jobs (by whole repo, git `range:` or `branch:`), the one Destination record, and how a repo's own checks are run (one 30-minute limit, once per pass, shared across signing, precheck and resume).
 > The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/wiki/FINDINGS.md`, not here.
 
 ---
@@ -26,13 +27,16 @@ JOB CARD: goal · source · destination · check type · $ cap · time cap · mo
   │  check type = Deterministic (a command decides; every repo job) / Rubric (a judge model
   │  reads, code decides; pages, sheets, docs, and Tickets). Reuse workflow is a button on
   │  every run, not a check type.
+  │  a repo job has a Job type: Change code (edits, the branch has the work) or Review code
+  │  (writes one .md report, no code edits); see "Review jobs and repo checks" below
   │  a web page can be an input: it is fetched at drafting and again at run start
   │  every job builds ONE check list (~ you, ! agent, $ default); the AI only points, code
   │  proves it against your own words; what code cannot prove is Not checked, with a reason
   │  a question is buttons only (Agree / Drop it); see "One list, one flow" below
   ▼
 bareloop checks everything at $0, before any token:
-  source and destination are real · the check runs · secrets refused or masked · the
+  source and destination are real · after the scout, code checks the Destination (point and
+  fence) · the check runs · secrets refused or masked · the
   monthly $ limit has room · a run needs at least one check
   anything code cannot prove shows as "Not checked", never silently
   │
@@ -52,6 +56,7 @@ THE RUN, on a copy: a worktree in your repo, or a hidden-git copy of a plain fol
 ENDED:  passed · failed · capped · stopped · died
   every run, at $0 and with no model: its lessons go into the ledger (see Learnings)
   passed           → your branch has the work (you merge, always) · Reuse workflow
+                     (a review's report waits under output/ until you Accept, then lands at Destination)
                      (a plain folder gets a dated file in its destination instead)
   not passed       → Reuse workflow (change the job or not, sign again)
   capped / stopped → Resume (only the $ and time caps can change)
@@ -192,6 +197,7 @@ The plan card, the Job tab, the Audit, the Result tab, the CLI print and the clo
 
 - rubric: facts, phrases and counts, each quoted from the saved page.
 - repo: catalogue commands (the test suite, typecheck), plus the write fence.
+- shape: when a `~` rule is left Not checked, the AI may propose a field for it; code checks only the SHAPE of each item (text, number, one-of, money, date, time, url, list, boolean), never its truth. A field covers a rule only with a real bound from the rule's own words ("has a title" = at least one character); a negating rule never takes one. Shape lines show on the Result tab as one row per item that opens to its fields. Truth checks come first; a shape check never replaces one that builds.
 
 Repo jobs had a side path first. It was removed because it broke on real drafts: a rule shown kept AND Not checked, reasons swapped between rules, and a false "fence keeps it" on a leftover copy of a file. The fit check, the calibration test and PASS/FAIL examples are gone for the same reason (one place for all checks).
 
@@ -215,6 +221,24 @@ Repo jobs had a side path first. It was removed because it broke on real drafts:
 - Seen live on 2026-11-15, repo job: "don't edit test/" kept by the fence in 3 of 3 drafts and again after Revise; "package.json" kept after Revise; run walk-sum3 went green. Rubric job: "be friendly please" came out Not checked; run walk-flight1-2.
 - Test-proven only, not seen live: the CLI readout, the reading-question correction box, a rule dropped to Not checked without a question (option A), and phone width of the new cards.
 
+
+---
+
+## Review jobs and repo checks (2026-11-23)
+
+**Job type.** A repo job is *Change code* or *Review code*, one code-owned line read by the card, the readout, the Job tab, the Result tab and the Audit (absent on a rubric job on files). A review uses the rubric road's rules and writes ONE `.md` report; it never edits code. The report is staged under `output/` when the run goes green and lands at Destination only at an honoured Accept. A passed review line records its findings for the Result tab.
+
+**Only part of the repo.** One line in the job can name `range: a..b` (ends may be commits) or `branch: name` (diffed against main). `range:` is review-only. A Change job's `branch:` starts the work branch from that branch's tip. Code writes one diff file per changed file under `output/review-diff/` (never committed); the worker cannot write there, so a diff cannot be faked, and the planner is told what the review covers. More than one token, or an end that is not there, is refused in plain words at the start, before any spend, by both doors.
+
+**One Destination.** Its one home is the `destination` in `source.json`; the card, Job tab, Reuse prefill, schedule words and the signed fence all read it. After the scout, code checks the Destination point and fence; the AI's "inside yes/no" guess is gone.
+
+**A repo's own checks (tests, typecheck).** One 30-minute limit covers an AI-drafted check at every stage: drafting read, signing gates, run-start precheck, final close. Past 5 minutes the panel says once a minute "Tests are still running (N min so far)". The command runs in its own process group and the whole group is killed at the limit, on Abandon, on Stop, and when its owner dies. A timeout is told in plain words from code; a starting check that timed out stops the draft at once.
+
+Each command runs **once per check pass**, however many stages read it:
+- signing tries and drafting reads share one result while the seed is unchanged (a stopped run is never shared);
+- the run-start precheck and the preflight share one pass;
+- a resumed leg takes the last finished result when the files' fingerprint is unchanged. A saved result is only a reading of the files; it never means "already done";
+- the original code's baseline for a count stage is measured once per run, across legs.
 
 ---
 
@@ -252,6 +276,7 @@ Evidence: F337 and a $0.60 POC (3 rounds). Worker-side rounds 1 and 2 failed. Pl
 | you pressed Stop | stops at the next round boundary; nothing discarded | stopped | you: Resume |
 | provider failure, or the model stalls | retries once; a stall outside a step stops | failed | you: retry or Resume |
 | the worker crashes | before any write: stops. After writes: counts as a try, the loop goes on | running, or failed | the shell |
+| a check runs past 30 minutes | the command's whole process group is killed; a timeout in plain words | failed (a starting check: the draft stops) | you: fix the check, or Reuse |
 | the process is gone | nothing to do | died | you: Resume if offered |
 
 When money and time both run out, the money cap wins. A resume appends to the same run; the
@@ -332,5 +357,6 @@ The one place implementation names appear:
 | the page-word map | `src/pagemap.js`, `src/pagerules.js` |
 | the one check list (rows, questions) | `src/checkblock.js`, `src/stagewords.js`, `src/questionbox.js` |
 | web-page inputs | `src/pagefetch.js` |
+| review by range or branch | `src/rangereview.js` |
 | the worker loop, the gate (fence, budget) | `bare-agent`, `bareguard` |
 | `recall` / `get` | `litectx` |

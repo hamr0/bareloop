@@ -11,6 +11,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SMOKE_STORE } from './kinds.js';
 import { redactSecrets } from './validate.js';
 import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
+import { DIFF_DIR } from './rangereview.js';
 
 const exec = promisify(execFile);
 export const CARRY_DIR = 'carry';
@@ -19,6 +20,9 @@ export const RED_MARKER = /Previous attempt failed (this step's checks|the verif
 
 const lineCount = (/** @type {string} */ s) => (s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0));
 const clip = (/** @type {unknown} */ s, n = 200) => redactSecrets(String(s ?? '')).slice(0, n);
+
+/** a file CODE wrote into the run's tree before any token (a range review's per-file diffs under `output/review-diff/`): an input, never a worker edit. The memo's EDITS owner (`workingEdits`) leaves it out; reads of it are still listed. @param {string} p */
+const isCodeWrittenInput = (p) => p === DIFF_DIR || p.startsWith(`${DIFF_DIR}/`);
 
 /**
  * The run's edits from the working tree against the start commit: tracked (git diff) plus untracked (no diff exists).
@@ -33,7 +37,7 @@ export async function workingEdits(workdir, base) {
   try {
     const { stdout: names } = await g(['diff', '--name-only', '-z', base]);
     for (const p of names.split('\0').filter(Boolean)) {
-      if (isCarryExcluded(p)) continue;
+      if (isCarryExcluded(p) || isCodeWrittenInput(p)) continue;
       const { stdout } = await g(['diff', '-U1', '--no-color', '--no-ext-diff', base, '--', `:(literal)${p}`]);
       if (/^(Binary files .* differ|GIT binary patch)$/m.test(stdout)) { out.push({ path: p, lines: 0, hunks: ['(binary file changed)'] }); continue; }
       const body = stdout.split('\n').filter((l) => !/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(l));
@@ -41,7 +45,7 @@ export async function workingEdits(workdir, base) {
     }
     const { stdout: un } = await g(['ls-files', '--others', '--exclude-standard', '-z']);
     for (const p of un.split('\0').filter(Boolean)) {
-      if (isCarryExcluded(p)) continue;
+      if (isCarryExcluded(p) || isCodeWrittenInput(p)) continue;
       try {
         const abs = resolve(workdir, p);
         if (!statSync(abs).isFile() || statSync(abs).size > 262144) continue;
@@ -82,11 +86,13 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   let loaded = false;
   /** @type {string|null} the job's own count-check text at start (the seed note's body), the oldest entry of the memo's earlier failures */
   let startFailure = null;
+  /** @type {Map<string, {key: string, treeId: string, code: number, out: string, ms: number, at: string, seed?: boolean}>} the latest COMPLETED check-command result per command key (resume reuse); an old state file has none */
+  const checks = new Map();
   if (resume && existsSync(stateFile)) {
-    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; loaded = true; } catch { /* a bad file starts empty */ }
+    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; for (const c of Array.isArray(s.checks) ? s.checks : []) if (c && typeof c.key === 'string' && typeof c.treeId === 'string' && typeof c.out === 'string') checks.set(c.key, c); loaded = true; } catch { /* a bad file starts empty */ }
   }
   const save = () => {
-    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
+    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure, checks: [...checks.values()] })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
   };
   const rel = (/** @type {string} */ p) => (isAbsolute(p) ? relative(workdir, p) : p).split('\\').join('/') || '.';
   const diskLines = (/** @type {string} */ r, /** @type {string|undefined} */ fallback) => { try { return lineCount(readFileSync(resolve(workdir, r), 'utf8')); } catch { return fallback === undefined ? null : lineCount(fallback); } };
@@ -265,5 +271,7 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /** The seed note's body (already secret-masked), set once per run; a resume keeps the one it persisted. @param {string} text */
   const setStartFailure = (text) => { if (!startFailure && text) { startFailure = text; save(); } };
 
-  return { wrapTools, beginAsk, setStartFailure, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /** keep a COMPLETED check command's result (latest per key); the caller already scrubbed `out` @param {{key: string, treeId: string, code: number, out: string, ms: number, at: string, seed?: boolean}} rec */
+  const keepCheck = (rec) => { checks.set(rec.key, rec); save(); };
+  return { wrapTools, beginAsk, setStartFailure, keepCheck, savedChecks: () => [...checks.values()], endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }

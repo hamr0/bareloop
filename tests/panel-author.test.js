@@ -114,7 +114,7 @@ const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...over
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  jobText: 'fix things\ntsc clean',
+  jobText: 'fix things\ntsc clean\n~ keep it small',
   inputs: `repo: ${source}`,
   destination: 'src/',
   capUsd: 2,
@@ -574,7 +574,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.equal(shown.text, PLAN_FOOTER);
   // a repo job's confirm turn plans the goal only (Addendum 2026-11-15 (d)): no AI check is drafted onto a line; the card is the job's rows, the `$ [default]` guards and the fence
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
-    [[1, 'fix things', '', []], [2, 'tsc clean', '', []]]);
+    [[1, 'fix things', '', []], [2, 'tsc clean', 'keep it small', []]]);
   assert.ok(shown.plan.loose.length > 0 && shown.plan.loose.every((c) => c.by === 'default'), 'the real protections are `$ [default]` rows');
   assert.deepEqual(shown.plan.alwaysOn, []);
 
@@ -1491,7 +1491,7 @@ test('Part 1a: POST /api/author/start accepts a rubric card whose Inputs are TWO
   const home = keysHomeWith('ANTHROPIC_API_KEY=fake-not-a-real-key\n', ANTH_WITH_URL);
   const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home });
   const post = async (card) => fetch(`${base}/api/author/start`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(card) });
-  const rubric = baseCard({ checkType: 'rubric', jobName: 'panel-author-rubric-files', jobText: '1. Summarize', destination: join(tmp('panel-author-out-'), 'out'), inputs: `Changelog: ${a}\nNotes: ${b}` });
+  const rubric = baseCard({ checkType: 'rubric', jobName: 'panel-author-rubric-files', jobText: '1. Summarize\n~ under 120 words', destination: join(tmp('panel-author-out-'), 'out'), inputs: `Changelog: ${a}\nNotes: ${b}` });
   const ok = await post(rubric);
   assert.equal(ok.status, 200, JSON.stringify(await ok.clone().json()));
   const started = await ok.json();
