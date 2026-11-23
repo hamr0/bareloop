@@ -5690,6 +5690,7 @@
     var pollTimer = null;
     var lastPhase = null;
     var signClickedOnce = false;
+    var signBusy = false; // click 1 is on its way: the button is dead until the server answers, so a second click can never reach a plan that is no longer waiting
     // build item 4 — Start disables the moment it's clicked and stays
     // disabled for the whole life of a non-terminal session (the server's
     // own one-at-a-time rule, `TERMINAL_PHASES` in
@@ -5947,7 +5948,7 @@
       actionErrEl.textContent = "";
       sessionId = null;
       sessionLive = false;
-      signClickedOnce = false;
+      signClickedOnce = false; signBusy = false;
       reuseSession = false;
       autoSigned = false;
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
@@ -6349,6 +6350,9 @@
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
+      if(st.signBusy && (atMenu || st.phase === "prepared")){
+        return {text: atMenu ? "Draft the plan" : "Sign & run", action: "none", disabled: true, hint: ""};
+      }
       if(ask && ask.kind === "install-needed"){
         return {text: "Check again", action: "check-deps", disabled: false, hint: ""};
       }
@@ -6382,7 +6386,7 @@
       return {text: "Revise", kind: "revise", left: n + (n === 1 ? " revise left" : " revises left")};
     }
     function renderMain(){
-      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
+      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked, signBusy: signBusy};
       if(sched){ st.when = {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
@@ -6927,12 +6931,14 @@
       if(!sessionId) return;
       if(!signClickedOnce){
         // click 1 — the confirm turn's own "confirm" pick. Never signs.
+        if(signBusy) return;
+        signBusy = true; renderMain();
         authorPost("/api/author/" + sessionId + "/sign-prepare", {}).then(function(r){
           var o = chatPostOutcome(r);
-          if(o.ok) chatActionOk(); else chatActionFailed(o.error);
-          signClickedOnce = true;
+          signBusy = false;
+          if(o.ok){ chatActionOk(); signClickedOnce = true; } else chatActionFailed(o.error);
           poll();
-        }).catch(function(){ chatActionFailed("network error — could not reach the panel server"); });
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server"); signBusy = false; renderMain(); });
         return;
       }
       // click 2 — the ONLY route that signs. Carries the hash shown on the

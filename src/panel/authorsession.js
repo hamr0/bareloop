@@ -1732,7 +1732,9 @@ export function createSession(card, deps = {}) {
       : sheetFinalEdit(op, key)),
     /** click 1 — the confirm pick. Never signs on its own. */
     signPrepare: () => {
-      if (!state.pendingAsk || state.pendingAsk.kind !== 'menu') return { ok: false, error: 'no plan is waiting for a decision right now' };
+      // the final card (prepared) has no menu left: the plan is already confirmed, so this click has nothing to confirm and the page moves on to the signing click (it never signs here)
+      if (state.phase === 'prepared' && !state.pendingAsk) return { ok: true };
+      if (!state.pendingAsk || state.pendingAsk.kind !== 'menu') return { ok: false, error: 'The plan is almost ready — wait a moment, then press Sign & run again.' };
       answer('confirm');
       return { ok: true };
     },

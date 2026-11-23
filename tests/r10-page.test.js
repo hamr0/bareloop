@@ -38,7 +38,7 @@ function menuRender(left) {
   const reopenBtn = { hidden: true, textContent: 'Revise' };
   const revisesLeftEl = { hidden: true, textContent: '' };
   const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('reviseButtonFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
-    + 'var sched = null; var whenLocked = false; var mainAction = "none"; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();';
+    + 'var signBusy = false; var sched = null; var whenLocked = false; var mainAction = "none"; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; }; var reusePathNow = function(){ return false; };\nrenderMain();';
   new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', 'reopenBtn', 'revisesLeftEl', 'chatRowEl', src)(
     { value: '', disabled: false, style: {}, scrollHeight: 10, offsetHeight: 0, clientHeight: 0 }, { textContent: '', disabled: false }, { textContent: '' }, true,
     { phase: 'confirming', pendingAsk: { kind: 'menu' }, specHash: 'h', revisesLeft: left }, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) }, reopenBtn, revisesLeftEl, { hidden: true });
