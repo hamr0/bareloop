@@ -3836,6 +3836,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       /** @type {any} */
       let evaled;
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
+      // THE PERSON'S STOP landed inside this step's check (the poll killed it): not a verdict and not an instrument fault. ralph files it as the
+      // same `stopped` escalation a round-boundary stop gets, so the step loop ends the leg `stopped` and a resume re-enters this step.
+      if (stoppedInClose) return { verdict: 'stopped' };
       const { pass, results: raw } = evaled;
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
