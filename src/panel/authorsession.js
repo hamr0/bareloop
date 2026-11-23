@@ -71,6 +71,7 @@ import { runDestPoint, destQuestionText, yesNoOf, scoutCodePaths, destinationHol
 import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
 import { jobTypeLineOf, JOB_TYPE_LABEL, CHANGE_JOB_TYPE } from '../sourcedefaults.js';
 import { draftRefusal } from '../rangereview.js';
+import { refGuess, refGuessQuestion, refGuessToken } from '../refguess.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
@@ -707,7 +708,7 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && (step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
+    } else if (step.kind === 'answer' && (step.source === 'dest-point' || step.source === 'ref-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
     else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}${answerEffectWords(/** @type {any} */ (step)) === null ? '' : ` ${answerEffectWords(/** @type {any} */ (step))}`}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
@@ -1184,6 +1185,26 @@ export function createSession(card, deps = {}) {
     if (road.answer !== null) appendDraftLog(outDir, { kind: REVIEW_CALL_LABEL, no: Math.max(0, state.steps.length - 1), answer: road.answer, ...(road.reason ? { reason: redactSecrets(road.reason) } : {}), at: new Date().toISOString() });
     if (road.review) { verdictType = road.verdictType; LANG = road.lang; RUBRIC_FILES = road.rubricFiles; }
     jobTypeNow = jobTypeLineOf(verdictType, road.review ? 'repo' : null);
+
+    // "Did you mean branch: X?" (src/refguess.js, hamr 2026-11-23): code compares the job's words with the repo's real branches (and, on a review, `A..B` words whose ends resolve) and asks ONE yes/no question; Yes writes the typed
+    // token onto that job line, which the one token reader then reads like a typed one. $0, no model. Asked once per draft, after the road is known (a change job's `range:` is refused, so it gets no range question).
+    if (rangeRepo !== null) {
+      const guess = await refGuess({ repo: rangeRepo, jobLines, review: road.review });
+      if (guess !== null) {
+        const a = await ask({ kind: 'answer', source: 'ref-point', index: 1, total: 1, question: refGuessQuestion(guess), line: guess.line });
+        if (a === null) return;
+        const said = yesNoOf(a);
+        appendDraftLog(outDir, { kind: 'ref-point', no: Math.max(0, state.steps.length - 1), guess: redactSecrets(refGuessToken(guess)), answer: said, at: new Date().toISOString() });
+        if (said === 'yes') {
+          const line = jobLines.find((l) => l.n === guess.line);
+          if (line) line.text = `${line.text} ${refGuessToken(guess)}`;
+          if (road.review) {
+            const late = await draftRefusal({ repo: rangeRepo, jobLines, review: true });
+            if (late !== null) { refuse(late); return; }
+          }
+        }
+      }
+    }
 
     // a rubric job writes only inside the tree's own `output/` (a review's report is written by code); its Destination is a drop-off folder
     // (proven above, per run), never a fence
