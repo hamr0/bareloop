@@ -86,11 +86,13 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   let loaded = false;
   /** @type {string|null} the job's own count-check text at start (the seed note's body), the oldest entry of the memo's earlier failures */
   let startFailure = null;
+  /** @type {Map<string, {key: string, treeId: string, code: number, out: string, ms: number, at: string}>} the latest COMPLETED check-command result per command key (resume reuse); an old state file has none */
+  const checks = new Map();
   if (resume && existsSync(stateFile)) {
-    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; loaded = true; } catch { /* a bad file starts empty */ }
+    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; for (const c of Array.isArray(s.checks) ? s.checks : []) if (c && typeof c.key === 'string' && typeof c.treeId === 'string' && typeof c.out === 'string') checks.set(c.key, c); loaded = true; } catch { /* a bad file starts empty */ }
   }
   const save = () => {
-    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
+    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure, checks: [...checks.values()] })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
   };
   const rel = (/** @type {string} */ p) => (isAbsolute(p) ? relative(workdir, p) : p).split('\\').join('/') || '.';
   const diskLines = (/** @type {string} */ r, /** @type {string|undefined} */ fallback) => { try { return lineCount(readFileSync(resolve(workdir, r), 'utf8')); } catch { return fallback === undefined ? null : lineCount(fallback); } };
@@ -269,5 +271,7 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /** The seed note's body (already secret-masked), set once per run; a resume keeps the one it persisted. @param {string} text */
   const setStartFailure = (text) => { if (!startFailure && text) { startFailure = text; save(); } };
 
-  return { wrapTools, beginAsk, setStartFailure, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /** keep a COMPLETED check command's result (latest per key); the caller already scrubbed `out` @param {{key: string, treeId: string, code: number, out: string, ms: number, at: string}} rec */
+  const keepCheck = (rec) => { checks.set(rec.key, rec); save(); };
+  return { wrapTools, beginAsk, setStartFailure, keepCheck, savedChecks: () => [...checks.values()], endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }

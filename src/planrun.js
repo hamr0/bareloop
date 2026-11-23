@@ -54,7 +54,7 @@ import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
-  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote,
+  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote, treeIdentity,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
@@ -1805,6 +1805,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   /** @type {Map<string, number>} */
   const cmdTimes = new Map();
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
+  /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
+  const cmdKeep = (rec) => { try { carry.keepCheck({ ...rec, out: scrub(rec.out), at: new Date().toISOString() }); } catch { /* never breaks a run */ } };
   /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
   const stopChecks = new AbortController();
   /** the Stop landed inside a close (the callers that can end `stopped` read it) */
@@ -1825,8 +1827,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo] a caller-owned check pass (the preflight loop); absent = a fresh pass
+   * @param {Map<string, any>} [cmdSaved] RESUME REUSE: saved results for this very tree, handed to the start pass ONLY
    */
-  const runCloseStagesInner = async (stages, cmdMemo) => {
+  const runCloseStagesInner = async (stages, cmdMemo, cmdSaved) => {
     if (!declared) return runStages(stages, scrub, closeOpts);
     // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
     // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
@@ -1838,6 +1841,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...closeOpts,
       signal: stopChecks.signal,
       ...(cmdMemo ? { cmdMemo } : {}),
+      ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
+      cmdKeep,
       onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
       cmdTimes,
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
@@ -1893,15 +1898,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * never retried, never fed back as a gap.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo]
+   * @param {Map<string, any>} [cmdSaved]
    */
-  const runCloseStages = async (stages, cmdMemo) => {
+  const runCloseStages = async (stages, cmdMemo, cmdSaved) => {
     const sig = checkStageByteSignature(stages, workdir);
     if (!sig.ok) {
       const r = sig.reds[0];
       const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
       return { verdict: 'close-tampered', stage: r?.stage, detail };
     }
-    return runCloseStagesInner(stages, cmdMemo);
+    return runCloseStagesInner(stages, cmdMemo, cmdSaved);
   };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -2068,9 +2074,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
 
   /** the close, as ONE verdict: every stage in order, first red wins */
-  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) */
-  const judgeClose = async (cmdMemo) => {
-    const v = await runCloseStages(stagedClose, cmdMemo);
+  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {Map<string, any>} [cmdSaved] the start pass's saved results (resume) */
+  const judgeClose = async (cmdMemo, cmdSaved) => {
+    const v = await runCloseStages(stagedClose, cmdMemo, cmdSaved);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
@@ -2242,8 +2248,37 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ONE start pass (hamr 2026-11-23, run mwsfq0pi): the precheck and the preflight loop below read the same unchanged tree back to back in this
   // process, so they share ONE memo and a command the precheck ran is not run again. The precheck is the memo's first user, so it is itself fresh.
   const startMemo = new Map();
-  const pre = await judgeClose(startMemo);
+  // RESUME REUSE (hamr 2026-11-23): on a resumed leg, a check result saved by an earlier leg for EXACTLY these files stands in for a run of the same command
+  // in this start pass (precheck + preflight). The tree identity is read once here; no match = the command runs fresh. Nothing else ever takes a saved result.
+  /** @type {Map<string, any>} */
+  const startSaved = new Map();
+  if (resuming && declared) {
+    const saved = carry.savedChecks();
+    const here = saved.length ? await treeIdentity(workdir) : null;
+    if (here) for (const c of saved) if (c.treeId === here) startSaved.set(c.key, { ...c });
+  }
+  const startEntries = [...startSaved.values()];
+  let pre = await judgeClose(startMemo, startSaved);
+  // THE ONE SAFETY RULE: a pass never comes from a saved result. A satisfied precheck that leaned on one drops those entries and is judged again fresh.
+  if (pre.verdict === 'satisfied' && startEntries.some((e) => e.used)) {
+    for (const e of startEntries) if (e.used) { startMemo.delete(e.memoKey); e.used = false; }
+    startSaved.clear();
+    pre = await judgeClose(startMemo);
+  }
+  let reuseTold = false;
+  /** ONE plain line, code-written, when a saved result was used (a spine record: the Audit and the run's records show it) */
+  const tellReuse = () => {
+    if (reuseTold) return;
+    const used = startEntries.filter((e) => e.used);
+    if (!used.length) return;
+    reuseTold = true;
+    const at = used.map((e) => e.at).sort().at(-1);
+    const d = new Date(at);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    emit('check-reused', { commands: used.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
+  };
   emit('close-precheck', { ...pre });
+  tellReuse();
   // …and if a signer's `accept` is what greened the human stage, it is PAID FOR:
   // the answer was applied to the tree they were shown, and no later leg may hold
   // it over a tree they have not seen (F102's persistence must never become a
@@ -2304,7 +2339,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // 2026-11-22 run mwsblixt; 2026-11-23 run mwsfq0pi). The memo lives only for the start; step exits, the fix-loop judge and the final close take fresh passes.
   const preflightMemo = startMemo;
   for (const m of menu) {
-    const v = await runCloseStages(m.run, preflightMemo);
+    const v = await runCloseStages(m.run, preflightMemo, startSaved);
+    tellReuse();
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
       if (seedNoteOn) seedReds.push({ stage: v.stage, kind: stagedClose.find((/** @type {any} */ s2) => s2?.name === v.stage)?.kind, gap: v.gap });

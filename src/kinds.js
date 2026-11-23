@@ -62,6 +62,7 @@
 import { REPO_LABEL } from './sourcedefaults.js';
 import { namedFilesText } from './repocite.js';
 import { spawn, execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -264,7 +265,8 @@ export function mechanicalStages(stages) {
  *   list?: any[]|null, source?: string,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>, seedShare?: Map<string, any>,
+ *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>, seedShare?: Map<string, any>,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -279,6 +281,8 @@ export function mechanicalStages(stages) {
  *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
  *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
+ *   `cmdKeep` is told of each COMPLETED command run (resume reuse: the caller saves it with the tree identity taken before it ran); `cmdSaved` is the start pass's
+ *   saved results whose tree identity equals the current one, by `checkKey`; a hit stands in for a run in `cmdMemo` and marks itself `used` (see `runCmd`).
  *   `seedShare` is a draft session's own map of COMPLETED seed-read command results (the signing gates' tries), keyed by command + seed tree (`sharedRun`).
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
@@ -693,6 +697,41 @@ export async function changedSet(workdir, seedRef) {
   const untracked = keep(split(u.out));
   return { stop: null, tracked, untracked, excluded, paths: [...new Set([...tracked, ...untracked])].sort() };
 }
+
+/**
+ * ONE identity of a work tree's content (resume reuse, hamr 2026-11-23): HEAD's tree + the tracked diff against HEAD (binary-safe) + every untracked
+ * non-ignored file's content, arbiter books left out exactly as `changedSet` leaves them. Equal identity = the same files; mtimes and gitignored paths
+ * do not enter. Never throws: null when git cannot answer (then nothing is saved or reused).
+ * @param {string} workdir @returns {Promise<string|null>}
+ */
+export async function treeIdentity(workdir) {
+  /** @param {string[]} a @returns {Promise<Buffer>} */
+  const g = (a) => new Promise((resolve, reject) => {
+    execFile('git', ['-c', 'core.quotepath=false', ...a], { cwd: workdir, maxBuffer: 1 << 28, encoding: 'buffer', timeout: 120_000 }, (e, out) => (e ? reject(e) : resolve(out)));
+  });
+  const names = async (/** @type {string[]} */ a) => (await g(a)).toString('utf8').split('\0').filter((p) => p !== '' && !isArbiterBook(p)).sort();
+  try {
+    const h = createHash('sha256');
+    h.update(await g(['rev-parse', 'HEAD^{tree}']));
+    for (const p of await names(['diff', '--name-only', '-z', 'HEAD'])) {
+      h.update(`T\0${p}\0`);
+      h.update(await g(['diff', '--binary', '--no-ext-diff', 'HEAD', '--', `:(literal)${p}`]));
+    }
+    for (const p of await names(['ls-files', '--others', '--exclude-standard', '-z'])) {
+      h.update(`U\0${p}\0`);
+      try { h.update(await g(['hash-object', '--', p])); } catch { h.update('unreadable'); }
+    }
+    return h.digest('hex');
+  } catch { return null; }
+}
+
+/** the key a saved check result is found by: the command, its args, env and effective limit - never the directory (a hash, so a declared env value never rests in a file) @param {any} p @param {number} timeoutMs */
+export function checkKey(p, timeoutMs) {
+  return createHash('sha256').update(JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, timeoutMs])).digest('hex');
+}
+
+/** a saved result larger than this is not kept */
+const MAX_SAVED_OUT = 8 * 1024 * 1024;
 
 /**
  * The lines this run ADDED to one file. A tracked file's additions come from
@@ -1330,6 +1369,8 @@ async function runCmd(p, cwd, ctx) {
   const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
   const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
   const run = async () => {
+    // resume reuse: ONE tree identity taken BEFORE the command (no compare after); only a run in the judged directory is kept
+    const keepId = typeof ctx.cmdKeep === 'function' && cwd === ctx.workdir ? await treeIdentity(cwd) : null;
     const r = await sh(p.cmd, p.args ?? [], {
       cwd,
       env: p.env ?? {},
@@ -1344,6 +1385,8 @@ async function runCmd(p, cwd, ctx) {
       ...(ctx.listBox ? { listBox: ctx.listBox } : {}),
     });
     if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
+    // only a command that COMPLETED (any exit code) is kept: a timed-out, killed or crashed one is a stop and never gets here
+    if (r.stop === null && keepId !== null && r.out.length <= MAX_SAVED_OUT) ctx.cmdKeep?.({ key: checkKey(p, timeoutMs), treeId: keepId, code: r.code, out: r.out, ms: r.ms });
     return r;
   };
   // ONCE PER CHECK PASS (hamr 2026-11-21): every stage reading the same command (same args, env, directory and limit) shares one run. The memo
@@ -1351,7 +1394,13 @@ async function runCmd(p, cwd, ctx) {
   if (!ctx.cmdMemo) return sharedRun(ctx, cwd, JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]), run);
   const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
   let pending = ctx.cmdMemo.get(memoKey);
-  if (!pending) { pending = sharedRun(ctx, cwd, memoKey, run); ctx.cmdMemo.set(memoKey, pending); }
+  if (!pending) {
+    // RESUME REUSE (start pass only: `cmdSaved` is handed to no other pass): a saved result for this command on this very tree stands in for the run
+    const hit = ctx.cmdSaved instanceof Map && cwd === ctx.workdir ? ctx.cmdSaved.get(checkKey(p, timeoutMs)) : undefined;
+    if (hit) { hit.used = true; hit.memoKey = memoKey; pending = Promise.resolve({ stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms }); }
+    else pending = sharedRun(ctx, cwd, memoKey, run);
+    ctx.cmdMemo.set(memoKey, pending);
+  }
   return pending;
 }
 
