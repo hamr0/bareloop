@@ -1859,6 +1859,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       list: Array.isArray(job.closeDecl?.list) ? job.closeDecl.list : null,
       // the close's SIGNED source (src/sourcedefaults.js): where a rubric step reads its input from
       source: job.closeDecl?.source ?? null,
+      // the close's language: which failing-test lines a red count stage quotes of its command's own output (src/authoring.js)
+      lang: job.closeDecl?.lang ?? null,
       // REPORT-ONLY: what a rubric-step stage's cited checks read (bareguard `full.evidence`), recorded as `rubric-evidence` for the Result
       // tab's highlights. No verdict, gap, governor or money path reads it. Masked HERE with the run's one `scrub`: the `text` is a quote from
       // the frozen page record, and the spine is append-only. Masking moves offsets, so an entry whose text changed keeps NO spans.

@@ -262,7 +262,7 @@ export function mechanicalStages(stages) {
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
- *   list?: any[]|null, source?: string,
+ *   list?: any[]|null, source?: string, failureLines?: (out: string) => string[],
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
  *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
@@ -1539,7 +1539,7 @@ async function runCountNotWorse(stage, ctx) {
         notes: [],
       };
     }
-    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, matched: v.matched, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
+    return { stop: null, value: v.value, breakdown: v.breakdown, notes: v.notes, matched: v.matched, out: r.out, exit: r.code, dropped: r.dropped, fault: STOP_FAULTS.FAILED };
   };
 
   const now = await measure(ctx.workdir, 'the current tree');
@@ -1605,6 +1605,13 @@ async function runCountNotWorse(stage, ctx) {
     for (const [i, b] of /** @type {any[]} */ (now.breakdown).entries()) {
       gap.push(`  term ${b.term} /${b.lineMatch}/ ${b.aggregate}: ${b.matches} match(es), subtotal ${b.subtotal}, contributes ${b.contribution >= 0 ? '+' : ''}${b.contribution}`);
       for (const l of perTerm[i] ?? []) gap.push(`    ${l}`);
+    }
+    // the command's OWN failing-test lines (the genre-owned table, src/authoring.js), after the existing lines: the terms above name a count and no
+    // test, and a worker told only "# fail 1" guesses. Quoted, never named by the close; the same Gap cap bounds them
+    const quoted = typeof ctx.failureLines === 'function' ? ctx.failureLines(String(now.out ?? '')) : [];
+    if (quoted.length) {
+      gap.push('  failing tests in the output:');
+      for (const l of quoted) gap.push(`    ${l}`);
     }
   }
   return result(stage, {
