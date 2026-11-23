@@ -266,7 +266,8 @@ export function mechanicalStages(stages) {
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
  *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
- *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>, seedShare?: Map<string, any>,
+ *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>,
+ *   seedBase?: {get: (key: string) => {code: number, out: string, ms: number}|undefined, keep: (rec: any) => void}, seedShare?: Map<string, any>,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -283,6 +284,7 @@ export function mechanicalStages(stages) {
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
  *   `cmdKeep` is told of each COMPLETED command run (resume reuse: the caller saves it with the tree identity taken before it ran); `cmdSaved` is the start pass's
  *   saved results whose tree identity equals the current one, by `checkKey`; a hit stands in for a run in `cmdMemo` and marks itself `used` (see `runCmd`).
+ *   `seedBase` is the RUN's kept seed-baseline readings (a count stage measured in the seed worktree): completed results only, by command + seed tree id, used by every pass and every leg.
  *   `seedShare` is a draft session's own map of COMPLETED seed-read command results (the signing gates' tries), keyed by command + seed tree (`sharedRun`).
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
@@ -1363,12 +1365,24 @@ export function effectiveTimeoutMs(declared, ctx) {
  * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
  * still-running note, and its measured time kept (`ctx.cmdTimes`, keyed by the command alone) so the NEXT pass of the same command can
  * say "usually about N min". Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
- * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx
+ * `seed` = the SEED-BASELINE reading (a count stage's command in the seed worktree): with `ctx.seedBase` it is kept and reused for the whole run and across legs (see `Ctx`).
+ * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx @param {boolean} [seed]
  */
-async function runCmd(p, cwd, ctx) {
+async function runCmd(p, cwd, ctx, seed = false) {
   const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
   const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
   const run = async () => {
+    // SEED BASELINE (hamr 2026-11-23, run mwsfq0pi leg 3): the seed tree never changes inside a run, so its reading is kept by command + seed TREE id (never the directory)
+    let seedKey = null;
+    if (seed && ctx.seedBase) {
+      const t = await git(ctx.workdir, ['rev-parse', `${ctx.seedRef}^{tree}`]);
+      const treeId = t.ok ? t.out.trim() : '';
+      if (/^[0-9a-f]{40,64}$/.test(treeId)) {
+        seedKey = { key: `seed:${checkKey(p, timeoutMs)}:${treeId}`, treeId };
+        const hit = ctx.seedBase.get(seedKey.key);
+        if (hit) return { stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms };
+      }
+    }
     // resume reuse: ONE tree identity taken BEFORE the command (no compare after); only a run in the judged directory is kept
     const keepId = typeof ctx.cmdKeep === 'function' && cwd === ctx.workdir ? await treeIdentity(cwd) : null;
     const r = await sh(p.cmd, p.args ?? [], {
@@ -1386,6 +1400,7 @@ async function runCmd(p, cwd, ctx) {
     });
     if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
     // only a command that COMPLETED (any exit code) is kept: a timed-out, killed or crashed one is a stop and never gets here
+    if (r.stop === null && seedKey && r.out.length <= MAX_SAVED_OUT) ctx.seedBase?.keep({ key: seedKey.key, treeId: seedKey.treeId, code: r.code, out: r.out, ms: r.ms, seed: true });
     if (r.stop === null && keepId !== null && r.out.length <= MAX_SAVED_OUT) ctx.cmdKeep?.({ key: checkKey(p, timeoutMs), treeId: keepId, code: r.code, out: r.out, ms: r.ms });
     return r;
   };
@@ -1467,7 +1482,7 @@ async function runCountNotWorse(stage, ctx) {
 
   /** @param {string} cwd @param {string} where */
   const measure = async (cwd, where) => {
-    const r = await runCmd(p, cwd, ctx);
+    const r = await runCmd(p, cwd, ctx, cwd !== ctx.workdir);
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault, ...survivorsOf(r) };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };

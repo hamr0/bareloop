@@ -557,7 +557,7 @@ function translate(r, redact) {
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null,
  *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
- *   cmdKeep?: Function, cmdSaved?: Map<string, any>}} [opts]
+ *   cmdKeep?: Function, cmdSaved?: Map<string, any>, seedBase?: any}} [opts]
  *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
  *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
@@ -565,7 +565,7 @@ function translate(r, redact) {
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null, source = null, onTick = null, tickAfterMs, tickEveryMs, cmdTimes, signal = null, cmdMemo, cmdKeep, cmdSaved,
+    onRubricEvidence = null, list = null, source = null, onTick = null, tickAfterMs, tickEveryMs, cmdTimes, signal = null, cmdMemo, cmdKeep, cmdSaved, seedBase,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -612,6 +612,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // RESUME REUSE seams (src/kinds.js `runCmd`): keep each completed command's result; the start pass alone is handed saved ones
     ...(typeof cmdKeep === 'function' ? { cmdKeep } : {}),
     ...(cmdSaved instanceof Map ? { cmdSaved } : {}),
+    ...(seedBase && typeof seedBase.get === 'function' ? { seedBase } : {}),
     seedTrees,
   };
   try {

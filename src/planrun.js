@@ -1806,6 +1806,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const cmdTimes = new Map();
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
   /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
+  /** the run's seed-baseline readings (hamr 2026-11-23): loaded from the carry memo file (an earlier leg's), kept there as they complete, handed to EVERY close pass */
+  const seedBaseMap = new Map(carry.savedChecks().filter((c) => c.seed === true).map((c) => [c.key, c]));
+  const seedBase = { get: (/** @type {string} */ k) => seedBaseMap.get(k), keep: (/** @type {any} */ rec) => { try { const full = { ...rec, out: scrub(rec.out), at: new Date().toISOString() }; seedBaseMap.set(rec.key, full); carry.keepCheck(full); } catch { /* never breaks a run */ } } };
   const cmdKeep = (rec) => { try { carry.keepCheck({ ...rec, out: scrub(rec.out), at: new Date().toISOString() }); } catch { /* never breaks a run */ } };
   /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
   const stopChecks = new AbortController();
@@ -1843,6 +1846,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...(cmdMemo ? { cmdMemo } : {}),
       ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
       cmdKeep,
+      seedBase,
       onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
       cmdTimes,
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
@@ -2255,7 +2259,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (resuming && declared) {
     const saved = carry.savedChecks();
     const here = saved.length ? await treeIdentity(workdir) : null;
-    if (here) for (const c of saved) if (c.treeId === here) startSaved.set(c.key, { ...c });
+    if (here) for (const c of saved) if (c.seed !== true && c.treeId === here) startSaved.set(c.key, { ...c });
   }
   const startEntries = [...startSaved.values()];
   let pre = await judgeClose(startMemo, startSaved);
