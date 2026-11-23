@@ -115,7 +115,7 @@ export async function runReviewPick({
  * A review takes the rubric road: the soft-green class, the text close language and the rubric road's own fence (`output/` alone, like a rubric job on files: the report is written by code, Destination is never in the fence)
  * and the signed source `repo` (this is where it is WRITTEN). A change returns `review: false` and nothing else the caller reads: its D flow stays byte for byte what it was.
  * `pick` is the door's own call (its provider, price, thinking and booking), `makePick` below builds it.
- * @param {{verdictType: string, isRepoSource: boolean, jobLines: {n: number, text: string, rules?: string[]}[]|null, pick: ((jobLines: any[]) => Promise<{answer: string, reason?: string|null}>)|null}} o
+ * @param {{verdictType: string, isRepoSource: boolean, jobLines: {n: number, text: string, rule?: string, rules?: string[]}[]|null, pick: ((jobLines: any[]) => Promise<{answer: string, reason?: string|null}>)|null}} o
  * @returns {Promise<{review: false, answer: string|null, reason: string|null, refusal?: string}|{review: true, answer: 'review', reason: null, refusal?: undefined, verdictType: 'soft-green', lang: string, rubricFiles: true, writeScope: string[], source: 'repo'}>}
  */
 export async function chooseRoad({ verdictType, isRepoSource, jobLines, pick }) {
