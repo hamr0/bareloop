@@ -65,7 +65,7 @@ test('panel door: a change job whose line holds the word feat asks "Did you mean
 });
 
 test('panel door: a review job with a word v1..feat asks "Did you mean range: v1..feat?" and Yes writes `range: v1..feat`; a change job with the same word asks nothing about a range; a typed token asks nothing', async (t) => {
-  const rv = await session(t, 'Review v1..feat for bugs', 'review');
+  const rv = await session(t, 'Review v1..feat for bugs\n~ say why', 'review');
   assert.ok(await until(() => rv.state.pendingAsk?.source === 'ref-point'), `no question (${rv.state.phase} ${rv.state.error})`);
   assert.equal(rv.state.pendingAsk.question, 'Did you mean range: v1..feat?');
   rv.send('yes');

@@ -84,7 +84,7 @@ test('both doors call the ONE shared function (not two copies)', () => {
 });
 
 // ── the wiring, through the real panel session ──
-async function session(t, { pick, jobText = 'List the slow code in src/\nat least 3 items' }) {
+async function session(t, { pick, jobText = 'List the slow code in src/\n~ at least 3 items' }) {
   const w = await world(t, { serve: false });
   const repo = makeRepo(path.join(w.base, 'repo'));
   const seams = draftSeams({});
@@ -108,7 +108,7 @@ test('panel door: a D repo job the drafter picks as "review" is drafted on the r
   const x = await session(t, { pick: { answer: 'review', reason: null } });
   const { got, asked } = x;
   await drafted(x);
-  assert.deepEqual(asked, [[1, 2]], 'the question was asked once, over the job lines');
+  assert.deepEqual(asked, [[1]], 'the question was asked once, over the job lines');
   assert.deepEqual([got.calls[0].verdictType, got.calls[0].lang], ['soft-green', 'text']);
   assert.deepEqual(got.calls[0].writeScope, ['output/'], 'a review\'s fence is the rubric road\'s own: output/ alone, Destination is where code writes the report (clean item 4)');
   assert.equal(got.calls[0].source, 'repo', 'the crossroads WRITES the signed source');
@@ -131,21 +131,11 @@ test('panel door: a test that replaces the model boundary asks NO question and t
   assert.equal(got.calls[0].verdictType, 'green');
 });
 
-test('chooseRoad: a CHANGE job with no ~ rule on any line is refused with ONE code-written ask (code counts the ~ lines, no model judges them); one ~ proceeds; a review is unchanged', async () => {
-  const ASK = 'Add at least one rule (~) for this job — for example what must stay true, or what must not change.';
+test('chooseRoad no longer counts ~ rules (hamr 2026-11-23: the count moved to the doors\' start, tests/job-needs-rule.test.js, before any model call): a no-~ change/review/absent pick is read as before', async () => {
   const pick = (answer) => async () => ({ answer, reason: null });
   const bare = [{ n: 1, text: 'Fix the failing test' }];
-  const noRules = [{ n: 1, text: 'Fix the failing test', rule: '', rules: [] }];
-  const withRule = [{ n: 1, text: 'Fix the failing test', rule: 'keep the public API', rules: ['keep the public API'] }];
-  for (const lines of [bare, noRules]) {
-    const r = await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: lines, pick: pick('change') });
-    assert.equal(r.review, false);
-    assert.equal(r.refusal, ASK);
-  }
-  const ok = await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: withRule, pick: pick('change') });
-  assert.equal(ok.refusal, undefined);
-  const review = await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: bare, pick: pick('review') });
-  assert.equal(review.review, true);
-  const absent = await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: bare, pick: pick('absent') });
-  assert.equal(absent.refusal, undefined, 'a pick that never answered stays the open D flow');
+  const ch = await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: bare, pick: pick('change') });
+  assert.deepEqual(ch, { review: false, answer: 'change', reason: null });
+  assert.equal((await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: bare, pick: pick('review') })).review, true);
+  assert.equal((await chooseRoad({ verdictType: 'green', isRepoSource: true, jobLines: bare, pick: pick('absent') })).refusal, undefined);
 });

@@ -25,7 +25,7 @@ async function session(t, { replyRaw, destination, jobText }) {
   const seams = draftSeams({});
   seams.scout = { state: 'PRESENT', facts: FACTS, calls: [], raws: [] };
   const destFn = (o) => dp.runDestPoint({ ...o, createLoop: () => ({ run: async () => ({ text: replyRaw, usage: { inputTokens: 10, outputTokens: 5 } }) }) });
-  const card = baseCard({ source: repo, jobName: 'one-job', jobText, destination });
+  const card = baseCard({ source: repo, jobName: 'one-job', jobText: `${jobText}\n~ keep it small`, destination });
   const s = createSession(card, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(path.join(w.base, 'keys')), sessionsRoot: path.join(w.base, 's'), ...seams, destFn });
   const dir = () => join(w.base, 's', readdirSync(join(w.base, 's'))[0]);
   const record = () => JSON.parse(readFileSync(join(dir(), 'source-seed', 'source.json'), 'utf8')).destination;

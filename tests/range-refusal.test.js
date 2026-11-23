@@ -45,12 +45,12 @@ async function panel(t, jobText, pick) {
 }
 
 test('panel door: two tokens, and a range on a change job, are refused in the plain words; nothing is authored', async (t) => {
-  const a = await panel(t, 'Review range: v1..v2 for bugs\nand branch: feat', 'review');
+  const a = await panel(t, 'Review range: v1..v2 for bugs\nand branch: feat\n~ say why', 'review');
   assert.equal(a.s.state.phase, 'refused');
   assert.equal(a.s.state.error, MANY);
   assert.equal(a.authored(), 0);
   // main..main: both ends exist in the real repo, so the draft-start check passes and the change-pick refusal (which needs the pick) is the one that fires
-  const b = await panel(t, 'Review range: main..main for bugs', 'change');
+  const b = await panel(t, 'Review range: main..main for bugs\n~ say why', 'change');
   assert.equal(b.s.state.phase, 'refused');
   assert.equal(b.s.state.error, CHANGE_RANGE);
   assert.equal(b.authored(), 0);
@@ -74,12 +74,12 @@ async function cli(t, jobLines, reviewPick) {
 }
 
 test('CLI door: two tokens, and a range on a change job, are refused in the SAME plain words, exit 2, the spine ends, nothing is spent', async (t) => {
-  const a = await cli(t, [{ n: 1, text: 'Review range: v1..v2 for bugs' }, { n: 2, text: 'and branch: feat' }]);
+  const a = await cli(t, [{ n: 1, text: 'Review range: v1..v2 for bugs' }, { n: 2, text: 'and branch: feat', rules: ['say why'] }]);
   assert.equal(a.rc, 2, `${a.e}\n${a.o}`);
   assert.match(a.e, new RegExp(MANY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(a.spine, /"author-end"/);
   assert.doesNotMatch(a.spine, /author-cost/);
-  const b = await cli(t, [{ n: 1, text: 'Review range: main..main for bugs' }], async () => ({ answer: 'change', reason: null }));
+  const b = await cli(t, [{ n: 1, text: 'Review range: main..main for bugs', rules: ['say why'] }], async () => ({ answer: 'change', reason: null }));
   assert.equal(b.rc, 2, `${b.e}\n${b.o}`);
   assert.ok(b.e.includes(CHANGE_RANGE), b.e);
 });

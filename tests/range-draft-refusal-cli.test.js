@@ -14,7 +14,7 @@ import { gitInPatient } from './helpers.js';
 const BAD_END = '"v9.9.9" is not a commit, tag or branch of this repo, so the range cannot be reviewed. Nothing spent.';
 const NO_BRANCH = 'This repo has no branch named "no-such-branch". Nothing spent.';
 const NO_MAIN = 'This repo has no branch named main, so branch "feat" cannot be compared with it. Use a range (range: A..B) instead. Nothing spent.';
-const lines = (/** @type {string[]} */ ...t) => t.map((text, i) => ({ n: i + 1, text }));
+const lines = (/** @type {string[]} */ ...t) => t.map((text, i) => ({ n: i + 1, text, rules: ['say why'] }));
 
 // ── CLI door: the real author script over a real prepared repo copy
 async function cli(/** @type {import('node:test').TestContext} */ t, /** @type {{n: number, text: string}[]} */ jobLines, /** @type {(repo: string) => void} */ prep = () => {}) {

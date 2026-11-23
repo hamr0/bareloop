@@ -63,7 +63,7 @@ for (const [name, text, words] of /** @type {[string, string, string][]} */ ([
 
 test('panel door: a review branch in a repo with no main is refused in the plain words right after the pick (git cannot know change-or-review before it); a change job\'s branch is NOT refused', async (t) => {
   const noMain = (/** @type {string} */ repo) => gitInPatient(repo, ['branch', '-m', 'main', 'trunk']);
-  const a = await panel(t, 'Review branch: feat for bugs', 'review', noMain);
+  const a = await panel(t, 'Review branch: feat for bugs\n~ say why', 'review', noMain);
   assert.equal(a.s.state.phase, 'refused');
   assert.equal(a.s.state.error, NO_MAIN);
   assert.equal(a.calls.author, 0);
@@ -82,8 +82,8 @@ test('draftRefusal: one helper, the same words; a legal token, or none, is null'
 
 test('panel door: a range given as SHORT hashes and as FULL hashes drafts (reaches the menu, no refusal)', async (t) => {
   for (const [label, text] of /** @type {[string, (w: {c0: string, c1: string}) => string][]} */ ([
-    ['short', (w) => `Review range: ${w.c0.slice(0, 7)}..${w.c1.slice(0, 7)} for bugs`],
-    ['full', (w) => `Review range: ${w.c0}..${w.c1} for bugs`],
+    ['short', (w) => `Review range: ${w.c0.slice(0, 7)}..${w.c1.slice(0, 7)} for bugs\n~ say why`],
+    ['full', (w) => `Review range: ${w.c0}..${w.c1} for bugs\n~ say why`],
   ])) {
     const a = await panel(t, text, 'review');
     assert.equal(a.s.state.pendingAsk?.kind, 'menu', `${label}: phase ${a.s.state.phase} ${a.s.state.error ?? ''}`);

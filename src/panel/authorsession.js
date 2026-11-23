@@ -68,7 +68,7 @@ import { choiceEntries } from '../checkblock.js';
 import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf, scoutCodePaths, destinationHoldsCode, destinationIsRoot, destFenceQuestion } from '../destpoint.js';
-import { chooseRoad, makePick, REVIEW_CALL_LABEL } from '../reviewpick.js';
+import { chooseRoad, makePick, needsRuleRefusal, REVIEW_CALL_LABEL } from '../reviewpick.js';
 import { jobTypeLineOf, JOB_TYPE_LABEL, CHANGE_JOB_TYPE } from '../sourcedefaults.js';
 import { draftRefusal } from '../rangereview.js';
 import { refGuess, refGuessQuestion, refGuessToken } from '../refguess.js';
@@ -912,6 +912,11 @@ export function createSession(card, deps = {}) {
     if (rangeRepo !== null) {
       const early = await draftRefusal({ repo: rangeRepo, jobLines });
       if (early !== null) { refuse(early); return; }
+    }
+    // hamr 2026-11-23: EVERY new draft (Change, Review, rubric) needs at least one `~` rule; code counts them, $0, before the copy and any model call. A Reuse replays a signed plan and is never asked.
+    if (!deps.reuse) {
+      const noRule = needsRuleRefusal(jobLines);
+      if (noRule !== null) { refuse(noRule); return; }
     }
 
     state.phase = 'preparing-source';

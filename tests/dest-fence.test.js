@@ -110,7 +110,7 @@ async function session(t, { replyRaw, destination, jobText, facts = FACTS, scout
   const inner = seams.authorFn;
   seams.authorFn = async (o) => { got.writeScope = o.writeScope; return inner(o); };
   const destFn = (o) => runDest(o, replyRaw);
-  const card = baseCard({ source: repo, jobName: 'df-job', jobText, destination });
+  const card = baseCard({ source: repo, jobName: 'df-job', jobText: `${jobText}\n~ keep it small`, destination });
   const s = createSession(card, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(path.join(w.base, 'keys')), sessionsRoot: path.join(w.base, 's'), ...seams, destFn });
   const log = () => readFileSync(path.join(w.base, 's', readdirSync(path.join(w.base, 's'))[0], DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   return { s, got, log };

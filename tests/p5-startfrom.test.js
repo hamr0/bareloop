@@ -49,7 +49,7 @@ const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
 
 // `source` is a shorthand for Inputs line 1 (P7: the Source box is gone)
 const baseCard = ({ source = '/x', ...o } = {}) => ({
-  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'p5-startfrom-job', jobText: 'fix things\ntsc clean', inputs: `repo: ${source}`,
+  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'p5-startfrom-job', jobText: 'fix things\ntsc clean\n~ keep it small', inputs: `repo: ${source}`,
   destination: 'src/', capUsd: 2, ...o,
 });
 
@@ -91,7 +91,7 @@ async function draftedSession(card) {
 
 test('card.json round-trips: written beside resolved-spec.json at sign-prepare, the form text VERBATIM, stray body keys never stored', async () => {
   const repo = makeRepo();
-  const card = baseCard({ source: repo, jobName: 'p5-sf-card-1', jobText: '  keep my   odd spacing\nsecond line\n', maxWallMs: 600000, startFrom: 'someRun', stray: 'x' });
+  const card = baseCard({ source: repo, jobName: 'p5-sf-card-1', jobText: '  keep my   odd spacing\nsecond line\n~ keep it small\n', maxWallMs: 600000, startFrom: 'someRun', stray: 'x' });
   const { session } = await draftedSession(card);
   const file = join(session.state.outDir, 'card.json');
   assert.ok(existsSync(file), 'card.json sits in the session dir, beside resolved-spec.json');
@@ -163,7 +163,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.from, 'signed job');
   assert.equal('locked' in a, false, 'v1.101: nothing is locked, so the prefill names no locked boxes');
   assert.equal('open' in a, false);
-  assert.equal(a.card.jobText, 'fix things\ntsc clean', 'the SIGNED job lines, not the typed text');
+  assert.equal(a.card.jobText, 'fix things\ntsc clean\n~ keep it small', 'the SIGNED job lines, not the typed text');
   assert.equal(a.card.jobText, jobTextFromSpec(spec));
   assert.equal(a.note, null, 'a job with numbered lines is not an older job');
   assert.equal(a.card.jobName, spec.job);

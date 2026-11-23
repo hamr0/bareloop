@@ -19,8 +19,18 @@ import { rangeTokens, manyTokensRefusal, changeRefusal } from './rangereview.js'
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
 
-/** the one ask a Change code job with no `~` rule gets, in plain words from code */
-export const CHANGE_NEEDS_RULE_WORDS = 'Add at least one rule (~) for this job \u2014 for example what must stay true, or what must not change.';
+/** the one ask a NEW job (Change, Review or rubric) with no `~` rule gets, in plain words from code */
+export const NEEDS_RULE_WORDS = 'Add at least one rule (~) for this job \u2014 for example what the result must include, or what must stay true.';
+
+/**
+ * hamr 2026-11-23: EVERY new job needs at least one `~` rule. The ONE owner of the count, read at the start of both doors, $0, before any model call (the review pick included). CODE counts the `~` lines; no model judges them.
+ * No job lines to count (null / empty) is not refused here: the card validator and the door's own checks own that.
+ * @param {{rule?: string, rules?: string[]}[]|null|undefined} jobLines @returns {string|null} the ask in plain words, or null
+ */
+export function needsRuleRefusal(jobLines) {
+  if (!Array.isArray(jobLines) || jobLines.length === 0) return null;
+  return jobLines.some((l) => (Array.isArray(l.rules) ? l.rules.length > 0 : String(l.rule ?? '') !== '')) ? null : NEEDS_RULE_WORDS;
+}
 
 /** the label of the one paid call, as the drafting book sees it */
 export const REVIEW_CALL_LABEL = 'review-pick';
@@ -127,8 +137,6 @@ export async function chooseRoad({ verdictType, isRepoSource, jobLines, pick }) 
   if (r.answer !== 'review') {
     const range = rangeTokens(jobLines).find((x) => x.kind === 'range');
     if (range !== undefined) return { review: false, answer: r.answer, reason: r.reason ?? null, refusal: changeRefusal(range) };
-    // hamr 2026-11-23: a CHANGE job needs at least one `~` rule. CODE counts the `~` lines (no model judges their quality); a pick that never answered stays the open D flow
-    if (r.answer === 'change' && !jobLines.some((l) => (Array.isArray(l.rules) ? l.rules.length > 0 : String(l.rule ?? '') !== ''))) return { review: false, answer: r.answer, reason: r.reason ?? null, refusal: CHANGE_NEEDS_RULE_WORDS };
     return { review: false, answer: r.answer, reason: r.reason ?? null };
   }
   return { review: true, answer: 'review', reason: null, verdictType: 'soft-green', lang: RUBRIC_LANG, rubricFiles: true, writeScope: [...RUBRIC_FENCE], source: 'repo' };

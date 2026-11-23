@@ -33,7 +33,7 @@ test('Reuse of an old job: the session refuses in the exact words, at $0, with n
   writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
   writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const spec = { schema: 'job-v1', job: 'old-job', goal: 'g', budgetUsd: 1, writeScope: ['src/**'], ...OLD_EXAMPLES };
-  const s = createSession({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'old-job', jobText: 'Document it', inputs: 'repo: /nonexistent', destination: 'src/', capUsd: 1 }, {
+  const s = createSession({ checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'old-job', jobText: 'Document it\n~ keep it short', inputs: 'repo: /nonexistent', destination: 'src/', capUsd: 1 }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'sessions'), reuse: { spec, workflowKey: 'k' },
     generate: async () => { throw new Error('no model call'); },
   });

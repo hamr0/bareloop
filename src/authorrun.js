@@ -119,7 +119,7 @@ import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
-import { chooseRoad, makePick, REVIEW_CALL_LABEL } from './reviewpick.js';
+import { chooseRoad, makePick, needsRuleRefusal, REVIEW_CALL_LABEL } from './reviewpick.js';
 import { draftRefusal } from './rangereview.js';
 import { rubricGoal } from './rubricstep.js';
 import { LEDGER_SYSTEM } from './checklist.js';
@@ -643,6 +643,15 @@ export async function main(argv, deps = {}) {
       if (early !== null) {
         err(early);
         emit('author-end', { outcome: 'not-authored', stop: 'range-refused' });
+        throw new ExitSignal(2);
+      }
+    }
+    // hamr 2026-11-23: EVERY new draft needs at least one `~` rule; code counts them, $0, before the pick and any model call (the panel door reads the SAME function)
+    {
+      const noRule = needsRuleRefusal(draftLines);
+      if (noRule !== null) {
+        err(noRule);
+        emit('author-end', { outcome: 'not-authored', stop: 'rule-missing' });
         throw new ExitSignal(2);
       }
     }
