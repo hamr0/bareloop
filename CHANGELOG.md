@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Docs
+
+- README: the suite section is now a short map of the bare suite (Hands / Rails / Apps) plus what this pairs well with, linking the full list on github.com/hamr0.
+
 ### Added
 
 - **The Run tab says when the start pass took a saved check result.** The `check-reused` spine record (a resumed leg's precheck/preflight used a saved result for the same files) now shows as one grey line under the step map, beside the `check-running` line: `Checks not run again: same files as the last check at 14:05.` The words are the record's own (code-written in `tellReuse`); the run payload carries the newest one as `checkReused` (`checkReusedOf`, `src/panel/server.js`) and the page paints it (`paintCheckReused`, `src/panel/index.html`). Nothing grades from it. Phone width has not been checked.
