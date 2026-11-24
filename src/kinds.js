@@ -64,9 +64,9 @@ import { namedFilesText } from './repocite.js';
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { readFile, stat, lstat, mkdtemp, rm, symlink, realpath, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, sep, dirname } from 'node:path';
+import { join, sep, dirname, relative } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
@@ -710,6 +710,20 @@ export async function treeIdentity(workdir) {
     execFile('git', ['-c', 'core.quotepath=false', ...a], { cwd: workdir, maxBuffer: 1 << 28, encoding: 'buffer', timeout: 120_000 }, (e, out) => (e ? reject(e) : resolve(out)));
   });
   const names = async (/** @type {string[]} */ a) => (await g(a)).toString('utf8').split('\0').filter((p) => p !== '' && !isArbiterBook(p)).sort();
+  /** git in another folder: its stdout, or null when it fails or is not a git folder @param {string} cwd @param {string[]} a @returns {Promise<string|null>} */
+  const g2 = (cwd, a) => new Promise((resolve) => {
+    execFile('git', a, { cwd, encoding: 'utf8', timeout: 120_000 }, (e, out) => resolve(e ? null : out.trim()));
+  });
+  /** every file under a directory, relative, sorted @param {string} d @param {string} [base] @returns {Promise<string[]>} */
+  const filesUnder = async (d, base = '') => {
+    /** @type {string[]} */
+    const out = [];
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const r = base ? `${base}/${e.name}` : e.name;
+      if (e.isDirectory()) out.push(...await filesUnder(join(d, e.name), r)); else out.push(r);
+    }
+    return out.sort();
+  };
   try {
     const h = createHash('sha256');
     h.update(await g(['rev-parse', 'HEAD^{tree}']));
@@ -717,9 +731,26 @@ export async function treeIdentity(workdir) {
       h.update(`T\0${p}\0`);
       h.update(await g(['diff', '--binary', '--no-ext-diff', 'HEAD', '--', `:(literal)${p}`]));
     }
+    /** @type {Array<[string, string]>} [path the tree shows, absolute file to hash] */
+    const entries = [];
     for (const p of await names(['ls-files', '--others', '--exclude-standard', '-z'])) {
+      const abs = join(workdir, p);
+      let link = false;
+      try { link = (await lstat(abs)).isSymbolicLink(); } catch { /* unreadable: hashed below as before */ }
+      if (!link) { entries.push([p, abs]); continue; }
+      // an untracked symlink (the seed worktree's node_modules/.venv/venv links): what is BEHIND it counts, not the link (hamr 2026-11-24)
+      /** @type {string} */
+      let real;
+      try { real = await realpath(abs); } catch { continue; } // dangling: nothing behind it
+      const top = await g2(dirname(real), ['rev-parse', '--show-toplevel']);
+      if (top !== null && await g2(top, ['check-ignore', '-q', '--', relative(top, real)]) !== null) continue; // ignored THERE: nothing
+      if ((await lstat(real)).isDirectory()) for (const f of await filesUnder(real)) entries.push([`${p}/${f}`, join(real, f)]);
+      else entries.push([p, real]);
+    }
+    entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    for (const [p, abs] of entries) {
       h.update(`U\0${p}\0`);
-      try { h.update(await g(['hash-object', '--', p])); } catch { h.update('unreadable'); }
+      try { h.update(await g(['hash-object', '--', abs])); } catch { h.update('unreadable'); }
     }
     return h.digest('hex');
   } catch { return null; }
