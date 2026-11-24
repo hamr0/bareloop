@@ -751,7 +751,7 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
     verdicts.push(workerCrashed ? 'worker-crash' : v.verdict);
     // A judge that reports `stopped` means the PERSON's Stop killed the check — never a verdict, never a close fault; end like a stop at a round seam.
     if (v.verdict === 'stopped') {
-      emit('escalation', { category: 'stopped', decisionReady: true, verdicts, spend: { runs: iteration, capRuns }, decision: 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.', options: ['resume (the same run continues)', 'abandon the task'], detail: 'stopped at the person\'s request (the check that was running was killed)' });
+      emit('escalation', { category: 'stopped', decisionReady: true, verdicts, spend: { runs: iteration, capRuns }, decision: 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.', options: ['resume (the same run continues)', 'abandon the task'], detail: `stopped at the person's request${v.killed === true ? ' (the check that was running was killed)' : ''}` });
       emit('run-end', { outcome: 'escalated', iterations: iteration });
       return 'escalated';
     }

@@ -1811,6 +1811,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const stopChecks = new AbortController();
   /** the Stop landed inside a close (the callers that can end `stopped` read it) */
   let stoppedInClose = false;
+  /** the Stop really killed a running check (the close pass came back `killed`); false when the stop landed while nothing was running (saved results, between stages) */
+  let stopKilledCheck = false;
+  /** the plain words a Stop inside a close ends with: the parenthesis is added only when a check was really killed */
+  const stoppedInCloseWords = () => `stopped at the person's request${stopKilledCheck ? ' (the check that was running was killed)' : ''}`;
   const STOP_POLL_MS = 1000;
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
@@ -1840,7 +1844,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // (the `check-running` tick only comes after 5 minutes, and no other record names when a check started). Nothing reads it back to decide anything.
     emit('check-start', {});
     try {
-      return await runDeclaredStages(stages, scrub, {
+      const closed = await runDeclaredStages(stages, scrub, {
       ...closeOpts,
       signal: stopChecks.signal,
       ...(cmdMemo ? { cmdMemo } : {}),
@@ -1874,12 +1878,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
       }),
       });
+      if (stopChecks.signal.aborted && closed?.verdict === 'killed') stopKilledCheck = true;
+      return closed;
     } finally {
       if (poll) clearInterval(poll);
       if (stopChecks.signal.aborted && !stoppedInClose) {
         stoppedInClose = true;
         if (stopFile !== null) { try { unlinkSync(stopFile); } catch { /* already consumed */ } }
-        emit('stop-requested', { phase: 'close', meaning: 'the person asked to stop; the check that was running was killed, with everything it started' });
+        emit('stop-requested', { phase: 'close', meaning: stopKilledCheck ? 'the person asked to stop; the check that was running was killed, with everything it started' : 'the person asked to stop; no check was running, so nothing was killed' });
       }
     }
   };
@@ -3832,7 +3838,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
       // THE PERSON'S STOP landed inside this step's check (the poll killed it): not a verdict and not an instrument fault. ralph files it as the
       // same `stopped` escalation a round-boundary stop gets, so the step loop ends the leg `stopped` and a resume re-enters this step.
-      if (stoppedInClose) return { verdict: 'stopped' };
+      if (stoppedInClose) return { verdict: 'stopped', killed: stopKilledCheck };
       const { pass, results: raw } = evaled;
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
@@ -4273,7 +4279,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // any other killed close keeps the close-fault routing below. No grade is minted and nothing is discarded.
   if (stoppedInClose) {
     planExecuted();
-    return relay(Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' }), 'close');
+    return relay(Object.assign(new Error(stoppedInCloseWords()), { category: 'stopped' }), 'close');
   }
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
@@ -4596,7 +4602,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       middle, judge: async () => {
         const v = await judgeClose();
         // a Stop inside a fix-loop close: ends through `relay` below, like a round-boundary stop in the fix phase
-        if (stoppedInClose) throw Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' });
+        if (stoppedInClose) throw Object.assign(new Error(stoppedInCloseWords()), { category: 'stopped' });
         carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
         return v;
       }, ladder: fixGovernor, emit: emitL, redact: scrub,

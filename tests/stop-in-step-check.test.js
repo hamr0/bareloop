@@ -69,6 +69,8 @@ test('a Stop while a step\'s exit check runs ends the leg `stopped`: no close-ki
   assert.ok(!esc.some((e) => e.category === 'close-killed' || /OOM/.test(e.decision ?? '')), 'no instrument-kill story');
   assert.ok(esc.some((e) => e.category === 'stopped'), 'filed as the person\'s stop');
   assert.equal(existsSync(stopFilePath(spine)), false);
+  assert.match(esc.find((e) => e.category === 'stopped').detail, /\(the check that was running was killed\)/, 'a check really was killed, so the words say so');
+  assert.match(events.find((e) => e.type === 'stop-requested').meaning, /was killed/);
 });
 
 test('a check killed with NO stop request stays close-killed', async (t) => {
