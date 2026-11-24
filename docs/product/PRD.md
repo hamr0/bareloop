@@ -2445,11 +2445,11 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
 - [ ] Rubric report: cumulative page dumps, no answer section. F391.
 - [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered.
 - [ ] Copy from fwd's v0.37.0 tag (hamr picked "A", 2026-11-23: all five), from the tag only:
-  - am11, a list line counts its items: fwd 872e01f3 (P1 count = itemShape minItems/maxItems), 2295cd22 (P2 per-row run results), cc8fce50 (P3 green itemShape preflight); tests bd563c72, 4a5c81b8, cae23ba7.
-  - Phrase alternatives, the airline case (`src/inputlook.js:173`).
-  - F251: the check block is the one decider; a line with no `~` holds no signable check; Add refused with the no-guardrail words. fwd 12e15916, test 25e7c30b.
-  - F252: checkedLines gives an explicit lead per step; no stray first row on a list line. fwd 92135697, test 399a46c5.
-  - Decimal-comma quote retry: a quote check failing on the page's own number form retries in that form (fwd CHANGELOG 0.37.0).
+  - am11, a list line counts its items: fwd 872e01f3 (P1 count = itemShape minItems/maxItems), 2295cd22 (P2 per-row run results), cc8fce50 (P3 green itemShape preflight); tests bd563c72, 4a5c81b8, cae23ba7. — copied (P1, P2; P3 does not apply: no canrun preflight here). Commit a152c03b.
+  - Phrase alternatives, the airline case (`src/inputlook.js:173`). — copied. Commits 16dc2d8e, 5c4de0ff, bd53004a.
+  - F251: the check block is the one decider; a line with no `~` holds no signable check; Add refused with the no-guardrail words. fwd 12e15916, test 25e7c30b. — NOT copied. hamr 2026-11-24: one `~` per job is the minimum, not per step; a step with no `~` keeps its `!` and `$` checks. fwd's F251 differs; hamr's word relayed to fwd so both repos match.
+  - F252: checkedLines gives an explicit lead per step; no stray first row on a list line. fwd 92135697, test 399a46c5. — does not apply (bareloop has no checkedLines lead).
+  - Decimal-comma quote retry: a quote check failing on the page's own number form retries in that form (fwd CHANGELOG 0.37.0). — already in bareloop (fwd borrowed it from bareloop v0.61.0).
   - Later, from fwd's NEXT tag only (unreleased now): am12 (count-row words), am14 (draft refusal in red under the Draft button, shorter job-box hint). am13 we already have.
 - [ ] NEW, signed by hamr 2026-11-23: drafting and run progress timer. No ticking clock: one progress line updated every 30 s. Finished drafting steps show their time (e.g. "installing packages ✓ 0:42"); the running step shows elapsed (every 30 s) and "Drafting so far: M:SS"; the "usually about N min" estimate is dropped; the plan card shows one line "Drafted in M:SS · $X"; the Run tab's still-running check line uses the same 30 s elapsed form; the Audit drafting row shows total draft time only, no per-step details. Display only, from times already recorded (draft-log step-start/step-end `at`; `src/draftspend.js` wallMs), $0.
 - [ ] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch.
