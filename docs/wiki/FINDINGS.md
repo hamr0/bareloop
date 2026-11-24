@@ -16770,6 +16770,7 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - `close-red` is not in CHECKPOINT_OUTCOMES (`src/reuse.js:148`: cap-halt, wall-halt, step-stalled, provider-red, stopped, human checkpoints), so the panel offered only Reuse, not Resume. The AI's step edit stayed on disk.
 - A timeout says nothing about the job (the check never answered), so it should be resumable like provider-red. Also noted: this start check's limit was 15 min (900000 ms) while CHECK_LIMIT_MS is 30 min; look at that in the same fix.
 - hamr: fix comes in the next branch after the release.
+- Fixed: a timed-out check at the start precheck or in the final close ends the leg `check-timeout`, a resumable checkpoint (aae86b26); the 15 min came from the drafter writing `timeoutMs: 900000`, now removed, and an authored `timeoutMs` is ignored, so the one 30 min limit binds (88f60280).
 
 ### F394: The Run tab shows an old Resume's "Checks not run again" line on a later Resume (run mwue75ih legs 2 and 3, 2026-11-24)
 

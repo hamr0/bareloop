@@ -5646,3 +5646,13 @@ Status: test-proven; reuse not seen in a live resume.
 - D4. NOW replaces the grey "Tests are still running…" and "Checks not run again…" lines under the step map; both go.
 - D5. When the run ends NOW goes; ENDED / NEXT / SCHEDULE keep today's words.
 - E. Proof: fail-first tests (30 s times, D3 current leg only, NOW gone after end, "usually about" gone); full suite + typecheck; orchestrator screenshots of the drafting list, plan card, Run tab live and ended vs these shapes; hamr's click-through and DevTools phone-width check before "done".
+
+## Addendum 2026-11-24b: F393 check timeout
+
+Spec approved by hamr 2026-11-24.
+
+- A check that times out (close verdict `timed-out`, escalation category `close-timeout`) at the start precheck or in the final close ends the leg `check-timeout`, not `close-red`. A check that breaks, is killed or crashes stays `close-red`; a Stop that kills a check stays `stopped`.
+- `check-timeout` is in `CHECKPOINT_OUTCOMES` (src/reuse.js), so Resume is offered exactly like after `provider-red`; the status sign and word are the same as provider-red's.
+- The escalation carries `limitMs`, the limit that bound the check. The Run tab says "Your tests did not finish inside N minutes, so nothing was judged. Resume runs them again." with N from that limit (else the one check limit), never a hardcoded number.
+- One 30-minute limit, set by code (hamr's 2026-11-21 ruling): the drafter is no longer offered `timeoutMs` (not in the declaration schema, not in the catalogue block). `effectiveTimeoutMs` ignores an authored `timeoutMs`, so old signed specs still load and run, now under the one limit; no signed file or hash is touched. A saved check result keyed under an old authored limit just runs once more.
+- Not changed, reported (these timeouts route differently and stay as they were): a start check that times out in the PREFLIGHT pass (a cold run whose first guard is red at the seed) ends `check-red`; a check that times out in a step's exit or in the fix loop ends the run with the bare category name `close-timeout`, which is not a checkpoint. A resumed leg that dies before it re-accepts its plan leaves no plan in its own window, so the next Resume re-drafts (`readResume` reads the latest leg only). Each is a question for hamr, not built here.
