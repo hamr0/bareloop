@@ -648,11 +648,8 @@
   .chat-steps .step.wait .step-label{color:var(--amber);}
   .chat-steps .step-detail{display:block;flex-basis:100%;min-width:0;padding-left:1.2em;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
   .chat-steps .step.bad .step-detail{color:var(--red);}
-  .chat-steps .step.run .step-sign::after{content:"\2026";}
-  @keyframes step-dots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
-  @media (prefers-reduced-motion: no-preference){
-    .chat-steps .step.run .step-sign::after{content:"";animation:step-dots 1.2s steps(1,end) infinite;}
-  }
+  .chat-steps .step-time{color:var(--text-faint);}
+  .chat-steps .step-so-far{padding:3px 0 0;color:var(--text-faint);}
   /* build item 7 — the two $0 readiness lines under the Model field. */
   .jf-readiness{font-size:11px;margin-top:2px;}
   .jf-readiness.ok{color:var(--green);}
@@ -6315,12 +6312,15 @@
       progressRow.innerHTML = steps.map(function(st, i){
         var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
         var cls = waiting ? "wait" : (st.status === "running" ? "run" : (st.status === "failed" ? "bad" : "ok"));
-        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
+        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : (cls === "run" ? "\u25B6" : ""));
         var label = waiting ? progressLabelFor(state) : st.label;
+        // hamr 2026-11-24 (A1): the server's own words beside the step, "took M:SS" or "M:SS so far", read from the drafting log (src/draftspend.js)
+        var time = typeof st.time === "string" && st.time ? '<span class="step-time" data-testid="step-time">' + escapeXml(st.time) + '</span>' : "";
         return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><div class="step-line"><span class="step-label">' + escapeXml(label) + '</span>' +
-          '<span class="step-sign">' + sign + '</span></div>' +
+          '<span class="step-sign">' + sign + '</span>' + time + '</div>' +
           (st.detail ? '<div class="step-detail">' + escapeXml("> " + st.detail) + '</div>' : "") + '</li>';
-      }).join("");
+      }).join("") + (steps.length && state && typeof state.draftSoFar === "string" && state.draftSoFar
+        ? '<li class="step-so-far" data-testid="drafting-so-far">' + escapeXml(state.draftSoFar) + '</li>' : "");
       return progressRow.innerHTML !== before;
     }
 

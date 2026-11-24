@@ -1786,11 +1786,11 @@ test('progress list (2026-10-05): renderProgress reports a change only when the 
   assert.doesNotMatch(progressPath, /\.focus\(/, 'the progress render path never moves keyboard focus');
 });
 
-test('progress list: the running dots are CSS and stop under prefers-reduced-motion (a static ellipsis)', () => {
+test('progress list (hamr 2026-11-24): a running step wears the sign \u25B6 in text; no CSS dots, no JS dot timer, no ticking clock', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /@keyframes step-dots/);
-  assert.match(html, /@media \(prefers-reduced-motion: no-preference\)\{\s*\.chat-steps \.step\.run \.step-sign::after\{[^}]*animation:step-dots/);
-  assert.match(html, /\.chat-steps \.step\.run \.step-sign::after\{content:"\\2026";\}/, 'the default (reduced-motion) form is the static ellipsis');
+  assert.doesNotMatch(html, /step-dots/, 'the animated dots are gone: the sign says running');
+  assert.doesNotMatch(html, /\.chat-steps \.step\.run \.step-sign::after/);
+  assert.match(html, /cls === "run" \? "\\u25B6"/);
   assert.doesNotMatch(html, /progressDotCount/, 'no JS dot timer any more');
 });
 
