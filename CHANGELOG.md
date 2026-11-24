@@ -40,6 +40,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The Run tab's "Checks not run again" line moves into the NOW row, above the NOW text, and reads only the current leg (F394).** `detail.checkReused` (whole spine, a grey line under the step map) and `#map-reused` are gone; `detail.nowReused` is the current leg's record (src/legs.js owns the boundary), set only while NOW shows.
 - **The Destination is no longer copied back onto the card.** Its one record is `source.json`; the served state, `card.json`, the draft readout and the schedule's sign read it through `recordedDestination`.
 
+### Fixed
+
+- **The "Checks not run again" line on the Run tab's NOW row wears the NOW text's own size and color (hamr 2026-11-24).** It was smaller and dimmer, so the two read as two things; they are one block now.
+
+- **A run that hit its money or time cap wears the stop sign [■], like a stopped run (hamr 2026-11-24).** The word stays "capped"; a check that did not finish and a provider failure keep [✗]. One table, `src/panel/status.js`.
+
+- **A Stop says "the check that was running was killed" only when it really killed one (hamr 2026-11-24, run mwuxqx4f).** A Stop that lands while the AI is working, with no check running, now ends "stopped at the person's request" with no parenthesis, and the `stop-requested` record says no check was running.
+
+- **A Run tab open in a second browser tab follows a Resume or Stop clicked in the first (hamr 2026-11-24).** The page re-reads the open run when the Runs list says its sign or word changed, instead of only while the run was live (it used to show "stopped" with a Resume button until a reload).
+
+- **The drafting log says why drafting ran again after a try that was not refused (hamr 2026-11-24, run mwuxqx4f).** One `try-again` line, in code's words: the AI is shown what its checks read at the starting point and may keep or change its plan.
+
 ## [0.62.0] - 2026-11-23
 
 ### Docs
