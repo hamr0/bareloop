@@ -19,6 +19,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { readRunList, runlistHome } from './runlist.js';
 import { tallyCalls } from './text.js';
+import { panelMoney2 } from './panelmoney.js';
 
 /** the OLD per-session total, no longer written; read only for a session folder that predates the log's call lines carrying it */
 export const DRAFT_SPEND_FILE = 'draft-spend.json';
@@ -310,6 +311,23 @@ export function withDraftTimes(state, nowMs = Date.now()) {
   const starts = logged.map((x) => Date.parse(x.startedAt)).filter(Number.isFinite);
   const running = logged.some((x) => x.status === 'running');
   return { ...state, steps, draftSoFar: running && starts.length ? `Drafting so far: ${mmss(stepped(nowMs - Math.min(...starts)))}` : null };
+}
+
+/**
+ * The plan card's one line (hamr 2026-11-24, B): "Drafted in M:SS · $X" - the drafting's whole time ({@link draftWallMs}) and its spend (the log's
+ * `call` lines, the same reader as the money views; "at least" when a call was unpriced). `null` when the log has no step time or no call
+ * (a Reuse has no drafting), so nothing is made up.
+ * @param {string} dir the session's folder
+ * @returns {string|null}
+ */
+export function draftedLine(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return null; }
+  const ms = draftWallMs(readDraftSteps(dir));
+  const spend = spendFromLog('', text);
+  if (ms === null || spend === null) return null;
+  return `Drafted in ${mmss(ms)} \u00B7 ${spend.spendComplete ? '' : 'at least '}${panelMoney2(spend.spentUsd)}`;
 }
 
 /**

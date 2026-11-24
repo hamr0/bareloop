@@ -737,6 +737,7 @@
   .jp-qs{margin:8px 0;overflow-wrap:anywhere;}
   .jp-qs .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
   .jp-qs ul{margin:4px 0;padding-left:26px;}
+  .jp-drafted{font-size:12px;color:var(--text-faint);margin-top:8px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
   /* the draft readout above the signed-ready card: plain text, wrapped, the server names the heading lines (bold) */
   .jp-readout{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -6280,7 +6281,9 @@
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
               m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs +
+            // hamr 2026-11-24 (B): the server's one line, "Drafted in M:SS \u00B7 $X" (src/draftspend.js draftedLine)
+            (typeof m.drafted === "string" && m.drafted ? '<div class="jp-drafted" data-testid="plan-drafted">' + escapeXml(m.drafted) + "</div>" : "") + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");

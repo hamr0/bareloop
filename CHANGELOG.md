@@ -17,6 +17,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **"usually about N min" is gone everywhere (hamr 2026-11-24, A4).** The still-running note (drafting, signing gates, the spine's `check-running` record) now says only "Tests are still running (7 min so far)." The three maps of each command's measured time (`cmdTimes`) and the `knownMs` plumbing existed only for that wording and are deleted; nothing new keeps a time.
 
+- **The plan card says how long drafting took and what it cost (hamr 2026-11-24, B).** One line under the signed-ready plan: "Drafted in M:SS · $X", the drafting's first step start to its last step end and the drafting log's own spend (`draftedLine`, `src/draftspend.js`; "at least $X" when a call was unpriced). A Reuse has no drafting and shows no line.
+
 ## [0.62.0] - 2026-11-23
 
 ### Docs

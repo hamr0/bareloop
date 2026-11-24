@@ -74,7 +74,7 @@ import { draftRefusal } from '../rangereview.js';
 import { refGuess, refGuessQuestion, refGuessToken } from '../refguess.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
-import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
+import { appendDraftLog, draftedLine, readDraftLedger, readDraftSteps } from '../draftspend.js';
 import { CHECK_LIMIT_MS, checkRunningNote } from '../kinds.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
@@ -1526,7 +1526,10 @@ export function createSession(card, deps = {}) {
   }
 
   /** the signed-ready card as a chat message; a repo job's agent rows can be Dropped on it (the person shapes the spec they sign: `dropStage`) */
-  const finalPlanMessage = () => ({ ...finalPlanCard(), readout: draftReadout() });
+  const finalPlanMessage = () => {
+    const drafted = draftedLine(outDir);
+    return { ...finalPlanCard(), readout: draftReadout(), ...(drafted ? { drafted } : {}) };
+  };
   /** the draft readout of the signed-ready plan (hamr 2026-11-15): text + head indexes, display only, built from the signed spec in `finalCtx`, the draft log and this session's own figures; one function, so Drop never carries a stale or a second one */
   const draftReadout = () => {
     const steps = readDraftSteps(outDir);
