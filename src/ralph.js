@@ -546,7 +546,7 @@ export function closeFaultEnding(v, o = {}) {
  * @param {object} opts
  * @param {(iteration: number, gap?: string) => void|Promise<void>} opts.middle the emergent middle; never sees close/cap
  * @param {string[]} [opts.close] argv whose exit code is truth (required unless `judge` is injected)
- * @param {() => Promise<{verdict: string, gap?: string, detail?: string}>|{verdict: string, gap?: string, detail?: string}} [opts.judge]
+ * @param {() => Promise<{verdict: string, gap?: string, detail?: string, killed?: boolean}>|{verdict: string, gap?: string, detail?: string, killed?: boolean}} [opts.judge]
  *   Layer 2 (PRD v1.12 §4): the judge generalized to a SHELL-owned seam. When
  *   present it replaces runClose for this loop — a plan STEP's micro-loop is
  *   judged by the exit evaluator (declarative form checks), not a command. It
