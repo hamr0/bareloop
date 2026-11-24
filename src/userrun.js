@@ -77,7 +77,7 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList, runNumbers } from './runlist.js';
 // P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
 // one owner of where a leg starts and ends; every reader below asks it.
-import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath } from './legs.js';
+import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath, currentLegView } from './legs.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
@@ -840,7 +840,7 @@ async function execute(ctx) {
     // was shown the evidence for is the rubber stamp this whole class exists to stop.
     doorRecord = doorRecordOf(doorEvents);
     if (!doorRecord) {
-      die(`--door ${DOOR}: that run opened no review door — its verdict (${doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end')?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
+      die(`--door ${DOOR}: that run opened no review door — its verdict (${currentLegView(doorEvents)?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
         + '  A soft-green run opens one always; a green-class run opens one only when the run was launched with --review-door.');
     }
     // …and the 60-day TTL, read HERE for the same reason the pause TTL is read with

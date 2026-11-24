@@ -106,7 +106,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf } from './legs.js';
+import { legsOf, capKindOf, currentLegView } from './legs.js';
 import { thinkingWordsFrom } from './thinking.js';
 
 /**
@@ -502,8 +502,11 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const outcome = jobEnd ? (jobEnd.outcome ?? null) : null;
   const isGreen = outcome === 'green' || outcome === 'already-green';
 
+  // every escalation of the run (the per-step trip windows below are seq-bounded and span legs on purpose) ...
   const escalations = spine.filter((e) => e.type === 'escalation');
-  const lastEscalation = escalations.length ? escalations[escalations.length - 1] : null;
+  // ... but "the" last escalation, and the stop reason built from it, belong to the LATEST leg only (src/legs.js `currentLegView`): a live
+  // leg that follows a stopped one has no stop reason yet, never the earlier leg's
+  const lastEscalation = currentLegView(spine)?.lastEscalation ?? null;
   // detail field sites (grepped): src/run.js:342 (smoke-red), src/ralph.js:656
   // (the DECISIONS passthrough — `detail: String(e.message || e)`),
   // src/planrun.js:2427 (the `relay()` transport/cap/wall relay), plus every
