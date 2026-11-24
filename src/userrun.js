@@ -55,7 +55,7 @@ import { makeSpine } from './spine.js';
 // signed into the job spec — a job is a repeatable SHAPE, the source/
 // destination a per-run value, exactly like `bareloop run <bundle> --repo
 // <path>` varies the repo without touching the bundle's signature).
-import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
+import { readSourceManifest, manifestDestination, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -1347,10 +1347,11 @@ async function execute(ctx) {
         const landed = staged !== null && (doorEvents ?? []).some((e) => e?.type === 'destination-written' && e.staged === staged.path);
         if (staged !== null && !landed) {
           const man = (await readSourceManifest(into)); // parenthesised on purpose: tests/source.test.js pins the FIRST `const x = await readSourceManifest(into)` as the front door's read
-          if (man.stop === null && man.present && typeof man.manifest?.destination === 'string') {
-            const land = await landStagedReport({ tree: wd, destination: man.manifest.destination, staged: staged.path });
+          const doorDestination = man.stop === null && man.present ? manifestDestination(man.manifest) : null;
+          if (doorDestination !== null) {
+            const land = await landStagedReport({ tree: wd, destination: doorDestination, staged: staged.path });
             if (land.stop === null) {
-              doorEmit('destination-written', { path: land.file.path, declared: man.manifest.destination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
+              doorEmit('destination-written', { path: land.file.path, declared: doorDestination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
               out(`\nDESTINATION  written in the repo - ${land.file.path} (${land.file.bytes}B, sha256 ${land.file.sha256.slice(0, 12)}...)`);
               try {
                 const fin = commitWork(wd, `bareloop: ${spec.job} (run ${DOOR !== null && (DOOR.includes('/') || DOOR.endsWith('.jsonl')) ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR})`, { exclude: defaultsOf(sourceOf(spec.closeDecl)).commitExclude });
@@ -2192,6 +2193,7 @@ async function execute(ctx) {
   /** @type {string | null} */
   let worktreeLine = null;
   const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  const wtDestination = manifestDestination(wtManifest);
   // the ONE delivery step has a row per source (src/sourcedefaults.js): a repo source writes ONLY its report at Destination INSIDE the worktree, before the final commit below, so the run's one commit carries it (and leaves the worker's scratch `output/` out).
   // A refused delivery is reported beside the green it could not deliver and never changes `outcome`.
   const delivery = defaultsOf(sourceOf(spec.closeDecl));
@@ -2202,18 +2204,18 @@ async function execute(ctx) {
     for (const home of [deps.runlistHome, cfgHome]) { try { n = n ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
     return n;
   };
-  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && typeof wtManifest?.destination === 'string') {
+  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && wtDestination !== null) {
     // ONE RULE: bareloop never writes into the judged tree after the close. With a review door open the report is STAGED under output/ (inside the fence the close judged) and lands at Destination only at an honoured Accept (below); with no door there is no Accept to wait for, so it lands now, as before.
     const staging = doorHere !== null;
-    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
+    const co = await copyOut({ tree: wd, destination: wtDestination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
     if (co.stop === null) {
       for (const f of co.files) {
         if (staging) {
-          emit('report-staged', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
-          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtManifest.destination} when you Accept`);
+          emit('report-staged', { path: f.path, declared: wtDestination, bytes: f.bytes, sha256: f.sha256 });
+          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtDestination} when you Accept`);
           continue;
         }
-        emit('destination-written', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+        emit('destination-written', { path: f.path, declared: wtDestination, bytes: f.bytes, sha256: f.sha256 });
         out(`\nDESTINATION  written in the repo - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...)`);
       }
     } else {

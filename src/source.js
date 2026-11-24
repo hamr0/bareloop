@@ -849,11 +849,16 @@ export async function setManifestDestination(manifestPath, destination) {
   return destination;
 }
 
+/** The ONE rule for a loaded source.json manifest's Destination: a non-empty string, else `null` (no record or none set). @param {any} manifest @returns {string|null} */
+export function manifestDestination(manifest) {
+  const d = manifest?.destination;
+  return typeof d === 'string' && d !== '' ? d : null;
+}
+
 /** The Destination record's value, read synchronously; `null` = no record or none set. @param {string} manifestPath @returns {string|null} */
 export function readManifestDestination(manifestPath) {
   try {
-    const d = JSON.parse(readFileSync(manifestPath, 'utf8')).destination;
-    return typeof d === 'string' && d !== '' ? d : null;
+    return manifestDestination(JSON.parse(readFileSync(manifestPath, 'utf8')));
   } catch { return null; }
 }
 
