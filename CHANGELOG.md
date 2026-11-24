@@ -19,6 +19,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The plan card says how long drafting took and what it cost (hamr 2026-11-24, B).** One line under the signed-ready plan: "Drafted in M:SS · $X", the drafting's first step start to its last step end and the drafting log's own spend (`draftedLine`, `src/draftspend.js`; "at least $X" when a call was unpriced). A Reuse has no drafting and shows no line.
 
+- **The Audit's drafting table shows the total draft time only (hamr 2026-11-24, C).** A step's own time is no longer in the table (the chat list shows it while drafting); the total row keeps the whole draft time.
+
 ## [0.62.0] - 2026-11-23
 
 ### Docs

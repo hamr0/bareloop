@@ -98,8 +98,8 @@ test('page Audit table: one row per step ("–" when it made no call), a further
   assert.doesNotMatch(html, /Tokens/, 'the call path carries no token counts, so the column is dropped');
   const rows = html.slice(html.indexOf('<tbody>')).match(/<tr>.*?<\/tr>|<tr class="drafting-total">.*?<\/tr>/g);
   assert.equal(rows.length, 5, 'setup, confirm, confirm\'s 2nd call, draft, total');
-  assert.match(rows[0], /checking setup<\/td><td>5\.0s<\/td><td>–<\/td><td>–<\/td><td>–<\/td>/, 'a step with no call shows – in Calls / Model / Cost');
-  assert.match(rows[1], /confirming plan<\/td><td>2m05s<\/td><td>1<\/td><td>deepseek-flash<\/td><td>\$0\.00(?:\d\d)<\/td>/, 'the step row carries its first call and the panel\'s 4-decimal rule under a cent');
+  assert.match(rows[0], /checking setup<\/td><td>–<\/td><td>–<\/td><td>–<\/td><td>–<\/td>/, 'a step with no call shows – in Time (hamr 2026-11-24, C: no per-step times) / Calls / Model / Cost');
+  assert.match(rows[1], /confirming plan<\/td><td>–<\/td><td>1<\/td><td>deepseek-flash<\/td><td>\$0\.00(?:\d\d)<\/td>/, 'the step row carries its first call and the panel\'s 4-decimal rule under a cent');
   assert.match(rows[2], /confirming plan \(confirm#2\)<\/td><td>–<\/td><td>1<\/td><td>deepseek-flash<\/td><td>\$0\.02<\/td>/, 'a repeated call gets its own row, named by its own label');
   assert.match(rows[4], /drafting-total.*<b>total<\/b>.*<td>3<\/td><td>–<\/td><td>\$0\.08<\/td>/);
   const header = partLine1Text(part, {}).split(' &middot; ')[1];

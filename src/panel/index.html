@@ -3714,7 +3714,8 @@
       rows += '<tr class="draft-checks-row" data-testid="drafting-notbuilt"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) + "</td></tr>";
     });
     (part.draftSteps || []).forEach(function(st){
-      var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
+      // hamr 2026-11-24 (C): the drafting row shows the total draft time only; a step's own time is not shown here (the chat list shows it while drafting)
+      var wall = "–";
       var calls = Array.isArray(st.calls) ? st.calls : [];
       var first = calls[0];
       rows += "<tr><td>" + escapeXml(st.label) + "</td><td>" + wall + "</td><td>" + (first ? "1" : "–") + "</td><td>" +
