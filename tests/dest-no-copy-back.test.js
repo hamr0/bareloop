@@ -1,5 +1,5 @@
 // hamr 2026-11-24 (ITEM33 addendum Part A item 7): the Destination has ONE record (source.json). The draft no longer copies it back onto the card: the card the session
-// keeps is the form as submitted, and every reader of "the Destination now" (the served state, card.json, the draft readout, the schedule's sign) reads the record.
+// keeps is the form as submitted, and every reader of "the Destination now" (the served state, the draft readout, the schedule's sign) reads the record.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
@@ -14,7 +14,7 @@ const REPLIES = JSON.parse(readFileSync(new URL('./fixtures/dest-fence-replies.j
 const FACTS = { sourcePaths: ['src/', 'bin/'], testPaths: ['tests/'] };
 const git = (dir, args) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
 
-test('a Destination answer updates the record only: the session\'s card keeps the typed value, recordedDestination and card.json read the record', async (t) => {
+test('a Destination answer updates the record only: the session\'s card keeps the typed value, recordedDestination reads the record and card.json keeps no copy', async (t) => {
   const w = await world(t, { serve: false });
   const repo = makeRepo(path.join(w.base, 'repo'));
   for (const f of ['docs/a.md', 'bin/x.mjs', 'tests/t.test.js', 'README.md']) { mkdirSync(path.dirname(path.join(repo, f)), { recursive: true }); writeFileSync(path.join(repo, f), '//\n'); }
@@ -34,7 +34,7 @@ test('a Destination answer updates the record only: the session\'s card keeps th
   assert.equal(record, 'src/, bin/, tests/');
   assert.equal(s.state.card.destination, 'docs/', 'nothing copied the record back onto the card');
   assert.equal(recordedDestination(s.state), record, 'the one reader says the record');
-  assert.equal(JSON.parse(readFileSync(join(dir, 'card.json'), 'utf8')).destination, record, 'card.json is written from the record');
+  assert.equal('destination' in JSON.parse(readFileSync(join(dir, 'card.json'), 'utf8')), false, 'card.json keeps no Destination copy');
 });
 
 test('the draft no longer assigns the record onto card / state.card (no second writer of the Destination)', () => {
