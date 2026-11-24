@@ -729,7 +729,7 @@ function endedBase(summary, death, o) {
  *  - tests: the newest record is a `check-start` (written when a check pass begins; src/planrun.js) or a `check-running` tick (its own time minus
  *    its `elapsedMs` is when the check began, so a spine from before `check-start` reads the same). Anything written after either retires it:
  *    a stale line is the failure, a missing one is not.
- *  - otherwise the NEAREST phase marker decides: `iteration-start` = the worker is in an attempt, counted from it; `materials` = the planner is
+ *  - otherwise the NEAREST phase marker decides: `iteration-start` = the worker is in an attempt, counted from it; `scout-start` = the scout (a worker too) is looking, counted from it until the planner starts (hamr 2026-11-24); `materials` = the planner is
  *    drafting a plan (a refused draft, `plan-validate` not ok, keeps it going), counted from it; any marker that ends the stretch
  *    (`middle-done`, `plan-accepted`, `plan-red`, `step-end`, `run-end`, `outer-close`, `job-end`, or a check's own records) = null.
  * @param {any[]} records
@@ -747,7 +747,7 @@ export function nowOf(records, nowMs) {
   for (let i = records.length - 1; i >= 0; i -= 1) {
     const r = records[i];
     if (!r || typeof r !== 'object') continue;
-    if (r.type === 'iteration-start') { const t = since(ms(r)); return t === null ? null : `AI working \u00B7 ${t}`; }
+    if (r.type === 'iteration-start' || r.type === 'scout-start') { const t = since(ms(r)); return t === null ? null : `AI working \u00B7 ${t}`; }
     if (r.type === 'materials') { const t = since(ms(r)); return t === null ? null : `Drafting \u00B7 ${t}`; }
     if (NOW_ENDS.has(r.type)) return null;
   }

@@ -114,3 +114,13 @@ test('page: the NOW row is the block\'s first row (summaryRow, same classes), dr
   render({ runid: 'r1', now: null, ended: null, schedule: null, resume: null });
   assert.equal(box.hidden, true, 'nothing to show: the block is hidden');
 });
+
+test('D2 AI (scout): from the newest scout-start until the planner starts (materials) the NOW row says "AI working", then "Drafting"', () => {
+  const t0 = FIXTURE[0];
+  const scout = { type: 'scout-start', rounds: 8, ts: t0.ts, seq: 1 };
+  assert.equal(detailOf([t0, scout], { now: at(scout, 95) }).now, 'AI working · 1:30');
+  const result = { type: 'scout-result', ts: new Date(at(scout, 20)).toISOString(), seq: 2 };
+  assert.equal(detailOf([t0, scout, result], { now: at(scout, 95) }).now, 'AI working · 1:30', 'the scout\'s own records do not end it');
+  const m = { type: 'materials', ts: new Date(at(scout, 60)).toISOString(), seq: 3 };
+  assert.equal(detailOf([t0, scout, result, m], { now: at(scout, 95) }).now, 'Drafting · 0:30', 'the planner starting hands over to Drafting');
+});
