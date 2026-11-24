@@ -1353,7 +1353,7 @@ test('END TO END: an unrunnable declared stage escalates by its OWN fault row, w
     closeDecl: {
       genre: GENRE, lang: 'js',
       stages: [
-        { name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0, timeoutMs: 400 } },
+        { name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0 } },
         guards(['src/'])[0], guards(['src/'])[1],
       ],
     },
@@ -1364,9 +1364,9 @@ test('END TO END: an unrunnable declared stage escalates by its OWN fault row, w
   let calls = 0;
   const provider = { name: 'counting', generate: async () => { calls += 1; return { text: '', toolCalls: [], usage: {}, costUsd: 0, stopReason: null, model: null }; } };
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: p.dir, provider, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  const outcome = await runPlan(jv.job, { workdir: p.dir, provider, emit, capRuns: 3, remainingUsd: () => 1.5, closeTimeoutMs: 400 });
 
-  assert.equal(outcome, 'close-red');
+  assert.equal(outcome, 'check-timeout');
   assert.equal(calls, 0);
   const esc = events.filter((e) => e.type === 'escalation').at(-1);
   assert.equal(esc.category, 'close-timeout', 'NOT broken-close — "raise the timeout" and "fix the argv" are two decisions');
