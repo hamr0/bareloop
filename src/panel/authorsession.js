@@ -242,7 +242,7 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
   }
 }
 
-/** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
+/** the form's fields, in card order — the names the card form and its request bodies carry (P5 item 3); `card.json` stores them minus `destination` (see `cardFileFields`) */
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
@@ -289,6 +289,12 @@ export function cardSource(card) {
  */
 export function recordedDestination(state) {
   return readManifestDestination(join(String(state.outDir), 'source-seed', 'source.json')) ?? String(state.card?.destination ?? '');
+}
+
+/** What `card.json` stores: the form's fields WITHOUT `destination` — the Destination has ONE record (source.json), so the card file keeps no copy of it. @param {any} card */
+export function cardFileFields(card) {
+  const { destination: _record, ...rest } = cardFields(card);
+  return rest;
 }
 
 /**
@@ -1105,7 +1111,7 @@ export function createSession(card, deps = {}) {
           ok: true, specHash: hash, note: 'command close — signed as written; close script bytes verified', gates: { closeBytes: { ok: true } },
         }, null, 2)}\n`);
         state.specHash = hash;
-        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify({ ...cardFields(card), destination: recordedDestination(state) }, null, 2)}\n`);
+        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFileFields(card), null, 2)}\n`);
         state.phase = 'prepared';
         stepStart('hash', `spec hash ${hash}`);
         stepDone();
@@ -1146,7 +1152,7 @@ export function createSession(card, deps = {}) {
       state.specHash = signing.specHash;
       // P5 item 3 — the form text, VERBATIM, beside the resolved spec: what "Start from this" prefills from.
       // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
-      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify({ ...cardFields(card), destination: recordedDestination(state) }, null, 2)}\n`);
+      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFileFields(card), null, 2)}\n`);
       state.phase = 'prepared';
       stepStart('hash', `spec hash ${signing.specHash}`);
       stepDone();

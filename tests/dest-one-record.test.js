@@ -38,14 +38,14 @@ const signed = async (s) => {
   assert.ok(await until(() => s.state.phase === 'prepared'), `never prepared (${s.state.phase} ${s.state.error})`);
 };
 
-test('(a) dest-fence Yes: source.json, the card (card.json) and the signed writeScope all carry the new Destination', async (t) => {
+test('(a) dest-fence Yes: source.json, and the signed writeScope (card.json keeps no copy) all carry the new Destination', async (t) => {
   const { s, dir, record } = await session(t, { replyRaw: REPLIES.F1.raw, destination: 'docs/', jobText: F1_TEXT });
   assert.ok(await until(() => asking(s)), `no question (${s.state.phase} ${s.state.error})`);
   assert.equal(record(), 'docs/', 'the record starts as the card said');
   assert.deepEqual(s.send('', 'yes'), { ok: true });
   await signed(s);
   assert.equal(record(), 'src/, bin/, tests/');
-  assert.equal(JSON.parse(readFileSync(join(dir(), 'card.json'), 'utf8')).destination, 'src/, bin/, tests/');
+  assert.equal('destination' in JSON.parse(readFileSync(join(dir(), 'card.json'), 'utf8')), false, 'card.json keeps no Destination copy');
   assert.equal(recordedDestination(s.state), 'src/, bin/, tests/');
   assert.deepEqual(JSON.parse(readFileSync(s.state.resolvedSpecPath, 'utf8')).writeScope, ['src/', 'bin/', 'tests/']);
 });
@@ -56,7 +56,7 @@ test('(b) a typed Destination (dest-fence typed, and the dest-point file questio
   assert.deepEqual(a.s.send('tests/', 'path'), { ok: true });
   await signed(a.s);
   assert.equal(a.record(), 'tests/');
-  assert.equal(JSON.parse(readFileSync(join(a.dir(), 'card.json'), 'utf8')).destination, 'tests/');
+  assert.equal('destination' in JSON.parse(readFileSync(join(a.dir(), 'card.json'), 'utf8')), false, 'card.json keeps no Destination copy');
   assert.deepEqual(JSON.parse(readFileSync(a.s.state.resolvedSpecPath, 'utf8')).writeScope, ['tests/']);
 
   const b = await session(t, { replyRaw: REPLIES.F3.raw, destination: 'src/', jobText: REPLIES.F3.job });

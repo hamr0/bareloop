@@ -97,11 +97,13 @@ test('card.json round-trips: written beside resolved-spec.json at sign-prepare, 
   assert.ok(existsSync(file), 'card.json sits in the session dir, beside resolved-spec.json');
   assert.ok(existsSync(join(session.state.outDir, 'resolved-spec.json')));
   const got = JSON.parse(readFileSync(file, 'utf8'));
-  assert.deepEqual(got, cardFields(card));
+  const { destination: _record, ...formFields } = cardFields(card);
+  assert.deepEqual(got, formFields, 'the form fields, VERBATIM, without a Destination copy (source.json is its one record)');
+  assert.equal('destination' in got, false);
   assert.equal(got.jobText, card.jobText, 'verbatim — no trimming, no rewrite');
   assert.equal(got.startFrom, undefined);
   assert.equal(got.stray, undefined);
-  assert.deepEqual(Object.keys(got).sort(), CARD_FIELDS.filter((f) => card[f] !== undefined).sort());
+  assert.deepEqual(Object.keys(got).sort(), CARD_FIELDS.filter((f) => f !== 'destination' && card[f] !== undefined).sort());
 });
 
 /**
@@ -156,7 +158,7 @@ function realSpec() {
 test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own readers; the open four start at what the run had; card.json only supplies model and the Inputs text', async () => {
   const spec = await realSpec();
   const home = tmp('p5-sf-h-');
-  const card = baseCard({ jobName: spec.job, source: '/typed/source', maxWallMs: 600000, model: 'claude-sonnet-5' });
+  const card = baseCard({ jobName: spec.job, source: '/typed/source', maxWallMs: 600000, model: 'claude-sonnet-5', destination: 'stale-copy/' }); // a card.json from before the one-record rule may still carry a Destination: Reuse never reads it
   makeRun(home, { runid: 'withcard', spec, card });
   const a = getStartFrom('withcard', { home });
   assert.equal(a.ok, true, JSON.stringify(a));
@@ -170,7 +172,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.card.checkType, 'deterministic');
   assert.equal(a.card.model, 'claude-sonnet-5');
   assert.equal(a.card.inputs, 'repo: /typed/source', 'the Inputs text the person saved');
-  assert.equal(a.card.destination, spec.writeScope.join(', '));
+  assert.equal(a.card.destination, 'src/', 'the Destination is source.json\'s record, never the card.json copy');
   assert.equal(a.card.capUsd, spec.budgetUsd);
   assert.equal(a.card.maxWallMs, spec.maxWallMs);
   assert.equal(a.workflowKey, workflowKey(spec));
