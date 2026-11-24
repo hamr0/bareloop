@@ -265,8 +265,8 @@ export function mechanicalStages(stages) {
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
  *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
  *   signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
- *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>,
- *   seedBase?: {get: (key: string) => {code: number, out: string, ms: number}|undefined, keep: (rec: any) => void}, seedShare?: Map<string, any>,
+ *   checkStore?: {findCheck: (key: string, treeId: string) => any, keepCheck: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void},
+ *   reuse?: (hit: {memoKey: string, at: string}) => void,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -280,10 +280,11 @@ export function mechanicalStages(stages) {
  *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run.
  *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
- *   `cmdKeep` is told of each COMPLETED command run (resume reuse: the caller saves it with the tree identity taken before it ran); `cmdSaved` is the start pass's
- *   saved results whose tree identity equals the current one, by `checkKey`; a hit stands in for a run in `cmdMemo` and marks itself `used` (see `runCmd`).
- *   `seedBase` is the RUN's kept seed-baseline readings (a count stage measured in the seed worktree): completed results only, by command + seed tree id, used by every pass and every leg.
- *   `seedShare` is a draft session's own map of COMPLETED seed-read command results (the signing gates' tries), keyed by command + seed tree (`sharedRun`).
+ *   `checkStore` is the run's ONE state file (src/carrystore.js): every COMPLETED command run (any exit code) is kept under (command key, fingerprint of the files the
+ *   command saw, `treeIdentity`, taken before it ran), and a later run of the same command on the same files may read it. The seed (original code) is just another
+ *   fingerprint: a command measured in the seed worktree, or in place on an unchanged tree, is the seed reading. A stop (timed out, killed, crashed) is never kept.
+ *   `reuse` is the SWITCH for reading a saved result in the judged directory itself (the run-start pass and the signing gates hand it; no other pass does, so a pass
+ *   never comes from a saved result); it is told of each hit. A command in another directory (the seed worktree's baseline) always reads.
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
@@ -1393,25 +1394,25 @@ export function effectiveTimeoutMs(declared, ctx) {
 /**
  * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
  * still-running note. Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
- * `seed` = the SEED-BASELINE reading (a count stage's command in the seed worktree): with `ctx.seedBase` it is kept and reused for the whole run and across legs (see `Ctx`).
- * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx @param {boolean} [seed]
+ * With `ctx.checkStore` (hamr 2026-11-24): the fingerprint of the directory the command will see is taken BEFORE it runs, a saved result for (command, fingerprint)
+ * stands in for the run where the caller allows it (see `Ctx`), and a completed run is kept. One lookup, one keeper: the seed baseline, resume, and drafting-to-run
+ * reuse are all this.
+ * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx
  */
-async function runCmd(p, cwd, ctx, seed = false) {
+async function runCmd(p, cwd, ctx) {
   const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
+  const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
   const run = async () => {
-    // SEED BASELINE (hamr 2026-11-23, run mwsfq0pi leg 3): the seed tree never changes inside a run, so its reading is kept by command + seed TREE id (never the directory)
-    let seedKey = null;
-    if (seed && ctx.seedBase) {
-      const t = await git(ctx.workdir, ['rev-parse', `${ctx.seedRef}^{tree}`]);
-      const treeId = t.ok ? t.out.trim() : '';
-      if (/^[0-9a-f]{40,64}$/.test(treeId)) {
-        seedKey = { key: `seed:${checkKey(p, timeoutMs)}:${treeId}`, treeId };
-        const hit = ctx.seedBase.get(seedKey.key);
-        if (hit) return { stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms };
+    const store = ctx.checkStore;
+    const key = checkKey(p, timeoutMs);
+    const treeId = store ? await treeIdentity(cwd) : null;
+    if (store && treeId !== null && (cwd !== ctx.workdir || typeof ctx.reuse === 'function')) {
+      const hit = store.findCheck(key, treeId);
+      if (hit) {
+        if (cwd === ctx.workdir) ctx.reuse?.({ memoKey, at: hit.at });
+        return { stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms };
       }
     }
-    // resume reuse: ONE tree identity taken BEFORE the command (no compare after); only a run in the judged directory is kept
-    const keepId = typeof ctx.cmdKeep === 'function' && cwd === ctx.workdir ? await treeIdentity(cwd) : null;
     const r = await sh(p.cmd, p.args ?? [], {
       cwd,
       env: p.env ?? {},
@@ -1425,44 +1426,15 @@ async function runCmd(p, cwd, ctx, seed = false) {
       ...(ctx.listBox ? { listBox: ctx.listBox } : {}),
     });
     // only a command that COMPLETED (any exit code) is kept: a timed-out, killed or crashed one is a stop and never gets here
-    if (r.stop === null && seedKey && r.out.length <= MAX_SAVED_OUT) ctx.seedBase?.keep({ key: seedKey.key, treeId: seedKey.treeId, code: r.code, out: r.out, ms: r.ms, seed: true });
-    if (r.stop === null && keepId !== null && r.out.length <= MAX_SAVED_OUT) ctx.cmdKeep?.({ key: checkKey(p, timeoutMs), treeId: keepId, code: r.code, out: r.out, ms: r.ms });
+    if (store && treeId !== null && r.stop === null && r.out.length <= MAX_SAVED_OUT) store.keepCheck({ key, treeId, code: r.code, out: r.out, ms: r.ms });
     return r;
   };
   // ONCE PER CHECK PASS (hamr 2026-11-21): every stage reading the same command (same args, env, directory and limit) shares one run. The memo
-  // belongs to ONE pass (a seed read, a close run), so the next pass reads the tree again; nothing is shared across a tree change.
-  if (!ctx.cmdMemo) return sharedRun(ctx, cwd, JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]), run);
-  const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
+  // belongs to ONE pass (a seed read, a close run) and holds only runs in flight or done in that pass; the next pass reads the tree again.
+  if (!ctx.cmdMemo) return run();
   let pending = ctx.cmdMemo.get(memoKey);
-  if (!pending) {
-    // RESUME REUSE (start pass only: `cmdSaved` is handed to no other pass): a saved result for this command on this very tree stands in for the run
-    const hit = ctx.cmdSaved instanceof Map && cwd === ctx.workdir ? ctx.cmdSaved.get(checkKey(p, timeoutMs)) : undefined;
-    if (hit) { hit.used = true; hit.memoKey = memoKey; pending = Promise.resolve({ stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms }); }
-    else pending = sharedRun(ctx, cwd, memoKey, run);
-    ctx.cmdMemo.set(memoKey, pending);
-  }
+  if (!pending) { pending = run(); ctx.cmdMemo.set(memoKey, pending); }
   return pending;
-}
-
-/**
- * ONE owner of what a draft session's signing-gate tries share (hamr 2026-11-22, run mwsblixt: four tries, four full suites on one unchanged seed).
- * Only where the caller handed `ctx.seedShare` (the panel's session map; never the run-start precheck or preflight): a COMPLETED run of a command
- * (any exit code) is kept under the command's own memo key + the seed's TREE id, and a later try reads it only while the directory is verifiably
- * at that seed. A stopped result (timed out, killed, crashed) is never kept, so the next try runs fresh; a tree that differs is a fresh run.
- * @param {Ctx} ctx @param {string} cwd @param {string} memoKey @param {() => Promise<any>} run
- */
-async function sharedRun(ctx, cwd, memoKey, run) {
-  const share = ctx.seedShare;
-  if (!(share instanceof Map) || !ctx.seedRef) return run();
-  const at = await treeIsAtSeed(cwd, ctx.seedRef);
-  const tree = at.at ? await git(cwd, ['rev-parse', `${ctx.seedRef}^{tree}`]) : null;
-  const treeId = tree?.ok ? tree.out.trim() : '';
-  if (!/^[0-9a-f]{40,64}$/.test(treeId)) return run();
-  const key = `${treeId}\u0000${memoKey}`;
-  if (share.has(key)) return share.get(key);
-  const r = await run();
-  if (r.stop === null) share.set(key, r);
-  return r;
 }
 
 /** the typed `survivors` of a killed check, for a stop's detail (said in plain words only where it is shown) @param {any} r @returns {Record<string, any>} */
@@ -1507,7 +1479,7 @@ async function runCountNotWorse(stage, ctx) {
 
   /** @param {string} cwd @param {string} where */
   const measure = async (cwd, where) => {
-    const r = await runCmd(p, cwd, ctx, cwd !== ctx.workdir);
+    const r = await runCmd(p, cwd, ctx);
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault, ...survivorsOf(r) };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };

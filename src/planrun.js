@@ -54,7 +54,7 @@ import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
-  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote, treeIdentity,
+  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
@@ -1096,6 +1096,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   passes `false` so the three `--resume`-naming readouts below (`MONEY_OPTIONS`,
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
+ * @param {string|null} [opts.stateFile=null] the run's ONE state file (`runStateFile`, src/carrystore.js): the carry memo and every completed check result; null = nothing is written
  * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
  *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of EVERY worker
  *   (scout, plan/replan drafter, step, close-fix: the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
@@ -1111,7 +1112,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, checkNote = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, stateFile = null, learnHints = null, checkNote = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1138,7 +1139,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, files read with their function
   // line ranges included (the old separate handoff note is folded in). ALWAYS ON, no switch (hamr 2026-11-01); a legacy spec's
   // `handoffNote` and the retired `carryNote` config key have no effect. One `carry-note` spine record (counts only) per note handed.
-  const carry = createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined });
+  const carry = createCarryStore({ workdir, stateFile, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined });
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -1802,11 +1803,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
 
   // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words). Nothing reads it back to decide anything.
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
-  /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
-  /** the run's seed-baseline readings (hamr 2026-11-23): loaded from the carry memo file (an earlier leg's), kept there as they complete, handed to EVERY close pass */
-  const seedBaseMap = new Map(carry.savedChecks().filter((c) => c.seed === true).map((c) => [c.key, c]));
-  const seedBase = { get: (/** @type {string} */ k) => seedBaseMap.get(k), keep: (/** @type {any} */ rec) => { try { const full = { ...rec, out: scrub(rec.out), at: new Date().toISOString() }; seedBaseMap.set(rec.key, full); carry.keepCheck(full); } catch { /* never breaks a run */ } } };
-  const cmdKeep = (rec) => { try { carry.keepCheck({ ...rec, out: scrub(rec.out), at: new Date().toISOString() }); } catch { /* never breaks a run */ } };
+  // ONE state file (hamr 2026-11-24, src/carrystore.js `runStateFile`): every COMPLETED check command of any close pass is kept in it under (command, fingerprint of
+  // the files it saw), output masked by the store's one scrub. A record, never a verdict: a failure there never breaks a run. The seed reading is just another fingerprint.
   /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
   const stopChecks = new AbortController();
   /** the Stop landed inside a close (the callers that can end `stopped` read it) */
@@ -1827,9 +1825,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo] a caller-owned check pass (the preflight loop); absent = a fresh pass
-   * @param {Map<string, any>} [cmdSaved] RESUME REUSE: saved results for this very tree, handed to the start pass ONLY
+   * @param {(hit: {memoKey: string, at: string}) => void} [reuse] handed to the start pass ONLY: it lets a saved result for these very files stand in for a run, and is told of each
    */
-  const runCloseStagesInner = async (stages, cmdMemo, cmdSaved) => {
+  const runCloseStagesInner = async (stages, cmdMemo, reuse) => {
     if (!declared) return runStages(stages, scrub, closeOpts);
     // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
     // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
@@ -1844,9 +1842,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...closeOpts,
       signal: stopChecks.signal,
       ...(cmdMemo ? { cmdMemo } : {}),
-      ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
-      cmdKeep,
-      seedBase,
+      ...(reuse ? { reuse } : {}),
+      checkStore: carry,
       onTick: (/** @type {{elapsedMs: number}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, text: checkRunningNote(t) }),
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
@@ -1903,16 +1900,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * never retried, never fed back as a gap.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo]
-   * @param {Map<string, any>} [cmdSaved]
+   * @param {(hit: {memoKey: string, at: string}) => void} [reuse]
    */
-  const runCloseStages = async (stages, cmdMemo, cmdSaved) => {
+  const runCloseStages = async (stages, cmdMemo, reuse) => {
     const sig = checkStageByteSignature(stages, workdir);
     if (!sig.ok) {
       const r = sig.reds[0];
       const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
       return { verdict: 'close-tampered', stage: r?.stage, detail };
     }
-    return runCloseStagesInner(stages, cmdMemo, cmdSaved);
+    return runCloseStagesInner(stages, cmdMemo, reuse);
   };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -2079,9 +2076,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
 
   /** the close, as ONE verdict: every stage in order, first red wins */
-  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {Map<string, any>} [cmdSaved] the start pass's saved results (resume) */
-  const judgeClose = async (cmdMemo, cmdSaved) => {
-    const v = await runCloseStages(stagedClose, cmdMemo, cmdSaved);
+  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {(hit: {memoKey: string, at: string}) => void} [reuse] the start pass's saved-result switch */
+  const judgeClose = async (cmdMemo, reuse) => {
+    const v = await runCloseStages(stagedClose, cmdMemo, reuse);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
@@ -2253,34 +2250,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ONE start pass (hamr 2026-11-23, run mwsfq0pi): the precheck and the preflight loop below read the same unchanged tree back to back in this
   // process, so they share ONE memo and a command the precheck ran is not run again. The precheck is the memo's first user, so it is itself fresh.
   const startMemo = new Map();
-  // RESUME REUSE (hamr 2026-11-23): on a resumed leg, a check result saved by an earlier leg for EXACTLY these files stands in for a run of the same command
-  // in this start pass (precheck + preflight). The tree identity is read once here; no match = the command runs fresh. Nothing else ever takes a saved result.
-  /** @type {Map<string, any>} */
-  const startSaved = new Map();
-  if (resuming && declared) {
-    const saved = carry.savedChecks();
-    const here = saved.length ? await treeIdentity(workdir) : null;
-    if (here) for (const c of saved) if (c.seed !== true && c.treeId === here) startSaved.set(c.key, { ...c });
-  }
-  const startEntries = [...startSaved.values()];
-  let pre = await judgeClose(startMemo, startSaved);
+  // SAVED RESULTS (hamr 2026-11-24): in this start pass (precheck + preflight) a check result saved for EXACTLY these files - by an earlier leg, or by drafting's signing
+  // gates - stands in for a run of the same command. The fingerprint is taken fresh by the command's own lookup; no match = the command runs fresh. Nothing else ever takes one.
+  /** @type {{memoKey: string, at: string}[]} the saved results this start pass leaned on (in flight, held only until the safety rule below has looked) */
+  let startUsed = [];
+  /** @type {((hit: {memoKey: string, at: string}) => void)|undefined} */
+  let noteReuse = declared ? (/** @type {{memoKey: string, at: string}} */ hit) => { startUsed.push(hit); } : undefined;
+  let pre = await judgeClose(startMemo, noteReuse);
   // THE ONE SAFETY RULE: a pass never comes from a saved result. A satisfied precheck that leaned on one drops those entries and is judged again fresh.
-  if (pre.verdict === 'satisfied' && startEntries.some((e) => e.used)) {
-    for (const e of startEntries) if (e.used) { startMemo.delete(e.memoKey); e.used = false; }
-    startSaved.clear();
+  if (pre.verdict === 'satisfied' && startUsed.length) {
+    for (const e of startUsed) startMemo.delete(e.memoKey);
+    startUsed = [];
+    noteReuse = undefined;
     pre = await judgeClose(startMemo);
   }
   let reuseTold = false;
   /** ONE plain line, code-written, when a saved result was used (a spine record: the Audit and the run's records show it) */
   const tellReuse = () => {
     if (reuseTold) return;
-    const used = startEntries.filter((e) => e.used);
-    if (!used.length) return;
+    if (!startUsed.length) return;
     reuseTold = true;
-    const at = used.map((e) => e.at).sort().at(-1);
-    const d = new Date(at);
+    const at = startUsed.map((e) => e.at).sort().at(-1);
+    const d = new Date(/** @type {string} */ (at));
     const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    emit('check-reused', { commands: used.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
+    emit('check-reused', { commands: startUsed.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
   };
   emit('close-precheck', { ...pre });
   tellReuse();
@@ -2344,7 +2337,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // 2026-11-22 run mwsblixt; 2026-11-23 run mwsfq0pi). The memo lives only for the start; step exits, the fix-loop judge and the final close take fresh passes.
   const preflightMemo = startMemo;
   for (const m of menu) {
-    const v = await runCloseStages(m.run, preflightMemo, startSaved);
+    const v = await runCloseStages(m.run, preflightMemo, noteReuse);
     tellReuse();
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
@@ -2546,7 +2539,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // uses), so this can only tighten, never widen
         writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
-        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
+        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s)), ...(stateFile ? [resolve(stateFile)] : [])],
       },
       // F178/F177's runtime belt: `.git` and `node_modules` WRITES only — never
       // fs.deny, which blocks reads too (see FORBIDDEN_WRITE_SEGMENT_PATTERN's

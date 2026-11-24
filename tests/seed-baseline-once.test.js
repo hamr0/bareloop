@@ -11,13 +11,14 @@ import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
+import { runStateFile } from '../src/carrystore.js';
 import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
 
 const guards = classGuards({ verdictType: 'green', lang: 'js' }).map((g) => ({
   name: g.name, kind: g.kind, params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
 }));
 
-function makePatient(t) {
+function makePatient(t, { atSeed = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'seed-once-'));
   const side = mkdtempSync(join(tmpdir(), 'seed-once-side-'));
   t.after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(side, { recursive: true, force: true }); });
@@ -32,9 +33,9 @@ for (let i = 0; i < n; i++) console.log('ERR' + i + ' at src/count.txt');
 process.exit(0);\n`);
   const seed = initPatientRepo(dir);
   // a tree already changed from its seed (a resumed run, or the work so far): 2 at the seed, 3 now (worse, so the precheck is red)
-  writeFileSync(join(dir, 'src', 'count.txt'), '3\n');
+  if (!atSeed) writeFileSync(join(dir, 'src', 'count.txt'), '3\n');
   const cwds = () => { try { return readFileSync(log, 'utf8').split('\n').filter(Boolean); } catch { return []; } };
-  return { dir, seed, spine: join(side, 'spine.jsonl'), log, cwds };
+  return { dir, seed, side, spine: join(side, 'spine.jsonl'), log, cwds };
 }
 
 const jobOf = (log) => ({
@@ -70,13 +71,13 @@ test('the seed-baseline reading runs ONCE in the run: precheck, preflight, the s
   assert.ok(here.length >= 3, `the current tree was read fresh in each pass (${here.length} reads)`);
 });
 
-test('a second leg reads the saved seed baseline from the carry memo file: 0 more seed runs', async (t) => {
+test('a second leg reads the saved seed baseline from the state file: 0 more seed runs', async (t) => {
   const p = makePatient(t);
   const job = jobOf(p.log);
   const leg = async (tag, resumeBranch) => {
     const spine = join(tmpdir(), `${tag}-${Date.now()}.jsonl`);
     const provider = { calls: [], async generate() { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); } };
-    const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: p.dir, provider, emit: makeSpine(spine), ...(resumeBranch ? { resumeBranch } : {}) });
+    const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: p.dir, provider, emit: makeSpine(spine), stateFile: runStateFile(p.side), ...(resumeBranch ? { resumeBranch } : {}) });
     const events = readSpine(spine);
     rmSync(spine, { force: true });
     return { outcome, events, branch: events.find((e) => e.type === 'work-branch')?.branch ?? null };
@@ -87,4 +88,25 @@ test('a second leg reads the saved seed baseline from the carry memo file: 0 mor
   assert.equal(seedRuns(), 1);
   await leg('l2', l1.branch);
   assert.equal(seedRuns(), 1, 'leg 2 did not measure the seed again');
+});
+
+test('F395: leg 1 at the seed in place, the AI then edits, a later leg reads the seed count from the state file: the command runs ONCE (the current tree), never in the seed worktree', async (t) => {
+  const p = makePatient(t, { atSeed: true });
+  const job = jobOf(p.log);
+  const leg = async (tag, resumeBranch) => {
+    const spine = join(p.side, `${tag}.jsonl`);
+    const provider = { calls: [], async generate() { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); } };
+    await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: p.dir, provider, emit: makeSpine(spine), stateFile: runStateFile(p.side), ...(resumeBranch ? { resumeBranch } : {}) });
+    const events = readSpine(spine);
+    return { events, branch: events.find((e) => e.type === 'work-branch')?.branch ?? null };
+  };
+  const l1 = await leg('l1', null);
+  assert.ok(l1.branch, JSON.stringify(l1.events.filter((e) => e.type === 'escalation')));
+  const afterLeg1 = p.cwds().length;
+  assert.equal(afterLeg1, 1, 'leg 1: the tree is at the seed, so the one in-place run is the seed reading');
+  writeFileSync(join(p.dir, 'src', 'count.txt'), '3\n'); // the AI edited between legs
+  await leg('l2', l1.branch);
+  const leg2 = p.cwds().slice(afterLeg1);
+  assert.equal(leg2.length, 1, `leg 2 ran the command ${leg2.length} times: ${leg2.join(' | ')}`);
+  assert.ok(leg2[0] === p.dir || leg2[0].endsWith(p.dir), 'and it was the current tree, not the seed worktree');
 });

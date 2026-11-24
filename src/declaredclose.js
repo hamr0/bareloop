@@ -557,7 +557,7 @@ function translate(r, redact) {
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null, lang?: string|null,
  *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
- *   cmdKeep?: Function, cmdSaved?: Map<string, any>, seedBase?: any}} [opts]
+ *   checkStore?: any, reuse?: Function}} [opts]
  *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
  *   `lang` = the close's language (`closeDecl.lang`): which failing-test lines a red count stage quotes (`failureLinesOf`)
  *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
@@ -566,7 +566,7 @@ function translate(r, redact) {
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null, source = null, lang = null, onTick = null, tickAfterMs, tickEveryMs, signal = null, cmdMemo, cmdKeep, cmdSaved, seedBase,
+    onRubricEvidence = null, list = null, source = null, lang = null, onTick = null, tickAfterMs, tickEveryMs, signal = null, cmdMemo, checkStore, reuse,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -611,10 +611,9 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // ONE close run is ONE check pass: every stage reading the same command shares its single run (src/kinds.js `runCmd`)
     // (a caller whose passes are one unchanged tree - the run-start preflight loop - passes its own memo and owns its life)
     cmdMemo: cmdMemo instanceof Map ? cmdMemo : new Map(),
-    // RESUME REUSE seams (src/kinds.js `runCmd`): keep each completed command's result; the start pass alone is handed saved ones
-    ...(typeof cmdKeep === 'function' ? { cmdKeep } : {}),
-    ...(cmdSaved instanceof Map ? { cmdSaved } : {}),
-    ...(seedBase && typeof seedBase.get === 'function' ? { seedBase } : {}),
+    // THE ONE STATE FILE's check results (src/kinds.js `runCmd`): each completed command's result is kept; only the start pass and the signing gates hand `reuse`
+    ...(checkStore && typeof checkStore.findCheck === 'function' ? { checkStore } : {}),
+    ...(typeof reuse === 'function' ? { reuse } : {}),
     seedTrees,
   };
   try {

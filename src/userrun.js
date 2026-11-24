@@ -25,6 +25,7 @@
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, rmdirSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { runStateFile } from './carrystore.js';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -2024,6 +2025,8 @@ async function execute(ctx) {
   try {
     outcome = await runJob(spec, {
       stopFile,
+      // the run's ONE state file (src/carrystore.js): beside source.json where the job has a prepared copy (drafting wrote its check results there), else beside the spine
+      stateFile: runStateFile(ctx.bundle || ctx.into === undefined ? spineDir : into),
       ...(placeValues === null ? {} : { placeValues }),
       ...(placeRead === null ? {} : { placeRead }),
       ...(ticketRecord === null ? {} : { ticketRecord }),

@@ -762,17 +762,17 @@ test('MUTATION PROOF: disabling the byte-signature compare inside runCloseStages
 
   const planrunPath = join(scratch, 'src', 'planrun.js');
   let src = readFileSync(planrunPath, 'utf8');
-  const before = '  const runCloseStages = async (stages, cmdMemo, cmdSaved) => {\n'
+  const before = '  const runCloseStages = async (stages, cmdMemo, reuse) => {\n'
     + '    const sig = checkStageByteSignature(stages, workdir);\n'
     + '    if (!sig.ok) {\n'
     + '      const r = sig.reds[0];\n'
     + '      const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : \'<unreadable>\'}`).join(\'; \');\n'
     + "      return { verdict: 'close-tampered', stage: r?.stage, detail };\n"
     + '    }\n'
-    + '    return runCloseStagesInner(stages, cmdMemo, cmdSaved);\n'
+    + '    return runCloseStagesInner(stages, cmdMemo, reuse);\n'
     + '  };';
   assert.ok(src.includes(before), 'the exact runCloseStages wrapper body must be found in the REAL source — if this fails, it moved and the mutation below would cut the wrong thing');
-  src = src.replace(before, '  const runCloseStages = async (stages, cmdMemo, cmdSaved) => runCloseStagesInner(stages, cmdMemo, cmdSaved);');
+  src = src.replace(before, '  const runCloseStages = async (stages, cmdMemo, reuse) => runCloseStagesInner(stages, cmdMemo, reuse);');
   const startMarker = '// ── close-tampered (PRD item 27/M2';
   const endMarker = "// ── THE SIGNER'S ANSWER (N4 §1.4)";
   const startIdx = src.indexOf(startMarker);

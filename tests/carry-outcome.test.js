@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCarryStore } from '../src/carrystore.js';
 import { CAP } from '../src/carrynote.js';
-import { runScripted } from './carry-scenario.js';
+import { runScripted, stateFileOf } from './carry-scenario.js';
 
 const base = mkdtempSync(join(tmpdir(), 'carry-outcome-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -71,7 +71,7 @@ test('call site: the engine hands the check result to the store, so state.json r
   const wd = join(base, 'wired');
   const r = await runScripted(wd, {});
   assert.equal(r.outcome, 'green');
-  const st = JSON.parse(readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8'));
+  const st = JSON.parse(readFileSync(stateFileOf(wd), 'utf8'));
   const real = st.asks.find((a) => a.step === 'real');
   assert.equal(real.result, 'green');
 });
@@ -116,19 +116,20 @@ test('a long failure text is kept whole (no 8-line clip) and masked', async () =
   assert.ok(!JSON.stringify(s._state()).includes('AKIAABCDEFGHIJKLMNOP'), 'stored masked');
 });
 
-test('state.json keeps failures across a resume; a v0.52.0 state (no failure text) loads and renders without throwing', async () => {
+test('the state file keeps failures across a resume; a v0.52.0 state (no failure text) loads and renders without throwing', async () => {
   const wd = join(base, 'resumed');
-  const s = createCarryStore({ workdir: wd, emit: () => {}, strikeLimit: 2 });
+  const sf = join(base, 'resumed-state.json');
+  const s = createCarryStore({ workdir: wd, stateFile: sf, emit: () => {}, strikeLimit: 2 });
   await ask(s, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'red', failure: 'kept across resume' });
   await ask(s, { phase: 'step:a', iteration: 2, prompt: RETRY, result: 'red', failure: 'newer one' });
-  const r = createCarryStore({ workdir: wd, emit: () => {}, strikeLimit: 2, resume: true });
+  const r = createCarryStore({ workdir: wd, stateFile: sf, emit: () => {}, strikeLimit: 2, resume: true });
   assert.equal(r.loaded(), true);
   const note = await ask(r, { phase: 'step:a', iteration: 3, prompt: RETRY, result: 'red' });
   assert.ok(note.includes('    kept across resume'), note);
   const old = join(base, 'old052');
-  mkdirSync(join(old, '.smoke', 'carry'), { recursive: true });
-  writeFileSync(join(old, '.smoke', 'carry', 'state.json'), JSON.stringify({ n: 2, base: null, events: [], asks: [{ n: 1, kind: 'step', step: 'a', iteration: 1, startSnap: {}, result: 'red', red: true, changed: [] }, { n: 2, kind: 'step', step: 'a', iteration: 2, startSnap: {}, result: 'red', red: true, changed: [] }] }));
-  const o = createCarryStore({ workdir: old, emit: () => {}, strikeLimit: 2, resume: true });
+  const oldFile = join(base, 'old052-state.json');
+  writeFileSync(oldFile, JSON.stringify({ n: 2, base: null, events: [], asks: [{ n: 1, kind: 'step', step: 'a', iteration: 1, startSnap: {}, result: 'red', red: true, changed: [] }, { n: 2, kind: 'step', step: 'a', iteration: 2, startSnap: {}, result: 'red', red: true, changed: [] }] }));
+  const o = createCarryStore({ workdir: old, stateFile: oldFile, emit: () => {}, strikeLimit: 2, resume: true });
   const n2 = await ask(o, { phase: 'step:a', iteration: 3, prompt: RETRY, result: 'red' });
   assert.ok(n2.includes('Last try: step "a", try 2') && !n2.includes('Earlier failures'), n2);
 });

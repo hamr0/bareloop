@@ -6,8 +6,8 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { runScripted, SECRET, CONTENT_MARK } from './carry-scenario.js';
+import { join, dirname } from 'node:path';
+import { runScripted, stateFileOf, SECRET, CONTENT_MARK } from './carry-scenario.js';
 import * as carrystore from '../src/carrystore.js';
 import { createCarryStore } from '../src/carrystore.js';
 import { readConfig, updateConfig, ConfigError } from '../src/config.js';
@@ -62,7 +62,7 @@ test('secret planted in a grep pattern and in a written file is masked everywher
   const r = await runScripted(wd, {});
   const all = JSON.stringify(askPrompts(r).at(-1).slice(askPrompts(r).at(-1).indexOf(HEADING)));
   assert.ok(!all.includes(SECRET) && all.includes('REDACTED'));
-  assert.ok(!readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8').includes(SECRET), 'state.json');
+  assert.ok(!readFileSync(stateFileOf(wd), 'utf8').includes(SECRET), 'state.json');
   assert.ok(!JSON.stringify(r.events).includes(SECRET));
 });
 
@@ -88,25 +88,25 @@ test('the saved memo text never carries a secret planted in a written file or a 
   assert.ok(recs.some((e) => e.text.includes('REDACTED')), 'the secret is there, masked');
 });
 
-test('state is persisted under .smoke (an arbiter book) and the worker cannot read it', async () => {
+test('state is persisted in the one run state file (outside the work copy) and the worker cannot read it', async () => {
   const wd = join(base, 'persist');
   const r = await runScripted(wd, {});
-  const st = JSON.parse(readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8'));
+  const st = JSON.parse(readFileSync(stateFileOf(wd), 'utf8'));
   assert.ok(st.events.length >= 3 && st.asks.length === 2 && st.base);
   // the scripted worker tried to shell_read that file during step real: the tool result it was given must not carry the state
   const toolMsgs = JSON.stringify(r.provider.messagesLog.at(-1));
   assert.ok(!toolMsgs.includes('"events"') && !toolMsgs.includes('startSnap'), 'state.json content never reached the worker');
-  assert.ok(toolMsgs.includes('[deny: fs.deny]'), 'the gate refused the read (fs.deny on .smoke)');
+  assert.ok(toolMsgs.includes('[deny: fs.deny]'), 'the gate refused the read (fs.deny on the state file)');
 });
 
 test('resume loads the persisted state (nice-to-have)', async () => {
   const wd = join(base, 'resume');
-  mkdirSync(join(wd, '.smoke', 'carry'), { recursive: true });
-  writeFileSync(join(wd, '.smoke', 'carry', 'state.json'), JSON.stringify({ n: 5, base: 'abc', events: [{ ask: 3, tool: 'read', path: 'src/x.js', lines: 9 }], asks: [] }));
-  const s = createCarryStore({ workdir: wd, emit: () => {}, resume: true });
+  mkdirSync(dirname(stateFileOf(wd)), { recursive: true });
+  writeFileSync(stateFileOf(wd), JSON.stringify({ n: 5, base: 'abc', events: [{ ask: 3, tool: 'read', path: 'src/x.js', lines: 9 }], asks: [] }));
+  const s = createCarryStore({ workdir: wd, stateFile: stateFileOf(wd), emit: () => {}, resume: true });
   assert.equal(s.loaded(), true);
   assert.equal(s._state().n, 5);
-  const fresh = createCarryStore({ workdir: wd, emit: () => {}, resume: false });
+  const fresh = createCarryStore({ workdir: wd, stateFile: stateFileOf(wd), emit: () => {}, resume: false });
   assert.equal(fresh.loaded(), false);
 });
 
@@ -114,7 +114,7 @@ test('call site: a red step check hands its WHOLE failing text to the store, whi
   const wd = join(base, 'redtext');
   const r = await runScripted(wd, { redFirst: true });
   assert.equal(r.outcome, 'green');
-  const st = JSON.parse(readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8'));
+  const st = JSON.parse(readFileSync(stateFileOf(wd), 'utf8'));
   const red = st.asks.find((a) => a.step === 'real' && a.iteration === 1);
   assert.equal(red.result, 'red');
   assert.match(red.failure, /FAILED tests\/test_x\.mjs missing/);

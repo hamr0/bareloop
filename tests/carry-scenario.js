@@ -7,6 +7,10 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { readSpine, scriptedProvider, initPatientRepo } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
+import { runStateFile } from '../src/carrystore.js';
+
+/** where the scripted run's ONE state file lives: beside its spine, outside the work copy */
+export const stateFileOf = (wd) => runStateFile(`${wd}-spine`);
 
 export const SECRET = 'AKIAABCDEFGHIJKLMNOP';
 export const CONTENT_MARK = 'zebra-content-xyzzy';
@@ -45,13 +49,13 @@ export async function runScripted(wd, { redFirst = false } = {}) {
     { toolCalls: [tcall('q1', 'ctx_recall', { query: 'ZEBRA' })] },
     { toolCalls: [tcall('w1', 'shell_write', { path: join(wd, 'tests', 'a.txt'), content: `a-line ${SECRET}\n` })] },
     { text: 'warm done' },
-    { toolCalls: [tcall('r2', 'shell_read', { path: join(wd, '.smoke', 'carry', 'state.json') })] },
+    { toolCalls: [tcall('r2', 'shell_read', { path: stateFileOf(wd) })] },
     { toolCalls: [tcall('w2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: redFirst ? 'nope\n' : 'ok\n' })] },
     { text: 'real done' },
     ...(redFirst ? [{ toolCalls: [tcall('w3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] }, { text: 'real done again' }] : []),
   ]);
   const file = join(wd + '-spine', 'spine.jsonl');
   const j = job();
-  const outcome = await runJob(j, { readShim: false, approvals: [{ specHash: jobSpecHash(j), signer: 'hamr', ts: 'now' }], workdir: wd, provider, emit: makeSpine(file) });
+  const outcome = await runJob(j, { readShim: false, approvals: [{ specHash: jobSpecHash(j), signer: 'hamr', ts: 'now' }], workdir: wd, provider, emit: makeSpine(file), stateFile: stateFileOf(wd) });
   return { outcome, provider, events: readSpine(file) };
 }

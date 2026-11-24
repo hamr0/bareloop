@@ -76,6 +76,7 @@ import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, draftedLine, readDraftLedger, readDraftSteps } from '../draftspend.js';
 import { CHECK_LIMIT_MS, checkRunningNote } from '../kinds.js';
+import { createCarryStore, runStateFile } from '../carrystore.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -527,8 +528,8 @@ export function createSession(card, deps = {}) {
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
-  /** this session's signing-gate seed reads: completed command results by command + seed tree, so a later gates try on the same seed does not rerun the suite (hamr 2026-11-22; src/kinds.js `sharedRun`) @type {Map<string, any>} */
-  const seedShare = new Map();
+  /** the ONE state file (src/carrystore.js `runStateFile`, in `prep.into`): made once the source is prepared. The signing gates keep and read completed command results in it by (command, files fingerprint), so a later gates try and the run's own start do not rerun the suite (hamr 2026-11-24) @type {any} */
+  let checkStore;
   /** Abandon ends a draft; a check still running for it (a repo's own tests) is killed with it, whole (hamr 2026-11-21) */
   const abortChecks = new AbortController();
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
@@ -970,6 +971,8 @@ export function createSession(card, deps = {}) {
       refuse(prep.stop);
       return;
     }
+    // the ONE state file of this job, beside source.json (the run finds it at the same `into`); drafting only keeps and reads check results in it (hamr 2026-11-24)
+    checkStore = createCarryStore({ workdir: prep.tree, stateFile: runStateFile(dirname(prep.manifestPath)), emit: () => {}, resume: true });
     stepStart('check');
 
     // ONE Destination (hamr 2026-11-22): its home is the record `source.json` (`prep.manifestPath`). A source that recorded none at prepare (a relative Destination on a non-repo code job) gets the card's value written once here;
@@ -1113,7 +1116,7 @@ export function createSession(card, deps = {}) {
       const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
       stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
-        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal,
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal,
         shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
@@ -1476,7 +1479,7 @@ export function createSession(card, deps = {}) {
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
-      authorOpts: { closeCtx: { seedShare, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
+      authorOpts: { closeCtx: { checkStore, reuse: () => {}, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
     });
 
     if (!authored.ok) {
@@ -1593,7 +1596,7 @@ export function createSession(card, deps = {}) {
       if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
       if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
       if (signing === null || !signing.ok) {
         block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
         return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
@@ -1703,7 +1706,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);
