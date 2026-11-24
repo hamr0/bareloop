@@ -77,7 +77,7 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
-import { CHECK_LIMIT_MS, checkLimitSpan } from '../kinds.js';
+import { checkTimeoutWords } from '../kinds.js';
 import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
@@ -662,10 +662,9 @@ function endedBase(summary, death, o) {
     };
   }
   if (outcome === 'check-timeout') {
-    // F393: the check never finished, so nothing was judged. The span is the limit that really bound it (the escalation's `limitMs`), else the one check limit.
-    const span = checkLimitSpan(typeof esc?.limitMs === 'number' ? esc.limitMs : CHECK_LIMIT_MS);
+    // F393: the check never finished, so nothing was judged; the words are kinds.js's one sentence
     return {
-      reason: `Your tests did not finish inside ${span}, so nothing was judged. Resume runs them again.`,
+      reason: checkTimeoutWords(esc?.limitMs),
       ...resumeOr('Resume.'),
       line: resumeOk ? 'tests did not finish — resume' : 'tests did not finish',
       actions: resumeOk ? RESUME : [],

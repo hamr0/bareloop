@@ -129,6 +129,15 @@ export function checkLimitSpan(limitMs) {
   return limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
 }
 
+/**
+ * The ONE sentence the Run tab says when a check never finished (F393). The span is the limit that really bound the check (the escalation's
+ * `limitMs`), else the one check limit; never a hardcoded number.
+ * @param {number} [limitMs]
+ */
+export function checkTimeoutWords(limitMs) {
+  return `Your tests did not finish inside ${checkLimitSpan(typeof limitMs === 'number' ? limitMs : CHECK_LIMIT_MS)}, so nothing was judged. Resume runs them again.`;
+}
+
 /** used when neither the stage nor the ctx names a bound. A stage that could
  * run forever is not a red — it is a stop, and something must decide when. */
 export const DEFAULT_TIMEOUT_MS = CHECK_LIMIT_MS;

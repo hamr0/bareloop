@@ -42,7 +42,7 @@ import { globToPrefix } from './validate.js';
  * the `not ok`/`FAILED` names survive. */
 export const CHECK_GAP_MAX = 12000;
 
-/** @typedef {{ type: string, pass: boolean, detail?: string, fault?: string }} ExitResult
+/** @typedef {{ type: string, pass: boolean, detail?: string, fault?: string, limitMs?: number }} ExitResult
  * `fault` present means the INSTRUMENT could not judge (unwired snapshot/seam,
  * a check in runClose's forbidden zone) — it carries the runClose verdict name
  * ('failed'|'timed-out'|'killed'|'crashed') so the micro-loop escalates through
@@ -173,7 +173,7 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
       // NAME: 'crashed' keeps its F32 routing (worker-crash after writes —
       // the F46 broken-test mechanism), 'timed-out' keeps its own decision
       if (typeof (/** @type {any} */ (r).fault) === 'string') {
-        return { type: e.type, pass: false, fault: /** @type {any} */ (r).fault, detail: `check "${e.name}": ${(r.gap ?? '').slice(0, CHECK_GAP_MAX)}` };
+        return { type: e.type, pass: false, fault: /** @type {any} */ (r).fault, detail: `check "${e.name}": ${(r.gap ?? '').slice(0, CHECK_GAP_MAX)}`, ...(typeof (/** @type {any} */ (r).limitMs) === 'number' ? { limitMs: /** @type {any} */ (r).limitMs } : {}) };
       }
       return { type: e.type, pass: false, detail: `check "${e.name}" red: ${(r.gap ?? '').slice(0, CHECK_GAP_MAX)}` };
     } catch (err) {

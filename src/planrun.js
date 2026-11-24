@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
+import { runClose, runStages, ralph, CLOSE_FAULTS, closeFaultEnding, boundGap } from './ralph.js';
 import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, exitExampleFor, mcpToolsExample } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
@@ -2304,11 +2304,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // one on the spine would be a record of work nobody did.
   if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
   if (stoppedInClose) return 'stopped';
-  const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
-  if (preFault) {
-    emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail, ...limitOf(pre) });
-    // a check that never finished is a Resume away (F393, hamr 2026-11-24); a check that broke, was killed or crashed stays close-red
-    return pre.verdict === 'timed-out' ? 'check-timeout' : 'close-red';
+  const preEnding = closeFaultEnding(pre);
+  if (preEnding) {
+    emit('escalation', preEnding.escalation);
+    return preEnding.outcome ?? 'close-red';
   }
 
   // ── 0b. check preflight ($0, deterministic): every OFFERABLE stage runs once
@@ -2364,10 +2363,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     if (stoppedInClose) return 'stopped';
-    const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
-    if (f) {
-      emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });
-      return 'check-red';
+    const preflightEnding = closeFaultEnding(v, { decisionLead: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. `, detail: `${m.name}: ${v.detail ?? ''}` });
+    if (preflightEnding) {
+      emit('escalation', preflightEnding.escalation);
+      return preflightEnding.outcome ?? 'check-red';
     }
   }
 
@@ -2467,7 +2466,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       runTrend.record(closeGrade(v));
       return { pass: false, gap: v.gap };
     }
-    return { pass: false, fault: v.verdict, gap: v.detail };
+    return { pass: false, fault: v.verdict, gap: v.detail, ...limitOf(v) };
   };
 
   /** the last escalation ralph emitted — the replan trigger reads its category
@@ -3858,7 +3857,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // an instrument fault rides out by its runClose verdict NAME: ralph
       // escalates it through CLOSE_FAULTS (or F32-routes a crash after writes)
       const faulty = results.find((r) => r.fault);
-      if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail };
+      if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail, ...limitOf(faulty) };
       if (pass) return { verdict: 'satisfied' };
       // AND-only: the gap names EVERY failing wall (mechanical genre, F38)
       lastGap = results.filter((r) => !r.pass).map((r) => r.detail).join('\n');
@@ -4261,7 +4260,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // it honestly — a provider-red carries the F44 spendComplete:false floor,
     // never laundered into step-red tier data. Mirrors the setup-fault catch.
     planExecuted();
-    return typeof cat === 'string' ? cat : `step-red:${step.id}`;
+    return typeof cat === 'string' ? (lastEscalation?.ends ?? cat) : `step-red:${step.id}`;
   }
 
   // ── 4. THE CLOSE — the operator's signed command, the only truth. Red →
@@ -4293,11 +4292,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     planExecuted();
     return HITL_PAUSE;
   }
-  const postFault = Object.hasOwn(CLOSE_FAULTS, post.verdict) ? CLOSE_FAULTS[post.verdict] : undefined;
-  if (postFault) {
-    emit('escalation', { category: postFault.category, decisionReady: true, decision: postFault.decision, options: postFault.options, detail: post.detail, ...limitOf(post) });
+  const postEnding = closeFaultEnding(post);
+  if (postEnding) {
+    emit('escalation', postEnding.escalation);
     planExecuted();
-    return post.verdict === 'timed-out' ? 'check-timeout' : 'close-red';
+    return postEnding.outcome ?? 'close-red';
   }
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   // ── THE RULING IS SPENT HERE (N4 §1.5). The human's words are what OPENS this
@@ -4657,7 +4656,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // provider-red here is a transport CASUALTY, and run.js keys the F44
     // spendComplete:false floor on the OUTCOME, so a laundered label would report
     // an exact-looking total for a call that never billed back.
-    return lastEscalation.category;
+    return lastEscalation.ends ?? lastEscalation.category;
   }
   // …and the fix loop's own green reaches the SAME door. A green the loop had to
   // work for is exactly as much a green as one the close minted first time, and a
