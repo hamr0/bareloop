@@ -1800,10 +1800,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'abandon the task',
   ];
 
-  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words), and each
-  // command's measured time is kept for the run's later passes ("usually about N min"). Nothing reads either back to decide anything.
-  /** @type {Map<string, number>} */
-  const cmdTimes = new Map();
+  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words). Nothing reads it back to decide anything.
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
   /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
   /** the run's seed-baseline readings (hamr 2026-11-23): loaded from the carry memo file (an earlier leg's), kept there as they complete, handed to EVERY close pass */
@@ -1847,8 +1844,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
       cmdKeep,
       seedBase,
-      onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
-      cmdTimes,
+      onTick: (/** @type {{elapsedMs: number}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, text: checkRunningNote(t) }),
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
       // the signer's answer reaches the human stage the same way every other

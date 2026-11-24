@@ -15,6 +15,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The drafting list in chat shows how long each step took (hamr 2026-11-24, A1-A3, A5).** A finished step reads "took M:SS", the running one "M:SS so far", the signs are ✓ done, ▶ running, ✗ failed (the animated dots are gone), and under the list a line says "Drafting so far: M:SS". The times are read from the drafting log's step-start / step-end lines at the moment the page asks (`withDraftTimes`, `src/draftspend.js`, the one owner of the math), move in 30 s steps (no ticking clock), and cost $0; a step the log never saw shows no time.
 
+- **"usually about N min" is gone everywhere (hamr 2026-11-24, A4).** The still-running note (drafting, signing gates, the spine's `check-running` record) now says only "Tests are still running (7 min so far)." The three maps of each command's measured time (`cmdTimes`) and the `knownMs` plumbing existed only for that wording and are deleted; nothing new keeps a time.
+
 ## [0.62.0] - 2026-11-23
 
 ### Docs

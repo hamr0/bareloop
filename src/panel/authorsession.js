@@ -527,8 +527,6 @@ export function createSession(card, deps = {}) {
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
-  /** each command's measured time across this session's signing gates (the still-running note's "usually about N min") @type {Map<string, number>} */
-  const cmdTimes = new Map();
   /** this session's signing-gate seed reads: completed command results by command + seed tree, so a later gates try on the same seed does not rerun the suite (hamr 2026-11-22; src/kinds.js `sharedRun`) @type {Map<string, any>} */
   const seedShare = new Map();
   /** Abandon ends a draft; a check still running for it (a repo's own tests) is killed with it, whole (hamr 2026-11-21) */
@@ -630,7 +628,7 @@ export function createSession(card, deps = {}) {
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
   /** the signing gates' still-running note: the gates step's one line (src/kinds.js `checkRunningNote`) */
-  const gatesTick = (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => stepDetail('gates', checkRunningNote(t));
+  const gatesTick = (/** @type {{elapsedMs: number}} */ t) => stepDetail('gates', checkRunningNote(t));
   /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
   const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
@@ -1115,7 +1113,7 @@ export function createSession(card, deps = {}) {
       const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
       stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
-        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal,
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal,
         shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
@@ -1478,7 +1476,7 @@ export function createSession(card, deps = {}) {
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
-      authorOpts: { closeCtx: { cmdTimes, seedShare, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
+      authorOpts: { closeCtx: { seedShare, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
     });
 
     if (!authored.ok) {
@@ -1592,7 +1590,7 @@ export function createSession(card, deps = {}) {
       if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
       if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
       if (signing === null || !signing.ok) {
         block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
         return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
@@ -1702,7 +1700,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);

@@ -108,13 +108,12 @@ export const CHECK_LIMIT_MS = 1_800_000;
 export const CHECK_NOTE_AFTER_MS = 300_000;
 export const CHECK_NOTE_EVERY_MS = 60_000;
 /**
- * The still-running note, in code's own words: minutes so far, and the command's own measured time once there is one.
- * @param {{elapsedMs: number, knownMs: number|null}} t
+ * The still-running note, in code's own words: minutes so far (hamr 2026-11-24, A4: nothing about how long it usually takes).
+ * @param {{elapsedMs: number}} t
  * @returns {string}
  */
-export function checkRunningNote({ elapsedMs, knownMs }) {
-  const so = `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far)`;
-  return typeof knownMs === 'number' ? `${so}, usually about ${Math.max(1, Math.round(knownMs / 60_000))} min.` : `${so}.`;
+export function checkRunningNote({ elapsedMs }) {
+  return `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far).`;
 }
 /**
  * A check that hit the limit, in plain words (hamr, 2026-11-21). `limitMs` is the limit that really bound the check (the one limit, or the
@@ -264,8 +263,8 @@ export function mechanicalStages(stages) {
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
  *   list?: any[]|null, source?: string, failureLines?: (out: string) => string[],
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
+ *   signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
  *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>,
  *   seedBase?: {get: (key: string) => {code: number, out: string, ms: number}|undefined, keep: (rec: any) => void}, seedShare?: Map<string, any>,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
@@ -278,8 +277,7 @@ export function mechanicalStages(stages) {
  *   await, so the shell gets told as each stage lands. It decides nothing, it is
  *   never consulted, and no verdict depends on it — the house pattern is
  *   `runJob`'s `emit` (the library reports, the shell prints).
- *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
- *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
+ *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run.
  *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
  *   `cmdKeep` is told of each COMPLETED command run (resume reuse: the caller saves it with the tree identity taken before it ran); `cmdSaved` is the start pass's
@@ -460,12 +458,12 @@ async function boxSurvivors(pgid, list) {
  * a throw here would have to be caught and turned back into a stop anyway.
  * @param {string} cmd @param {string[]} args
  * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null,
+ *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
  *   group?: boolean, signal?: AbortSignal|null, listBox?: (pgid: number) => Promise<number[]>}} o
  *   `group`: run the command in its OWN process group (the box) so one kill stops it and everything it started; `signal`: an abort (Abandon, Stop) kills that box at once
  * @returns {Promise<{stop: string, fault: string, survivors?: number[]}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
  */
-async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null, group = false, signal = null, listBox = boxMembers }) {
+async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, group = false, signal = null, listBox = boxMembers }) {
   const { env, dropped } = stageEnv(declared);
   const t0 = Date.now();
   /** the box's group id, once the command has started (its leader's pid) @type {number|null} */
@@ -495,7 +493,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
     // REPORT-ONLY: the still-running note. Nothing reads it back; a throwing consumer never touches the run.
     if (typeof onTick === 'function') {
       const fire = () => {
-        try { onTick({ elapsedMs: Date.now() - t0, knownMs }); } catch { /* a reporting seam never decides */ }
+        try { onTick({ elapsedMs: Date.now() - t0 }); } catch { /* a reporting seam never decides */ }
         tickTimer = setTimeout(fire, tickEveryMs);
         tickTimer.unref();
       };
@@ -1363,13 +1361,11 @@ export function effectiveTimeoutMs(declared, ctx) {
 
 /**
  * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
- * still-running note, and its measured time kept (`ctx.cmdTimes`, keyed by the command alone) so the NEXT pass of the same command can
- * say "usually about N min". Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
+ * still-running note. Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
  * `seed` = the SEED-BASELINE reading (a count stage's command in the seed worktree): with `ctx.seedBase` it is kept and reused for the whole run and across legs (see `Ctx`).
  * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx @param {boolean} [seed]
  */
 async function runCmd(p, cwd, ctx, seed = false) {
-  const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
   const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
   const run = async () => {
     // SEED BASELINE (hamr 2026-11-23, run mwsfq0pi leg 3): the seed tree never changes inside a run, so its reading is kept by command + seed TREE id (never the directory)
@@ -1393,12 +1389,10 @@ async function runCmd(p, cwd, ctx, seed = false) {
       onTick: ctx.onTick ?? null,
       tickAfterMs: ctx.tickAfterMs,
       tickEveryMs: ctx.tickEveryMs,
-      knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
       group: true,
       signal: ctx.signal ?? null,
       ...(ctx.listBox ? { listBox: ctx.listBox } : {}),
     });
-    if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
     // only a command that COMPLETED (any exit code) is kept: a timed-out, killed or crashed one is a stop and never gets here
     if (r.stop === null && seedKey && r.out.length <= MAX_SAVED_OUT) ctx.seedBase?.keep({ key: seedKey.key, treeId: seedKey.treeId, code: r.code, out: r.out, ms: r.ms, seed: true });
     if (r.stop === null && keepId !== null && r.out.length <= MAX_SAVED_OUT) ctx.cmdKeep?.({ key: checkKey(p, timeoutMs), treeId: keepId, code: r.code, out: r.out, ms: r.ms });

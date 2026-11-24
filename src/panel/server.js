@@ -2405,7 +2405,7 @@ function getRunDetailBody(runid, opts) {
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
-    // hamr 2026-11-22: "Tests are still running (8 min so far), usually about 12 min." under the step map — only while the run is live and the
+    // hamr 2026-11-22: "Tests are still running (8 min so far)." under the step map — only while the run is live and the
     // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
     checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
     // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one

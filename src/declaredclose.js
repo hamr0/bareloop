@@ -556,7 +556,7 @@ function translate(r, redact) {
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null, source?: string|null, lang?: string|null,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
  *   cmdKeep?: Function, cmdSaved?: Map<string, any>, seedBase?: any}} [opts]
  *   `source` = the close's signed source (`closeDecl.source`, src/sourcedefaults.js): where a rubric step reads its input from
  *   `lang` = the close's language (`closeDecl.lang`): which failing-test lines a red count stage quotes (`failureLinesOf`)
@@ -566,7 +566,7 @@ function translate(r, redact) {
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null, list = null, source = null, lang = null, onTick = null, tickAfterMs, tickEveryMs, cmdTimes, signal = null, cmdMemo, cmdKeep, cmdSaved, seedBase,
+    onRubricEvidence = null, list = null, source = null, lang = null, onTick = null, tickAfterMs, tickEveryMs, signal = null, cmdMemo, cmdKeep, cmdSaved, seedBase,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -603,11 +603,10 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     ...(source ? { source } : {}),
     // what a RED count stage quotes of its command's own output (src/authoring.js `failureLinesOf`); it tells the worker, it decides nothing
     ...(typeof lang === 'string' ? { failureLines: (/** @type {string} */ out) => failureLinesOf(lang, out) } : {}),
-    // REPORT-ONLY: the still-running note for a long check, and the map of each command's measured time (src/kinds.js)
+    // REPORT-ONLY: the still-running note for a long check (src/kinds.js)
     ...(typeof onTick === 'function' ? { onTick } : {}),
     ...(tickAfterMs !== undefined ? { tickAfterMs } : {}),
     ...(tickEveryMs !== undefined ? { tickEveryMs } : {}),
-    ...(cmdTimes instanceof Map ? { cmdTimes } : {}),
     ...(signal ? { signal } : {}),
     // ONE close run is ONE check pass: every stage reading the same command shares its single run (src/kinds.js `runCmd`)
     // (a caller whose passes are one unchanged tree - the run-start preflight loop - passes its own memo and owns its life)

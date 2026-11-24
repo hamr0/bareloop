@@ -1,10 +1,10 @@
 // The still-running note (hamr, 2026-11-21): after 5 minutes of a check running, every minute, "Tests are still running
-// (7 min so far)." and, once that same command has a measured time earlier in this draft/run, ", usually about 12 min".
+// (7 min so far)." (hamr 2026-11-24, A4: the ", usually about N min" half is gone everywhere, and with it the maps of measured times).
 // Times come from injected ctx fields at the PRODUCTION RATIO: the note starts at 5/30 of the limit and repeats every
 // 1/30 of it. Nothing here waits real minutes, and no number is spelled twice: the constants are read off the module.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -27,10 +27,18 @@ test('the note starts at 5 of the 30 minutes and repeats every minute', () => {
   assert.equal(kinds.CHECK_NOTE_EVERY_MS, MIN);
 });
 
-test('the words: minutes so far, and "usually about N min" only once a time was measured', () => {
-  assert.equal(kinds.checkRunningNote({ elapsedMs: 7 * MIN + 3_000, knownMs: null }), 'Tests are still running (7 min so far).');
-  assert.equal(kinds.checkRunningNote({ elapsedMs: 7 * MIN, knownMs: 12 * MIN }), 'Tests are still running (7 min so far), usually about 12 min.');
-  assert.equal(kinds.checkRunningNote({ elapsedMs: 5 * MIN, knownMs: 20_000 }), 'Tests are still running (5 min so far), usually about 1 min.', 'a measured time under a minute rounds UP to one minute, never "0 min"');
+test('the words: minutes so far, and nothing about how long it usually takes (A4)', () => {
+  assert.equal(kinds.checkRunningNote({ elapsedMs: 7 * MIN + 3_000 }), 'Tests are still running (7 min so far).');
+  assert.equal(kinds.checkRunningNote({ elapsedMs: 5 * MIN }), 'Tests are still running (5 min so far).');
+  assert.doesNotMatch(kinds.checkRunningNote({ elapsedMs: 7 * MIN, knownMs: 12 * MIN }), /usually/, 'a leftover knownMs from an old caller is not read');
+});
+
+test('A4: "usually about" and the maps of measured times are gone from the source (src/kinds.js, authorflow, authorsession, planrun, declaredclose, authorjob, panel/server)', () => {
+  for (const f of ['kinds.js', 'authorflow.js', 'planrun.js', 'declaredclose.js', 'authorjob.js', 'panel/authorsession.js', 'panel/server.js', 'panel/index.html']) {
+    const text = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(text, /usually about/, `${f} still says "usually about"`);
+    assert.doesNotMatch(text, /knownMs|cmdTimes/, `${f} still carries knownMs / cmdTimes`);
+  }
 });
 
 function repo(t) {
@@ -56,7 +64,7 @@ test('a check running past the note threshold reports each interval, never befor
   assert.ok(ticks.length >= 3, `three or more notes over ${AFTER_T + 4 * EVERY_T} ms, got ${ticks.length}`);
   assert.ok(ticks[0].elapsedMs >= AFTER_T, `the first note comes at or after the threshold, got ${ticks[0].elapsedMs}`);
   assert.ok(ticks[1].elapsedMs - ticks[0].elapsedMs >= EVERY_T * 0.8, 'notes are one interval apart');
-  assert.equal(ticks[0].knownMs, null, 'no measured time yet for this command');
+  assert.equal('knownMs' in ticks[0], false, 'a tick carries the elapsed time only');
 });
 
 test('a command that ends before the threshold says nothing', async (t) => {
@@ -65,19 +73,6 @@ test('a command that ends before the threshold says nothing', async (t) => {
   await kinds.seedRead(slow(10), { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: LIMIT_T, tickAfterMs: AFTER_T, tickEveryMs: EVERY_T, onTick: (e) => ticks.push(e) });
   await new Promise((res) => { setTimeout(res, AFTER_T + EVERY_T); });
   assert.equal(ticks.length, 0);
-});
-
-test('the SAME command carries its measured time into the next pass; a different one does not', async (t) => {
-  const r = repo(t);
-  const cmdTimes = new Map();
-  const ctx = (ticks) => ({ workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: LIMIT_T, tickAfterMs: AFTER_T, tickEveryMs: EVERY_T, onTick: (e) => ticks.push(e), cmdTimes });
-  const first = []; const second = []; const control = [];
-  await kinds.seedRead(slow(AFTER_T + 2 * EVERY_T), ctx(first));
-  assert.equal(first[0].knownMs, null);
-  await kinds.seedRead(slow(AFTER_T + 2 * EVERY_T), ctx(second));
-  assert.ok(second[0].knownMs >= AFTER_T + 2 * EVERY_T, `the second pass knows the first's measured time, got ${second[0].knownMs}`);
-  await kinds.seedRead(slow(AFTER_T + 2 * EVERY_T + 1), ctx(control));
-  assert.equal(control[0].knownMs, null, 'a command with different args is a different command');
 });
 
 // ── the two consumers ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -106,19 +101,18 @@ test('panel, drafting: a check-running phase becomes the running step\'s one lin
   assert.equal(during?.detail, 'Tests are still running (7 min so far).', JSON.stringify([during, s.state.phase, s.state.error]));
 });
 
-test('panel, signing gates: the gates step line carries the note, and the gates get a tick seam and the session\'s map of times', async (t) => {
+test('panel, signing gates: the gates step line carries the note, and the gates get a tick seam', async (t) => {
   const { w, repo: src } = await panelWorld(t);
   const seams = draftSeams({});
   /** @type {any} */ let s;
-  /** @type {any} */ let during = null; let gotMap = false;
+  /** @type {any} */ let during = null;
   const inner = seams.prepareSigningFn;
-  seams.prepareSigningFn = async (o) => { gotMap = o.cmdTimes instanceof Map; o.onTick({ elapsedMs: 9 * MIN, knownMs: 12 * MIN }); during = structuredClone(s.state.steps.find((x) => x.id === 'gates')); return inner(o); };
+  seams.prepareSigningFn = async (o) => { o.onTick({ elapsedMs: 9 * MIN }); during = structuredClone(s.state.steps.find((x) => x.id === 'gates')); return inner(o); };
   s = createSession(baseCard({ source: src }), opts(w, seams));
   assert.ok(await until(() => s.state.pendingAsk?.kind === 'menu'), `${s.state.phase} ${s.state.error}`);
   s.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(s.state.phase)));
-  assert.ok(gotMap);
-  assert.equal(during?.detail, 'Tests are still running (9 min so far), usually about 12 min.');
+  assert.equal(during?.detail, 'Tests are still running (9 min so far).');
 });
 
 // ── the run: a declared check running long is announced on the spine, report-only ───────────────────────────────────
@@ -163,5 +157,5 @@ process.exit(existsSync(p) && readFileSync(p, 'utf8').includes('ok') ? 0 : 1);\n
   assert.ok(notes.length >= 2, `the slow check is announced more than once, got ${notes.length}`);
   assert.ok(notes[0].elapsedMs >= AFTER_T);
   assert.match(notes[0].text, /^Tests are still running \(\d+ min so far\)/);
-  assert.ok(notes.some((n) => typeof n.knownMs === 'number'), 'a later pass of the same command knows how long it took');
+  assert.ok(notes.every((n) => !('knownMs' in n) && !/usually/.test(n.text)), 'the note says minutes so far and nothing else');
 });

@@ -2826,7 +2826,7 @@ test('authorClose: a refused try announces WHY — a validation red names its re
   assert.ok(!ok.includes('author-try-failed'));
 });
 
-// ── the still-running note (hamr 2026-11-21): the seed read is given a tick seam and a draft-wide map of measured times ──
+// ── the still-running note (hamr 2026-11-21): the seed read is given a tick seam ──
 test('authorClose: the seed read gets a tick seam; each note reaches onPhase as check-running, in code\'s own words', async () => {
   const decl = goodDeclaration();
   const { generate } = scriptGenerate([{ declaration: decl }, { declaration: decl }]);
@@ -2834,8 +2834,8 @@ test('authorClose: the seed read gets a tick seam; each note reaches onPhase as 
   let sawTick = false;
   const seedReadFn = async (/** @type {any} */ declaration, /** @type {any} */ ctx) => {
     assert.equal(typeof ctx.onTick, 'function', 'authorClose gives the seed read a tick seam');
-    assert.ok(ctx.cmdTimes instanceof Map, 'and the draft-wide map of measured times');
-    ctx.onTick({ elapsedMs: 7 * 60_000, knownMs: null });
+    assert.equal('cmdTimes' in ctx, false, 'and no map of measured times (hamr 2026-11-24, A4)');
+    ctx.onTick({ elapsedMs: 7 * 60_000 });
     sawTick = true;
     return declaration.stages.map((/** @type {any} */ s) => ({ verdict: 'red', exitCode: EXIT_RED, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {} }));
   };
