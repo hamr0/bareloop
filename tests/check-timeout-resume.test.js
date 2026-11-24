@@ -22,7 +22,7 @@ import { scriptedProvider, initPatientRepo, readSpine } from './helpers.js';
 const LIMIT_MS = 3000;
 
 /** a patient whose check hangs while hang.flag exists, kills itself while kill.flag exists, and otherwise goes green once src/fix.js says `final` */
-function world(t, { check = 'check.mjs' } = {}) {
+function world(t, { check = 'check.mjs', clean = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'check-timeout-'));
   const out = mkdtempSync(join(tmpdir(), 'check-timeout-out-'));
   t.after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(out, { recursive: true, force: true }); });
@@ -36,7 +36,7 @@ if (existsSync(at('hang.flag'))) setTimeout(() => {}, 60000);
 else process.exit(existsSync(at('src/fix.js')) && readFileSync(at('src/fix.js'), 'utf8').includes('final') ? 0 : 1);
 `);
   initPatientRepo(dir);
-  writeFileSync(join(dir, 'src', 'mod.js'), '// edited, uncommitted\n');
+  if (!clean) writeFileSync(join(dir, 'src', 'mod.js'), '// edited, uncommitted\n');
   const guards = classGuards({ verdictType: 'green', lang: 'js' }).map((g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) } }));
   const job = {
     schema: 'job-v1', job: 'check-timeout', description: 'a check that may not finish', provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 1.5,
@@ -52,20 +52,6 @@ const approvals = (job) => [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'n
 const run = (w, provider, extra = {}) => runJob(w.job, { approvals: approvals(w.job), workdir: w.dir, provider, emit: makeSpine(w.spine), stopFile: w.stopFile, closeTimeoutMs: LIMIT_MS, ...extra });
 const writeFix = (w, content = '// final\n') => ({ toolCalls: [{ id: 'w1', name: 'shell_write', arguments: { path: join(w.dir, 'src', 'fix.js'), content } }] });
 
-test('(a) a start check that times out ends the leg check-timeout, with the limit that bound it on the escalation; no model call was made', async (t) => {
-  const w = world(t);
-  writeFileSync(join(w.dir, 'hang.flag'), '');
-  const provider = scriptedProvider([{ text: 'never' }]);
-  const outcome = await run(w, provider);
-  const events = readSpine(w.spine);
-  assert.equal(outcome, 'check-timeout', JSON.stringify(events.filter((e) => e.type === 'escalation')));
-  assert.equal(provider.calls.length, 0);
-  const esc = events.filter((e) => e.type === 'escalation').at(-1);
-  assert.equal(esc.category, 'close-timeout', 'the escalation keeps the arbiter\'s own category');
-  assert.equal(esc.limitMs, LIMIT_MS);
-  assert.equal(events.find((e) => e.type === 'job-end')?.outcome, 'check-timeout');
-});
-
 test('(a) a start check that is killed (OOM-style) or cannot run stays close-red', async (t) => {
   const killed = world(t);
   writeFileSync(join(killed.dir, 'kill.flag'), '');
@@ -74,19 +60,6 @@ test('(a) a start check that is killed (OOM-style) or cannot run stays close-red
   // the file is absent, so node exits 1: that is a RED, not a fault - use a command that cannot start instead
   broken.job.closeDecl.stages[1].params = { cmd: 'no-such-binary-xyz-bareloop', args: [], expectExit: 0 };
   assert.equal(await run(broken, scriptedProvider([{ text: 'never' }])), 'close-red', 'a check that cannot run');
-});
-
-test('(a) the final close: a check that times out after the work ends check-timeout, not close-red', async (t) => {
-  const w = world(t);
-  // the check is a fast red at the start, and hangs once the worker has written src/fix.js: the flag appears with the write
-  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN }, writeFix(w), { text: 'wrote src/fix.js' }]);
-  const gen = provider.generate.bind(provider);
-  let n = 0;
-  provider.generate = async (...a) => { n += 1; if (n === 4) writeFileSync(join(w.dir, 'hang.flag'), ''); return gen(...a); };
-  const outcome = await run(w, provider);
-  const events = readSpine(w.spine);
-  assert.equal(outcome, 'check-timeout', JSON.stringify(events.filter((e) => e.type === 'escalation')));
-  assert.equal(events.filter((e) => e.type === 'escalation').at(-1)?.limitMs, LIMIT_MS);
 });
 
 test('(b) the F393 story: stopped, resumed, the start check times out -> check-timeout, and Resume is offered for it', async (t) => {
@@ -114,8 +87,113 @@ test('(b) the F393 story: stopped, resumed, the start check times out -> check-t
   const cp2 = readResume(leg2, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
   assert.equal(cp2.endOutcome, 'check-timeout');
   assert.ok(cp2.restart, 'check-timeout is a checkpoint: a resume point is read back (what the panel offers Resume from)');
-  // NOT asserted here: that a Resume of THIS leg re-enters leg 1's recorded step. A resumed leg that dies before it re-accepts its plan
-  // leaves no plan in its own window, and `readResume` reads the latest leg only (reported to hamr, not decided here).
+  // the ONE resume rule: leg 2 died before it re-accepted its plan, so the plan leg 1 accepted still stands behind it - Resume re-enters the
+  // recorded step and drafts nothing
+  assert.ok(cp2.restart.seed, 'the leg that never re-accepted a plan still resumes from the recorded plan');
+  assert.deepEqual(cp2.restart.seed.plan, cp1.restart.seed.plan);
+  assert.equal(cp2.restart.branch, branch, 'the work branch the tree sits on is read back the same way');
+
+  // leg 3: the machine is quiet again. Only the worker's own rounds are scripted: a draft or scout call would eat a worker answer and fail the run
+  rmSync(join(w.dir, 'hang.flag'));
+  makeSpine(w.spine)('leg-resume', { leg: 3, after: 'check-timeout', at: new Date().toISOString() });
+  const third = scriptedProvider([writeFix(w), { text: 'wrote src/fix.js' }]);
+  const out3 = await run(w, third, { resumeSeed: cp2.restart.seed, resumeBranch: cp2.restart.branch });
+  const leg3 = readSpine(w.spine).slice(leg2.length);
+  assert.ok(['green', 'already-green'].includes(out3), `${out3} ${JSON.stringify(leg3.filter((e) => e.type === 'escalation'))}`);
+  assert.ok(third.calls.length <= 2, `no drafting call: ${third.calls.length} calls`);
+  assert.ok(leg3.some((e) => e.type === 'step-start' && e.step === 'write-fix'), 'the recorded step was re-entered');
+});
+
+test('(b) the one resume rule is general: any leg that ended before re-accepting its plan resumes from the last plan that was accepted (provider-red at start)', () => {
+  const plan = { schema: 'plan-v1', steps: [{ id: 's1' }, { id: 's2' }] };
+  const t = (n) => new Date(2026, 10, 24, 10, n).toISOString();
+  const spine = [
+    { type: 'job-start', seq: 1, ts: t(0), specHash: 'h', job: 'j', budgetUsd: 2 },
+    { type: 'work-branch', seq: 2, ts: t(1), branch: 'bareloop/j' },
+    { type: 'plan-accepted', seq: 3, ts: t(2), plan },
+    { type: 'step-end', seq: 4, ts: t(3), step: 's1', outcome: 'green' },
+    { type: 'job-end', seq: 5, ts: t(4), outcome: 'stopped' },
+    { type: 'leg-resume', seq: 6, ts: t(5), leg: 2, after: 'stopped' },
+    { type: 'job-start', seq: 7, ts: t(6), specHash: 'h', job: 'j', budgetUsd: 2 },
+    { type: 'job-end', seq: 8, ts: t(7), outcome: 'provider-red' },
+  ];
+  const cp = readResume(spine, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  assert.deepEqual(cp.restart.seed.plan, plan);
+  assert.deepEqual(cp.restart.seed.completedSteps.map((c) => c.id), ['s1']);
+  assert.equal(cp.restart.branch, 'bareloop/j');
+  // a leg that DID accept its own plan wins over an earlier one
+  const plan2 = { schema: 'plan-v1', steps: [{ id: 'n1' }] };
+  const redrafted = [...spine, { type: 'leg-resume', seq: 9, ts: t(8), leg: 3, after: 'provider-red' }, { type: 'job-start', seq: 10, ts: t(9), specHash: 'h', job: 'j', budgetUsd: 2 }, { type: 'plan-accepted', seq: 11, ts: t(10), plan: plan2 }, { type: 'job-end', seq: 12, ts: t(11), outcome: 'provider-red' }];
+  assert.deepEqual(readResume(redrafted, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES }).restart.seed.plan, plan2);
+});
+
+const SITE = { limitMs: LIMIT_MS, category: 'close-timeout' };
+/** the escalation every site must file for a timed-out check: the arbiter's own category, the limit, and the one ending */
+const assertTimeoutEscalation = (events) => {
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc?.category, SITE.category);
+  assert.equal(esc?.limitMs, SITE.limitMs);
+  assert.equal(esc?.ends, 'check-timeout');
+  assert.equal(events.find((e) => e.type === 'job-end')?.outcome, 'check-timeout');
+};
+/** a worker script whose 4th model call (the one after its write) makes the check hang from then on */
+const hangAfterWrite = (w, responses) => {
+  const provider = scriptedProvider(responses);
+  const gen = provider.generate.bind(provider);
+  let n = 0;
+  provider.generate = async (...a) => { n += 1; if (n === 4) writeFileSync(join(w.dir, 'hang.flag'), ''); return gen(...a); };
+  return provider;
+};
+
+test('(site 1) the start precheck: ends check-timeout, nothing spent', async (t) => {
+  const w = world(t);
+  writeFileSync(join(w.dir, 'hang.flag'), '');
+  const provider = scriptedProvider([{ text: 'never' }]);
+  assert.equal(await run(w, provider), 'check-timeout');
+  assert.equal(provider.calls.length, 0);
+  assertTimeoutEscalation(readSpine(w.spine));
+});
+
+test('(site 2) the preflight pass: a clean seed stops the precheck at the changed-from-seed guard, the preflight runs the check and it times out -> check-timeout, not check-red', async (t) => {
+  const w = world(t, { clean: true });
+  writeFileSync(join(w.dir, 'hang.flag'), '');
+  const provider = scriptedProvider([{ text: 'never' }]);
+  const out = await run(w, provider);
+  const events = readSpine(w.spine);
+  assert.equal(out, 'check-timeout', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  assert.ok(events.some((e) => e.type === 'check-preflight' && e.verdict === 'timed-out'), 'it was the PREFLIGHT pass that met the timeout');
+  assert.equal(provider.calls.length, 0);
+  assertTimeoutEscalation(events);
+});
+
+test('(site 3) a step exit check: the check times out inside the step -> check-timeout, not the bare category name', async (t) => {
+  const w = world(t);
+  const plan = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'write-fix', action: 'Create src/fix.js.', tools: ['write'], rounds: 6, target: 'src/fix.js', exit: [{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'verdict' }] }] });
+  const out = await run(w, hangAfterWrite(w, [{ text: 'scout' }, { text: plan }, writeFix(w), { text: 'wrote src/fix.js' }]));
+  const events = readSpine(w.spine);
+  assert.equal(out, 'check-timeout', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  assert.ok(events.some((e) => e.type === 'check-run' && e.verdict === 'timed-out'), 'it was the step exit check that met the timeout');
+  assertTimeoutEscalation(events);
+});
+
+test('(site 4) the fix loop close: red first, then the check times out while the fix is judged -> check-timeout', async (t) => {
+  const w = world(t);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: PLAN }, writeFix(w, '// wrong\n'), { text: 'wrote src/fix.js' }, writeFix(w, '// final\n'), { text: 'fixed' }]);
+  const gen = provider.generate.bind(provider);
+  let n = 0;
+  provider.generate = async (...a) => { n += 1; if (n === 5) writeFileSync(join(w.dir, 'hang.flag'), ''); return gen(...a); };
+  const out = await run(w, provider);
+  const events = readSpine(w.spine);
+  assert.equal(out, 'check-timeout', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  assert.ok(events.some((e) => e.type === 'fix-loop'), 'the final close was red first, so the fix loop ran');
+  assertTimeoutEscalation(events);
+});
+
+test('(site 5) the final close: the check times out after the work -> check-timeout', async (t) => {
+  const w = world(t);
+  const out = await run(w, hangAfterWrite(w, [{ text: 'scout' }, { text: PLAN }, writeFix(w), { text: 'wrote src/fix.js' }]));
+  assert.equal(out, 'check-timeout');
+  assertTimeoutEscalation(readSpine(w.spine));
 });
 
 test('(b) a check that times out in the FINAL close is resumable at the close: the resumed leg reads the recorded plan, runs the check again, buys no worker round', async (t) => {
