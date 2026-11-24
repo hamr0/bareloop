@@ -2437,7 +2437,7 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 
 Hamr's rule: anything not confirmed, walked, or still open goes first into the next branch.
 
-- [ ] Resume reuse line not seen live (test-proven only). F382; build doc "Addendum 2026-11-23".
+- [x] Resume reuse line seen live 2026-11-24 (run mwue75ih leg 2); a later leg after edits correctly ran fresh (leg 3). F382, F394.
 - [x] Stop during a step check: seen live 2026-11-23, leg 1 ended stopped and Resume was offered (F388, F393).
 - [ ] Sign & run early-click fix is not proven live. F390.
 - [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
@@ -2454,3 +2454,4 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
 - [ ] NEW, signed by hamr 2026-11-23: drafting and run progress timer. No ticking clock: one progress line updated every 30 s. Finished drafting steps show their time (e.g. "installing packages ✓ 0:42"); the running step shows elapsed (every 30 s) and "Drafting so far: M:SS"; the "usually about N min" estimate is dropped; the plan card shows one line "Drafted in M:SS · $X"; the Run tab's still-running check line uses the same 30 s elapsed form; the Audit drafting row shows total draft time only, no per-step details. Display only, from times already recorded (draft-log step-start/step-end `at`; `src/draftspend.js` wallMs), $0.
 - [ ] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch.
 - [ ] NEW, signed by hamr 2026-11-23 (option 1): a NOW row in the Run tab's ENDED / NEXT / SCHEDULE block, shown only while the run is live: "Running your tests · M:SS", "AI working · M:SS", or drafting. Time updated every 30 s (same rule as the progress timer item). It replaces the grey "Tests are still running (N min so far)" line under the map; it disappears when the run ends and ENDED fills in.
+- [ ] The Run tab's "Checks not run again" line shows an older leg's reuse on a later Resume; show it only for the current leg (records after the last leg-resume). F394, seen live by hamr 2026-11-24.

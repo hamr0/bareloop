@@ -16770,3 +16770,10 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - `close-red` is not in CHECKPOINT_OUTCOMES (`src/reuse.js:148`: cap-halt, wall-halt, step-stalled, provider-red, stopped, human checkpoints), so the panel offered only Reuse, not Resume. The AI's step edit stayed on disk.
 - A timeout says nothing about the job (the check never answered), so it should be resumable like provider-red. Also noted: this start check's limit was 15 min (900000 ms) while CHECK_LIMIT_MS is 30 min; look at that in the same fix.
 - hamr: fix comes in the next branch after the release.
+
+### F394: The Run tab shows an old Resume's "Checks not run again" line on a later Resume (run mwue75ih legs 2 and 3, 2026-11-24)
+
+- Leg 2 (resumed 07:58:49Z after a Stop right after the first check finished, before any edit) reused the saved check: spine `check-reused` "Checks not run again: same files as the last check at 08:48." All 7 checks passed the same second. F382 is now seen live.
+- Leg 3 (Stop at 08:01:36Z while the step check ran, after the AI edited tests/codeversion.test.js at 07:59:54Z; resumed 08:01:42Z) correctly did NOT reuse: no `check-reused` record in leg 3, and the tests ran fresh.
+- But the Run tab still showed "Checks not run again: same files as the last check at 08:48." in leg 3: the panel shows the newest `check-reused` record of the whole spine across legs (src/panel/server.js:742), not only the current leg's (records after the last `leg-resume`). hamr saw it live.
+- Open: scope the line to the current leg. Fix next on feat/next-branch-first.
