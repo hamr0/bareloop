@@ -247,7 +247,7 @@ test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resum
   assert.equal(typeof d.resume.wallUsedMs, 'number', 'the time used so far rides with the resume plan — the route\'s time refusal reads the same figure');
   const row = listRuns({ home }).find((r) => r.runid === 'cap1');
   assert.equal(row.endedLine, 'money cap — resume');
-  assert.equal(row.glyph, '✗', 'result glyphs unchanged');
+  assert.equal(row.glyph, '■', 'a capped run wears the stop sign (hamr 2026-11-24)');
 });
 
 test('getRunDetail: a green run reads "Goal met." with no Resume; a died run reads Stopped with no ending and glyph ?', () => {

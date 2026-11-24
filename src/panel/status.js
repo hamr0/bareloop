@@ -2,7 +2,8 @@
 // hamr's ruling 2026-10-04 (option A): every surface (run cards, expanded run rows, the right-side header, imported
 // rows) reads `status` from the server; the page never maps an outcome to a word itself.
 //
-//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [✗] capped · [■] stopped · [?] died
+//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [■] capped · [■] stopped · [?] died
+//   (capped wears the stop sign ■ like stopped, hamr 2026-11-24; the word stays "capped". check-timeout and provider-red stay failed ✗.)
 //
 // Outcome -> word (every outcome the panel knows; anything not listed is `failed`):
 //   green, already-green, satisfied                      -> passed
@@ -40,7 +41,7 @@ export const STATUS = Object.freeze({
   waiting: Object.freeze({ sign: '·', word: 'waiting' }),
   passed: Object.freeze({ sign: '✓', word: 'passed' }),
   failed: Object.freeze({ sign: '✗', word: 'failed' }),
-  capped: Object.freeze({ sign: '✗', word: 'capped' }),
+  capped: Object.freeze({ sign: '■', word: 'capped' }),
   stopped: Object.freeze({ sign: '■', word: 'stopped' }),
   died: Object.freeze({ sign: '?', word: 'died' }),
   // a ticket the job's signed filter did not let through (piece 2): grey, rests, ends at run start at $0
