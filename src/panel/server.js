@@ -43,7 +43,7 @@ import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
 import { jobTypeLine, sourceOf } from '../sourcedefaults.js';
 import { rangeTokens } from '../rangereview.js';
-import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger, mmss, stepped } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
@@ -723,16 +723,38 @@ function endedBase(summary, death, o) {
  * @param {{died: boolean, lastThing: string|null}} death
  */
 /**
- * The newest `check-running` record's own text (code-written by src/kinds.js `checkRunningNote`, shown verbatim), or null. It stands only while the
- * tests are running NOW: the tick must be the newest record of the whole spine — every record that ends a check (close-verdict, check-run,
- * outer-close, check-preflight, close-precheck), a step (step-end) or the run (run-end, job-end, escalation) is written after it and so retires it,
- * and so does anything else (a worker round, a new step): a stale line is the failure, a missing one is not.
+ * The Run tab's NOW row (hamr 2026-11-24, D1-D2), read from the run's own spine alone - the caller asks only while the run is live. One of
+ * "Running your tests · M:SS", "AI working · M:SS", "Drafting · M:SS", or null (nothing is made up between them). The time moves in 30 s steps
+ * (`stepped`, src/draftspend.js, the one owner of the time math), never a ticking clock.
+ *  - tests: the newest record is a `check-start` (written when a check pass begins; src/planrun.js) or a `check-running` tick (its own time minus
+ *    its `elapsedMs` is when the check began, so a spine from before `check-start` reads the same). Anything written after either retires it:
+ *    a stale line is the failure, a missing one is not.
+ *  - otherwise the NEAREST phase marker decides: `iteration-start` = the worker is in an attempt, counted from it; `materials` = the planner is
+ *    drafting a plan (a refused draft, `plan-validate` not ok, keeps it going), counted from it; any marker that ends the stretch
+ *    (`middle-done`, `plan-accepted`, `plan-red`, `step-end`, `run-end`, `outer-close`, `job-end`, or a check's own records) = null.
  * @param {any[]} records
+ * @param {number} nowMs
+ * @returns {string|null}
  */
-export function checkRunningOf(records) {
+export function nowOf(records, nowMs) {
+  const ms = (/** @type {any} */ r) => Date.parse(r?.ts);
+  const since = (/** @type {number} */ from) => (Number.isFinite(from) ? mmss(stepped(nowMs - from)) : null);
   const last = records[records.length - 1];
-  return last && last.type === 'check-running' && typeof last.text === 'string' ? last.text : null;
+  if (last && typeof last === 'object' && (last.type === 'check-start' || last.type === 'check-running')) {
+    const t = since(last.type === 'check-start' ? ms(last) : ms(last) - (Number.isFinite(last.elapsedMs) ? last.elapsedMs : 0));
+    return t === null ? null : `Running your tests \u00B7 ${t}`;
+  }
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const r = records[i];
+    if (!r || typeof r !== 'object') continue;
+    if (r.type === 'iteration-start') { const t = since(ms(r)); return t === null ? null : `AI working \u00B7 ${t}`; }
+    if (r.type === 'materials') { const t = since(ms(r)); return t === null ? null : `Drafting \u00B7 ${t}`; }
+    if (NOW_ENDS.has(r.type)) return null;
+  }
+  return null;
 }
+/** the records that end a stretch `nowOf` could be counting (a refused `plan-validate` is not one) */
+const NOW_ENDS = new Set(['middle-done', 'plan-accepted', 'plan-red', 'step-end', 'run-end', 'outer-close', 'job-end', 'check-start', 'check-running', 'check-run', 'check-preflight', 'close-precheck']);
 
 /**
  * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. Unlike the running tick it stays true for the whole run: it says the start pass took a saved check result.
@@ -2405,9 +2427,8 @@ function getRunDetailBody(runid, opts) {
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
-    // hamr 2026-11-22: "Tests are still running (8 min so far)." under the step map — only while the run is live and the
-    // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
-    checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
+    // hamr 2026-11-24 (D1-D2): the NOW row, only while the run is live: "Running your tests · M:SS" / "AI working · M:SS" / "Drafting · M:SS" (see nowOf); null once it ends
+    now: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? nowOf(rawSpineRecords, typeof opts.now === 'number' ? opts.now : Date.now()) : null,
     // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one
     checkReused: row.via !== 'import' ? checkReusedOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's

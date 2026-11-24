@@ -2638,11 +2638,11 @@ unreferenced loose objects are left. Gitignored files inside the fence are seen 
 changed nothing in scope emits nothing, and a failed capture emits `gitError` with empty lists: a record,
 never a verdict, and it never throws. No prompt carries it; the learnings cards read it ("What changed").
 
-#### `check-running` — a declared check running past 5 minutes (`src/kinds.js`, `src/planrun.js`)
+#### `check-start` and `check-running` — a declared check begins; one running past 5 minutes (`src/kinds.js`, `src/planrun.js`)
 
-REPORT-ONLY. One record per minute once a declared check (an AI-drafted `command-exit` / `count-not-worse` command) has run 5 minutes:
-`{elapsedMs, knownMs, text}` (`knownMs` = how long the same command took earlier in this run, else `null`; `text` is `checkRunningNote`'s words,
-e.g. `Tests are still running (7 min so far), usually about 12 min.`). Nothing reads it back to decide anything. A run that ends the
+REPORT-ONLY. `{type:'check-start'}` is written when a declared close pass begins (the precheck, the preflight, a step's check, the final close); it names no command and carries no cost. Its only reader is the Run tab's NOW row ("Running your tests · M:SS", counted from the record's `ts`).
+`check-running`: one record per minute once a declared check (an AI-drafted `command-exit` / `count-not-worse` command) has run 5 minutes:
+`{elapsedMs, text}` (`text` is `checkRunningNote`'s words, e.g. `Tests are still running (7 min so far).`; an older spine also carries `knownMs`, no longer written). Nothing reads either back to decide anything. A run that ends the
 check early because of the person's Stop writes the existing `stop-requested` record with `phase: 'close'`.
 
 #### `handoff-note` — LEGACY, no longer written (the handoff note was folded into the carry memo)
@@ -3173,12 +3173,10 @@ compared to `maxWallMs`: the `wall-under-close-timeout` refusal does not fire fo
 pay for tests). A hand-written command close (`job.close`, `src/ralph.js` `runClose`) is untouched: the 120 s floor x K autoset.
 
 - **Still-running note.** Past `CHECK_NOTE_AFTER_MS` (5 min) and every `CHECK_NOTE_EVERY_MS` (1 min) a running check is announced
-  by `checkRunningNote({elapsedMs, knownMs})`: `Tests are still running (7 min so far).`, and `, usually about 12 min.` once the same
-  command (command, args, env) has a measured time earlier in the draft or run (`ctx.cmdTimes`). Report-only: drafting hears it as
-  `onPhase('check-running', {call, elapsedMs, knownMs, text})` (the panel shows it as the running step's line; the signing gates step
-  too), a run writes a `check-running` spine record `{elapsedMs, knownMs, text}` (no reader decides anything from it). The Run tab shows it as one small grey line under the step map: the run detail's
-  `checkRunning` (`src/panel/server.js` `checkRunningOf`) is the newest record's `text` verbatim, only while the run is live and that tick is the
-  spine's newest record (a check, step or run end, or any later record, retires it), else `null`.
+  by `checkRunningNote({elapsedMs})`: `Tests are still running (7 min so far).` Report-only: drafting hears it as
+  `onPhase('check-running', {call, elapsedMs, text})` (the panel shows it as the running step's line; the signing gates step
+  too), a run writes a `check-running` spine record `{elapsedMs, text}` (no reader decides anything from it). A run also writes `check-start` when a declared check pass begins. The Run tab's block shows a NOW row only while the run is live: the run detail's
+  `now` (`src/panel/server.js` `nowOf`) is `Running your tests · M:SS` (the newest record is a `check-start` or a `check-running` tick), `AI working · M:SS` (the nearest phase marker is an `iteration-start`) or `Drafting · M:SS` (a `materials` record, until the plan is accepted), in 30 s steps, else `null`; it is `null` once the run ends.
 - **The box.** A check's command (`command-exit`, `count-not-worse`) runs in its own process group; the limit, `ctx.signal` (an
   `AbortSignal`: the panel's Abandon, the run's Stop) and a dying owner (`exit`, SIGINT, SIGTERM, SIGHUP while a box is live) each kill
   the WHOLE group: SIGTERM, SIGKILL after 2 s, and SIGKILL again once the leader is gone (a child that ignores SIGTERM). A run's Stop is

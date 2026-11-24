@@ -1836,6 +1836,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // consumed here and the stop recorded; the caller routes a close that was stopped (the precheck and the preflight end `stopped`).
     const poll = stopFile === null ? null : setInterval(() => { if (existsSync(stopFile)) stopChecks.abort(); }, STOP_POLL_MS);
     poll?.unref();
+    // REPORT-ONLY (hamr 2026-11-24, D2): the moment a check pass begins, so the Run tab's NOW row can say "Running your tests · M:SS" from the first second
+    // (the `check-running` tick only comes after 5 minutes, and no other record names when a check started). Nothing reads it back to decide anything.
+    emit('check-start', {});
     try {
       return await runDeclaredStages(stages, scrub, {
       ...closeOpts,

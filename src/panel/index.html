@@ -1169,7 +1169,7 @@
             <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
-            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-tests" data-testid="check-running" hidden></div><div class="map-key map-tests" id="map-reused" data-testid="check-reused" hidden></div></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-reused" data-testid="check-reused" hidden></div></div>
             <div id="step-list"></div>
           </div>
         </section>
@@ -1597,13 +1597,6 @@
       '<span>\u21bbN = took N tries (dashed box)</span>' +
       (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
-  }
-  // hamr 2026-11-22: the one grey line under the map — the server's `checkRunning` string verbatim, present only while the tests are running now
-  function paintCheckRunning(detail){
-    var el = document.getElementById("map-tests");
-    var text = detail && typeof detail.checkRunning === "string" ? detail.checkRunning : "";
-    el.textContent = text;
-    el.hidden = text === "";
   }
   // hamr 2026-11-23: the grey line for a start pass that took a saved check result — the server's `checkReused` string verbatim
   function paintCheckReused(detail){
@@ -2791,15 +2784,18 @@
     var box = document.getElementById("ended-block");
     var e = detail.ended;
     var sc = detail.schedule;
-    if(!e && !sc){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    // hamr 2026-11-24 (D1): the NOW row, the server's own words ("Running your tests \u00B7 M:SS"), only while the run is live; it and ENDED never show together
+    var now = typeof detail.now === "string" && detail.now ? detail.now : null;
+    if(!e && !sc && !now){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
     // rebuilt only when what it shows changed
-    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
+    var sig2 = detail.runid + "|" + now + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
     if(sig2 === lastEndedSig) return;
     lastEndedSig = sig2;
     box.hidden = false;
     var problem = !!(sc && sc.scheduled && sc.problem === true);
     box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : (detail.glyph === "■" ? "grey" : "red")))));
     var h = "";
+    if(now) h += summaryRow("NOW", now, "now-row", false);
     if(e){
       // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
       h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + nextRow(e);
@@ -3099,7 +3095,6 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
-    paintCheckRunning(detail);
     paintCheckReused(detail);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);

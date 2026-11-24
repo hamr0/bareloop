@@ -157,5 +157,9 @@ process.exit(existsSync(p) && readFileSync(p, 'utf8').includes('ok') ? 0 : 1);\n
   assert.ok(notes.length >= 2, `the slow check is announced more than once, got ${notes.length}`);
   assert.ok(notes[0].elapsedMs >= AFTER_T);
   assert.match(notes[0].text, /^Tests are still running \(\d+ min so far\)/);
+  // hamr 2026-11-24 (D2): every declared check pass writes `check-start` when it begins, so the Run tab's NOW row can count from the first second
+  const starts = events.filter((e) => e.type === 'check-start');
+  assert.ok(starts.length >= 1, 'a check-start record is written when a check pass begins');
+  assert.ok(events.indexOf(starts[0]) < events.indexOf(notes[0]), 'and it comes before the first still-running note');
   assert.ok(notes.every((n) => !('knownMs' in n) && !/usually/.test(n.text)), 'the note says minutes so far and nothing else');
 });
