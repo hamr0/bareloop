@@ -76,3 +76,9 @@ test('page: #map-reused and its painter are gone; the NOW row draws the line abo
   render({ runid: 'r1', now: null, nowReused: TEXT, ended: null, schedule: null, resume: null });
   assert.equal(box.hidden, true, 'no NOW: nothing shows, the line does not float alone');
 });
+
+test('hamr 2026-11-24: the reused line wears the NOW text\'s own size and color (one block): its CSS rule sets neither', () => {
+  const rule = /\.ended-text \.now-reused\{([^}]*)\}/.exec(PAGE);
+  assert.ok(rule, 'the rule exists');
+  assert.doesNotMatch(rule[1], /font-size|color/);
+});
