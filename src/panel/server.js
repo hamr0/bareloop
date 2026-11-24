@@ -757,11 +757,13 @@ export function nowOf(records, nowMs) {
 const NOW_ENDS = new Set(['middle-done', 'plan-accepted', 'plan-red', 'step-end', 'run-end', 'outer-close', 'job-end', 'check-start', 'check-running', 'check-run', 'check-preflight', 'close-precheck']);
 
 /**
- * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. Unlike the running tick it stays true for the whole run: it says the start pass took a saved check result.
+ * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null - read from the run's CURRENT leg only
+ * (the records after the last `leg-resume`; src/legs.js owns that boundary), so an earlier leg's line never shows on a later one (F394). It says this leg's start pass took a saved check result.
  * @param {any[]} records
  */
 export function checkReusedOf(records) {
-  for (let i = records.length - 1; i >= 0; i -= 1) if (records[i]?.type === 'check-reused' && typeof records[i].text === 'string') return records[i].text;
+  const leg = legsOf(records).at(-1)?.records ?? [];
+  for (let i = leg.length - 1; i >= 0; i -= 1) if (leg[i]?.type === 'check-reused' && typeof leg[i].text === 'string') return leg[i].text;
   return null;
 }
 
@@ -2386,6 +2388,8 @@ function getRunDetailBody(runid, opts) {
   // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
   const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
   const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, lines: auditChecksAll.lines, jobNotChecked: auditChecksAll.jobNotChecked, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
+  /** the NOW row's words, only while the run is live (null once it ends or when no stretch is being counted) */
+  const nowText = row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? nowOf(rawSpineRecords, typeof opts.now === 'number' ? opts.now : Date.now()) : null;
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never
@@ -2428,9 +2432,9 @@ function getRunDetailBody(runid, opts) {
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
     // hamr 2026-11-24 (D1-D2): the NOW row, only while the run is live: "Running your tests · M:SS" / "AI working · M:SS" / "Drafting · M:SS" (see nowOf); null once it ends
-    now: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? nowOf(rawSpineRecords, typeof opts.now === 'number' ? opts.now : Date.now()) : null,
-    // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one
-    checkReused: row.via !== 'import' ? checkReusedOf(rawSpineRecords) : null,
+    now: nowText,
+    // D3: this leg's "Checks not run again: same files as the last check at 14:05." - the current leg's own `check-reused` record, shown above the NOW text (so only while NOW shows)
+    nowReused: nowText ? checkReusedOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,

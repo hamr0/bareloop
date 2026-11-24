@@ -358,6 +358,7 @@
   /* RULED 2026-10-15 (aligned with fwdloop M9 am7): a schedule that started nothing turns its whole SCHEDULE row red; the frame turns red with `.ended-block.red` */
   .ended-row.is-red .ended-label,.ended-row.is-red .ended-text,.ended-text.is-red{color:var(--red);}
   .ended-text .sched-line2{display:block;}
+  .ended-text .now-reused{display:block;font-size:11px;color:var(--text-dim);}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   #run-content.actions-only > :not(.run-actions){display:none;}
@@ -1169,7 +1170,7 @@
             <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
-            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-reused" data-testid="check-reused" hidden></div></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
             <div id="step-list"></div>
           </div>
         </section>
@@ -1597,13 +1598,6 @@
       '<span>\u21bbN = took N tries (dashed box)</span>' +
       (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
-  }
-  // hamr 2026-11-23: the grey line for a start pass that took a saved check result — the server's `checkReused` string verbatim
-  function paintCheckReused(detail){
-    var el = document.getElementById("map-reused");
-    var text = detail && typeof detail.checkReused === "string" ? detail.checkReused : "";
-    el.textContent = text;
-    el.hidden = text === "";
   }
   function renderStepMap(steps){
     var mount = document.getElementById("map-mount");
@@ -2765,8 +2759,8 @@
 
   // ---- P5: the ENDED block (Run tab, first block above the action row, every finished run) and Resume ----
   var lastEndedSig = null;
-  function summaryRow(label, text, testid, red, extraHtml){
-    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + escapeXml(text) + (extraHtml || "") + '</span></div>';
+  function summaryRow(label, text, testid, red, extraHtml, beforeHtml){
+    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + (beforeHtml || "") + escapeXml(text) + (extraHtml || "") + '</span></div>';
   }
   // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
   // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
@@ -2786,16 +2780,18 @@
     var sc = detail.schedule;
     // hamr 2026-11-24 (D1): the NOW row, the server's own words ("Running your tests \u00B7 M:SS"), only while the run is live; it and ENDED never show together
     var now = typeof detail.now === "string" && detail.now ? detail.now : null;
+    // D3 (hamr 2026-11-24): this leg's "Checks not run again..." line sits above the NOW text, in the same row, current leg only (the server reads the spine's current leg)
+    var reused = now && typeof detail.nowReused === "string" && detail.nowReused ? detail.nowReused : null;
     if(!e && !sc && !now){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
     // rebuilt only when what it shows changed
-    var sig2 = detail.runid + "|" + now + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
+    var sig2 = detail.runid + "|" + now + "|" + reused + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
     if(sig2 === lastEndedSig) return;
     lastEndedSig = sig2;
     box.hidden = false;
     var problem = !!(sc && sc.scheduled && sc.problem === true);
     box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : (detail.glyph === "■" ? "grey" : "red")))));
     var h = "";
-    if(now) h += summaryRow("NOW", now, "now-row", false);
+    if(now) h += summaryRow("NOW", now, "now-row", false, "", reused ? '<span class="now-reused" data-testid="check-reused">' + escapeXml(reused) + '</span>' : "");
     if(e){
       // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
       h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + nextRow(e);
@@ -3095,7 +3091,6 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
-    paintCheckReused(detail);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
 

@@ -87,11 +87,10 @@ test('D5: the run ended (job-end) or is not live (died): no NOW, and the ENDED w
   assert.equal(dead.now, null);
 });
 
-test('D4: the grey "Tests are still running" line is gone - no detail.checkRunning, no #map-tests, no painter; the reused line stays as it is', () => {
+test('D4: the grey "Tests are still running" line is gone - no detail.checkRunning, no #map-tests, no painter; the reused line is not under the step map any more', () => {
   assert.equal('checkRunning' in detailOf(FIXTURE, { now: at(FIXTURE.at(-1), 5) }), false);
   assert.doesNotMatch(PAGE, /id="map-tests"|paintCheckRunning|check-running"/);
-  assert.match(PAGE, /id="map-reused"[^>]*data-testid="check-reused"[^>]*hidden/, 'D3 is Part A: its line stays exactly as it is');
-  assert.match(PAGE, /paintCheckReused\(detail\)/);
+  assert.doesNotMatch(PAGE, /map-reused|paintCheckReused/, 'D3 moved into the NOW row (tests/run-tab-check-reused.test.js)');
 });
 
 test('page: the NOW row is the block\'s first row (summaryRow, same classes), drawn only when the server sent `now`, and a live run with only NOW shows the block', () => {
