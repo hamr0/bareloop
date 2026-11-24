@@ -12,7 +12,7 @@
 //   escalated + money-halt record, escalated + wall-halt -> capped
 //   stopped (the person pressed Stop)                    -> stopped
 //   skipped (a Tickets job's signed filter let the ticket by)  -> skipped  (a quiet end: not a failure, not a pass, never reusable or Needs you)
-//   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, step-stalled,
+//   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, check-timeout, step-stalled,
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
 

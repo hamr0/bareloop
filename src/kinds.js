@@ -121,9 +121,12 @@ export function checkRunningNote({ elapsedMs }) {
  * @param {number} limitMs @returns {string}
  */
 export function checkTimedOutText(limitMs) {
+  return `Your tests did not finish inside ${checkLimitSpan(limitMs)}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
+}
+/** a check limit as a span of words ("30 minutes", "45 seconds") @param {number} limitMs @returns {string} */
+export function checkLimitSpan(limitMs) {
   const n = (/** @type {number} */ v, /** @type {string} */ unit) => `${v} ${unit}${v === 1 ? '' : 's'}`;
-  const span = limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
-  return `Your tests did not finish inside ${span}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
+  return limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
 }
 
 /** used when neither the stage nor the ctx names a bound. A stage that could

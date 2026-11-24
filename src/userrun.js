@@ -2332,6 +2332,12 @@ async function execute(ctx) {
     out('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
   }
+  // F393 (hamr 2026-11-24): a check that never finished inside its limit judged nothing and spent no allowance — Resume runs it again.
+  if (outcome === 'check-timeout') {
+    out('\nCHECK TIMEOUT — your tests did not finish inside their limit, so nothing was judged. The tree, the plan and the steps already finished STAND.');
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
+    out('          (no spec edit, so the hash is unchanged — the check runs again at the start of the resumed leg)');
+  }
   // PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. The one
   // transport retry (src/planrun.js's `withTransportRetry`) already ran and
   // still failed, so `spent` above is already a FLOOR (`je.spendComplete ===

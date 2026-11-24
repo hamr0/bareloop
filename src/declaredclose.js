@@ -535,6 +535,8 @@ function translate(r, redact) {
   return {
     verdict: r.detail?.fault ?? STOP_FAULTS.FAILED,
     detail: redact(String(r.detail?.stop ?? `stage "${r.stage}" rendered no judgment`)),
+    // the limit that bound a timed-out check, typed, so the Run tab can name it
+    ...(r.detail?.fault === STOP_FAULTS.TIMED_OUT && typeof r.detail?.limitMs === 'number' ? { limitMs: r.detail.limitMs } : {}),
     ...notes,
   };
 }

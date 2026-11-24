@@ -223,7 +223,7 @@ export const CLOSE_ENV_DENY = Object.freeze({
  *   ever THREADS the value, it never invents one.
  * @returns {Promise<{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
  *   gap?: string, exitCode?: number, signal?: string, detail?: string,
- *   judgedCount?: number|null, unaudited?: boolean}>}
+ *   judgedCount?: number|null, unaudited?: boolean, limitMs?: number}>}
  */
 export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep, closeDir = null } = {}) {
   const env = { ...process.env };
@@ -250,7 +250,7 @@ export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, 
     // The runner reports BOTH "cannot run" and "ran too long" through `error`;
     // they are different human decisions, so they get different names.
     const code = /** @type {NodeJS.ErrnoException} */ (r.error).code;
-    if (code === 'ETIMEDOUT') return { verdict: 'timed-out', detail: `close exceeded ${timeoutMs}ms and was killed — it never finished judging` };
+    if (code === 'ETIMEDOUT') return { verdict: 'timed-out', detail: `close exceeded ${timeoutMs}ms and was killed — it never finished judging`, limitMs: timeoutMs };
     return { verdict: 'failed', detail: String(r.error) };
   }
   // No spawn error and no exit status: the close died by signal (OOM, an

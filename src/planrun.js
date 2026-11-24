@@ -161,6 +161,8 @@ const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn:
 // `e.body` object itself must never reach a spine record.
 const BODY_MAX = 600;
 const BODY_MARKER = ' — body: ';
+/** the limit that bound a timed-out check, when the verdict carries it (the Run tab's words name it) @param {any} v */
+const limitOf = (v) => (typeof v?.limitMs === 'number' ? { limitMs: v.limitMs } : {});
 /** @param {any} e @returns {string} '' when there is no body, else ' — body: <redacted, ≤BODY_MAX chars>' */
 const bodySuffix = (e) => {
   if (e?.body === undefined) return '';
@@ -1109,7 +1111,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'check-timeout' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
 export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, stateFile = null, learnHints = null, checkNote = null }) {
@@ -2304,8 +2306,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (stoppedInClose) return 'stopped';
   const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
   if (preFault) {
-    emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
-    return 'close-red';
+    emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail, ...limitOf(pre) });
+    // a check that never finished is a Resume away (F393, hamr 2026-11-24); a check that broke, was killed or crashed stays close-red
+    return pre.verdict === 'timed-out' ? 'check-timeout' : 'close-red';
   }
 
   // ── 0b. check preflight ($0, deterministic): every OFFERABLE stage runs once
@@ -4292,9 +4295,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   }
   const postFault = Object.hasOwn(CLOSE_FAULTS, post.verdict) ? CLOSE_FAULTS[post.verdict] : undefined;
   if (postFault) {
-    emit('escalation', { category: postFault.category, decisionReady: true, decision: postFault.decision, options: postFault.options, detail: post.detail });
+    emit('escalation', { category: postFault.category, decisionReady: true, decision: postFault.decision, options: postFault.options, detail: post.detail, ...limitOf(post) });
     planExecuted();
-    return 'close-red';
+    return post.verdict === 'timed-out' ? 'check-timeout' : 'close-red';
   }
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   // ── THE RULING IS SPENT HERE (N4 §1.5). The human's words are what OPENS this

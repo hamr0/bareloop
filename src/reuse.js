@@ -80,7 +80,8 @@ const { Loop } = require('bare-agent');
  *  - `cap-halt` / `wall-halt` — governance stops. A money cut is never a capability read
  *    (F45) and the wall keeps the verdict already minted (W-2).
  *  - `provider-red` / `step-stalled` / `pricing-red` — transport and metering.
- *  - `close-red` / `close-unsupported` — the close FAULTED (broken, timed out, killed,
+ *  - `check-timeout` — a check never finished inside its limit (F393): resumable, like `provider-red`.
+ *  - `close-red` / `close-unsupported` — the close FAULTED (broken, killed,
  *    crashed). It rendered no judgment, so its exit says nothing about the tree.
  *  - `recipe-stale` — the load gate refused the recipe at the door, $0 spent.
  *  - `plan-red` / `step-red:<id>` / `check-red` — the plan flow stopped before the close
@@ -145,7 +146,7 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * does not end up with two lists that can drift, which is the exact failure this
  * constant exists to end (see the paragraph above).
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'stopped', ...HUMAN_CHECKPOINTS]);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'check-timeout', 'stopped', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the

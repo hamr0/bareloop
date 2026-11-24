@@ -789,7 +789,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
         const capKind = legCapKind(myLeg);
         stopReason = capKind === 'money' ? 'money cap' : capKind === 'time' ? 'time cap' : o === 'provider-red' ? 'provider failed'
-          : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
+          : o === 'check-timeout' ? 'tests did not finish' : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
       }
     }
 

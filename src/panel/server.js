@@ -77,6 +77,7 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
+import { CHECK_LIMIT_MS, checkLimitSpan } from '../kinds.js';
 import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
@@ -440,6 +441,7 @@ export function legDividersFor(spineRecords, parts) {
     if (a === 'cap-halt') stopped = `money cap reached (${money})`;
     else if (a === 'wall-halt') stopped = 'time cap reached';
     else if (a === 'provider-red') stopped = 'the model provider failed';
+    else if (a === 'check-timeout') stopped = 'your tests did not finish';
     else if (a === 'step-stalled') stopped = 'a step stopped making progress';
     else if (a === 'stopped') stopped = 'you stopped it';
     else if (a === 'hitl-pause') stopped = 'paused for a decision';
@@ -656,6 +658,16 @@ function endedBase(summary, death, o) {
       reason: 'You stopped it.',
       ...resumeOr('Resume.'),
       line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'check-timeout') {
+    // F393: the check never finished, so nothing was judged. The span is the limit that really bound it (the escalation's `limitMs`), else the one check limit.
+    const span = checkLimitSpan(typeof esc?.limitMs === 'number' ? esc.limitMs : CHECK_LIMIT_MS);
+    return {
+      reason: `Your tests did not finish inside ${span}, so nothing was judged. Resume runs them again.`,
+      ...resumeOr('Resume.'),
+      line: resumeOk ? 'tests did not finish — resume' : 'tests did not finish',
       actions: resumeOk ? RESUME : [],
     };
   }
