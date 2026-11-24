@@ -5613,3 +5613,35 @@ Status: test-proven; reuse not seen in a live resume.
 2. A `~` rule on every job (460c130c, 057e510c; F387): code counts at $0 at the start of both doors, before any AI call; with none, one code-written ask. No AI judges prompt quality.
 3. "Did you mean branch: X?" / "Did you mean range: A..B?" (0c275690, d5233224; F385): `src/refguess.js`, panel only; range stays review-only; not counted in the 3-ask cap; the Job box shows the token.
 4. Run tab reused line (039570e5): the `check-reused` text as one grey line.
+
+## Addendum 2026-11-24: one run state file, and the drafting timer and NOW row (signed by hamr)
+
+### Part A: the one run state file (signed 2026-11-24; POC first, build not started)
+
+1. Where: the run's own folder beside its spine (for panel jobs the session folder, so drafting and the run share it), not inside the work copy (a green run removes the work copy). Behind the same arbiter fence: the worker never reads it. Reuse the existing carry store (`src/carrystore.js`) and move its file; no second state file.
+2. Holds: every completed check command result keyed by (command key, tree fingerprint of the files the command saw); the seed (original code) is just another tree fingerprint, so a leg-1 run on an unchanged tree IS the seed reading; each result's run time (ms); the carry memo it holds today; and run position: phase, step, leg, whether a check is running and since when, whether a stop was asked.
+3. Written atomically (temp file then rename).
+4. Read by drafting, signing, run start, step checks, resume and the Run tab (NOW row and the reused line come from it, scoped to the current leg).
+5. Only completed runs are kept; a killed or timed-out run never is.
+6. Unchanged rules: the tests-executed floor still compares against the ORIGINAL code (anti-cheat: a worker must not delete tests a few at a time); a pass never comes from a saved result alone (`src/planrun.js` ~2268 rule kept).
+7. Removed: startSaved, seedBaseMap, seedShare, the three cmdTimes maps, the `seed:` key prefix, and the Destination copy-back onto the card (the card reads source.json, the one Destination record). cmdMemo stays only as in-flight dedupe of a run already going, holding nothing after the pass.
+8. Parked for hamr's separate go (arbiter books): the gate audit's two files.
+9. Known limits unchanged: the key holds no node version or gitignored files.
+10. POC first ($0, throwaway copy): (a) an unchanged work folder and a detached seed worktree of the same commit get the same tree fingerprint (installed packages are linked into the seed worktree); (b) drafting's signing checks run in the same folder the run uses. Either failing goes back to hamr before any build.
+11. Proof: fail-first tests for F382, F383, F394 and F395; full suite; one hamr walk (draft, run, Stop, Resume).
+
+### Part B: drafting timer and Run tab NOW row (signed 2026-11-24)
+
+- A1. Drafting list in chat: a finished step shows "took M:SS"; the running step shows "M:SS so far"; signs ✓ done, ▶ running, ✗ failed.
+- A2. Under the list: "Drafting so far: M:SS".
+- A3. Every 30 s; no ticking clock.
+- A4. "usually about N min" removed everywhere (drafting, signing, Run tab).
+- A5. Times from what is already recorded (draft-log step-start/step-end); one owner of the math (`src/draftspend.js`); $0.
+- B. Plan card: one line "Drafted in M:SS · $X".
+- C. Audit drafting row: total draft time only, no per-step times.
+- D1. NOW row in the Run tab's ENDED / NOW / NEXT / SCHEDULE block, only while the run is live.
+- D2. Shows "Running your tests · M:SS", "AI working · M:SS" or "Drafting · M:SS", every 30 s.
+- D3. When this leg reused a saved check, a line above it: "Checks not run again: same files as the last check at HH:MM", current leg only (fixes F394).
+- D4. NOW replaces the grey "Tests are still running…" and "Checks not run again…" lines under the step map; both go.
+- D5. When the run ends NOW goes; ENDED / NEXT / SCHEDULE keep today's words.
+- E. Proof: fail-first tests (30 s times, D3 current leg only, NOW gone after end, "usually about" gone); full suite + typecheck; orchestrator screenshots of the drafting list, plan card, Run tab live and ended vs these shapes; hamr's click-through and DevTools phone-width check before "done".

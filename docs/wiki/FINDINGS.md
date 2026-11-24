@@ -16777,3 +16777,14 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - Leg 3 (Stop at 08:01:36Z while the step check ran, after the AI edited tests/codeversion.test.js at 07:59:54Z; resumed 08:01:42Z) correctly did NOT reuse: no `check-reused` record in leg 3, and the tests ran fresh.
 - But the Run tab still showed "Checks not run again: same files as the last check at 08:48." in leg 3: the panel shows the newest `check-reused` record of the whole spine across legs (src/panel/server.js:742), not only the current leg's (records after the last `leg-resume`). hamr saw it live.
 - Open: scope the line to the current leg. Fix next on feat/next-branch-first.
+
+### F395: A resumed leg ran the suite twice: the seed count was never kept when the tree was the seed (run mwue75ih leg 3, 2026-11-24)
+- Leg 3 (resumed 08:01:42Z after the AI edited tests/codeversion.test.js) ran `npm test` on the run's tree (14.8 min, 886766 ms, kept 08:17:01Z), then at once ran it again in a seed worktree /tmp/bareloop-seed-*/tree for the tests-executed-floor seed baseline (~15 min). No AI work between.
+- Cause: in leg 1 the tree was the seed, so count-not-worse took the "measured IN PLACE" branch (src/kinds.js ~1555-1560) and kept nothing under the `seed:` key (src/kinds.js ~1376-1404 keeps only a run done in the seed dir). The later leg found no seed reading and measured it again.
+- Proof: the run's .smoke/carry/state.json held a `seed:` entry for typecheck but none for `npm test`; the second `node --test` process had cwd /tmp/bareloop-seed-*/tree.
+- Not patched (hamr 2026-11-24): the cause is the class in F396; fixed by the one run state file.
+
+### F396: One run's state lives in many stores that drift (audit 2026-11-24)
+- Test-check results lived in 6 stores with 4 key shapes: per-pass memo (cmdMemo/startMemo), resume list (startSaved), the carry file (.smoke/carry/state.json, src/carrystore.js), seedBaseMap, the draft-session seedShare, and three "usually about N min" time maps (cmdTimes in src/planrun.js, src/panel/authorsession.js, src/authorflow.js). A result kept by one was invisible to the others: F381, F382, F383, F394, F395 are this one class, each fixed by adding another store.
+- Other facts held twice: run position ("what is happening now") only in memory and the spine tail; leg scoping done by each reader (F394); Destination copied back onto the card by hand (src/panel/authorsession.js ~984-989); the gate audit in two files (<workdir>/gate-audit.jsonl and the spine dir's u-<runid>-gate-audit.jsonl); spend and job text/spec hash in several places, each with a ruling on which wins.
+- hamr 2026-11-24: "one place where run keeps its [state] ... a json file that keeps all necessary bits and pieces together, so you can look while it's running". Design signed the same day: ITEM33-BUILD.md "Addendum 2026-11-24".
