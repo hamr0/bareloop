@@ -42,6 +42,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The Run tab and the summary read the run's CURRENT leg, from one place (hamr 2026-11-24, F397, run mwuxqx4f).** While a resumed leg ran, the header said "ended" with the previous leg's time, the why showed the previous leg's "You stopped the run", and "Checks not run again" stayed after the tests ran again in the same leg. `currentLegView` in `src/legs.js` now owns the last end, last escalation, money halt and reused line of the latest leg; the panel, the replay summary, the Result tab and the Ended block ask it. A running leg also no longer reads "green" from a mid-run `run-end` (it showed on Reuse, the track record and the bundle lists). The reused line stays through the start pass and the AI's turns and goes at the first new test run. Not moved, for a ruling: the Runs list's "step N of M" on a leg that has no plan yet, and the learnings noise check over the whole spine.
+
 - **The "Checks not run again" line on the Run tab's NOW row wears the NOW text's own size and color (hamr 2026-11-24).** It was smaller and dimmer, so the two read as two things; they are one block now.
 
 - **A run that hit its money or time cap wears the stop sign [■], like a stopped run (hamr 2026-11-24).** The word stays "capped"; a check that did not finish and a provider failure keep [✗]. One table, `src/panel/status.js`.
