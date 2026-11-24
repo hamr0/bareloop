@@ -1541,6 +1541,34 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
   assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
 });
 
+test('a look after a try that was NOT refused records WHY drafting ran again: a try-again line in draft-log.jsonl (walk mwuxqx4f)', async () => {
+  const sessionsRoot = tmp('panel-author-sess-tryagain-');
+  const authorFn = async (/** @type {any} */ o) => {
+    o.onPhase('author-call', { call: 'author', i: 0, of: 2 });
+    o.onPhase('author-try-failed', { call: 'author', i: 0, of: 2, reason: 'no check was failing at the starting point' });
+    o.onPhase('author-call', { call: 'revise-1', i: 1, of: 2 }); // after a refused try: a retry, no try-again line
+    o.onPhase('author-call', { call: 'revise-2', i: 2, of: 2 }); // the previous try passed: nothing recorded why this one ran
+    return fakeAuthorFn()();
+  };
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try-again', capUsd: 1 }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn,
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  const until = async (/** @type {() => boolean} */ fn) => { const t0 = Date.now(); while (Date.now() - t0 < 5000 && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } };
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const again = log.filter((e) => e.kind === 'try-again');
+  assert.deepEqual(again.map((e) => e.call), ['revise-2'], 'only the look after a try that was not refused');
+  assert.match(again[0].reason, /^the last try was not refused, so drafting looks again \(3 of 3\)/);
+  assert.equal(again[0].no, session.state.steps.findIndex((/** @type {any} */ x) => x.id === 'draft'));
+});
+
 const sessionsRootFinal = tmp('panel-author-sess-final-');
 test('createSession (repo, the live defect of session smwhv4lv4g3w0): the FINAL Sign & run card draws every `! [agent]` stage row on its line and every `~ [you]` rule with its status', async () => {
   const repo = makeRepo();

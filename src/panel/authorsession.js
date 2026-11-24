@@ -786,6 +786,13 @@ export function createSession(card, deps = {}) {
     // "retry" is said only when the previous try was actually refused; otherwise it is "look". The same one line, never a second one.
     if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {
       const label = `${STEP_LABELS.draft} (${lastTryRefused ? 'retry' : 'look'} ${data.i + 1} of ${data.of + 1})`;
+      // hamr 2026-11-24 (walk mwuxqx4f): a look after a try that was NOT refused used to leave no record of why drafting ran again. The ladder always drafts
+      // again after a passing try (the drafter is shown what its checks read at the starting point) until its last call; say so in the drafting log, in code's words
+      if (!lastTryRefused) appendDraftLog(outDir, {
+        kind: 'try-again', no: Math.max(0, state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft')), call: String(data.call ?? ''),
+        reason: `the last try was not refused, so drafting looks again (${data.i + 1} of ${data.of + 1}): the AI is shown what its checks read at the starting point and may keep or change its plan`,
+        at: new Date().toISOString(),
+      });
       lastTryRefused = false;
       stepLabel('draft', label);
       state.progressLabel = label;
