@@ -5619,16 +5619,17 @@ Status: test-proven; reuse not seen in a live resume.
 ### Part A: the one run state file (signed 2026-11-24; POC first, build not started)
 
 1. Where: the run's own folder beside its spine (for panel jobs the session folder, so drafting and the run share it), not inside the work copy (a green run removes the work copy). Behind the same arbiter fence: the worker never reads it. Reuse the existing carry store (`src/carrystore.js`) and move its file; no second state file.
-2. Holds: every completed check command result keyed by (command key, tree fingerprint of the files the command saw); the seed (original code) is just another tree fingerprint, so a leg-1 run on an unchanged tree IS the seed reading; each result's run time (ms); the carry memo it holds today; and run position: phase, step, leg, whether a check is running and since when, whether a stop was asked.
+2. Holds: every completed check command result keyed by (command key, tree fingerprint of the files the command saw); the seed (original code) is just another tree fingerprint, so a leg-1 run on an unchanged tree IS the seed reading; each result's run time (ms); the carry memo it holds today; and nothing else. Run position (phase, step, leg, a check running and since when, a stop asked) is NOT in this file: it is read from the run's spine, scoped to the current leg (records after the last leg-resume; src/legs.js owns the boundary) — the spine is the single source for every UI (PRD Floor). (hamr 2026-11-24)
 3. Written atomically (temp file then rename).
-4. Read by drafting, signing, run start, step checks, resume and the Run tab (NOW row and the reused line come from it, scoped to the current leg).
+4. Read by drafting, signing, run start, step checks, resume and the Run tab (the NOW row and the reused line read the spine's current leg).
 5. Only completed runs are kept; a killed or timed-out run never is.
 6. Unchanged rules: the tests-executed floor still compares against the ORIGINAL code (anti-cheat: a worker must not delete tests a few at a time); a pass never comes from a saved result alone (`src/planrun.js` ~2268 rule kept).
 7. Removed: startSaved, seedBaseMap, seedShare, the three cmdTimes maps, the `seed:` key prefix, and the Destination copy-back onto the card (the card reads source.json, the one Destination record). cmdMemo stays only as in-flight dedupe of a run already going, holding nothing after the pass.
 8. Parked for hamr's separate go (arbiter books): the gate audit's two files.
 9. Known limits unchanged: the key holds no node version or gitignored files.
-10. POC first ($0, throwaway copy): (a) an unchanged work folder and a detached seed worktree of the same commit get the same tree fingerprint (installed packages are linked into the seed worktree); (b) drafting's signing checks run in the same folder the run uses. Either failing goes back to hamr before any build.
+10. POC done 2026-11-24: (a) PASS with item 12's rule, (b) PASS (same folder; the fingerprint is taken fresh at each read, never carried). Original: POC first ($0, throwaway copy): (a) an unchanged work folder and a detached seed worktree of the same commit get the same tree fingerprint (installed packages are linked into the seed worktree); (b) drafting's signing checks run in the same folder the run uses. Either failing goes back to hamr before any build.
 11. Proof: fail-first tests for F382, F383, F394 and F395; full suite; one hamr walk (draft, run, Stop, Resume).
+12. Tree fingerprint (POC 2026-11-24, .claude/scratch/poc-statefile/poc3.mjs, all 6 cases PASS): treeIdentity fingerprints what is BEHIND an untracked symlink, not the link: a dangling link counts nothing; a link whose target is ignored in the git folder it points into (`git -C <top> check-ignore -q`) counts nothing; otherwise the target counts as if it were at the link's path (a directory by its sorted files). Non-symlink entries unchanged, so ids of symlink-free trees do not change. hamr: 'fingerprint what's behind the symlinks'.
 
 ### Part B: drafting timer and Run tab NOW row (signed 2026-11-24)
 
