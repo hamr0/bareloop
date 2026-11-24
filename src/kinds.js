@@ -101,7 +101,7 @@ export const GAP_TRIM_MARKER = 'gap trimmed:';
 /**
  * THE one limit for an AI-drafted check (hamr, 2026-11-21): 30 minutes per command, at drafting, at the signing gates and
  * at the run (precheck + final close). Code's own number — not in the draft, not in the signature, never compared to the
- * job's Time cap. The AI's own `timeoutMs` may only tighten it (`effectiveTimeoutMs`).
+ * job's Time cap. The AI no longer writes a limit (F393, hamr 2026-11-24): a `timeoutMs` on an OLD signed spec is ignored (`effectiveTimeoutMs`).
  */
 export const CHECK_LIMIT_MS = 1_800_000;
 /** the still-running note: first at 5 of the 30 minutes, then every minute (hamr, 2026-11-21) */
@@ -1365,37 +1365,30 @@ const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED, note
     exitCode: EXIT_STOP,
     judged: false,
     gapLines: gap.render(),
-    // the limit that bound a timed-out check (the AI's own tighter `timeoutMs` or the one limit), so the plain words can name it
-    detail: { ...detail, stop, fault, ...(fault === STOP_FAULTS.TIMED_OUT ? { limitMs: effectiveTimeoutMs(stage?.params?.timeoutMs, ctx) } : {}) },
+    // the limit that bound a timed-out check (the one limit), so the plain words can name it
+    detail: { ...detail, stop, fault, ...(fault === STOP_FAULTS.TIMED_OUT ? { limitMs: effectiveTimeoutMs(ctx) } : {}) },
   });
 };
 
 // ── the four kinds ──────────────────────────────────────────────────────────
 
 /**
- * The bound a stage ACTUALLY runs under: the tighter of what the declaration
- * asked for and what the operator allows.
+ * The bound a stage ACTUALLY runs under: the ONE check limit (hamr 2026-11-21 ruling, restated 2026-11-24 for F393: an AI-drafted
+ * check gets one fixed limit per command, set by code). `ctx.timeoutMsDefault` is the operator's number (the run's resolved check
+ * limit; a test seam shortens it) and falls back to `DEFAULT_TIMEOUT_MS`, never to `sh`'s "no timer at all".
  *
- * `timeoutMs` is AUTHORED — it rides in the declaration, on the emergent side
- * of the line. `ctx.timeoutMsDefault` is the operator's ceiling and is not.
- * This is the budget rule applied to time: the advertised bound and the
- * enforced bound must be the same number, and the authored side may only ever
- * TIGHTEN it (a declaration that could widen its own ceiling is a second,
- * silent ceiling above the signed one). A declared value that is unusable —
- * absent, non-finite, zero or negative — falls back to the ceiling rather than
- * to `sh`'s "no timer at all", which is the same direction: never wider.
- * @param {any} declared @param {Ctx} ctx
+ * A `timeoutMs` still riding in an OLD signed declaration is IGNORED: the number was authored on the emergent side of the line, and the
+ * AI no longer writes one. Ignoring it changes no signed hash (the signature covers the declaration as written) — only
+ * the saved-result key (`checkKey`), so a result saved under an old authored limit is simply run once more.
+ * @param {Ctx} ctx
  * @returns {number}
  */
-export function effectiveTimeoutMs(declared, ctx) {
-  const ceiling = ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
-  return typeof declared === 'number' && Number.isFinite(declared) && declared > 0
-    ? Math.min(declared, ceiling)
-    : ceiling;
+export function effectiveTimeoutMs(ctx) {
+  return ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
 }
 
 /**
- * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
+ * ONE command of a declared stage, through `sh`: under the one check limit (an old spec's authored `timeoutMs` is ignored), with the
  * still-running note. Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
  * With `ctx.checkStore` (hamr 2026-11-24): the fingerprint of the directory the command will see is taken BEFORE it runs, a saved result for (command, fingerprint)
  * stands in for the run where the caller allows it (see `Ctx`), and a completed run is kept. One lookup, one keeper: the seed baseline, resume, and drafting-to-run
@@ -1403,7 +1396,7 @@ export function effectiveTimeoutMs(declared, ctx) {
  * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx
  */
 async function runCmd(p, cwd, ctx) {
-  const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
+  const timeoutMs = effectiveTimeoutMs(ctx);
   const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
   const run = async () => {
     const store = ctx.checkStore;

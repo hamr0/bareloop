@@ -519,8 +519,8 @@ test('command-exit: the declared exit is green and judged; another exit is red, 
 test('command-exit: a command that outruns its timeout is an instrument stop, never a red', async (t) => {
   const r = makeRepo(t, { 'a.js': 'a\n' });
   const res = await runStage(
-    { name: 'slow', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(() => {}, 60000)'], expectExit: 0, timeoutMs: 300 } },
-    ctxFor(r),
+    { name: 'slow', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(() => {}, 60000)'], expectExit: 0 } },
+    ctxFor(r, { timeoutMsDefault: 300 }),
   );
   assert.equal(res.verdict, 'instrument-stop');
   assert.equal(res.judged, false);
@@ -559,7 +559,7 @@ test('command-exit: output past the buffer ceiling is an instrument stop — a t
 
 // ── the time ceiling: a declaration may only TIGHTEN it ──────────────────────
 
-test('a declared timeoutMs may only TIGHTEN the operator ceiling, never widen it — on every kind that spawns', async (t) => {
+test('a declared timeoutMs is ignored (F393): the operator limit binds on every kind that spawns, whether the declaration is wider or tighter', async (t) => {
   const r = makeRepo(t, { 'report.txt': '# tests 1\n' });
   const CEILING = 400;
   const SLEEP = ['-e', 'setTimeout(() => {}, 3000)'];
@@ -568,23 +568,22 @@ test('a declared timeoutMs may only TIGHTEN the operator ceiling, never widen it
     { name: 'suite-green', kind: 'command-exit', params: { cmd: 'node', args: SLEEP, expectExit: 0, timeoutMs: 60_000 } },
     ctxFor(r, { timeoutMsDefault: CEILING }),
   );
-  assert.equal(exitStage.verdict, 'instrument-stop', 'the declared 60s must not outrank the operator ceiling');
+  assert.equal(exitStage.verdict, 'instrument-stop', 'the declared 60s must not outrank the operator limit');
   assert.match(exitStage.gapLines.join('\n'), new RegExp(`did not finish inside ${CEILING}ms`));
 
   const countStage = await runStage(
     { name: 'typecheck', kind: 'count-not-worse', params: { cmd: 'node', args: SLEEP, parser: { lineMatch: 'total (\\d+)', capture: 1 }, scope: {}, direction: 'lower-is-better', baseline: 0, timeoutMs: 60_000 } },
     ctxFor(r, { timeoutMsDefault: CEILING }),
   );
-  assert.equal(countStage.verdict, 'instrument-stop', 'the second spawning site obeys the same ceiling');
+  assert.equal(countStage.verdict, 'instrument-stop', 'the second spawning site obeys the same limit');
   assert.match(countStage.gapLines.join('\n'), new RegExp(`did not finish inside ${CEILING}ms`));
 
-  // and it still TIGHTENS: below the ceiling, the declaration is the bound that fires
+  // and a declaration below the limit no longer tightens it: the 3 s command under a 30 s limit finishes
   const tighter = await runStage(
     { name: 'suite-green', kind: 'command-exit', params: { cmd: 'node', args: SLEEP, expectExit: 0, timeoutMs: 250 } },
     ctxFor(r, { timeoutMsDefault: 30_000 }),
   );
-  assert.equal(tighter.verdict, 'instrument-stop');
-  assert.match(tighter.gapLines.join('\n'), /did not finish inside 250ms/);
+  assert.equal(tighter.verdict, 'green', 'the authored 250 ms is ignored');
 });
 
 // ── count-not-worse ──────────────────────────────────────────────────────────
@@ -1161,14 +1160,14 @@ test('judged rides EVERY real judgment (green and red) and is withheld from EVER
   const cases = [
     { label: 'green', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: SAY('', 0), expectExit: 0 } }, verdict: 'green' },
     { label: 'red', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: SAY('', 3), expectExit: 0 } }, verdict: 'red' },
-    { label: 'timeout', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0, timeoutMs: 250 } }, verdict: 'instrument-stop' },
+    { label: 'timeout', stage: { name: 's', kind: 'command-exit', params: { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0 } }, verdict: 'instrument-stop', ctx: { timeoutMsDefault: 250 } },
     { label: 'spawn-fault', stage: { name: 's', kind: 'command-exit', params: { cmd: 'no-such-binary-abc', args: [], expectExit: 0 } }, verdict: 'instrument-stop' },
     { label: 'unknown kind', stage: { name: 's', kind: 'vibes-check', params: {} }, verdict: 'instrument-stop' },
     { label: 'malformed params', stage: { name: 's', kind: 'pattern-absent-in-diff', params: { patterns: 'not-an-array', extensions: ['.js'], scope: {} } }, verdict: 'instrument-stop' },
     { label: 'parser stop', stage: { name: 's', kind: 'count-not-worse', params: { cmd: 'node', args: CAT('report.txt'), parser: { lineMatch: 'total (\\d+)', capture: 1 }, scope: {}, direction: 'lower-is-better', baseline: 0 } }, verdict: 'instrument-stop' },
   ];
   for (const c of cases) {
-    const res = await runStage(c.stage, ctxFor(r));
+    const res = await runStage(c.stage, ctxFor(r, c.ctx ?? {}));
     assert.equal(res.verdict, c.verdict, `${c.label}: ${res.gapLines.join('\n')}`);
     assert.equal(res.judged, c.verdict !== 'instrument-stop', `${c.label}: judged`);
     assert.equal(res.exitCode, c.verdict === 'green' ? EXIT_GREEN : c.verdict === 'red' ? EXIT_RED : EXIT_STOP, c.label);

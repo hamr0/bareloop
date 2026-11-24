@@ -69,10 +69,10 @@ const TIMEOUT_MS = 4000;
 
 test('a timed-out command on try 1 is not kept: try 2 runs it fresh', async (t) => {
   const { dir, seed, runs, storeOf } = makePatient(t);
-  const spec = jobOf([counter('slow', 'b', { sleepMs: 20_000, timeoutMs: TIMEOUT_MS })]);
+  const spec = jobOf([counter('slow', 'b', { sleepMs: 20_000 })]);
   const checkStore = storeOf();
-  await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: 30_000, checkStore });
-  await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: 30_000, checkStore });
+  await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: TIMEOUT_MS, checkStore });
+  await prepareSigning({ spec, workdir: dir, seedRef: seed, timeoutMs: TIMEOUT_MS, checkStore });
   assert.equal(runs().length, 2, `ran ${runs().length} times`);
 });
 

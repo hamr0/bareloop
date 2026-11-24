@@ -37,10 +37,10 @@ test('two stages reading the same command: it runs once in a seed read, and both
   assert.deepEqual(rows.map((x) => x.verdict), ['green', 'green']);
 });
 
-test('a command that differs in args, env or limit is another command and runs on its own', async (t) => {
+test('a command that differs in args or env is another command and runs on its own; an authored limit is no difference (F393)', async (t) => {
   const r = repo(t);
   await seedRead({ stages: [stage('one'), stage('args', ['0', 'x']), stage('env', ['0'], { env: { FOO: '1' } }), stage('limit', ['0'], { timeoutMs: 20_000 })] }, ctxOf(r));
-  assert.equal(r.runs(), 4);
+  assert.equal(r.runs(), 3, 'one, args, env - the authored limit is ignored, so `limit` shares the first run');
 });
 
 test('the next pass runs the command again: nothing is shared across passes (the tree may have changed)', async (t) => {

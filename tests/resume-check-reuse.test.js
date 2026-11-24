@@ -57,9 +57,9 @@ const dropped = () => ({
 });
 
 /** one leg. `resumeBranch` null = a cold leg. */
-async function leg(ctx, job, provider, resumeBranch, tag) {
+async function leg(ctx, job, provider, resumeBranch, tag, closeTimeoutMs) {
   const spine = join(ctx.spineDir, `${tag}.jsonl`);
-  const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: ctx.dir, provider, emit: makeSpine(spine), stateFile: runStateFile(ctx.spineDir), ...(resumeBranch ? { resumeBranch } : {}) });
+  const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: ctx.dir, provider, emit: makeSpine(spine), stateFile: runStateFile(ctx.spineDir), ...(resumeBranch ? { resumeBranch } : {}), ...(closeTimeoutMs ? { closeTimeoutMs } : {}) });
   const events = readSpine(spine);
   return { outcome, events, branch: events.find((e) => e.type === 'work-branch')?.branch ?? null };
 }
@@ -162,14 +162,14 @@ test('f. a command that TIMED OUT saves nothing: the state file holds no result,
   const ctx = makePatient(t);
   git(ctx.dir, ['branch', 'bareloop-rb']);
   startRed(ctx);
-  const job = jobOf([counter('slow', 'a', { hang: true, timeoutMs: 3000 })]);
-  const l1 = await leg(ctx, job, dropped(), null, 'l1');
+  const job = jobOf([counter('slow', 'a', { hang: true })]);
+  const l1 = await leg(ctx, job, dropped(), null, 'l1', 3000);
   assert.ok(l1.events.some((e) => e.type === 'close-precheck'), `the precheck ran and hit the limit: ${JSON.stringify(l1.events.filter((e) => e.type === 'escalation')).slice(0, 600)}`);
   assert.equal(ctx.runs(), 1);
   let saved = [];
   try { saved = JSON.parse(readFileSync(runStateFile(ctx.spineDir), 'utf8')).checks ?? []; } catch { /* no file = nothing saved */ }
   assert.deepEqual(saved, [], 'a timed-out run is never kept');
-  await leg(ctx, job, dropped(), 'bareloop-rb', 'l2');
+  await leg(ctx, job, dropped(), 'bareloop-rb', 'l2', 3000);
   assert.equal(ctx.runs(), 2, 'leg 2 ran it fresh');
 });
 

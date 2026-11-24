@@ -20,7 +20,7 @@ const WORDS = (span) => `Your tests did not finish inside ${span}, so bareloop c
 test('the words: the limit in minutes, from the limit that really bound the check', () => {
   assert.equal(LIMIT, 30 * 60_000, 'the spec says 30 minutes; the words below must say what the limit is');
   assert.equal(readout.checkTimedOutText(LIMIT), WORDS('30 minutes'));
-  assert.equal(readout.checkTimedOutText(5 * 60_000), WORDS('5 minutes'), 'an AI-declared tighter limit is the one named');
+  assert.equal(readout.checkTimedOutText(5 * 60_000), WORDS('5 minutes'), 'whatever limit really bound the check is the one named');
   assert.equal(readout.checkTimedOutText(60_000), WORDS('1 minute'));
   assert.equal(readout.checkTimedOutText(45_000), WORDS('45 seconds'));
 });
@@ -37,7 +37,7 @@ test('a stage that timed out carries the limit that bound it, in its detail; a s
   assert.equal(slow.detail.fault, kinds.STOP_FAULTS.TIMED_OUT);
   assert.equal(slow.detail.limitMs, 400);
   const tight = await kinds.runStage({ name: 'tests', kind: 'command-exit', params: { cmd: process.execPath, args: ['-e', 'setTimeout(()=>{},5000)'], expectExit: 0, timeoutMs: 250 } }, ctx);
-  assert.equal(tight.detail.limitMs, 250, 'the AI tightened it, so the tighter number bound the check');
+  assert.equal(tight.detail.limitMs, 400, 'an old spec\'s authored 250 is ignored: the one limit bound the check (F393)');
   const gone = await kinds.runStage({ name: 'tests', kind: 'command-exit', params: { cmd: 'no-such-binary-xyz', args: [], expectExit: 0 } }, ctx);
   assert.equal(gone.detail.limitMs, undefined);
 });

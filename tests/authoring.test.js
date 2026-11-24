@@ -920,6 +920,11 @@ test('validator: command shape — cmd, args, timeoutMs, env values', () => {
   t.stages[3].params.timeoutMs = -1;
   assert.ok(at(run(t), 'invalid-value').some((r) => r.path.endsWith('.timeoutMs')));
 
+  // F393: the drafter no longer writes timeoutMs, but an OLD signed declaration carries one and must still load
+  const old = goodDeclaration();
+  old.stages[3].params.timeoutMs = 900000;
+  assert.deepEqual(run(old).reds, [], 'an old spec with timeoutMs is not refused');
+
   const e = goodDeclaration();
   e.stages[3].params.env = { CI: 1 };
   assert.ok(at(run(e), 'invalid-value').some((r) => r.path.endsWith('.env')));

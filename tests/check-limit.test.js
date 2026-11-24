@@ -1,6 +1,6 @@
 // The one 30-minute limit for an AI-drafted check (hamr, 2026-11-21): drafting seed read, signing gates, the run's
-// precheck and final close all run a declared check under the SAME code-owned limit. The AI's own `timeoutMs` may only
-// tighten it. A hand-written command close keeps its old ceiling (120 s floor x K autoset) byte for byte.
+// precheck and final close all run a declared check under the SAME code-owned limit. The AI writes no limit of its own (F393,
+// hamr 2026-11-24): a `timeoutMs` on an OLD signed spec is ignored. A hand-written command close keeps its old ceiling (120 s floor x K autoset) byte for byte.
 //
 // The constant is read off the module namespace (`kinds.CHECK_LIMIT_MS`) so a test never respells the number.
 import { test } from 'node:test';
@@ -27,13 +27,26 @@ const LIMIT = kinds.CHECK_LIMIT_MS;
 test('the check limit is ONE named constant and the kinds executor defaults to it', () => {
   assert.equal(typeof LIMIT, 'number');
   assert.equal(kinds.DEFAULT_TIMEOUT_MS, LIMIT, 'one number, never a second spelling');
-  assert.equal(kinds.effectiveTimeoutMs(undefined, {}), LIMIT, 'a ctx that names no bound runs under the limit');
+  assert.equal(kinds.effectiveTimeoutMs({}), LIMIT, 'a ctx that names no bound runs under the limit');
 });
 
-test('the AI\'s own timeoutMs may only TIGHTEN the limit, never widen it', () => {
-  assert.equal(kinds.effectiveTimeoutMs(5_000, {}), 5_000, 'a tighter ask stands');
-  assert.equal(kinds.effectiveTimeoutMs(LIMIT * 10, {}), LIMIT, 'a wider ask is cut back to the limit');
-  assert.equal(kinds.effectiveTimeoutMs(-1, {}), LIMIT, 'an unusable ask falls back to the limit, not to no timer');
+test('an authored timeoutMs no longer shortens the limit: the one limit binds, whatever an old spec carries (F393)', async () => {
+  assert.equal(kinds.effectiveTimeoutMs({ timeoutMsDefault: 7_000 }), 7_000, 'the operator\'s number is the limit');
+  // the stage itself: a declared 250 ms would have killed this command under the old rule; now the ctx limit (30 s here) binds and the command finishes
+  const dir = mkdtempSync(join(tmpdir(), 'check-limit-ignored-'));
+  try {
+    writeFileSync(join(dir, 'a.txt'), 'a\n');
+    const { execFileSync } = await import('node:child_process');
+    const git = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'seed');
+    const seed = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim();
+    const stage = { name: 'tests', kind: 'command-exit', params: { cmd: process.execPath, args: ['-e', 'setTimeout(()=>{},800)'], expectExit: 0, timeoutMs: 250 } };
+    const row = await kinds.runStage(stage, { workdir: dir, seedRef: seed, gapKeep: '', timeoutMsDefault: 30_000 });
+    assert.equal(row.verdict, 'green', 'the authored 250 ms did not cut the command short');
+    const slow = await kinds.runStage({ ...stage, params: { ...stage.params, timeoutMs: 60_000 } }, { workdir: dir, seedRef: seed, gapKeep: '', timeoutMsDefault: 300 });
+    assert.equal(slow.verdict, 'instrument-stop', 'and an authored 60 s did not widen it');
+    assert.equal(slow.detail.limitMs, 300);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 const declaredStages = () => [{ name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['-e', '0'], expectExit: 0 } }];
