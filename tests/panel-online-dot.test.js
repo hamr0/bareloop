@@ -33,7 +33,8 @@ function mount() {
   };
   // eslint-disable-next-line no-new-func
   const f = new Function('document', 'fetch', 'Date', 'state', `
-    var RUNS_LIST_POLL_MS = 10000; var lastRunsListRefreshAt = 0; var pollFailStreak = 0; var lastRunsPayloadSig = null; var lastRunsSig = null;
+    var RUNS_LIST_POLL_MS = 10000; var lastRunsListRefreshAt = 0; var pollFailStreak = 0; var lastRunsPayloadSig = null; var lastRunsSig = null; var currentRunid = null; var openStatusSig = null;
+    function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; }
     function sig(o){ return JSON.stringify(o); }
     function withScrollPreserved(ids, fn){ fn(); }
     function setRunsData(){ if (state.renderThrows) throw new Error('render boom'); } var console = { error: function(){} }; var runsFilterBar = { refresh: function(){} };

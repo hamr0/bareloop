@@ -4883,6 +4883,10 @@
   // changing (a refused fire turns NEXT red, a slot passes), and nothing else would repaint it
   var openIsScheduled = false;
   var lastOpenFetchAt = 0;
+  // hamr 2026-11-24 (second tab stale): the sign + word the open run's detail last showed. A FINISHED run is not refetched on a tick, so when the Runs list
+  // says this run's sign/word changed (a Resume clicked in ANOTHER tab), the list poll refetches the open detail once
+  var openStatusSig = null;
+  function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; }
   function selectRun(runid){
     hideImportView();
     clearSelection();
@@ -4901,6 +4905,7 @@
       lastRunDetailSig = sig(detail);
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
+      openStatusSig = statusSigOf(detail);
       renderRun(detail);
       if(detail.hasResult === true) loadResult(runid);
     }).catch(function(e){
@@ -4995,6 +5000,11 @@
       pollFailStreak = 0;
       paintOnline(true);
       var runs = result.runs || [];
+      // the list says the OPEN run's sign/word moved on (Resume or Stop from another tab): its detail is refetched now, not only while it was live
+      if(currentRunid && openStatusSig !== null){
+        var openRow = runs.filter(function(r){ return r.runid === currentRunid; })[0];
+        if(openRow && statusSigOf(openRow) !== openStatusSig) refreshOpenRun(true);
+      }
       var next = sig(result);
       if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsPayloadSig = next;
@@ -5021,10 +5031,10 @@
     });
   }
 
-  function refreshOpenRun(){
+  function refreshOpenRun(force){
     if(!currentRunid) return Promise.resolve();
     var scheduleDue = openIsScheduled && (Date.now() - lastOpenFetchAt) >= RUNS_LIST_POLL_MS;
-    if(!runIsLive && !scheduleDue) return Promise.resolve();
+    if(force !== true && !runIsLive && !scheduleDue) return Promise.resolve();
     lastOpenFetchAt = Date.now();
     var runid = currentRunid;
     var myToken = selectToken;
@@ -5037,6 +5047,7 @@
       lastRunDetailSig = next;
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
+      openStatusSig = statusSigOf(detail);
       if(changed){
         withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
       }

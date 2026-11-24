@@ -1432,6 +1432,8 @@ function makePollHarness(getJSONImpl) {
     var lastRunsSig = null;
     var lastRunsPayloadSig = null;
     var lastRunDetailSig = null;
+    var openStatusSig = null;
+    function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; }
     var lastRunsListRefreshAt = 0;
     var RUNS_LIST_POLL_MS = 10000;
     var pollFailStreak = 0;
@@ -2463,6 +2465,8 @@ test('M3: afterSignRefresh forces list refreshes past the throttle until a new r
       var lastRunsListRefreshAt = Date.now();
       var RUNS_LIST_POLL_MS = 10000;
       var pollFailStreak = 0;
+      var currentRunid = null; var openStatusSig = null;
+      function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; }
       ${src}
       return { afterSignRefresh: afterSignRefresh, currentRunIds: currentRunIds };
     `)(calls, timers, listFor);
