@@ -828,9 +828,17 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
   // it inherited (`priorSpentUsd`/`priorWallMs`/…) — so reading that one window and adding its rounds is the whole
   // chain exactly once, never the earlier legs' rounds on top of a fold that already carries them. A spine with
   // no marker is one leg and reads as it always did.
+  /** the records of the legs BEFORE the one read, oldest first: a leg that died before it re-accepted its plan has no plan of its own,
+   * and the plan the last leg that HAD one accepted still stands behind it (the one resume rule, F393) */
+  let earlierLegs = /** @type {any[][]} */ ([]);
   if (direct) {
     const legs = legsOf(list);
-    if (legs.length > 1) list = (legs.findLast((l) => l.jobStart !== null) ?? legs[legs.length - 1]).records;
+    if (legs.length > 1) {
+      const at = legs.findLastIndex((l) => l.jobStart !== null);
+      const read = at >= 0 ? at : legs.length - 1;
+      list = legs[read].records;
+      earlierLegs = legs.slice(0, read).map((l) => l.records);
+    }
   }
   /** which landed terminals are a CHECKPOINT rather than a graded row */
   const resumableHalt = new Set(Array.isArray(resumableOutcomes) ? resumableOutcomes : []);
@@ -1064,6 +1072,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // is the substitution D3 forbids at the selection seam.
         seed: readStepCheckpoint(open.seen)
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readStepCheckpoint(w.seen)).filter(Boolean).at(-1)
+          ?? earlierLegs.map((r) => readStepCheckpoint(r)).filter(Boolean).at(-1)
           ?? null,
         // the CLOSE GRADES this leg recorded, so the resumed leg's halt readout spans
         // the chain rather than restarting at its own first close (readGradeSeed).
@@ -1083,6 +1092,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // leg that never branched has no work to strand.
         branch: readWorkBranch(open.seen)
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readWorkBranch(w.seen)).filter(Boolean).at(-1)
+          ?? earlierLegs.map((r) => readWorkBranch(r)).filter(Boolean).at(-1)
           ?? null,
         // the REPLAN ledger, folded like the money one line below and deliberately
         // NOT like the grades one line above. A grade seed feeds a READOUT and its
