@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import * as dp from '../src/destpoint.js';
 import { boxFor, refuseChoice, CHOICE_SAYS } from '../src/questionbox.js';
-import { createSession } from '../src/panel/authorsession.js';
+import { createSession, recordedDestination } from '../src/panel/authorsession.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
 import { draftStopText } from '../src/authorreadout.js';
 import { classifySurvey } from '../src/authorscout.js';
@@ -138,7 +138,7 @@ test('session F1: a job whose lines name no file, Destination docs/, scout code 
   assert.notDeepEqual(s.send('', 'no'), { ok: true }, 'no "keep it" button: the door refuses it');
   assert.deepEqual(s.send('', 'yes'), { ok: true });
   assert.deepEqual(await fence(s, got), ['src/', 'bin/', 'tests/']);
-  assert.equal(s.state.card.destination, 'src/, bin/, tests/');
+  assert.equal(recordedDestination(s.state), 'src/, bin/, tests/');
   assert.ok(await until(() => s.state.phase === 'prepared'), `never prepared / refused at signing (${s.state.phase} ${s.state.error})`);
   assert.deepEqual(JSON.parse(readFileSync(s.state.resolvedSpecPath, 'utf8')).writeScope, ['src/', 'bin/', 'tests/'], 'the SIGNED spec carries the answer');
   const row = log().find((e) => e.kind === 'dest-fence');

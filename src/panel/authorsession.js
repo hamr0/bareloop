@@ -282,6 +282,16 @@ export function cardSource(card) {
 }
 
 /**
+ * The Destination as the ONE record says it (source.json `destination`, beside the draft's prepared copy), or the draft's own card value until the record exists. The card, the
+ * served state and every later reader take it from here; nothing copies the record back onto the card (hamr 2026-11-24).
+ * @param {{outDir: string, card?: any}} state
+ * @returns {string}
+ */
+export function recordedDestination(state) {
+  return readManifestDestination(join(String(state.outDir), 'source-seed', 'source.json')) ?? String(state.card?.destination ?? '');
+}
+
+/**
  * Only the form's own fields, nothing else a request body might carry (`startFrom`, stray keys).
  * @param {any} card
  * @returns {Record<string, any>}
@@ -976,19 +986,17 @@ export function createSession(card, deps = {}) {
     stepStart('check');
 
     // ONE Destination (hamr 2026-11-22): its home is the record `source.json` (`prep.manifestPath`). A source that recorded none at prepare (a relative Destination on a non-repo code job) gets the card's value written once here;
-    // from then on `setDestination` is the only writer (record first, atomic), `card.destination` / `state.card.destination` are set ONLY from a read of the record, and the fence is built from it (`fenceFromRecord`).
+    // from then on `setDestination` is the only writer (record first, atomic), nothing copies it back onto the card: every later reader reads the record (`destinationNow`), the served state overlays it (`recordedDestination`), and the fence is built from it (`fenceFromRecord`).
     const MANIFEST_PATH = /** @type {string} */ (prep.manifestPath);
     if (card.checkType !== 'rubric' && readManifestDestination(MANIFEST_PATH) === null && String(card.destination ?? '').trim() !== '') {
       try { await setManifestDestination(MANIFEST_PATH, card.destination); } catch (e) { refuse(`could not record the Destination (${/** @type {Error} */ (e).message})`); return; }
     }
     const scopeOfDestination = (/** @type {string} */ d) => d.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-    const fenceFromRecord = () => scopeOfDestination(readManifestDestination(MANIFEST_PATH) ?? card.destination);
+    const destinationNow = () => readManifestDestination(MANIFEST_PATH) ?? card.destination;
+    const fenceFromRecord = () => scopeOfDestination(destinationNow());
     const setDestination = async (/** @type {string} */ value) => {
       await setManifestDestination(MANIFEST_PATH, value);
-      const recorded = readManifestDestination(MANIFEST_PATH) ?? value;
-      card = { ...card, destination: recorded };
-      state.card = { ...state.card, destination: recorded };
-      return recorded;
+      return readManifestDestination(MANIFEST_PATH) ?? value;
     };
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
@@ -1097,7 +1105,7 @@ export function createSession(card, deps = {}) {
           ok: true, specHash: hash, note: 'command close — signed as written; close script bytes verified', gates: { closeBytes: { ok: true } },
         }, null, 2)}\n`);
         state.specHash = hash;
-        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify({ ...cardFields(card), destination: recordedDestination(state) }, null, 2)}\n`);
         state.phase = 'prepared';
         stepStart('hash', `spec hash ${hash}`);
         stepDone();
@@ -1138,7 +1146,7 @@ export function createSession(card, deps = {}) {
       state.specHash = signing.specHash;
       // P5 item 3 — the form text, VERBATIM, beside the resolved spec: what "Start from this" prefills from.
       // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
-      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify({ ...cardFields(card), destination: recordedDestination(state) }, null, 2)}\n`);
       state.phase = 'prepared';
       stepStart('hash', `spec hash ${signing.specHash}`);
       stepDone();
@@ -1288,18 +1296,18 @@ export function createSession(card, deps = {}) {
       if (destFn && tracked !== null) {
         destTree = tracked;
         const pointed = await destFn({
-          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          jobLines, files: tracked, destination: destinationNow(), provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
           ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
         });
         if (abandoned) return;
         destNamed = Array.isArray(pointed.named) ? pointed.named : (pointed.point ? [pointed.point.line] : []);
         appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
         if (pointed.state === 'point' && pointed.point) {
-          const question = destQuestionText(pointed.point, card.destination);
+          const question = destQuestionText(pointed.point, destinationNow());
           let said = null;
           let typedDest = '';
           while (said === null) {
-            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line, folder: pointed.point.folder, current: card.destination });
+            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line, folder: pointed.point.folder, current: destinationNow() });
             if (a === null) return;
             // a typed Destination (the question box's own words, already checked at $0 by `send`) is taken as typed; buttons and old words say yes or no
             if (takeChoice() === 'path') { said = 'typed'; typedDest = String(a).trim(); break; }
@@ -1307,7 +1315,7 @@ export function createSession(card, deps = {}) {
             if (said === null) say('bot', 'Type yes or no.');
           }
           const newDest = said === 'typed' ? typedDest : pointed.point.folder;
-          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
+          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(destinationNow()), to: redactSecrets(newDest), at: new Date().toISOString() });
           if (said === 'yes' || said === 'typed') {
             await setDestination(newDest);
             writeScope = fenceFromRecord();
@@ -1413,14 +1421,14 @@ export function createSession(card, deps = {}) {
         const entries = scoutCodePaths(facts, tree);
         // the file check above owns every job that names a file; this one is for a job where no line does (a line like "make the tests pass" is not a change to a file)
         const unnamed = destNamed.length === 0 ? jobLines[0] : undefined;
-        if (entries.length === 0 || unnamed === undefined || destinationHoldsCode(card.destination, entries, tree)) return null;
+        if (entries.length === 0 || unnamed === undefined || destinationHoldsCode(destinationNow(), entries, tree)) return null;
         const holds = (/** @type {string} */ d) => !destinationIsRoot(d) && destinationHoldsCode(d, entries, tree);
         const proposal = entries.join(', ');
         const no = Math.max(0, state.steps.length - 1);
-        const from = card.destination;
+        const from = destinationNow();
         let wrong = 0;
         for (;;) {
-          const a = await ask({ kind: 'answer', source: 'dest-point', closed: true, index: 1, total: 1, question: destFenceQuestion({ destination: card.destination, entries }), line: unnamed.n, folder: proposal, current: card.destination });
+          const a = await ask({ kind: 'answer', source: 'dest-point', closed: true, index: 1, total: 1, question: destFenceQuestion({ destination: destinationNow(), entries }), line: unnamed.n, folder: proposal, current: destinationNow() });
           if (a === null) return { abandoned: true };
           const via = takeChoice();
           const typed = via === 'path' ? String(a).trim() : null;
@@ -1444,7 +1452,7 @@ export function createSession(card, deps = {}) {
           appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'wrong', line: unnamed.n, entries, answer: typed === null ? 'other' : 'typed', to: redactSecrets(typed ?? String(a)), at: new Date().toISOString() });
           const shown = typed ?? String(a).trim();
           const why = typed !== null && destinationIsRoot(typed) ? 'The whole repo (.) cannot be the place a job may change files; type a folder.' : `${shown === '' ? 'That' : shown} holds none of the code or tests (${proposal}).`;
-          if (wrong >= 2) return { stop: `Destination ${redactSecrets(card.destination.trim().replace(/\s*\n\s*/g, ', '))} still holds none of the code or tests (${proposal}) after two tries, so the draft stopped. Start a new draft with a Destination that holds the code or the tests.` };
+          if (wrong >= 2) return { stop: `Destination ${redactSecrets(destinationNow().trim().replace(/\s*\n\s*/g, ', '))} still holds none of the code or tests (${proposal}) after two tries, so the draft stopped. Start a new draft with a Destination that holds the code or the tests.` };
           say('bot', `${redactSecrets(why)} Approve ${proposal}, or type a folder that holds some of it.`);
         }
       }
@@ -1538,7 +1546,7 @@ export function createSession(card, deps = {}) {
     const steps = readDraftSteps(outDir);
     const text = buildReadout({
       spec: finalCtx?.spec, name: String(finalCtx?.spec?.job ?? card.jobName), modelId: String(card.model), rounds: steps.reduce((n, x) => n + x.calls.length, 0),
-      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: String(card.destination ?? ''),
+      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: recordedDestination(state),
       humans: steps.flatMap((x) => x.humans), ledger: readDraftLedger(outDir),
     });
     return { text, heads: readoutHeadIndexes(text) };

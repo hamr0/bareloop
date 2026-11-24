@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { writeFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as dp from '../src/destpoint.js';
-import { createSession } from '../src/panel/authorsession.js';
+import { createSession, recordedDestination } from '../src/panel/authorsession.js';
 import { getRunJob, getStartFrom } from '../src/panel/server.js';
 import { world, makeRepo, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
 import { keysHome as trigHome, makeRun, specOf } from './trigger-world.mjs';
@@ -46,7 +46,7 @@ test('(a) dest-fence Yes: source.json, the card (card.json) and the signed write
   await signed(s);
   assert.equal(record(), 'src/, bin/, tests/');
   assert.equal(JSON.parse(readFileSync(join(dir(), 'card.json'), 'utf8')).destination, 'src/, bin/, tests/');
-  assert.equal(s.state.card.destination, 'src/, bin/, tests/');
+  assert.equal(recordedDestination(s.state), 'src/, bin/, tests/');
   assert.deepEqual(JSON.parse(readFileSync(s.state.resolvedSpecPath, 'utf8')).writeScope, ['src/', 'bin/', 'tests/']);
 });
 

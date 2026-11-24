@@ -26,7 +26,7 @@ import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
-import { createSession, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
@@ -148,7 +148,9 @@ export function createAuthorRoutes(opts) {
   const headless = new Map();
 
   /** the session's state as the page reads it: the progress lines carry their drafting times, read from the drafting log at this moment (src/draftspend.js) */
-  const viewOf = (/** @type {{state: any}} */ s) => withDraftTimes(s.state);
+  /** the served state: the card's Destination is the ONE record's (source.json), never a copy the draft made onto the card (hamr 2026-11-24) */
+  const withRecord = (/** @type {{state: any}} */ s, /** @type {any} */ v) => (v?.card ? { ...v, card: { ...v.card, destination: recordedDestination(s.state) } } : v);
+  const viewOf = (/** @type {{state: any}} */ s) => withRecord(s, withDraftTimes(s.state));
   const hasLiveSession = () => [...sessions.values()].some((s) => !TERMINAL_PHASES.has(s.state.phase));
 
   /**
@@ -377,7 +379,7 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
       if (live) settleFetchingStep(live.state);
-      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
+      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? withRecord(live, live.state) : null });
       return true;
     }
 
@@ -560,7 +562,7 @@ export function signRun(session, claimedHash, o) {
     if (!o.schedules) return { ok: false, error: 'this panel cannot keep a schedule, so the job was not signed' };
     try {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-      const dest = typeof session.state.card?.destination === 'string' ? session.state.card.destination.trim() : '';
+      const dest = recordedDestination(session.state).trim();
       const made = o.schedules.signWithJob({ spec, specHash: session.state.specHash, trigger: spec.trigger, inputsText: typeof session.state.card?.inputs === 'string' ? session.state.card.inputs : '', destination: /^(\/|[a-zA-Z]:[\\/])/.test(dest) ? dest : null });
       if (!made.ok) return { ok: false, error: made.say };
       scheduledJob = spec.job;
