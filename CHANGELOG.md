@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.63.0] - 2026-11-25
 
 ### Added
 
@@ -25,7 +25,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The Audit's drafting table shows the total draft time only (hamr 2026-11-24, C).** A step's own time is no longer in the table (the chat list shows it while drafting); the total row keeps the whole draft time.
 
-- **The Run tab has a NOW row while a run is live (hamr 2026-11-24, D1, D2, D4, D5).** The ENDED / NEXT / SCHEDULE block gets a first row, NOW: "Running your tests · M:SS", "AI working · M:SS" or "Drafting · M:SS", in 30 s steps, read from the run's own spine (`nowOf`, `src/panel/server.js`; the time math is `src/draftspend.js`). It replaces the grey "Tests are still running (N min so far)" line under the step map, which is gone (`detail.checkRunning` too); the "Checks not run again" line is untouched. When the run ends NOW goes and ENDED / NEXT / SCHEDULE keep their words. One new report-only spine record, `check-start`, is written when a declared check pass begins: no existing record names when a check started (the `check-running` tick only comes after 5 minutes, the end records only at the end).
+- **The Run tab has a NOW row while a run is live (hamr 2026-11-24, D1, D2, D4, D5).** The ENDED / NEXT / SCHEDULE block gets a first row, NOW: "Running your tests · M:SS", "AI working · M:SS" (this also covers the scout, from its start until the planner starts) or "Drafting · M:SS", in 30 s steps, read from the run's own spine (`nowOf`, `src/panel/server.js`; the time math is `src/draftspend.js`). It replaces the grey "Tests are still running (N min so far)" line under the step map, which is gone (`detail.checkRunning` too); the "Checks not run again" line is untouched. When the run ends NOW goes and ENDED / NEXT / SCHEDULE keep their words. One new report-only spine record, `check-start`, is written when a declared check pass begins: no existing record names when a check started (the `check-running` tick only comes after 5 minutes, the end records only at the end).
 
 ### Changed
 
@@ -42,7 +42,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-- **One owner for "the final close of this run's current leg" (hamr 2026-11-25, run mwvwcxvy).** The Result tab, Audit tab and replay each scanned the whole run for it, so a resumed already-green run showed no close (or the earlier leg's red one) in the replay CLOSE line; all three now ask `finalCloseOf` in `src/legs.js`, and a guard test fails if another file scans for it.
+- **One owner for "the final close of this run's current leg" (hamr 2026-11-25, run mwvwcxvy).** The Result tab, Audit tab and replay each scanned the whole run for it, so a resumed already-green run showed no close (or the earlier leg's red one) in the replay CLOSE line; all three now ask `finalCloseOf` in `src/legs.js`, and a guard test fails if a line in any other `src` file both scans records (`findLast`, `.some`, `.filter`, `.find`, `last(`) and names a close record type (`close-verdict`, `outer-close`, `close-precheck`), unless that file is on the test's short allow-list of four sites that scan on purpose (history or trend readers, each with its reason). It is a line-level check, not proof that no other reader exists.
 
 - **The Audit tab's checks on a resumed already-green run are the resumed leg's own (hamr 2026-11-25, run mwvwcxvy).** Audit read only the staged close records, so it showed an earlier leg's close for a run whose last leg ended already-green. It now reads the same final close the Result tab does (the resumed leg's own check), so both tabs show the same checks.
 
