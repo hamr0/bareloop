@@ -2439,7 +2439,8 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
 
 - [x] Resume reuse line seen live 2026-11-24 (run mwue75ih leg 2); a later leg after edits correctly ran fresh (leg 3). F382, F394.
 - [x] Stop during a step check: seen live 2026-11-23, leg 1 ended stopped and Resume was offered (F388, F393).
-- [ ] Sign & run early-click fix is not proven live. F390.
+- [x] Sign & run early-click fix proven live (run mww606do, review-walk, 2026-11-25). F390.
+- [ ] Already-green delivery (findings + report) on a resumed leg is test-proven only, not seen live. F398.
 - [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
 - [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389.
 - [ ] Rubric report: cumulative page dumps, no answer section. F391.

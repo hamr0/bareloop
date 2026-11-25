@@ -16753,6 +16753,7 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 
 - The Destination box reverted to a refused draft's Destination on every poll while the person typed (fixed 8df64f7a).
 - An early click on Sign & run showed the raw "no plan is waiting for a decision right now" (run mwt92ze1 draft). Now unclickable while its first click is in flight, and an early click gets plain words (c2203bf5). Cause from source; the click was not reproduced, so the fix is not proven live.
+- Proven live 2026-11-25 (run mww606do, job review-walk): hamr clicked Sign & run fast as the card appeared; one run started, no raw "no plan is waiting" text.
 
 ### F391: The rubric page job report is a cumulative dump with no answer section (run mwtc0mol, walk-r-rule, 2026-11-23)
 
@@ -16796,3 +16797,11 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - POC ($0, `.claude/scratch/poc-currentleg/poc.mjs`, the walk spine plus five other multi-leg spines, cut at every leg start, job-start and mid-leg check-start): today wrong on 18 of 18 cuts of the walk spine and on every cut of the five others (2, 4, 4, 2, 2); an owner built on `legsOf` right on every cut ("FINAL: owner right on every cut of every spine").
 - Fixed: `currentLegView` in src/legs.js is the one reader; the sites above ask it; `Leg.outcome` reads `run-end` only for a leg with no `job-start`; the reused line retires at the first `check-start` after the leg's plan; tests/legs-current.test.js (the real spines at every cut) and tests/legs-current-guard.test.js (no other file scans for the three). Open for a ruling: `liveStepWhy` (whole-spine plan) and `src/learn.js` (whole-spine last escalation), named in ITEM33-BUILD.md "Addendum 2026-11-24c".
 - Fixed (2A, hamr 2026-11-24): the learnings' noise check in `buildCards` (src/learn.js) now reads the last leg's escalation through `currentLegView`, so a run whose earlier leg ended provider-red but whose last leg ended on a verdict teaches; a run whose LAST leg is provider-red is still noise. Tests: tests/learn-cards.test.js (two real archived spines joined by a leg-resume marker; fails on the old code).
+
+### F398: A review run that ended already-green on Resume had an empty Result tab and no report (run mwvwcxvy, long-walk, 2026-11-25)
+
+- The run passed its close, the person pressed Stop in a leftover second step, then Resume. The resumed leg's $0 precheck read already-green and ended there.
+- Two delivery sites tested `=== 'green'` only: the review-findings record (src/planrun.js already-green precheck return) and the staged markdown report (src/userrun.js). So the Result tab said "no saved result to show" and no .md was staged.
+- Not a regression: both were built that way (3d47c75d 2026-11-20, cae1c47d 2026-11-21); already-green dates from August. A live walk was the first Stop-after-pass then Resume.
+- Fix fdca54b1: one owner `isReusableGreen` (src/panel/status.js, already existed); 16 hand-spelled copies now call it; a guard test fails on a new copy. Fail-first tests in tests/already-green-delivers.test.js. Suite on fdca54b1: exit 0, 6509 pass, 0 fail, 2 skipped; CI success.
+- Test-proven only, not seen live (hamr's call A: the plans kept coming out one step, so the Stop-after-pass case is hard to hit by hand).
