@@ -3504,7 +3504,7 @@ key you want first (the panel picks the row by the Model menu).
   lowered from the original 2s per F195 — `listRuns()` re-replays every archived spine on
   every call, ~457ms CPU at 250 rows, open/escalated), except the tick right after the open
   run stops being live, which forces one immediate list refresh so that row's glyph doesn't
-  wait up to 10s. The Runs list read is also the panel's heartbeat for the topbar online dot (see "Panel topbar"). Both fetches skip re-rendering when the payload's JSON is byte-identical to
+  wait up to 10s. The Runs list read is also the panel's heartbeat for the topbar online dot (see "Panel topbar"). When that list says the OPEN run's sign or word moved on (a Resume or Stop from another tab), the open detail is refetched once even though the run is not live. A Stop says "the check that was running was killed" only when a check really was killed (`stopKilledCheck`, `src/planrun.js`). Both fetches skip re-rendering when the payload's JSON is byte-identical to
   the last one, restore each pane's scroll position across a poll-driven rebuild, and pause
   while the tab is hidden (`document.hidden`), catching up immediately on
   `visibilitychange`. The Audit tab does **not** join this loop — it refetches only when
