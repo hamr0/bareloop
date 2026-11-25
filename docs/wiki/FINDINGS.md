@@ -16847,3 +16847,19 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
   4. A run with no final close (step-red, provider-red) has only the stage verdict, so rows inherit it.
 - Not compared, not read as passed: fence row state and blocked count; unkeyed Audit always-guard rows; Audit Not-checked row texts (count only); shape grid cells; a structured close with stage `items`; R sheet; ticket-job reds; D review report content; branch and commit existence.
 - hamr picked option 1 on 2026-11-25: round 2, re-frozen. See ITEM33-BUILD.md Addendum 2026-11-25c.
+
+### F402: F399 POC round 2 PASS by hamr's ruling; two pre-registered rules clashed (2026-11-25)
+
+- Round 2 (ITEM33-BUILD.md Addendum 2026-11-25c) changed one thing: `outputOf` reads the whole run, `checksOf` still reads the current leg. Results: .claude/scratch/poc-f399/RESULTS-round2.md. $0, no provider call, runs.jsonl untouched (247 lines before and after). Same 97 copies.
+- Counts: 70 mismatches. 0 reader bugs. 0 missing facts beyond the 3 known. 70 today's-view mismatches in 5 classes. Reader sizes: checksOf 76 lines, outputOf 37 lines, one fork table each.
+- The 4 round-1 output mismatches (mvtatlxw, mwue75ih, mwtf8p8s, mwuxqx4f) are gone. Saved files (delivered, staged, landed): 0 mismatches. Replay CLOSE line: 0. Reader matches `finalCloseOf` on the 3 known runs.
+- The 5 classes, with run ids:
+  1. Result tab line checks `none` where the green final close has the stage satisfied: mv5e1ktb, mv76m82c, mv97ju82, mwgjlezb, mwgoxy6n.
+  2. Result tab line checks `none` where the record says failed and Audit says failed: mv73swnx, mv76jhj1, mv7qabx4, mv9vzze6, mvcur592, mvdg1xo3, mvh7g2hc, mv9euoam, mv9gm796.
+  3. An earlier leg's step checks merged into a leg that has none: muuvmmul (Result), mwtf8p8s (Audit and Result).
+  4. reuse readTry `failingStage` reads an earlier red on a run whose final close is satisfied: muutlcko, muvbmk2f, mvkiau8t, mwuxqx4f, mulbz0ny, mvtatlxw.
+  5. reuse readTry `closeReached` false on an already-green leg: mwue75ih, mwvwcxvy.
+- The clash: PASS rule 1 of Addendum 2026-11-25b allowed today's-view exceptions only on the 3 known runs (mwvwcxvy, mwue75ih, mvtatlxw). PASS rule 2 said every mismatch is classed as reader bug, today's-view bug or missing fact, and the round-2 addendum said the round-1 today's-view bugs stay classed as today's-view bugs. Read strictly, rule 1 fails round 2: bugs 1 to 3 sit on other runs. Read as meant, it passes: all 70 are today's-view bugs, and rule 2 is the rule that classes them.
+- hamr ruled it PASS on 2026-11-25. This is a ruling on a clash in our own wording, not a re-tune: no bar moved, no run was added or dropped, the frozen addenda stay unedited. The strict reading is kept here so the record shows the clash.
+- Still not compared (unchanged from F401): fence row state and blocked count; unkeyed Audit guard rows; Audit Not-checked texts; shape grid cells; a structured close with stage `items`; R sheet (0 runs); ticket-job reds; D review report content; branch and commit existence. Each gets its own parity test in the build.
+- Build approved by hamr: "pass, and make sure you parity match what's there with the new one, make a checklist". Spec and checklist: ITEM33-BUILD.md Addendum 2026-11-25d.

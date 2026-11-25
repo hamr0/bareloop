@@ -2473,6 +2473,7 @@ Hamr: "all next come next release ... we need to start clean; also a lot of borr
 - [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
 - [ ] One run state file pieces still open (F395, F396).
 - [ ] F399 one place per run: hamr picked option 1 (readers over the spine, simple > clever) 2026-11-25; POC pre-registered in ITEM33-BUILD Addendum 2026-11-25b. Whole next-release list rides this branch (hamr: "we take it all in").
+  - round 2 PASS by hamr's ruling 2026-11-25; build spec + parity checklist: ITEM33-BUILD Addendum 2026-11-25d
 
 Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.
 

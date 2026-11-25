@@ -5770,3 +5770,181 @@ Nothing else changes:
 - Same mismatch classes: reader bug, today's-view bug, fact missing from the records. The today's-view bugs found in round 1 (F401) stay classed as today's-view bugs.
 
 Results go to `.claude/scratch/poc-f399/RESULTS-round2.md` with `VERDICT: PASS` or `VERDICT: FAIL` first. A round-2 FAIL goes back to hamr, no build. No round 3 without a new pre-registration.
+
+## Addendum 2026-11-25d: F399 build — one checks reader, one output reader, every view reads them (hamr: pass, 2026-11-25)
+
+**Ruling (hamr 2026-11-25).** Round 2 of the POC is PASS (F402). Rule 1 and rule 2 of Addendum 2026-11-25b clashed. Read strictly, rule 1 failed. Read as meant, it passed: all 70 differences are today's-view bugs, and rule 2 classes them. hamr called it a pass. This is a ruling, not a re-tune. Build approved: "pass, and make sure you parity match what's there with the new one, make a checklist". Addenda 2026-11-25b and 2026-11-25c stay frozen.
+
+**Design (simple).**
+
+- `checksOf(spine, runDir)` reads the CURRENT leg. `outputOf(spine, runDir)` reads the WHOLE run (every leg), because the edits and files of a run pile up on its work branch.
+- One new file: `src/runread.js`. Why not `src/legs.js`: legs.js says it is pure (no imports, no file IO), and `outputOf` checks files on disk (lstat, sha256). runread.js imports legs.js (`currentLegView`, `finalCloseOf`) and keeps them where they are. Why a file and not a folder: two readers, about 150 lines each, one tidy place.
+- Job kinds fork in ONE table per reader: `STAGE_ROWS` (checksOf, by close-stage kind) and `OUTPUT` (outputOf, by record type). The POC's one `files-changed` check outside the table moves into the table.
+- If runread.js importing `src/panel/jobplan.js` makes an import cycle (replay.js and reuse.js are lower than the panel), the plan-row join (`planRows`) stays in jobplan.js `auditChecksOf`, fed by checksOf. runread.js then imports nothing from the panel. The builder checks this first.
+- Every view calls the two readers. The old per-view scans are DELETED in the same commit as the switch, never left beside the new readers. Views to switch: Result tab (`getRunResult`, `genericResultOf`), Audit checks box (`auditChecksFor`), Run tab checks line (`checksLineOf`), replay (`resolveClose`), reuse (`readTry`), ticket grid, and anything else the checklist below names.
+- Not moved (reason in each line): history views stay on replay parts (per-try checks, per-iteration closes, rounds drill-down) because they show every try on purpose. The close-trend governor and the resume checkpoint reader in reuse.js stay (engine and arbiter territory).
+- Guard test `tests/runread-guard.test.js`, same style as `tests/legs-final-close.test.js:84` and `tests/legs-current-guard.test.js:34` (a walk of src, exact scan counts per file, an `ALLOWED` map with a `why` per entry, a stale entry fails too). It fails if a src file outside runread.js scans spine records of these types by hand: `check-run`, `exit-eval`, `close-verdict`, `outer-close`, `close-precheck`, `rubric-evidence`, `output-judged`, `review-findings`, `destination-written`, `report-staged`, `attempt-diff`, `work-branch`, `destination-refused`, and the three new ones below. Starting allow-list, each with its reason:
+  - src/legs.js: owner of `finalCloseOf`.
+  - src/replay.js: history parts (attempts, per-iteration close, fix loop). History is not "the reading".
+  - src/panel/server.js: rounds drill-down (`stepRoundsPage` 3088, `closeStageDetail` 3169, exit-eval stamps 3115). Per-round history.
+  - src/reuse.js: resume checkpoint (603, 630) and the close-trend governor `readGrade` (726-740). Engine and arbiter territory; moving it would change close semantics.
+  - src/learn.js (324-390): builds learning cards from per-try failure events at run end. Not a view.
+  - src/userrun.js (1346, 2192, 2228, 2271-2275): writer-side lines in the run itself, and the leg's own stdout readout.
+  - src/planrun.js, src/ralph.js, src/run.js, src/kinds.js: writers. They emit these records; they do not read them back.
+
+**Three new spine records (report-only; no verdict path reads them; written at the moment the fact happens).**
+
+1. `fence {held, blocked}`. Today: only in the gate-audit sidecar, scoped by run windows (`scopedAuditRows` server.js:2715, `writesBlocked` behaviour.js:131). Writer call site: src/userrun.js right after the gate-audit move (2169-2181), from the leg's own `audit` rows already in memory there: `emit('fence', { held: true, blocked: writesBlocked(audit) })`. `held` is true because the row today says "held" whenever the gate's record exists. Written once per leg. The reader sums `blocked` over every leg, because today's Audit fence row counts every leg's window. This is the one place `checksOf` reads past the current leg; the code says so. No sidecar, no record, as today ("the gate's record for this run is missing").
+2. `shape-items {step, line, items}`. Today: a red run keeps shape item failures only as gap prose (run mwnbs3np), parsed back with `shapeItemOfPlain` (server.js:1311-1318, a copy in the POC reader). `items` are the same raw strings a final close keeps in `stages[].items` (`#<i>:<path>:<reason>`; built at src/kinds.js:1827). Writer call sites: next to the `close-verdict` emit at src/ralph.js:758 and the `outer-close` emit at src/planrun.js:4276, from the close's stages. The builder first reads kinds.js:1827 to see why a red close carries no `items` today, and says so in the commit.
+3. `work-committed {branch, commit, folderKept}`. Today: a D change run has no record of its final commit; `work-branch` (planrun.js:2181) has branch and base only, and the Result "The work" box asks git live (`workOf` server.js:1739). Writer call sites: src/userrun.js:2231 (the green final commit; `commit` = `fin.sha`, null when nothing was committed or the commit failed; `folderKept` true when a door keeps the folder or removal failed) and src/userrun.js:1357 (the door accept's commit). The branch stays on every green by today's code, so no separate "kept" field. Whether the branch STILL exists later is git's live answer: that one `git rev-parse` stays, inside runread.js, and is the only git call there.
+
+**Old runs are not repaired. Each missing record has a named fallback to today's source, so an old run reads as it does now.**
+
+- no `fence`: the gate-audit sidecar scoped by the run's windows (today's `scopedAuditRows`); no sidecar: "record missing", as today.
+- no `shape-items`: the close-verdict gap prose through `shapeItemOfPlain`, as today (server.js:1311).
+- no `work-committed`: branch from `work-branch`, final commit from git live (`workOf` server.js:1747), as today.
+
+**The 5 today's-view bugs. Each is fixed by the switch. Each gets a fail-first test on a fixture built from that run's REAL copied spine (corpus: `.claude/scratch/poc-f399/corpus`). The builder commits a trimmed copy under `tests/fixtures/` and the test never reads `.claude/scratch`. The test is shown red on today's code before the switch.**
+
+1. Result tab shows `none` for a green run's rows. Run mv5e1ktb (also mv76m82c, mv97ju82, mwgjlezb, mwgoxy6n). Cause: `stagePassedIn` server.js:1418 reads `check-run`, not the final close.
+2. Result tab shows `none` for a failed row. Run mv73swnx (also mv76jhj1, mv7qabx4, mv9vzze6, mvcur592, mvdg1xo3, mvh7g2hc, mv9euoam, mv9gm796). Audit says `failed` for the same record. Decision: Result shows `failed` like Audit, because one record must read one way on both screens. This changes a look on the Result tab of a red run, so it NEEDS HAMR'S CONFIRM before the build changes it. Until then the test pins the Audit word and the Result word is left as today.
+3. An earlier leg merged into a later one. Run muuvmmul (Result), mwtf8p8s (Audit and Result). Cause: `stepChecksOf` server.js:1643 reads `replayRun(records).parts` over the whole spine.
+4. `readTry` `failingStage` reads an earlier red. Run muutlcko (also muvbmk2f, mvkiau8t, mwuxqx4f, mulbz0ny, mvtatlxw). Existing real fixtures `tests/fixtures/audit-grid` (mvtatlxw) can serve for this one.
+5. `readTry` `closeReached` false on an already-green leg. Run mwue75ih (also mwvwcxvy). Real fixtures `tests/fixtures/final-close` and `tests/fixtures/already-green-result` exist.
+
+**PARITY CHECKLIST (hamr's explicit ask).** One line per fact a view shows today about a run's checks or output. Read from the code; each `today:` names the function and line. `new:` names the reader field. `POC:` says whether round 2 compared it (`compared ✓`), did not (`not compared`), or had too few runs (`UNDERPOWERED`). `proof:` is a test name to be written, or "hamr walk" for a look. A fact the POC dropped but whose record has it (stage numbers, verdict words, `iteration`, tags from `planFromSpec`) keeps the whole record field in the built readers. A fact with no home in either POC reader is `GAP-n` (list below), with no home invented.
+
+Run tab
+
+- [ ] Run tab · summary row "N run · P passed · F failed · K not reached" · today: checksLineOf server.js:3464 (drawn index.html:3085) · new: checksOf.stages + notReached · POC: compared ✓ · proof: run-checks-line-reads-checksOf
+- [ ] Run tab · "Checks not run again: same files as the last check at …" · today: checkReusedOf server.js:775 over currentLegView().reused legs.js:113 · new: unchanged, stays currentLegView().reused (a start-pass note, not a result) · POC: not compared · proof: tests/legs-current-guard.test.js (exists)
+- [ ] Run tab · Ended block "Goal met — not delivered" · today: endedForRow server.js:808 reads `destination-refused`; words at endedBase server.js:620-629 · new: outputOf.refused (current leg) · POC: not compared · proof: ended-not-delivered-reads-outputOf
+- [ ] Run tab · delivered files list (path, bytes, sha256) · today: deliveredOf server.js:1284, used at 2518 · new: outputOf.files role delivered/staged · POC: compared ✓ · proof: run-delivered-list-reads-outputOf
+- [ ] Run tab · Ended block names the kept worktree folder and branch (Resume text) · today: worktreeOfRun server.js:3200 · new: outputOf.landing (`branch`, `folderKept`) · POC: not compared · proof: ended-worktree-reads-outputOf
+- [ ] Run tab · whether a Result tab shows at all · today: resultKindOf server.js:1539 (spec + currentLegView().jobEnd) · new: unchanged, view rule · POC: not compared · proof: hamr walk
+- [ ] Run tab · "Accept" waiting tag and flag · today: doorWaiting reviewdoor.js:83 (server.js:931, 2520) · new: unchanged, door state not a result · POC: not compared · proof: existing needs-tag tests
+
+Result tab (rubric jobs)
+
+- [ ] Result · each row's own mark (passed/failed/none) per job line · today: rowResultsFromRecords server.js:1322, applied in getRunResult at 1990-1995 · new: checksOf.planRows + rows · POC: compared ✓ (bugs 1 and 2) · proof: result-rows-green-not-none, result-rows-failed-like-audit (needs hamr's confirm)
+- [ ] Result · the line's passed flag and ✓ · today: stagePassedIn server.js:1418 · new: checksOf.stages · POC: compared ✓ (bug 1) · proof: result-rows-green-not-none
+- [ ] Result · row failure words (`why`) · today: rowResultsFromRecords server.js:1322 (`why`) · new: GAP-1 · POC: not compared · proof: to be written once ruled
+- [ ] Result · unclaimed gap words under a line · today: rowResultsFromRecords server.js:1322, shown at getRunResult 1991 · new: checksOf.unclaimed · POC: compared ✓ · proof: result-unclaimed-reads-checksOf
+- [ ] Result · Not-checked texts per line and at the bottom · today: planFromSpec + proseNotCheckedItems (rubricstep.js:1085) + tiedToLine, getRunResult ~1975 · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: result-notchecked-texts-parity
+- [ ] Result · Saved card: file name, bytes, still there / gone / changed · today: deliveredOf server.js:1284, readDelivered 1372, getRunResult delivered list ~2105 · new: outputOf.files[].state (POC returned a yes/no `landed`; the built reader returns `ok`/`gone`/`changed`) · POC: compared ✓ for landed yes/no only · proof: result-saved-landed-parity
+- [ ] Result · the words "the saved file is gone" vs "the saved file changed after the run" · today: RESULT_FILE_GONE/CHANGED server.js:1356, readDelivered 1372 · new: outputOf.files[].state (see GAP-2) · POC: not compared · proof: result-saved-state-words
+- [ ] Result · which saved file belongs to which job line · today: stepOfDelivered server.js:1407 (name `steps/<n>-date.json`) · new: outputOf.files[].path (line by name) · POC: not compared · proof: result-line-file-parity
+- [ ] Result · .md files card and the "saved under a new name because X was taken" note · today: mdFiles in getRunResult, RESULT_MD_RENAMED server.js:1359 · new: outputOf.files[].pairedTaken (POC dropped it, GAP-2) · POC: not compared · proof: result-md-renamed-note
+- [ ] Result · red run: the last file the check read, with its note and gone/changed words · today: readJudged server.js:1391 (`output-judged`) · new: GAP-3 · POC: not compared · proof: to be written once ruled
+- [ ] Result · facts grid: quote, cells, proof, money as read · today: getRunResult 2036-2075, proofOf 1458, moneyAsRead 1484 (`rubric-evidence`) · new: GAP-4 and GAP-5 · POC: not compared · proof: result-facts-grid-parity
+- [ ] Result · a text line's answer and its cites · today: getRunResult 2078-2085 · new: GAP-5 · POC: not compared · proof: result-answer-cites-parity
+- [ ] Result · red run: the check's first gap line and "+N more" · today: getRunResult ~2084 (`exit-eval` scan, gapOneLine server.js:3562) · new: checksOf.stepChecks + GAP-1 (detail words) · POC: not compared · proof: result-red-gap-line-parity
+- [ ] Result · "Findings" box, line "covers A..B · N files", "How it ran" · today: findingsOf server.js:1790, coversOf 1810, ranOf 1827 · new: GAP-6 (ranOf reads steps, not checks or output; stays) · POC: not compared · proof: see Review group
+
+Result tab (generic: D change, D review)
+
+- [ ] Result generic · "The checks" box, each stage's pass/fail word · today: checksOf server.js:1702 (STATUS words from status.js) · new: checksOf.stages · POC: compared ✓ · proof: result-generic-checks-parity
+- [ ] Result generic · stage numbers: value, baseline, direction, notes · today: checksOf server.js:1702 · new: checksOf.stages[] keeps the record's `value`, `baseline`, `direction`, `baselineKind`, `notes` (POC kept pass/fail only) · POC: not compared · proof: result-generic-numbers-parity
+- [ ] Result generic · head words "N of M passed · K not reached" · today: checksOf server.js:1702 · new: checksOf.stages + notReached · POC: compared ✓ · proof: result-generic-checks-parity
+- [ ] Result generic · "not reached" stages (stops at the first red) · today: server.js:1702 unreached list · new: checksOf.notReached · POC: compared ✓ · proof: result-generic-notreached-parity
+- [ ] Result generic · run the close never reached: checks the steps ran · today: stepChecksOf server.js:1643 · new: checksOf.stepChecks (current leg only: bug 3) · POC: compared ✓ · proof: result-stepchecks-current-leg-only
+- [ ] Result generic · one-list repo rows with tag, held, record-missing, not checked · today: repoRowChecks server.js:1676 → auditChecksFor 3659 · new: checksOf.planRows + fence · POC: compared ✓ for states; fence part not compared (see Audit) · proof: result-generic-onelist-parity
+- [ ] Result generic · "What changed": files, count, head line · today: changedOf server.js:1569 (`attempt-diff`) · new: outputOf.files role changed · POC: compared ✓ · proof: result-changed-paths-all-legs
+- [ ] Result generic · "What changed": +/− lines, each file's last diff, cut notes, "every edit" fold · today: changedOf server.js:1569 · new: GAP-7 · POC: not compared · proof: to be written once ruled
+- [ ] Result generic · fence line "only src/ was allowed; the run wrote N files" · today: changedOf scopeLine server.js:1614-1623 · new: outputOf.files paths + the signed writeScope (derived) · POC: not compared · proof: result-fence-line-parity
+- [ ] Result generic · "The work" box: branch, final commit, made-from, merge and drop lines · today: workOf server.js:1739 (git live) · new: outputOf.landing (`work-committed`; branch-exists check stays one live git call) · POC: not compared (git state is outside the records) · proof: result-work-box-parity
+
+Audit tab
+
+- [ ] Audit · checks box head: "checks · N passed · F failed · K not reached · M not checked" · today: auditChecksEl index.html:3911-3925 fed by auditChecksFor server.js:3659 · new: checksOf.planRows · POC: compared ✓ · proof: audit-checks-head-parity
+- [ ] Audit · each line row's state · today: auditChecksOf jobplan.js:269-284 (`rowOf0`) · new: checksOf.planRows · POC: compared ✓ (bug 3 on mwtf8p8s) · proof: audit-rows-parity
+- [ ] Audit · row tag [you]/[agent]/[default] and kind word truth/shape/file · today: kindOfCheck jobplan.js:35, `by` from planFromSpec · new: unchanged, from the signed spec · POC: not compared (same planFromSpec by construction) · proof: audit-row-tags-parity
+- [ ] Audit · a failed row's reason words · today: jobplan.js:281 (`why`) · new: GAP-1 · POC: not compared · proof: to be written once ruled
+- [ ] Audit · unclaimed failed rows under a line · today: jobplan.js:288, 320 · new: checksOf.unclaimed · POC: compared ✓ · proof: audit-unclaimed-parity
+- [ ] Audit · write-fence row "held · N writes blocked" / "the gate's record for this run is missing" · today: jobplan.js:272-277 and 307-311; blocked from writesBlocked behaviour.js:131 over scopedAuditRows server.js:2715 · new: checksOf.fence (new `fence` record, summed over legs; fallback sidecar) · POC: not compared · proof: audit-fence-row-from-record, audit-fence-row-fallback-sidecar
+- [ ] Audit · "Always checked" keyed rows ($ defaults, loose) · today: looseAlways jobplan.js:292 · new: checksOf.planRows · POC: compared ✓ · proof: audit-always-keyed-parity
+- [ ] Audit · "Always checked" unkeyed guard rows (names from confirmProtections, state from the stage) · today: jobplan.js:299-313 · new: checksOf.planRows by stage · POC: not compared · proof: audit-guard-rows-unkeyed-parity
+- [ ] Audit · Not-checked rows: text, tag, why, shape truth words · today: jobplan.js:297-298, 316-317 (ncOf) · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: audit-notchecked-texts-parity
+- [ ] Audit · line blocks, "Every line" block, jobNotChecked, shapeHead · today: jobplan.js:318-325 · new: unchanged, from the signed spec plus planRows · POC: not compared · proof: audit-line-blocks-parity
+- [ ] Audit · the "not reached" word · today: jobplan.js:324 · new: checksOf.notReached · POC: compared ✓ · proof: audit-not-reached-parity
+- [ ] Audit · parts list: each try's checks (type, pass, name, detail) · today: replay.js:860-875 via enrichPartsWithStageKind server.js:3354 and tryChecksOf 3588 · new: unchanged, history stays on replay parts · POC: not compared · proof: existing replay and audit tests
+- [ ] Audit · parts list: the file each try's check read · today: replay.js:874-880 (`judgedHere`, `output-judged`) · new: GAP-3 · POC: not compared · proof: to be written once ruled
+- [ ] Audit · rounds drill-down: per-round check detail · today: stepRoundsPage server.js:3088, closeStageDetail 3169 · new: unchanged, history · POC: not compared · proof: existing rounds tests
+- [ ] Audit · place rules block "what the run start read for each place rule" · today: placeRuleLines placerule.js:347 (server.js:2528) · new: GAP-8 · POC: not compared · proof: to be written once ruled
+
+Replay (CLI and panel)
+
+- [ ] Replay · CLOSE line source, verdict, stage pass/fail · today: resolveClose replay.js:412 over finalCloseOf, closeLine replay.js:1859, renderStages 1848 · new: checksOf.source, verdict, stages · POC: compared ✓ (0 mismatches, 97 runs) · proof: replay-close-line-parity
+- [ ] Replay · CLOSE line "iteration N ·" prefix and each stage's verdict word (`FAIL(needs_revision)`) · today: closeLine replay.js:1859, renderStages 1848 · new: checksOf keeps `iteration` and each stage's `verdict` (POC kept pass/fail only) · POC: not compared · proof: replay-close-line-words-parity
+- [ ] Replay · "none — the run ended before any close ran" · today: closeLine replay.js:1860 · new: checksOf.closeReached false · POC: compared ✓ · proof: replay-close-none-parity
+- [ ] Replay · per-iteration close line "close: verdict — failing stage" · today: closeStageLine replay.js:1824 · new: unchanged, history · POC: not compared · proof: existing replay tests
+- [ ] Replay · FIX LOOP precheck and iteration sequence · today: replay.js:2087-2090 · new: unchanged, history · POC: not compared · proof: existing replay tests
+
+Reuse
+
+- [ ] Reuse · readTry failingStage (the stage that rendered the LAST verdict) · today: readTry reuse.js:480-516 (callers 1041, 1613) · new: checksOf.failingStage over the try's own events window · POC: compared ✓ (bug 4) · proof: readtry-failingstage-final-close
+- [ ] Reuse · readTry closeReached · today: reuse.js:516 · new: checksOf.closeReached · POC: compared ✓ (bug 5) · proof: readtry-closereached-already-green
+- [ ] Reuse · try history lines "at stage X … close reached / NEVER REACHED" · today: reuse.js:2056-2059 · new: the same two fields · POC: not compared · proof: reuse-try-history-line-parity
+- [ ] Reuse · bridge history `failingStage` on a red try · today: reuse.js:1723, bridges.js:98 · new: checksOf.failingStage · POC: not compared (bridge grading is arbiter-adjacent: see Gaps note) · proof: bridge-history-failingstage-parity
+- [ ] Reuse · the estimate line "Same job — G green · N not green · about $X and M min a run" · today: trackRecordFor server.js:4105 + reuseLine 4150 (reads each run's last-leg outcome) · new: unchanged, reads outcome and spend, no check or output fact · POC: not compared · proof: existing reuse-line tests
+
+Shape grid
+
+- [ ] Shape · item reds from a final staged close (`stages[].items`) · today: shapeRedsFromRecords server.js:1306 · new: checksOf.shapeItems · POC: not compared (no corpus run carries stage `items`) · proof: shape-items-structured-close-parity
+- [ ] Shape · item reds on a red run (gap prose read back) · today: shapeRedsFromRecords server.js:1311-1318 via shapeItemOfPlain · new: checksOf.shapeItems from the new `shape-items` record; fallback the prose · POC: UNDERPOWERED (mwnbs3np only) · proof: shape-items-red-run-record, shape-items-red-run-fallback-prose
+- [ ] Shape · grid cells: items as rows, signed fields as columns, values clipped, failed items open · today: shapeResultModel shaperesult.js:57, called at getRunResult ~2098 · new: shapeItems plus file content (GAP-5) · POC: not compared · proof: hamr walk and shape-grid-model-parity
+
+Review (D review)
+
+- [ ] Review · FINDINGS header and rows (base, line, short why, total, cut, cite words) · today: findingsOf server.js:1790 (`review-findings`) · new: GAP-6 · POC: not compared · proof: to be written once ruled
+- [ ] Review · "covers A..B · N files changed" · today: coversOf server.js:1810 · new: GAP-6 · POC: not compared · proof: to be written once ruled
+- [ ] Review · the report: staged under output/ at green, landed at Accept (the Accept replaces the staged name) · today: deliveredOf server.js:1284, writers userrun.js:2212-2220 · new: outputOf.files role staged/delivered, `replaces` · POC: compared ✓ (path and landed; 4 runs) · proof: review-report-staged-landed-parity
+- [ ] Review · the report's content (per line: "Checked by code" bullets, the AI's answer, "### The answer" rule) · today: deliveredReporter resultmd.js:204 · new: GAP-5 · POC: not compared · proof: hamr walk
+
+Sheet results
+
+- [ ] Sheet · a passed sheet row's "found" line (claim count or value) · today: sheetFoundLine sheetrows.js:58, used at getRunResult ~2046 · new: GAP-5 (reads the delivered file's claims) · POC: UNDERPOWERED (0 sheet runs in the corpus) · proof: sheet-found-line-parity on a fixture authored to the real shape, then hamr walk
+- [ ] Sheet · the code-written Count and Total lines at the end of the report · today: resultmd.js:204 report writer · new: GAP-5 · POC: UNDERPOWERED (0 sheet runs) · proof: sheet-report-totals-parity
+
+Tickets
+
+- [ ] Tickets · the ticket box on the Result tab (number, title, link) · today: ticketOfStart server.js:1759 (from `job-start`) · new: unchanged, an input fact · POC: not compared · proof: existing ticket-grid tests
+- [ ] Tickets · the grid row's "checks passed/total" · today: ticketGridOfJob server.js:1921 over checksOf · new: checksOf.stages counts · POC: UNDERPOWERED (3 runs; ticket-job reds not compared) · proof: ticket-grid-checks-parity
+
+Destination delivery
+
+- [ ] Destination · files delivered with dated name (-2 same day), path, bytes, sha256, landed · today: deliveredOf server.js:1284; writers userrun.js:2212-2222 and copyOut · new: outputOf.files role delivered · POC: compared ✓ (0 mismatches) · proof: destination-delivered-parity
+- [ ] Destination · download route serves file i only while sha256 still matches · today: getRunDownload server.js:2126 with readDelivered 1372 · new: outputOf.files[].state (one shared state check) · POC: not compared · proof: download-route-state-parity
+- [ ] Destination · a review report landing at Accept (staged path replaced by the delivered one) · today: userrun.js:1346-1362 (reads `report-staged` and `destination-written` to decide landed) · new: outputOf.files `replaces`; the door code is a writer and stays allow-listed · POC: not compared · proof: door-accept-landing-parity
+- [ ] Destination · D change: final commit, branch, folder kept or removed · today: userrun.js:2231-2246 prints a WORKTREE line only; no record · new: outputOf.landing from the new `work-committed` record · POC: not compared · proof: work-committed-record, work-committed-fallback-git
+
+CLI readout
+
+- [ ] CLI readout · "checks N runs · menu [...]" and "close first judgment … → fix loop ran" · today: userrun.js:2271-2277 (the leg's own events) · new: unchanged, leg-local stdout of the run itself; allow-listed · POC: not compared · proof: existing readout tests
+
+**Counts.** 72 lines: Run tab 7, Result rubric 14, Result generic 10, Audit 15, Replay 5, Reuse 5, Shape grid 3, Review 4, Sheet 2, Tickets 2, Destination 4, CLI readout 1. POC compared ✓: 23. Not compared: 45. UNDERPOWERED: 4.
+
+**Gaps (a fact with no home in either POC reader; no home invented here; hamr rules each: a home in a reader, or "the view keeps reading it").**
+
+- GAP-1: failure words. A row's `why` (rowResultsFromRecords server.js:1322, jobplan.js:281) and a step check's `detail` (exit-eval gap line). The POC `rows` map keeps the result only.
+- GAP-2: a delivered file's `bytes`, its `gone`/`changed` state and its `pairedTaken` note. The POC `outputOf` has a yes/no `landed` and a sha, no bytes, no note.
+- GAP-3: the file a check judged (`output-judged`: step, path, sha256). The POC `OUTPUT` table has no row for it.
+- GAP-4: what the check read (`rubric-evidence`: quotes, proof, money as read).
+- GAP-5: file content: answer text, cites, fact values, shape results, sheet claims, report text. Both readers return paths and hashes, never content.
+- GAP-6: the review findings (`review-findings`: items, total, cite, files count).
+- GAP-7: edit diffs (`attempt-diff` text, edit order, cut notes, +/− counts). The POC `outputOf` keeps paths only.
+- GAP-8: place-rule lines (`placeRuleLines`).
+- Note, not a gap: reuse `failingStage` also feeds the bridge history (reuse.js:1723). That is bridge grading, arbiter-adjacent. The built value changes on the 6 bug-4 runs only. hamr's word before the switch lands there.
+- Note: `readTry` runs on a try's own events window inside the live loop (reuse.js:903, 1041, 1613), not on a finished spine. checksOf must give the same answer on such a window. A test covers both call sites.
+
+**Rule.** The build is done only when every box is ticked with a passing test, or with a hamr walk for looks, and a final parity run passes. The final parity run reruns the POC harness (`.claude/scratch/poc-f399`) against the BUILT readers (`src/runread.js`) on the same 97 copies. Every row must match either today's value (read from the code before the switch, kept as a frozen copy for this run) or the named bug fix of the five above. A box for a `GAP-n` is ticked only after hamr rules that gap. A fact the POC did not compare is ticked only by its own parity test, never by the POC pass.
+
+**Proof and done.**
+
+- Every bug and every new record gets a fail-first test, shown red on today's code first.
+- `npm run typecheck`, `npm run build:types` and the full `npm test` exit 0 on the final commit. Quote the exit code and the last line of each.
+- A CHANGELOG `[Unreleased]` entry (one line per new record, the two readers, the five fixes).
+- `bareloop.context.md` updated if an export changes. runread.js exports are internal unless the builder adds one to the package root.
+- A hamr walk of the Result, Audit and Run tabs on a resumed run and on a plain run. Phone width is hamr's own DevTools check; barebrowse cannot emulate it.
+- Run `/self-review` after the code change (code lines and test asserts change).
+- Build goes to a sonnet builder, one piece at a time: the two readers and the guard first, then one view per commit. The builder commits after each piece.
