@@ -16826,3 +16826,24 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - fwd's late-first-read race (fwd commit 23777c8b, `clearFieldErrors`) does not exist here: bareloop has no /api/author/flows, `loadFlows`, `paintedFlow` or `clearFieldErrors`. Not copied. Its lesson carries over: once box lines exist, any repaint that clears error lines must skip the refusal's own line. `renderActions` blanks `#chat-card-error` on every tick (index.html:6543).
 - The monthly limit is not a Draft refusal here. It is a note while typing (`#jf-cap-note`, index.html:6043-6050) and a refusal at sign (authorroutes.js, `signRun` area, 536-541).
 - Fix: PRD "fwd v0.38.0 swap" entry and ITEM33-BUILD.md "Addendum 2026-11-25" (the build spec).
+
+### F401: F399 POC round 1 FAIL — the output reader was scoped to the current leg (2026-11-25)
+
+- Round 1 of the F399 POC (pre-registered in ITEM33-BUILD.md Addendum 2026-11-25b, commit fe9c47a1) ended `VERDICT: FAIL`. Results: .claude/scratch/poc-f399/RESULTS.md. $0, no provider call, runs.jsonl untouched (247 lines before and after).
+- Corpus: 105 runs listed, 97 spines copied, 8 spines gone (mvk2e4uy, mvkij2nw, mvkj03w7, mvldih08, mvlelfho, mw6skdyk, mw6u5794, mwqnha01). Kinds: R file/URL 49, D change 32, shape 7, D review 4, tickets 3, legacy no-spec 2, R sheet 0. UNDERPOWERED: R sheet (0) and legacy no-spec (2); tickets (3) and already-green (3) sit at the floor. Only 1 red shape run (mwnbs3np); no final close in the corpus carries stage `items`.
+- Readers: checksOf 76 lines (fork table `STAGE_ROWS`), outputOf 37 lines (fork table `OUTPUT` by record type). Both under 150. 4 reader-fix rounds. Compared all 97 runs on four screens (Audit checks box, Result rubric and generic payloads, replay CLOSE line, reuse readTry): 0 view throws. The reader matched `finalCloseOf` on the three known runs.
+- FAIL cause: `outputOf` read the current leg only. It missed earlier legs' edits on mvtatlxw (reader [] vs 9 files), mwue75ih, mwtf8p8s, mwuxqx4f (1 file vs 3). Today's "What changed" rightly shows all legs: a resumed run's edits accumulate on its work branch. Variant run (information only, not the verdict): scoping `outputOf` to the whole spine cleared all 4 (74 to 70 mismatches, the 70 being today's-view bugs).
+- The scope error was the operator's: the pre-registration applied "current leg only" to both readers. It is right for checks and wrong for output.
+- Today's-view bugs (not reader misses):
+  1. Result tab line checks shows `none` where the final close recorded the stage satisfied, on green runs mv5e1ktb, mv76m82c, mv97ju82, mwgjlezb, mwgoxy6n. `stagePassedIn` (src/panel/server.js:1418) reads `check-run`, not the final close.
+  2. Result tab line checks shows `none` where the stage failed, on mv73swnx, mv76jhj1, mv7qabx4, mv9vzze6, mvcur592, mvdg1xo3, mvh7g2hc, mv9euoam, mv9gm796. The Audit box shows `failed` for the same rows; the two screens disagree on one record.
+  3. A previous leg's step checks merge into a leg that has none: muuvmmul, mwtf8p8s (`stepChecksOf` reads the whole spine, F398 class).
+  4. reuse readTry `failingStage` returns an earlier red on a run whose final close is satisfied: muutlcko, muvbmk2f, mvkiau8t, mwuxqx4f, mulbz0ny, mvtatlxw.
+  5. reuse readTry `closeReached` false on an already-green leg: mwue75ih, mwvwcxvy.
+- Missing facts (candidate new spine records):
+  1. Fence result and blocked-write count live only in the gate-audit sidecar. 3 runs have no sidecar (muwmu9xo, muwny69o, mwrqzy1u). Candidate: one `fence {held, blocked}` record at job-end.
+  2. Shape item failures on a red run survive only as gap prose (mwnbs3np), parsed back with `shapeItemOfPlain`. Candidate: structured `items` on the red close-verdict.
+  3. A D change run's landing has no final-commit and no branch-kept record; `work-branch` carries branch and base only. Candidate: `work-committed {branch, commit}`.
+  4. A run with no final close (step-red, provider-red) has only the stage verdict, so rows inherit it.
+- Not compared, not read as passed: fence row state and blocked count; unkeyed Audit always-guard rows; Audit Not-checked row texts (count only); shape grid cells; a structured close with stage `items`; R sheet; ticket-job reds; D review report content; branch and commit existence.
+- hamr picked option 1 on 2026-11-25: round 2, re-frozen. See ITEM33-BUILD.md Addendum 2026-11-25c.

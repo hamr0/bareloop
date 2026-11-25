@@ -5756,3 +5756,17 @@ Build spec. A fresh session can build from this alone. Finding: F400 (docs/wiki/
 A reader bug left at the end is a FAIL. A FAIL goes back to hamr, no build. A FAIL is reported as FAIL; a second round, if any, is pre-registered anew, never re-tuned.
 
 **Results** go to `.claude/scratch/poc-f399/RESULTS.md` with a verdict line `VERDICT: PASS` or `VERDICT: FAIL`, the per-kind counts, every mismatch with its class, and the missing-facts list.
+
+## Addendum 2026-11-25c: F399 POC round 2 pre-registration (frozen before round 2 runs; hamr "1")
+
+Round 1 ended `VERDICT: FAIL` (F401). Addendum 2026-11-25b stays frozen and unedited. Round 2 is the same as 2026-11-25b in every rule (question, corpus, method, compared fields, PASS 1-3, FAIL rule, results format), with ONE change:
+
+- `outputOf` reads the WHOLE run (every leg), because a run's output accumulates across legs on its work branch. `checksOf` stays current leg only.
+
+Nothing else changes:
+
+- Same corpus: the copies already in `.claude/scratch/poc-f399/corpus`. No run is added, none removed.
+- Same bars: each reader at most 150 lines, job kinds fork in ONE table per reader.
+- Same mismatch classes: reader bug, today's-view bug, fact missing from the records. The today's-view bugs found in round 1 (F401) stay classed as today's-view bugs.
+
+Results go to `.claude/scratch/poc-f399/RESULTS-round2.md` with `VERDICT: PASS` or `VERDICT: FAIL` first. A round-2 FAIL goes back to hamr, no build. No round 3 without a new pre-registration.
