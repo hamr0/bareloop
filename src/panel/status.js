@@ -24,7 +24,7 @@ export const GOAL_MET_LINE = 'goal met';
 
 /**
  * THE ONE OWNER of "this run's outcome is a green" (green or already-green): every src site that asks it calls this, and
- * tests/green-outcome-owner.test.js fails on a hand-spelled copy. Also the spelling of "a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
+ * test (d) in tests/already-green-delivers.test.js fails on a hand-spelled copy. Also the spelling of "a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
  * next line). hamr 2026-10-15: an `already-green` (fixed before any work) counts. `satisfied` is a close verdict, never a run outcome.
  * The SCHEDULE gate (schedules.js greenFor) deliberately stays on a real `green` only (T3).
  * @param {string|null|undefined} outcome

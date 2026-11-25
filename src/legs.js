@@ -101,7 +101,7 @@ export function legsOf(events) {
  * THE ONE owner of "what is true of the run's CURRENT leg" (hamr 2026-11-24, run mwuxqx4f): the run's last `job-end`, last escalation, money
  * halt and reused-check line are facts about ONE leg. A reader that scanned the whole spine for them showed the PREVIOUS leg's end time, Stop
  * reason and "Checks not run again" on a leg that was still running. Every panel / replay reader of those facts asks here; none scans the
- * spine for them on its own (tests/legs-current-guard.test.mjs fails if one does). Pure, built on {@link legsOf}.
+ * spine for them on its own (tests/legs-current-guard.test.js fails if one does). Pure, built on {@link legsOf}.
  *
  * `reused` speaks for the START PASS it was written in (src/planrun.js `tellReuse`, only ever emitted there: the precheck and the preflight
  * loop). That pass ends at the leg's `plan-accepted`; the first `check-start` AFTER that plan is a later pass (a real test run), and it
