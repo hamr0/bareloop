@@ -76,8 +76,6 @@ const GREEN_ONLY = [
   ['reuse.js', "if (outcome !== 'green') {", 'writeRunGreenRow: an already-green predates the run and mints no registry row (reason green-predates-run)'],
   [path.join('panel', 'schedules.js'), 'r.outcome === \'green\'', 'the schedule gate takes a real green only (T3)'],
   [path.join('panel', 'server.js'), "outcome: outcome === 'green' && heldScheduled(", 'the schedule gate\'s held-green rule (T D.2)'],
-  // UNDECIDED, reported to hamr: counts a pass as "not green" in the reuse estimate line
-  [path.join('panel', 'server.js'), "if (outcome === 'green') green += 1; else notGreen += 1;", 'UNDECIDED (reported 2026-11-25): trackRecordFor counts an already-green run as "not green" in the Reuse estimate line'],
   // a bridge ROW's own outcome (appendGreen mints only 'green' rows; an already-green never becomes one)
   ['bridges.js', "r.outcome === 'green'", 'bridge history rows: only minted greens are rows'],
   ['bridges.js', "h.outcome === 'green'", 'bridge history rows: only minted greens are rows'],

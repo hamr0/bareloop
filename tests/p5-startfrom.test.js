@@ -244,6 +244,18 @@ test('track record is by WORKFLOW KEY: one run = ONE entry (a two-leg run counts
   assert.equal(reuseLine(rec), 'Same job — 2 green · 1 not green · about $0.80 and 5 min a run');
 });
 
+test('track record: an already-green run counts as GREEN, but its ~$0 spend and wall stay out of the averages (hamr 2026-11-25, run mwvwcxvy)', async () => {
+  const spec = await realSpec();
+  const home = tmp('p5-sf-h-');
+  makeRun(home, { runid: 'g1', spec, outcome: 'green', spent: 1 });
+  makeRun(home, { runid: 'ag1', spec, outcome: 'already-green', spent: 0.01 });
+  const rec = trackRecordFor(workflowKey(spec), { home });
+  assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, live: rec.live }, { green: 2, notGreen: 0, live: 0 });
+  assert.equal(rec.avgSpendUsd, 1, 'the average is the green run\'s own figure, not dragged down by the already-green run');
+  assert.ok(Math.abs(rec.avgWallMs - 5 * 60000) < 1, `wall average is the green run's own, got ${rec.avgWallMs}`);
+  assert.equal(reuseLine(rec), 'Same job — 2 green · 0 not green · about $1.00 and 5 min a run');
+});
+
 test('reuseLine: what is unknown is SAID — never $0 or 0 min; a died run counts as not green but is left out of the averages', async () => {
   const spec = await realSpec();
   const home = tmp('p5-sf-h-');

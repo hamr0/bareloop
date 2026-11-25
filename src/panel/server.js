@@ -4135,11 +4135,13 @@ export function trackRecordFor(key, opts = {}) {
     if (opts.worker !== undefined && (opts.worker === null || workerId(workerOfSpec(signed.spec)) !== workerId(opts.worker))) continue;
     const outcome = legs.at(-1)?.outcome ?? null;
     if (outcome === null && runIsAlive(row)) { live += 1; continue; }
-    if (outcome === 'green') green += 1; else notGreen += 1;
+    if (isReusableGreen(outcome)) green += 1; else notGreen += 1;
     // the averages read FINISHED runs only (a recorded terminal), and only figures that are exact: an unpriced run
     // or one with unreadable stamps is left out, never counted as $0 or 0 min (unknown is never zero)
     if (outcome === null) continue;
     finished += 1;
+    // an already-green run counts as green above, but its ~$0 spend and near-zero wall are not a real run's cost: it stays out of the averages
+    if (outcome === 'already-green') continue;
     const sp = chainSpend(records);
     if (sp.complete) { spendSum += sp.usd; spendN += 1; }
     const wall = legsWallMs(legs);
