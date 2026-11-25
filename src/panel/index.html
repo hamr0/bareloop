@@ -358,6 +358,7 @@
   /* RULED 2026-10-15 (aligned with fwdloop M9 am7): a schedule that started nothing turns its whole SCHEDULE row red; the frame turns red with `.ended-block.red` */
   .ended-row.is-red .ended-label,.ended-row.is-red .ended-text,.ended-text.is-red{color:var(--red);}
   .ended-text .sched-line2{display:block;}
+  .ended-text .now-reused{display:block;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   #run-content.actions-only > :not(.run-actions){display:none;}
@@ -648,11 +649,8 @@
   .chat-steps .step.wait .step-label{color:var(--amber);}
   .chat-steps .step-detail{display:block;flex-basis:100%;min-width:0;padding-left:1.2em;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
   .chat-steps .step.bad .step-detail{color:var(--red);}
-  .chat-steps .step.run .step-sign::after{content:"\2026";}
-  @keyframes step-dots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
-  @media (prefers-reduced-motion: no-preference){
-    .chat-steps .step.run .step-sign::after{content:"";animation:step-dots 1.2s steps(1,end) infinite;}
-  }
+  .chat-steps .step-time{color:var(--text-faint);}
+  .chat-steps .step-so-far{padding:3px 0 0;color:var(--text-faint);}
   /* build item 7 — the two $0 readiness lines under the Model field. */
   .jf-readiness{font-size:11px;margin-top:2px;}
   .jf-readiness.ok{color:var(--green);}
@@ -740,6 +738,7 @@
   .jp-qs{margin:8px 0;overflow-wrap:anywhere;}
   .jp-qs .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
   .jp-qs ul{margin:4px 0;padding-left:26px;}
+  .jp-drafted{font-size:12px;color:var(--text-faint);margin-top:8px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
   /* the draft readout above the signed-ready card: plain text, wrapped, the server names the heading lines (bold) */
   .jp-readout{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -1171,7 +1170,7 @@
             <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
-            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div><div class="map-key map-tests" id="map-tests" data-testid="check-running" hidden></div><div class="map-key map-tests" id="map-reused" data-testid="check-reused" hidden></div></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
             <div id="step-list"></div>
           </div>
         </section>
@@ -1599,20 +1598,6 @@
       '<span>\u21bbN = took N tries (dashed box)</span>' +
       (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
-  }
-  // hamr 2026-11-22: the one grey line under the map — the server's `checkRunning` string verbatim, present only while the tests are running now
-  function paintCheckRunning(detail){
-    var el = document.getElementById("map-tests");
-    var text = detail && typeof detail.checkRunning === "string" ? detail.checkRunning : "";
-    el.textContent = text;
-    el.hidden = text === "";
-  }
-  // hamr 2026-11-23: the grey line for a start pass that took a saved check result — the server's `checkReused` string verbatim
-  function paintCheckReused(detail){
-    var el = document.getElementById("map-reused");
-    var text = detail && typeof detail.checkReused === "string" ? detail.checkReused : "";
-    el.textContent = text;
-    el.hidden = text === "";
   }
   function renderStepMap(steps){
     var mount = document.getElementById("map-mount");
@@ -2774,8 +2759,8 @@
 
   // ---- P5: the ENDED block (Run tab, first block above the action row, every finished run) and Resume ----
   var lastEndedSig = null;
-  function summaryRow(label, text, testid, red, extraHtml){
-    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + escapeXml(text) + (extraHtml || "") + '</span></div>';
+  function summaryRow(label, text, testid, red, extraHtml, beforeHtml){
+    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + (beforeHtml || "") + escapeXml(text) + (extraHtml || "") + '</span></div>';
   }
   // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
   // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
@@ -2793,15 +2778,20 @@
     var box = document.getElementById("ended-block");
     var e = detail.ended;
     var sc = detail.schedule;
-    if(!e && !sc){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    // hamr 2026-11-24 (D1): the NOW row, the server's own words ("Running your tests \u00B7 M:SS"), only while the run is live; it and ENDED never show together
+    var now = typeof detail.now === "string" && detail.now ? detail.now : null;
+    // D3 (hamr 2026-11-24): this leg's "Checks not run again..." line sits above the NOW text, in the same row, current leg only (the server reads the spine's current leg)
+    var reused = now && typeof detail.nowReused === "string" && detail.nowReused ? detail.nowReused : null;
+    if(!e && !sc && !now){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
     // rebuilt only when what it shows changed
-    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
+    var sig2 = detail.runid + "|" + now + "|" + reused + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
     if(sig2 === lastEndedSig) return;
     lastEndedSig = sig2;
     box.hidden = false;
     var problem = !!(sc && sc.scheduled && sc.problem === true);
     box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : (detail.glyph === "■" ? "grey" : "red")))));
     var h = "";
+    if(now) h += summaryRow("NOW", now, "now-row", false, "", reused ? '<span class="now-reused" data-testid="check-reused">' + escapeXml(reused) + '</span>' : "");
     if(e){
       // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
       h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + nextRow(e);
@@ -3101,8 +3091,6 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
-    paintCheckRunning(detail);
-    paintCheckReused(detail);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
 
@@ -3716,7 +3704,8 @@
       rows += '<tr class="draft-checks-row" data-testid="drafting-notbuilt"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) + "</td></tr>";
     });
     (part.draftSteps || []).forEach(function(st){
-      var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
+      // hamr 2026-11-24 (C): the drafting row shows the total draft time only; a step's own time is not shown here (the chat list shows it while drafting)
+      var wall = "–";
       var calls = Array.isArray(st.calls) ? st.calls : [];
       var first = calls[0];
       rows += "<tr><td>" + escapeXml(st.label) + "</td><td>" + wall + "</td><td>" + (first ? "1" : "–") + "</td><td>" +
@@ -4894,6 +4883,10 @@
   // changing (a refused fire turns NEXT red, a slot passes), and nothing else would repaint it
   var openIsScheduled = false;
   var lastOpenFetchAt = 0;
+  // hamr 2026-11-24 (second tab stale): the sign + word the open run's detail last showed. A FINISHED run is not refetched on a tick, so when the Runs list
+  // says this run's sign/word changed (a Resume clicked in ANOTHER tab), the list poll refetches the open detail once
+  var openStatusSig = null;
+  function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; }
   function selectRun(runid){
     hideImportView();
     clearSelection();
@@ -4912,6 +4905,7 @@
       lastRunDetailSig = sig(detail);
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
+      openStatusSig = statusSigOf(detail);
       renderRun(detail);
       if(detail.hasResult === true) loadResult(runid);
     }).catch(function(e){
@@ -5006,6 +5000,11 @@
       pollFailStreak = 0;
       paintOnline(true);
       var runs = result.runs || [];
+      // the list says the OPEN run's sign/word moved on (Resume or Stop from another tab): its detail is refetched now, not only while it was live
+      if(currentRunid && openStatusSig !== null){
+        var openRow = runs.filter(function(r){ return r.runid === currentRunid; })[0];
+        if(openRow && statusSigOf(openRow) !== openStatusSig) refreshOpenRun(true);
+      }
       var next = sig(result);
       if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsPayloadSig = next;
@@ -5032,10 +5031,10 @@
     });
   }
 
-  function refreshOpenRun(){
+  function refreshOpenRun(force){
     if(!currentRunid) return Promise.resolve();
     var scheduleDue = openIsScheduled && (Date.now() - lastOpenFetchAt) >= RUNS_LIST_POLL_MS;
-    if(!runIsLive && !scheduleDue) return Promise.resolve();
+    if(force !== true && !runIsLive && !scheduleDue) return Promise.resolve();
     lastOpenFetchAt = Date.now();
     var runid = currentRunid;
     var myToken = selectToken;
@@ -5048,6 +5047,7 @@
       lastRunDetailSig = next;
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
+      openStatusSig = statusSigOf(detail);
       if(changed){
         withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
       }
@@ -6283,7 +6283,9 @@
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
               m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + ro + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs +
+            // hamr 2026-11-24 (B): the server's one line, "Drafted in M:SS \u00B7 $X" (src/draftspend.js draftedLine)
+            (typeof m.drafted === "string" && m.drafted ? '<div class="jp-drafted" data-testid="plan-drafted">' + escapeXml(m.drafted) + "</div>" : "") + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");
@@ -6315,12 +6317,15 @@
       progressRow.innerHTML = steps.map(function(st, i){
         var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
         var cls = waiting ? "wait" : (st.status === "running" ? "run" : (st.status === "failed" ? "bad" : "ok"));
-        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
+        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : (cls === "run" ? "\u25B6" : ""));
         var label = waiting ? progressLabelFor(state) : st.label;
+        // hamr 2026-11-24 (A1): the server's own words beside the step, "took M:SS" or "M:SS so far", read from the drafting log (src/draftspend.js)
+        var time = typeof st.time === "string" && st.time ? '<span class="step-time" data-testid="step-time">' + escapeXml(st.time) + '</span>' : "";
         return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><div class="step-line"><span class="step-label">' + escapeXml(label) + '</span>' +
-          '<span class="step-sign">' + sign + '</span></div>' +
+          '<span class="step-sign">' + sign + '</span>' + time + '</div>' +
           (st.detail ? '<div class="step-detail">' + escapeXml("> " + st.detail) + '</div>' : "") + '</li>';
-      }).join("");
+      }).join("") + (steps.length && state && typeof state.draftSoFar === "string" && state.draftSoFar
+        ? '<li class="step-so-far" data-testid="drafting-so-far">' + escapeXml(state.draftSoFar) + '</li>' : "");
       return progressRow.innerHTML !== before;
     }
 

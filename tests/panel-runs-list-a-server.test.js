@@ -72,7 +72,7 @@ test('listRuns: a cap-halted run that can continue carries Resume; stoppedAt is 
   assert.equal(at(STOP_MS + 1000).needs, 'Resume');
   assert.equal(at(STOP_MS + 1000).stoppedAt, STOP);
   assert.equal(at(STOP_MS + 7 * DAY).needs, null, 'exactly 7 days = out of Needs you');
-  assert.equal(at(STOP_MS + 7 * DAY).glyph, '✗', 'it is still listed under Jobs with its own sign');
+  assert.equal(at(STOP_MS + 7 * DAY).glyph, '■', 'it is still listed under Jobs with its own sign');
 });
 
 test('listRuns: once the job is edited (no Resume button) the run carries no tag; a green and a live run never carry one', () => {

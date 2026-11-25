@@ -64,9 +64,9 @@ import { namedFilesText } from './repocite.js';
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { readFile, stat, lstat, mkdtemp, rm, symlink, realpath, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, sep, dirname } from 'node:path';
+import { join, sep, dirname, relative } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
@@ -101,20 +101,19 @@ export const GAP_TRIM_MARKER = 'gap trimmed:';
 /**
  * THE one limit for an AI-drafted check (hamr, 2026-11-21): 30 minutes per command, at drafting, at the signing gates and
  * at the run (precheck + final close). Code's own number — not in the draft, not in the signature, never compared to the
- * job's Time cap. The AI's own `timeoutMs` may only tighten it (`effectiveTimeoutMs`).
+ * job's Time cap. The AI no longer writes a limit (F393, hamr 2026-11-24): a `timeoutMs` on an OLD signed spec is ignored (`effectiveTimeoutMs`).
  */
 export const CHECK_LIMIT_MS = 1_800_000;
 /** the still-running note: first at 5 of the 30 minutes, then every minute (hamr, 2026-11-21) */
 export const CHECK_NOTE_AFTER_MS = 300_000;
 export const CHECK_NOTE_EVERY_MS = 60_000;
 /**
- * The still-running note, in code's own words: minutes so far, and the command's own measured time once there is one.
- * @param {{elapsedMs: number, knownMs: number|null}} t
+ * The still-running note, in code's own words: minutes so far (hamr 2026-11-24, A4: nothing about how long it usually takes).
+ * @param {{elapsedMs: number}} t
  * @returns {string}
  */
-export function checkRunningNote({ elapsedMs, knownMs }) {
-  const so = `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far)`;
-  return typeof knownMs === 'number' ? `${so}, usually about ${Math.max(1, Math.round(knownMs / 60_000))} min.` : `${so}.`;
+export function checkRunningNote({ elapsedMs }) {
+  return `Tests are still running (${Math.floor(elapsedMs / 60_000)} min so far).`;
 }
 /**
  * A check that hit the limit, in plain words (hamr, 2026-11-21). `limitMs` is the limit that really bound the check (the one limit, or the
@@ -122,9 +121,21 @@ export function checkRunningNote({ elapsedMs, knownMs }) {
  * @param {number} limitMs @returns {string}
  */
 export function checkTimedOutText(limitMs) {
+  return `Your tests did not finish inside ${checkLimitSpan(limitMs)}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
+}
+/** a check limit as a span of words ("30 minutes", "45 seconds") @param {number} limitMs @returns {string} */
+export function checkLimitSpan(limitMs) {
   const n = (/** @type {number} */ v, /** @type {string} */ unit) => `${v} ${unit}${v === 1 ? '' : 's'}`;
-  const span = limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
-  return `Your tests did not finish inside ${span}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
+  return limitMs >= 60_000 ? n(Math.round(limitMs / 60_000), 'minute') : n(Math.max(1, Math.round(limitMs / 1000)), 'second');
+}
+
+/**
+ * The ONE sentence the Run tab says when a check never finished (F393). The span is the limit that really bound the check (the escalation's
+ * `limitMs`), else the one check limit; never a hardcoded number.
+ * @param {number} [limitMs]
+ */
+export function checkTimeoutWords(limitMs) {
+  return `Your tests did not finish inside ${checkLimitSpan(typeof limitMs === 'number' ? limitMs : CHECK_LIMIT_MS)}, so nothing was judged. Resume runs them again.`;
 }
 
 /** used when neither the stage nor the ctx names a bound. A stage that could
@@ -264,10 +275,10 @@ export function mechanicalStages(stages) {
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
  *   list?: any[]|null, source?: string, failureLines?: (out: string) => string[],
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
- *   cmdTimes?: Map<string, number>, signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
- *   cmdKeep?: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void, cmdSaved?: Map<string, any>,
- *   seedBase?: {get: (key: string) => {code: number, out: string, ms: number}|undefined, keep: (rec: any) => void}, seedShare?: Map<string, any>,
+ *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
+ *   signal?: AbortSignal|null, cmdMemo?: Map<string, Promise<any>>,
+ *   checkStore?: {findCheck: (key: string, treeId: string) => any, keepCheck: (rec: {key: string, treeId: string, code: number, out: string, ms: number}) => void},
+ *   reuse?: (hit: {memoKey: string, at: string}) => void,
  *   listBox?: (pgid: number) => Promise<number[]>}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -278,14 +289,14 @@ export function mechanicalStages(stages) {
  *   await, so the shell gets told as each stage lands. It decides nothing, it is
  *   never consulted, and no verdict depends on it — the house pattern is
  *   `runJob`'s `emit` (the library reports, the shell prints).
- *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run
- *   and (`knownMs`) how long the SAME command took earlier, read from `cmdTimes` (a map the caller keeps for the draft or the run).
+ *   `onTick` is the same kind of seam for ONE long command: past `tickAfterMs` it is told, every `tickEveryMs`, how long the command has run.
  *   `listBox` is a TEST SEAM: how a kill is checked (default: the process table, `boxMembers`).
  *   `cmdMemo` is ONE check pass's results by command (a seed read, a close run), so each command runs once per pass.
- *   `cmdKeep` is told of each COMPLETED command run (resume reuse: the caller saves it with the tree identity taken before it ran); `cmdSaved` is the start pass's
- *   saved results whose tree identity equals the current one, by `checkKey`; a hit stands in for a run in `cmdMemo` and marks itself `used` (see `runCmd`).
- *   `seedBase` is the RUN's kept seed-baseline readings (a count stage measured in the seed worktree): completed results only, by command + seed tree id, used by every pass and every leg.
- *   `seedShare` is a draft session's own map of COMPLETED seed-read command results (the signing gates' tries), keyed by command + seed tree (`sharedRun`).
+ *   `checkStore` is the run's ONE state file (src/carrystore.js): every COMPLETED command run (any exit code) is kept under (command key, fingerprint of the files the
+ *   command saw, `treeIdentity`, taken before it ran), and a later run of the same command on the same files may read it. The seed (original code) is just another
+ *   fingerprint: a command measured in the seed worktree, or in place on an unchanged tree, is the seed reading. A stop (timed out, killed, crashed) is never kept.
+ *   `reuse` is the SWITCH for reading a saved result in the judged directory itself (the run-start pass and the signing gates hand it; no other pass does, so a pass
+ *   never comes from a saved result); it is told of each hit. A command in another directory (the seed worktree's baseline) always reads.
  *   `signal` is an ABORT (Abandon on a draft, Stop on a run): it kills the running check's whole process group at once.
  * @typedef {{verdict: 'green'|'red'|'instrument-stop'|'not-reached'|'pause'|'skipped',
  *   exitCode: number|null, value: number|null, baseline: number|null,
@@ -460,12 +471,12 @@ async function boxSurvivors(pgid, list) {
  * a throw here would have to be caught and turned back into a stop anyway.
  * @param {string} cmd @param {string[]} args
  * @param {{cwd: string, env?: Record<string,string>, timeoutMs?: number, maxBuffer?: number,
- *   onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, tickAfterMs?: number, tickEveryMs?: number, knownMs?: number|null,
+ *   onTick?: ((t: {elapsedMs: number}) => void)|null, tickAfterMs?: number, tickEveryMs?: number,
  *   group?: boolean, signal?: AbortSignal|null, listBox?: (pgid: number) => Promise<number[]>}} o
  *   `group`: run the command in its OWN process group (the box) so one kill stops it and everything it started; `signal`: an abort (Abandon, Stop) kills that box at once
  * @returns {Promise<{stop: string, fault: string, survivors?: number[]}|{stop: null, code: number, out: string, dropped: string[], ms: number}>}
  */
-async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, knownMs = null, group = false, signal = null, listBox = boxMembers }) {
+async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIMEOUT_MS, maxBuffer = MAX_BUFFER, onTick = null, tickAfterMs = CHECK_NOTE_AFTER_MS, tickEveryMs = CHECK_NOTE_EVERY_MS, group = false, signal = null, listBox = boxMembers }) {
   const { env, dropped } = stageEnv(declared);
   const t0 = Date.now();
   /** the box's group id, once the command has started (its leader's pid) @type {number|null} */
@@ -495,7 +506,7 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
     // REPORT-ONLY: the still-running note. Nothing reads it back; a throwing consumer never touches the run.
     if (typeof onTick === 'function') {
       const fire = () => {
-        try { onTick({ elapsedMs: Date.now() - t0, knownMs }); } catch { /* a reporting seam never decides */ }
+        try { onTick({ elapsedMs: Date.now() - t0 }); } catch { /* a reporting seam never decides */ }
         tickTimer = setTimeout(fire, tickEveryMs);
         tickTimer.unref();
       };
@@ -712,6 +723,20 @@ export async function treeIdentity(workdir) {
     execFile('git', ['-c', 'core.quotepath=false', ...a], { cwd: workdir, maxBuffer: 1 << 28, encoding: 'buffer', timeout: 120_000 }, (e, out) => (e ? reject(e) : resolve(out)));
   });
   const names = async (/** @type {string[]} */ a) => (await g(a)).toString('utf8').split('\0').filter((p) => p !== '' && !isArbiterBook(p)).sort();
+  /** git in another folder: its stdout, or null when it fails or is not a git folder @param {string} cwd @param {string[]} a @returns {Promise<string|null>} */
+  const g2 = (cwd, a) => new Promise((resolve) => {
+    execFile('git', a, { cwd, encoding: 'utf8', timeout: 120_000 }, (e, out) => resolve(e ? null : out.trim()));
+  });
+  /** every file under a directory, relative, sorted @param {string} d @param {string} [base] @returns {Promise<string[]>} */
+  const filesUnder = async (d, base = '') => {
+    /** @type {string[]} */
+    const out = [];
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const r = base ? `${base}/${e.name}` : e.name;
+      if (e.isDirectory()) out.push(...await filesUnder(join(d, e.name), r)); else out.push(r);
+    }
+    return out.sort();
+  };
   try {
     const h = createHash('sha256');
     h.update(await g(['rev-parse', 'HEAD^{tree}']));
@@ -719,9 +744,26 @@ export async function treeIdentity(workdir) {
       h.update(`T\0${p}\0`);
       h.update(await g(['diff', '--binary', '--no-ext-diff', 'HEAD', '--', `:(literal)${p}`]));
     }
+    /** @type {Array<[string, string]>} [path the tree shows, absolute file to hash] */
+    const entries = [];
     for (const p of await names(['ls-files', '--others', '--exclude-standard', '-z'])) {
+      const abs = join(workdir, p);
+      let link = false;
+      try { link = (await lstat(abs)).isSymbolicLink(); } catch { /* unreadable: hashed below as before */ }
+      if (!link) { entries.push([p, abs]); continue; }
+      // an untracked symlink (the seed worktree's node_modules/.venv/venv links): what is BEHIND it counts, not the link (hamr 2026-11-24)
+      /** @type {string} */
+      let real;
+      try { real = await realpath(abs); } catch { continue; } // dangling: nothing behind it
+      const top = await g2(dirname(real), ['rev-parse', '--show-toplevel']);
+      if (top !== null && await g2(top, ['check-ignore', '-q', '--', relative(top, real)]) !== null) continue; // ignored THERE: nothing
+      if ((await lstat(real)).isDirectory()) for (const f of await filesUnder(real)) entries.push([`${p}/${f}`, join(real, f)]);
+      else entries.push([p, real]);
+    }
+    entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    for (const [p, abs] of entries) {
       h.update(`U\0${p}\0`);
-      try { h.update(await g(['hash-object', '--', p])); } catch { h.update('unreadable'); }
+      try { h.update(await g(['hash-object', '--', abs])); } catch { h.update('unreadable'); }
     }
     return h.digest('hex');
   } catch { return null; }
@@ -1332,59 +1374,50 @@ const stopped = (stage, ctx, stop, detail = {}, fault = STOP_FAULTS.FAILED, note
     exitCode: EXIT_STOP,
     judged: false,
     gapLines: gap.render(),
-    // the limit that bound a timed-out check (the AI's own tighter `timeoutMs` or the one limit), so the plain words can name it
-    detail: { ...detail, stop, fault, ...(fault === STOP_FAULTS.TIMED_OUT ? { limitMs: effectiveTimeoutMs(stage?.params?.timeoutMs, ctx) } : {}) },
+    // the limit that bound a timed-out check (the one limit), so the plain words can name it
+    detail: { ...detail, stop, fault, ...(fault === STOP_FAULTS.TIMED_OUT ? { limitMs: effectiveTimeoutMs(ctx) } : {}) },
   });
 };
 
 // ── the four kinds ──────────────────────────────────────────────────────────
 
 /**
- * The bound a stage ACTUALLY runs under: the tighter of what the declaration
- * asked for and what the operator allows.
+ * The bound a stage ACTUALLY runs under: the ONE check limit (hamr 2026-11-21 ruling, restated 2026-11-24 for F393: an AI-drafted
+ * check gets one fixed limit per command, set by code). `ctx.timeoutMsDefault` is the operator's number (the run's resolved check
+ * limit; a test seam shortens it) and falls back to `DEFAULT_TIMEOUT_MS`, never to `sh`'s "no timer at all".
  *
- * `timeoutMs` is AUTHORED — it rides in the declaration, on the emergent side
- * of the line. `ctx.timeoutMsDefault` is the operator's ceiling and is not.
- * This is the budget rule applied to time: the advertised bound and the
- * enforced bound must be the same number, and the authored side may only ever
- * TIGHTEN it (a declaration that could widen its own ceiling is a second,
- * silent ceiling above the signed one). A declared value that is unusable —
- * absent, non-finite, zero or negative — falls back to the ceiling rather than
- * to `sh`'s "no timer at all", which is the same direction: never wider.
- * @param {any} declared @param {Ctx} ctx
+ * A `timeoutMs` still riding in an OLD signed declaration is IGNORED: the number was authored on the emergent side of the line, and the
+ * AI no longer writes one. Ignoring it changes no signed hash (the signature covers the declaration as written) — only
+ * the saved-result key (`checkKey`), so a result saved under an old authored limit is simply run once more.
+ * @param {Ctx} ctx
  * @returns {number}
  */
-export function effectiveTimeoutMs(declared, ctx) {
-  const ceiling = ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
-  return typeof declared === 'number' && Number.isFinite(declared) && declared > 0
-    ? Math.min(declared, ceiling)
-    : ceiling;
+export function effectiveTimeoutMs(ctx) {
+  return ctx.timeoutMsDefault ?? DEFAULT_TIMEOUT_MS;
 }
 
 /**
- * ONE command of a declared stage, through `sh`: under the check limit (the AI's own `timeoutMs` may only tighten it), with the
- * still-running note, and its measured time kept (`ctx.cmdTimes`, keyed by the command alone) so the NEXT pass of the same command can
- * say "usually about N min". Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
- * `seed` = the SEED-BASELINE reading (a count stage's command in the seed worktree): with `ctx.seedBase` it is kept and reused for the whole run and across legs (see `Ctx`).
- * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx @param {boolean} [seed]
+ * ONE command of a declared stage, through `sh`: under the one check limit (an old spec's authored `timeoutMs` is ignored), with the
+ * still-running note. Both kinds that spawn a command (`command-exit`, `count-not-worse`) come through here.
+ * With `ctx.checkStore` (hamr 2026-11-24): the fingerprint of the directory the command will see is taken BEFORE it runs, a saved result for (command, fingerprint)
+ * stands in for the run where the caller allows it (see `Ctx`), and a completed run is kept. One lookup, one keeper: the seed baseline, resume, and drafting-to-run
+ * reuse are all this.
+ * @param {any} p the stage's params @param {string} cwd @param {Ctx} ctx
  */
-async function runCmd(p, cwd, ctx, seed = false) {
-  const timeKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}]);
-  const timeoutMs = effectiveTimeoutMs(p.timeoutMs, ctx);
+async function runCmd(p, cwd, ctx) {
+  const timeoutMs = effectiveTimeoutMs(ctx);
+  const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
   const run = async () => {
-    // SEED BASELINE (hamr 2026-11-23, run mwsfq0pi leg 3): the seed tree never changes inside a run, so its reading is kept by command + seed TREE id (never the directory)
-    let seedKey = null;
-    if (seed && ctx.seedBase) {
-      const t = await git(ctx.workdir, ['rev-parse', `${ctx.seedRef}^{tree}`]);
-      const treeId = t.ok ? t.out.trim() : '';
-      if (/^[0-9a-f]{40,64}$/.test(treeId)) {
-        seedKey = { key: `seed:${checkKey(p, timeoutMs)}:${treeId}`, treeId };
-        const hit = ctx.seedBase.get(seedKey.key);
-        if (hit) return { stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms };
+    const store = ctx.checkStore;
+    const key = checkKey(p, timeoutMs);
+    const treeId = store ? await treeIdentity(cwd) : null;
+    if (store && treeId !== null && (cwd !== ctx.workdir || typeof ctx.reuse === 'function')) {
+      const hit = store.findCheck(key, treeId);
+      if (hit) {
+        if (cwd === ctx.workdir) ctx.reuse?.({ memoKey, at: hit.at });
+        return { stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms };
       }
     }
-    // resume reuse: ONE tree identity taken BEFORE the command (no compare after); only a run in the judged directory is kept
-    const keepId = typeof ctx.cmdKeep === 'function' && cwd === ctx.workdir ? await treeIdentity(cwd) : null;
     const r = await sh(p.cmd, p.args ?? [], {
       cwd,
       env: p.env ?? {},
@@ -1393,51 +1426,20 @@ async function runCmd(p, cwd, ctx, seed = false) {
       onTick: ctx.onTick ?? null,
       tickAfterMs: ctx.tickAfterMs,
       tickEveryMs: ctx.tickEveryMs,
-      knownMs: ctx.cmdTimes?.get(timeKey) ?? null,
       group: true,
       signal: ctx.signal ?? null,
       ...(ctx.listBox ? { listBox: ctx.listBox } : {}),
     });
-    if (r.stop === null) ctx.cmdTimes?.set(timeKey, r.ms);
     // only a command that COMPLETED (any exit code) is kept: a timed-out, killed or crashed one is a stop and never gets here
-    if (r.stop === null && seedKey && r.out.length <= MAX_SAVED_OUT) ctx.seedBase?.keep({ key: seedKey.key, treeId: seedKey.treeId, code: r.code, out: r.out, ms: r.ms, seed: true });
-    if (r.stop === null && keepId !== null && r.out.length <= MAX_SAVED_OUT) ctx.cmdKeep?.({ key: checkKey(p, timeoutMs), treeId: keepId, code: r.code, out: r.out, ms: r.ms });
+    if (store && treeId !== null && r.stop === null && r.out.length <= MAX_SAVED_OUT) store.keepCheck({ key, treeId, code: r.code, out: r.out, ms: r.ms });
     return r;
   };
   // ONCE PER CHECK PASS (hamr 2026-11-21): every stage reading the same command (same args, env, directory and limit) shares one run. The memo
-  // belongs to ONE pass (a seed read, a close run), so the next pass reads the tree again; nothing is shared across a tree change.
-  if (!ctx.cmdMemo) return sharedRun(ctx, cwd, JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]), run);
-  const memoKey = JSON.stringify([p.cmd, p.args ?? [], p.env ?? {}, cwd, timeoutMs]);
+  // belongs to ONE pass (a seed read, a close run) and holds only runs in flight or done in that pass; the next pass reads the tree again.
+  if (!ctx.cmdMemo) return run();
   let pending = ctx.cmdMemo.get(memoKey);
-  if (!pending) {
-    // RESUME REUSE (start pass only: `cmdSaved` is handed to no other pass): a saved result for this command on this very tree stands in for the run
-    const hit = ctx.cmdSaved instanceof Map && cwd === ctx.workdir ? ctx.cmdSaved.get(checkKey(p, timeoutMs)) : undefined;
-    if (hit) { hit.used = true; hit.memoKey = memoKey; pending = Promise.resolve({ stop: null, code: hit.code, out: hit.out, dropped: stageEnv(p.env ?? {}).dropped, ms: hit.ms }); }
-    else pending = sharedRun(ctx, cwd, memoKey, run);
-    ctx.cmdMemo.set(memoKey, pending);
-  }
+  if (!pending) { pending = run(); ctx.cmdMemo.set(memoKey, pending); }
   return pending;
-}
-
-/**
- * ONE owner of what a draft session's signing-gate tries share (hamr 2026-11-22, run mwsblixt: four tries, four full suites on one unchanged seed).
- * Only where the caller handed `ctx.seedShare` (the panel's session map; never the run-start precheck or preflight): a COMPLETED run of a command
- * (any exit code) is kept under the command's own memo key + the seed's TREE id, and a later try reads it only while the directory is verifiably
- * at that seed. A stopped result (timed out, killed, crashed) is never kept, so the next try runs fresh; a tree that differs is a fresh run.
- * @param {Ctx} ctx @param {string} cwd @param {string} memoKey @param {() => Promise<any>} run
- */
-async function sharedRun(ctx, cwd, memoKey, run) {
-  const share = ctx.seedShare;
-  if (!(share instanceof Map) || !ctx.seedRef) return run();
-  const at = await treeIsAtSeed(cwd, ctx.seedRef);
-  const tree = at.at ? await git(cwd, ['rev-parse', `${ctx.seedRef}^{tree}`]) : null;
-  const treeId = tree?.ok ? tree.out.trim() : '';
-  if (!/^[0-9a-f]{40,64}$/.test(treeId)) return run();
-  const key = `${treeId}\u0000${memoKey}`;
-  if (share.has(key)) return share.get(key);
-  const r = await run();
-  if (r.stop === null) share.set(key, r);
-  return r;
 }
 
 /** the typed `survivors` of a killed check, for a stop's detail (said in plain words only where it is shown) @param {any} r @returns {Record<string, any>} */
@@ -1482,7 +1484,7 @@ async function runCountNotWorse(stage, ctx) {
 
   /** @param {string} cwd @param {string} where */
   const measure = async (cwd, where) => {
-    const r = await runCmd(p, cwd, ctx, cwd !== ctx.workdir);
+    const r = await runCmd(p, cwd, ctx);
     if (r.stop !== null) return { stop: `${r.stop} (measuring ${where})`, fault: r.fault, ...survivorsOf(r) };
     const v = parseValue(r.out, terms, { scope: p.scope, workdir: cwd });
     if (v.stop !== null) return { stop: `${v.stop} (measuring ${where})`, fault: v.fault, notes: v.notes ?? [] };

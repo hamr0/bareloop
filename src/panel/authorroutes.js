@@ -26,7 +26,7 @@ import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
-import { createSession, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
@@ -49,6 +49,7 @@ import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 import { reviseRefusal, sessionsRootOf } from '../revises.js';
 import { CHOICE_SAYS } from '../questionbox.js';
+import { withDraftTimes } from '../draftspend.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -146,6 +147,10 @@ export function createAuthorRoutes(opts) {
   /** @type {Map<string, ReturnType<typeof createSession>>} */
   const headless = new Map();
 
+  /** the session's state as the page reads it: the progress lines carry their drafting times, read from the drafting log at this moment (src/draftspend.js) */
+  /** the served state: the card's Destination is the ONE record's (source.json), never a copy the draft made onto the card (hamr 2026-11-24) */
+  const withRecord = (/** @type {{state: any}} */ s, /** @type {any} */ v) => (v?.card ? { ...v, card: { ...v.card, destination: recordedDestination(s.state) } } : v);
+  const viewOf = (/** @type {{state: any}} */ s) => withRecord(s, withDraftTimes(s.state));
   const hasLiveSession = () => [...sessions.values()].some((s) => !TERMINAL_PHASES.has(s.state.phase));
 
   /**
@@ -374,7 +379,7 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
       if (live) settleFetchingStep(live.state);
-      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
+      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? withRecord(live, live.state) : null });
       return true;
     }
 
@@ -434,7 +439,7 @@ export function createAuthorRoutes(opts) {
       if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
       startSession(card, reuse, ip.inputs).then((r) => {
         if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
-        send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
+        send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: viewOf(r.session) });
       });
       return true;
     }
@@ -448,29 +453,29 @@ export function createAuthorRoutes(opts) {
     if (sub === null) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       settleFetchingStep(session.state);
-      send(200, { ok: true, state: session.state });
+      send(200, { ok: true, state: viewOf(session) });
       return true;
     }
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
 
     if (sub === 'send') {
       // hamr 2026-11-12 (fwd M10 am32 A): while a question is open the page always posts the button's typed choice; an answer with none is from an old page and is refused, nothing logged, the question stays open
-      if (session.state.pendingAsk?.kind === 'answer' && body?.choice === undefined) { send(400, { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.outOfDate, state: session.state }); return true; }
+      if (session.state.pendingAsk?.kind === 'answer' && body?.choice === undefined) { send(400, { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.outOfDate, state: viewOf(session) }); return true; }
       const r =session.send(String(body?.text ?? ''), body?.choice);
-      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      send(r.ok ? 200 : 400, { ...r, state: viewOf(session) });
       return true;
     }
     if (sub === 'abandon') {
       // a Revise ends this draft: the third one is refused here, so the plan the person is looking at is not thrown away for nothing
       const tooMany = body?.kind === 'revise' ? reviseRefusal(sessionsRootOf(opts.sessionsRoot), session.id, 'revise') : null;
-      if (tooMany !== null) { send(409, { ok: false, error: tooMany, state: session.state }); return true; }
+      if (tooMany !== null) { send(409, { ok: false, error: tooMany, state: viewOf(session) }); return true; }
       const r = session.abandon();
-      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      send(r.ok ? 200 : 400, { ...r, state: viewOf(session) });
       return true;
     }
     if (sub === 'check-deps') {
       const r = session.checkDeps();
-      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      send(r.ok ? 200 : 400, { ...r, state: viewOf(session) });
       return true;
     }
     if (sub === 'row-edit') {
@@ -478,16 +483,16 @@ export function createAuthorRoutes(opts) {
       // the FINAL repo card's Drop (hamr 2026-11-15): the signing gates run again, so the answer comes when they have
       // a sheet job's FINAL card takes a Drop and an Add (S4): the live check block edits the row, the gates run again
       if (session.state.phase === 'prepared' && (body?.op === 'drop' || body?.op === 'add')) {
-        session.finalEdit(body?.op, body?.key).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }), () => send(500, { ok: false, error: 'could not change that check' }));
+        session.finalEdit(body?.op, body?.key).then((r) => send(r.ok ? 200 : 400, { ...r, state: viewOf(session) }), () => send(500, { ok: false, error: 'could not change that check' }));
         return true;
       }
       const r = session.rowEdit(body?.op, body?.key);
-      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      send(r.ok ? 200 : 400, { ...r, state: viewOf(session) });
       return true;
     }
     if (sub === 'sign-prepare') {
       const r = session.signPrepare();
-      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      send(r.ok ? 200 : 400, { ...r, state: viewOf(session) });
       return true;
     }
     if (sub === 'sign') {
@@ -557,7 +562,7 @@ export function signRun(session, claimedHash, o) {
     if (!o.schedules) return { ok: false, error: 'this panel cannot keep a schedule, so the job was not signed' };
     try {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-      const dest = typeof session.state.card?.destination === 'string' ? session.state.card.destination.trim() : '';
+      const dest = recordedDestination(session.state).trim();
       const made = o.schedules.signWithJob({ spec, specHash: session.state.specHash, trigger: spec.trigger, inputsText: typeof session.state.card?.inputs === 'string' ? session.state.card.inputs : '', destination: /^(\/|[a-zA-Z]:[\\/])/.test(dest) ? dest : null });
       if (!made.ok) return { ok: false, error: made.say };
       scheduledJob = spec.job;

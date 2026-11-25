@@ -53,6 +53,7 @@ import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
 import { legsOf } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 
 /** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
  * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
@@ -80,7 +81,8 @@ const { Loop } = require('bare-agent');
  *  - `cap-halt` / `wall-halt` — governance stops. A money cut is never a capability read
  *    (F45) and the wall keeps the verdict already minted (W-2).
  *  - `provider-red` / `step-stalled` / `pricing-red` — transport and metering.
- *  - `close-red` / `close-unsupported` — the close FAULTED (broken, timed out, killed,
+ *  - `check-timeout` — a check never finished inside its limit (F393): resumable, like `provider-red`.
+ *  - `close-red` / `close-unsupported` — the close FAULTED (broken, killed,
  *    crashed). It rendered no judgment, so its exit says nothing about the tree.
  *  - `recipe-stale` — the load gate refused the recipe at the door, $0 spent.
  *  - `plan-red` / `step-red:<id>` / `check-red` — the plan flow stopped before the close
@@ -145,7 +147,7 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * does not end up with two lists that can drift, which is the exact failure this
  * constant exists to end (see the paragraph above).
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'stopped', ...HUMAN_CHECKPOINTS]);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'check-timeout', 'stopped', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the
@@ -531,7 +533,7 @@ export function readTry(events) {
  * ROW saying "casualty" was the one place the machinery still mis-described itself.
  * @param {string} outcome @returns {'green'|'red'|'checkpoint'|'casualty'} */
 function verdictClassOf(outcome) {
-  if (outcome === 'green' || outcome === 'already-green') return 'green';
+  if (isReusableGreen(outcome)) return 'green';
   if (HUMAN_CHECKPOINTS.includes(outcome)) return 'checkpoint';
   return REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
 }
@@ -827,9 +829,17 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
   // it inherited (`priorSpentUsd`/`priorWallMs`/…) — so reading that one window and adding its rounds is the whole
   // chain exactly once, never the earlier legs' rounds on top of a fold that already carries them. A spine with
   // no marker is one leg and reads as it always did.
+  /** the records of the legs BEFORE the one read, oldest first: a leg that died before it re-accepted its plan has no plan of its own,
+   * and the plan the last leg that HAD one accepted still stands behind it (the one resume rule, F393) */
+  let earlierLegs = /** @type {any[][]} */ ([]);
   if (direct) {
     const legs = legsOf(list);
-    if (legs.length > 1) list = (legs.findLast((l) => l.jobStart !== null) ?? legs[legs.length - 1]).records;
+    if (legs.length > 1) {
+      const at = legs.findLastIndex((l) => l.jobStart !== null);
+      const read = at >= 0 ? at : legs.length - 1;
+      list = legs[read].records;
+      earlierLegs = legs.slice(0, read).map((l) => l.records);
+    }
   }
   /** which landed terminals are a CHECKPOINT rather than a graded row */
   const resumableHalt = new Set(Array.isArray(resumableOutcomes) ? resumableOutcomes : []);
@@ -1063,6 +1073,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // is the substitution D3 forbids at the selection seam.
         seed: readStepCheckpoint(open.seen)
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readStepCheckpoint(w.seen)).filter(Boolean).at(-1)
+          ?? earlierLegs.map((r) => readStepCheckpoint(r)).filter(Boolean).at(-1)
           ?? null,
         // the CLOSE GRADES this leg recorded, so the resumed leg's halt readout spans
         // the chain rather than restarting at its own first close (readGradeSeed).
@@ -1082,6 +1093,7 @@ export function readResume(events, { deathAt = null, direct = false, resumableOu
         // leg that never branched has no work to strand.
         branch: readWorkBranch(open.seen)
           ?? abandoned.filter((w) => w.n === open.n).map((w) => readWorkBranch(w.seen)).filter(Boolean).at(-1)
+          ?? earlierLegs.map((r) => readWorkBranch(r)).filter(Boolean).at(-1)
           ?? null,
         // the REPLAN ledger, folded like the money one line below and deliberately
         // NOT like the grades one line above. A grade seed feeds a READOUT and its
@@ -2178,6 +2190,7 @@ export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
  */
 export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record }) {
   if (!isNonEmptyString(registryDir)) return { minted: false, reason: 'no-registry', write: null };
+  // minted green ONLY on purpose: an already-green predates the run and mints no registry row (guard: tests/already-green-delivers.test.js (e))
   if (outcome !== 'green') {
     return { minted: false, reason: outcome === 'already-green' ? 'green-predates-run' : 'not-green', write: null };
   }

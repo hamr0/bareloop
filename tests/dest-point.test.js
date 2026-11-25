@@ -7,7 +7,7 @@ import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { destinationCovers, decideDestPoint, destQuestionText, yesNoOf, runDestPoint, destPrompt, DEST_CALL_LABEL } from '../src/destpoint.js';
-import { createSession } from '../src/panel/authorsession.js';
+import { createSession, recordedDestination } from '../src/panel/authorsession.js';
 import { world, makeRepo, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
 
 const FILES = ['src/sum.js', 'src/deep/x.js', 'docs/a.md', 'README.md', 'test/sum.test.js'];
@@ -116,7 +116,7 @@ test('wiring: Destination docs/ and a job line naming src/mod.js -> ONE typed qu
   assert.equal(s.state.pendingAsk?.source, 'dest-point');
   assert.equal(s.send('yes').ok, true);
   assert.deepEqual(await signedFence(s, got), ['src/'], 'the fence the composer drafts under, so the one signed');
-  assert.equal(s.state.card.destination, 'src/', 'the session\'s card (the page re-fills its box from it) says src/');
+  assert.equal(recordedDestination(s.state), 'src/', 'the session\'s card (the page re-fills its box from it) says src/');
   assert.ok(await until(() => s.state.phase === 'prepared'), `never prepared (${s.state.phase} ${s.state.error})`);
   assert.deepEqual(JSON.parse(readFileSync(s.state.resolvedSpecPath, 'utf8')).writeScope, ['src/'], 'the SIGNED spec carries the answer');
   assert.equal(card.destination, 'docs/', 'the caller\'s own object is never mutated');
@@ -127,7 +127,7 @@ test('wiring: "no" keeps Destination as it is and drafting goes on with the old 
   assert.ok(await until(() => s.state.pendingAsk?.source === 'dest-point'));
   s.send('no');
   assert.deepEqual(await signedFence(s, got), ['docs/']);
-  assert.equal(s.state.card.destination, 'docs/');
+  assert.equal(recordedDestination(s.state), 'docs/');
 });
 
 test('wiring: a file already inside Destination asks NOTHING; a made-up file, or a line that does not hold the path, is no point (the file question) and, with nothing named and Destination holding none of the scout\'s code, the CLOSED Destination question (hamr 2026-11-22) comes instead', async (t) => {

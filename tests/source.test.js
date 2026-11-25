@@ -1226,7 +1226,7 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   // adapter) into src/userrun.js's one shared `execute()` engine, which
   // imports its sibling modules with `./` rather than `../src/`.
   const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
-  assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut,\s*landStagedReport,\s*refreezeUrlInputs\s*\}\s*from\s*'\.\/source\.js'/);
+  assert.match(src, /import\s*\{\s*readSourceManifest,\s*manifestDestination,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut,\s*landStagedReport,\s*refreezeUrlInputs\s*\}\s*from\s*'\.\/source\.js'/);
 
   // P6 item 1: the source door's directory is now ONE variable (`into`) — `dirname(wd)` for the copied-tree layout
   // (tree at `<into>/tree`), passed explicitly for a worktree run (tree inside the person's repo). The three call sites
@@ -1245,8 +1245,8 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
 
   assert.match(src, new RegExp(`const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ into: ${intoVar} \\}\\);|const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ ${intoVar} \\}\\);`),
     'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
-  assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
-    'the copy-out gate fires on the ONE outcome string a graded close mints');
+  assert.match(src, new RegExp(`if \\(isReusableGreen\\(outcome\\) && ${frontDoorVar}\\)`),
+    'the copy-out gate fires on a green or an already-green (the one owner, isReusableGreen)');
   assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination(, \\.\\.\\.\\(amend \\? \\{ amend \\} : \\{\\}\\))?(, report: \\{ name: spec\\.job, render: deliveredReporter\\(\\{ closeDecl: spec\\.closeDecl, jobLines: spec\\.jobLines, job: spec\\.job, runNo \\}\\) \\})? \\}\\);`),
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');

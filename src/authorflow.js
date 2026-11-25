@@ -81,7 +81,7 @@ import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTi
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
-  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang,
+  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang, offeredOptional,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
@@ -744,7 +744,6 @@ export const PARAM_SCHEMAS = Object.freeze({
   cmd: { type: 'string', description: 'the executable, invoked so its binary actually resolves' },
   args: { type: 'array', items: { type: 'string' } },
   expectExit: { type: 'integer' },
-  timeoutMs: { type: 'integer', minimum: 1 },
   env: { type: 'object', additionalProperties: { type: 'string' } },
   parser: PARSER_SCHEMA,
   scope: SCOPE_SCHEMA,
@@ -848,7 +847,7 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
   /** @type {Set<string>} */ const used = new Set();
   for (const [kind, spec] of Object.entries(catalogue)) {
     if (spec.locked) continue;
-    for (const p of [...spec.required, ...spec.optional]) {
+    for (const p of [...spec.required, ...offeredOptional(spec)]) {
       used.add(p);
       if (!Object.hasOwn(PARAM_SCHEMAS, p)) missing.push(`${kind}.${p}`);
     }
@@ -899,7 +898,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
     .map(([kind, spec]) => {
       /** @type {Record<string, any>} */
       const properties = {};
-      for (const p of [...spec.required, ...spec.optional]) properties[p] = PARAM_SCHEMAS[/** @type {keyof typeof PARAM_SCHEMAS} */ (p)];
+      for (const p of [...spec.required, ...offeredOptional(spec)]) properties[p] = PARAM_SCHEMAS[/** @type {keyof typeof PARAM_SCHEMAS} */ (p)];
       return {
         title: kind,
         description: spec.asserts,
@@ -1013,7 +1012,7 @@ export function catalogueBlock(catalogue = KIND_CATALOGUE, { verdictType = null 
   const rows = Object.entries(catalogue).filter(([name]) => menu.includes(name)).map(([name, spec]) => (spec.locked
     ? `- ${name}  — LOCKED. Not available in v1; it will not run.`
     : `- ${name}\n    ${spec.shape}\n    required: ${spec.required.join(', ')}`
-      + `${spec.optional.length ? `   optional: ${spec.optional.join(', ')}` : ''}\n    asserts: ${spec.asserts}`));
+      + `${offeredOptional(spec).length ? `   optional: ${offeredOptional(spec).join(', ')}` : ''}\n    asserts: ${spec.asserts}`));
   return `THE KIND CATALOGUE — these are the only kinds that exist.
 You parameterise kinds. You never write a script, a shell fragment, or a new kind.
 
@@ -2773,8 +2772,6 @@ export async function authorClose({
   let questionLines = null;
   /** per try: null = it passed (validated AND was measured with a work stage red); else the job lines its failure named @type {({lines: number[]}|null)[]} */
   const tryFails = [];
-  /** each command's measured time across this draft's tries (the still-running note's "usually about N min") @type {Map<string, number>} */
-  const cmdTimes = closeCtx.cmdTimes instanceof Map ? closeCtx.cmdTimes : new Map();
   /** @type {{line: number, question: string}[]} */
   let askedQuestions = [];
   /** P7 item 5: may the try AFTER try `i` ask? Only the last try of a full ladder, and only when try 1 and try `i` both failed. */
@@ -2978,10 +2975,8 @@ export async function authorClose({
         const rows = await seedReadFn(injected.declaration, {
           gapKeep: '', ...closeCtx, workdir, seedRef, seedTrees, ...(lang === RUBRIC_LANG ? { source } : {}),
           onStage: (/** @type {any} */ row) => onPhase('stage', { call: label, ...row }),
-          // REPORT-ONLY (hamr 2026-11-21): a check running past 5 minutes says so, in code's own words, once a minute; the map keeps each
-          // command's measured time for the next try of this draft ("usually about N min")
+          // REPORT-ONLY (hamr 2026-11-21): a check running past 5 minutes says so, in code's own words, once a minute
           onTick: (/** @type {any} */ t) => onPhase('check-running', { call: label, ...t, text: checkRunningNote(t) }),
-          cmdTimes,
         });
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;

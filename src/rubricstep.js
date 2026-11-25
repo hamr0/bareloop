@@ -138,7 +138,10 @@ export function lineBriefs(closeDecl) {
     if (sp) {
       const fields = sp.fields.filter(isRec);
       const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
-      const count = Number.isInteger(sp.minItems) && sp.minItems === sp.maxItems ? `exactly ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}` : Number.isInteger(sp.minItems) && sp.maxItems === undefined ? `at least ${sp.minItems} item${sp.minItems === 1 ? '' : 's'}, one for every one you find` : 'one item for every one you find';
+      // M19 am11 item 3 (fwdloop v0.37.0): the count as it is signed (`exactly N items`, `at least N items`, `at most N items`)
+      const lo = Number.isInteger(sp.minItems) ? sp.minItems : null; const hi = Number.isInteger(sp.maxItems) ? sp.maxItems : null;
+      const s = (/** @type {number} */ k) => `${k} item${k === 1 ? '' : 's'}`;
+      const count = lo !== null && lo === hi ? `exactly ${s(lo)}` : lo !== null || hi !== null ? [...(lo !== null ? [`at least ${s(lo)}`] : []), ...(hi !== null ? [`at most ${s(hi)}`] : [])].join(' and ') : 'one item for every one you find';
       out.push({
         line: n,
         text: [

@@ -156,6 +156,7 @@ export function createScheduleDoor(deps) {
     const head = runs.find((r) => r.spec);
     if (!head) return { ok: false, say: SCHEDULE_WORDS.notGreen };
     const key = workflowKey(head.spec);
+    // real green ONLY on purpose: the schedule gate never takes an already-green (T3; guard: tests/already-green-delivers.test.js (e))
     const hit = runs.find((r) => !(skip && skip.has(r.runid)) && r.spec && workflowKey(r.spec) === key && r.outcome === 'green'
       && (r.spec.verdictType !== 'soft-green' || doorAccepted(r.records)));
     return hit ? { ok: true, run: hit, key } : { ok: false, say: SCHEDULE_WORDS.notGreen };

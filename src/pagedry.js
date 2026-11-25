@@ -160,7 +160,9 @@ export async function dryReadPhrases(text, facts) {
   const reads = {};
   for (const k of facts) {
     if (k.shape !== 'phrase' || quotes.length === 0 || !k.words.length) { kept.push(k); continue; }
-    const fact = { name: k.name, shape: 'phrase', phrase: k.words[0] };
+    // a plain phrase fact is read on all its words (any one), as it is signed (fwdloop v0.37.0, M19 am5)
+    const alts = [...new Set(k.words)];
+    const fact = alts.length > 1 ? { name: k.name, shape: 'phrase', anyOf: alts } : { name: k.name, shape: 'phrase', phrase: k.words[0] };
     let n = 0;
     for (const quote of quotes) {
       const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };

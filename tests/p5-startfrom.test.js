@@ -97,11 +97,13 @@ test('card.json round-trips: written beside resolved-spec.json at sign-prepare, 
   assert.ok(existsSync(file), 'card.json sits in the session dir, beside resolved-spec.json');
   assert.ok(existsSync(join(session.state.outDir, 'resolved-spec.json')));
   const got = JSON.parse(readFileSync(file, 'utf8'));
-  assert.deepEqual(got, cardFields(card));
+  const { destination: _record, ...formFields } = cardFields(card);
+  assert.deepEqual(got, formFields, 'the form fields, VERBATIM, without a Destination copy (source.json is its one record)');
+  assert.equal('destination' in got, false);
   assert.equal(got.jobText, card.jobText, 'verbatim — no trimming, no rewrite');
   assert.equal(got.startFrom, undefined);
   assert.equal(got.stray, undefined);
-  assert.deepEqual(Object.keys(got).sort(), CARD_FIELDS.filter((f) => card[f] !== undefined).sort());
+  assert.deepEqual(Object.keys(got).sort(), CARD_FIELDS.filter((f) => f !== 'destination' && card[f] !== undefined).sort());
 });
 
 /**
@@ -156,7 +158,7 @@ function realSpec() {
 test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own readers; the open four start at what the run had; card.json only supplies model and the Inputs text', async () => {
   const spec = await realSpec();
   const home = tmp('p5-sf-h-');
-  const card = baseCard({ jobName: spec.job, source: '/typed/source', maxWallMs: 600000, model: 'claude-sonnet-5' });
+  const card = baseCard({ jobName: spec.job, source: '/typed/source', maxWallMs: 600000, model: 'claude-sonnet-5', destination: 'stale-copy/' }); // a card.json from before the one-record rule may still carry a Destination: Reuse never reads it
   makeRun(home, { runid: 'withcard', spec, card });
   const a = getStartFrom('withcard', { home });
   assert.equal(a.ok, true, JSON.stringify(a));
@@ -170,7 +172,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.card.checkType, 'deterministic');
   assert.equal(a.card.model, 'claude-sonnet-5');
   assert.equal(a.card.inputs, 'repo: /typed/source', 'the Inputs text the person saved');
-  assert.equal(a.card.destination, spec.writeScope.join(', '));
+  assert.equal(a.card.destination, 'src/', 'the Destination is source.json\'s record, never the card.json copy');
   assert.equal(a.card.capUsd, spec.budgetUsd);
   assert.equal(a.card.maxWallMs, spec.maxWallMs);
   assert.equal(a.workflowKey, workflowKey(spec));
@@ -240,6 +242,18 @@ test('track record is by WORKFLOW KEY: one run = ONE entry (a two-leg run counts
   assert.ok(Math.abs(rec.avgWallMs - (5 + 4 + 5) / 3 * 60000) < 1, `working time averaged over the 3 finished runs (a two-leg run counts its legs, not the gap), got ${rec.avgWallMs}`);
   assert.equal(rec.finished, 3);
   assert.equal(reuseLine(rec), 'Same job — 2 green · 1 not green · about $0.80 and 5 min a run');
+});
+
+test('track record: an already-green run counts as GREEN, but its ~$0 spend and wall stay out of the averages (hamr 2026-11-25, run mwvwcxvy)', async () => {
+  const spec = await realSpec();
+  const home = tmp('p5-sf-h-');
+  makeRun(home, { runid: 'g1', spec, outcome: 'green', spent: 1 });
+  makeRun(home, { runid: 'ag1', spec, outcome: 'already-green', spent: 0.01 });
+  const rec = trackRecordFor(workflowKey(spec), { home });
+  assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, live: rec.live }, { green: 2, notGreen: 0, live: 0 });
+  assert.equal(rec.avgSpendUsd, 1, 'the average is the green run\'s own figure, not dragged down by the already-green run');
+  assert.ok(Math.abs(rec.avgWallMs - 5 * 60000) < 1, `wall average is the green run's own, got ${rec.avgWallMs}`);
+  assert.equal(reuseLine(rec), 'Same job — 2 green · 0 not green · about $1.00 and 5 min a run');
 });
 
 test('reuseLine: what is unknown is SAID — never $0 or 0 min; a died run counts as not green but is left out of the averages', async () => {

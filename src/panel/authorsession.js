@@ -74,8 +74,9 @@ import { draftRefusal } from '../rangereview.js';
 import { refGuess, refGuessQuestion, refGuessToken } from '../refguess.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
-import { appendDraftLog, readDraftLedger, readDraftSteps } from '../draftspend.js';
+import { appendDraftLog, draftedLine, readDraftLedger, readDraftSteps } from '../draftspend.js';
 import { CHECK_LIMIT_MS, checkRunningNote } from '../kinds.js';
+import { createCarryStore, runStateFile } from '../carrystore.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -241,7 +242,7 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
   }
 }
 
-/** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
+/** the form's fields, in card order — the names the card form and its request bodies carry (P5 item 3); `card.json` stores them minus `destination` (see `cardFileFields`) */
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
@@ -278,6 +279,22 @@ export function ticketRubricInputs(inputs, { rubric, flowType }) {
 export function cardSource(card) {
   const p = cardInputs(card);
   return p.ok ? p.inputs[0].value : '';
+}
+
+/**
+ * The Destination as the ONE record says it (source.json `destination`, beside the draft's prepared copy), or the draft's own card value until the record exists. The card, the
+ * served state and every later reader take it from here; nothing copies the record back onto the card (hamr 2026-11-24).
+ * @param {{outDir: string, card?: any}} state
+ * @returns {string}
+ */
+export function recordedDestination(state) {
+  return readManifestDestination(join(String(state.outDir), 'source-seed', 'source.json')) ?? String(state.card?.destination ?? '');
+}
+
+/** What `card.json` stores: the form's fields WITHOUT `destination` — the Destination has ONE record (source.json), so the card file keeps no copy of it. @param {any} card */
+export function cardFileFields(card) {
+  const { destination: _record, ...rest } = cardFields(card);
+  return rest;
 }
 
 /**
@@ -527,10 +544,8 @@ export function createSession(card, deps = {}) {
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? CHECK_LIMIT_MS;
-  /** each command's measured time across this session's signing gates (the still-running note's "usually about N min") @type {Map<string, number>} */
-  const cmdTimes = new Map();
-  /** this session's signing-gate seed reads: completed command results by command + seed tree, so a later gates try on the same seed does not rerun the suite (hamr 2026-11-22; src/kinds.js `sharedRun`) @type {Map<string, any>} */
-  const seedShare = new Map();
+  /** the ONE state file (src/carrystore.js `runStateFile`, in `prep.into`): made once the source is prepared. The signing gates keep and read completed command results in it by (command, files fingerprint), so a later gates try and the run's own start do not rerun the suite (hamr 2026-11-24) @type {any} */
+  let checkStore;
   /** Abandon ends a draft; a check still running for it (a repo's own tests) is killed with it, whole (hamr 2026-11-21) */
   const abortChecks = new AbortController();
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
@@ -630,7 +645,7 @@ export function createSession(card, deps = {}) {
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
   /** the signing gates' still-running note: the gates step's one line (src/kinds.js `checkRunningNote`) */
-  const gatesTick = (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => stepDetail('gates', checkRunningNote(t));
+  const gatesTick = (/** @type {{elapsedMs: number}} */ t) => stepDetail('gates', checkRunningNote(t));
   /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
   const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
@@ -771,6 +786,13 @@ export function createSession(card, deps = {}) {
     // "retry" is said only when the previous try was actually refused; otherwise it is "look". The same one line, never a second one.
     if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {
       const label = `${STEP_LABELS.draft} (${lastTryRefused ? 'retry' : 'look'} ${data.i + 1} of ${data.of + 1})`;
+      // hamr 2026-11-24 (walk mwuxqx4f): a look after a try that was NOT refused used to leave no record of why drafting ran again. The ladder always drafts
+      // again after a passing try (the drafter is shown what its checks read at the starting point) until its last call; say so in the drafting log, in code's words
+      if (!lastTryRefused) appendDraftLog(outDir, {
+        kind: 'try-again', no: Math.max(0, state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft')), call: String(data.call ?? ''),
+        reason: `the last try was not refused, so drafting looks again (${data.i + 1} of ${data.of + 1}): the AI is shown what its checks read at the starting point and may keep or change its plan`,
+        at: new Date().toISOString(),
+      });
       lastTryRefused = false;
       stepLabel('draft', label);
       state.progressLabel = label;
@@ -972,22 +994,22 @@ export function createSession(card, deps = {}) {
       refuse(prep.stop);
       return;
     }
+    // the ONE state file of this job, beside source.json (the run finds it at the same `into`); drafting only keeps and reads check results in it (hamr 2026-11-24)
+    checkStore = createCarryStore({ workdir: prep.tree, stateFile: runStateFile(dirname(prep.manifestPath)), emit: () => {}, resume: true });
     stepStart('check');
 
     // ONE Destination (hamr 2026-11-22): its home is the record `source.json` (`prep.manifestPath`). A source that recorded none at prepare (a relative Destination on a non-repo code job) gets the card's value written once here;
-    // from then on `setDestination` is the only writer (record first, atomic), `card.destination` / `state.card.destination` are set ONLY from a read of the record, and the fence is built from it (`fenceFromRecord`).
+    // from then on `setDestination` is the only writer (record first, atomic), nothing copies it back onto the card: every later reader reads the record (`destinationNow`), the served state overlays it (`recordedDestination`), and the fence is built from it (`fenceFromRecord`).
     const MANIFEST_PATH = /** @type {string} */ (prep.manifestPath);
     if (card.checkType !== 'rubric' && readManifestDestination(MANIFEST_PATH) === null && String(card.destination ?? '').trim() !== '') {
       try { await setManifestDestination(MANIFEST_PATH, card.destination); } catch (e) { refuse(`could not record the Destination (${/** @type {Error} */ (e).message})`); return; }
     }
     const scopeOfDestination = (/** @type {string} */ d) => d.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-    const fenceFromRecord = () => scopeOfDestination(readManifestDestination(MANIFEST_PATH) ?? card.destination);
+    const destinationNow = () => readManifestDestination(MANIFEST_PATH) ?? card.destination;
+    const fenceFromRecord = () => scopeOfDestination(destinationNow());
     const setDestination = async (/** @type {string} */ value) => {
       await setManifestDestination(MANIFEST_PATH, value);
-      const recorded = readManifestDestination(MANIFEST_PATH) ?? value;
-      card = { ...card, destination: recorded };
-      state.card = { ...state.card, destination: recorded };
-      return recorded;
+      return readManifestDestination(MANIFEST_PATH) ?? value;
     };
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
@@ -1096,7 +1118,7 @@ export function createSession(card, deps = {}) {
           ok: true, specHash: hash, note: 'command close — signed as written; close script bytes verified', gates: { closeBytes: { ok: true } },
         }, null, 2)}\n`);
         state.specHash = hash;
-        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFileFields(card), null, 2)}\n`);
         state.phase = 'prepared';
         stepStart('hash', `spec hash ${hash}`);
         stepDone();
@@ -1115,7 +1137,7 @@ export function createSession(card, deps = {}) {
       const runsRepoCheck = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st?.kind === 'command-exit' || st?.kind === 'count-not-worse');
       stepStart('gates', runsRepoCheck ? SEED_CHECK_LINE : 'gates 1–3 cost $0');
       const signing = await prepareSigningFn({
-        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal,
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal,
         shellCapUsd: spec.budgetUsd,
       });
       const signingFile = join(outDir, 'signing.json');
@@ -1137,7 +1159,7 @@ export function createSession(card, deps = {}) {
       state.specHash = signing.specHash;
       // P5 item 3 — the form text, VERBATIM, beside the resolved spec: what "Start from this" prefills from.
       // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
-      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFileFields(card), null, 2)}\n`);
       state.phase = 'prepared';
       stepStart('hash', `spec hash ${signing.specHash}`);
       stepDone();
@@ -1287,18 +1309,18 @@ export function createSession(card, deps = {}) {
       if (destFn && tracked !== null) {
         destTree = tracked;
         const pointed = await destFn({
-          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          jobLines, files: tracked, destination: destinationNow(), provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
           ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
         });
         if (abandoned) return;
         destNamed = Array.isArray(pointed.named) ? pointed.named : (pointed.point ? [pointed.point.line] : []);
         appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
         if (pointed.state === 'point' && pointed.point) {
-          const question = destQuestionText(pointed.point, card.destination);
+          const question = destQuestionText(pointed.point, destinationNow());
           let said = null;
           let typedDest = '';
           while (said === null) {
-            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line, folder: pointed.point.folder, current: card.destination });
+            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line, folder: pointed.point.folder, current: destinationNow() });
             if (a === null) return;
             // a typed Destination (the question box's own words, already checked at $0 by `send`) is taken as typed; buttons and old words say yes or no
             if (takeChoice() === 'path') { said = 'typed'; typedDest = String(a).trim(); break; }
@@ -1306,7 +1328,7 @@ export function createSession(card, deps = {}) {
             if (said === null) say('bot', 'Type yes or no.');
           }
           const newDest = said === 'typed' ? typedDest : pointed.point.folder;
-          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
+          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(destinationNow()), to: redactSecrets(newDest), at: new Date().toISOString() });
           if (said === 'yes' || said === 'typed') {
             await setDestination(newDest);
             writeScope = fenceFromRecord();
@@ -1412,14 +1434,14 @@ export function createSession(card, deps = {}) {
         const entries = scoutCodePaths(facts, tree);
         // the file check above owns every job that names a file; this one is for a job where no line does (a line like "make the tests pass" is not a change to a file)
         const unnamed = destNamed.length === 0 ? jobLines[0] : undefined;
-        if (entries.length === 0 || unnamed === undefined || destinationHoldsCode(card.destination, entries, tree)) return null;
+        if (entries.length === 0 || unnamed === undefined || destinationHoldsCode(destinationNow(), entries, tree)) return null;
         const holds = (/** @type {string} */ d) => !destinationIsRoot(d) && destinationHoldsCode(d, entries, tree);
         const proposal = entries.join(', ');
         const no = Math.max(0, state.steps.length - 1);
-        const from = card.destination;
+        const from = destinationNow();
         let wrong = 0;
         for (;;) {
-          const a = await ask({ kind: 'answer', source: 'dest-point', closed: true, index: 1, total: 1, question: destFenceQuestion({ destination: card.destination, entries }), line: unnamed.n, folder: proposal, current: card.destination });
+          const a = await ask({ kind: 'answer', source: 'dest-point', closed: true, index: 1, total: 1, question: destFenceQuestion({ destination: destinationNow(), entries }), line: unnamed.n, folder: proposal, current: destinationNow() });
           if (a === null) return { abandoned: true };
           const via = takeChoice();
           const typed = via === 'path' ? String(a).trim() : null;
@@ -1443,7 +1465,7 @@ export function createSession(card, deps = {}) {
           appendDraftLog(outDir, { kind: 'dest-fence', no, state: 'wrong', line: unnamed.n, entries, answer: typed === null ? 'other' : 'typed', to: redactSecrets(typed ?? String(a)), at: new Date().toISOString() });
           const shown = typed ?? String(a).trim();
           const why = typed !== null && destinationIsRoot(typed) ? 'The whole repo (.) cannot be the place a job may change files; type a folder.' : `${shown === '' ? 'That' : shown} holds none of the code or tests (${proposal}).`;
-          if (wrong >= 2) return { stop: `Destination ${redactSecrets(card.destination.trim().replace(/\s*\n\s*/g, ', '))} still holds none of the code or tests (${proposal}) after two tries, so the draft stopped. Start a new draft with a Destination that holds the code or the tests.` };
+          if (wrong >= 2) return { stop: `Destination ${redactSecrets(destinationNow().trim().replace(/\s*\n\s*/g, ', '))} still holds none of the code or tests (${proposal}) after two tries, so the draft stopped. Start a new draft with a Destination that holds the code or the tests.` };
           say('bot', `${redactSecrets(why)} Approve ${proposal}, or type a folder that holds some of it.`);
         }
       }
@@ -1478,7 +1500,7 @@ export function createSession(card, deps = {}) {
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
       // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
-      authorOpts: { closeCtx: { cmdTimes, seedShare, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
+      authorOpts: { closeCtx: { checkStore, reuse: () => {}, signal: abortChecks.signal }, ...(deps.flow?.flowType === 'tickets' ? { ticket: true } : {}) },
     });
 
     if (!authored.ok) {
@@ -1528,13 +1550,16 @@ export function createSession(card, deps = {}) {
   }
 
   /** the signed-ready card as a chat message; a repo job's agent rows can be Dropped on it (the person shapes the spec they sign: `dropStage`) */
-  const finalPlanMessage = () => ({ ...finalPlanCard(), readout: draftReadout() });
+  const finalPlanMessage = () => {
+    const drafted = draftedLine(outDir);
+    return { ...finalPlanCard(), readout: draftReadout(), ...(drafted ? { drafted } : {}) };
+  };
   /** the draft readout of the signed-ready plan (hamr 2026-11-15): text + head indexes, display only, built from the signed spec in `finalCtx`, the draft log and this session's own figures; one function, so Drop never carries a stale or a second one */
   const draftReadout = () => {
     const steps = readDraftSteps(outDir);
     const text = buildReadout({
       spec: finalCtx?.spec, name: String(finalCtx?.spec?.job ?? card.jobName), modelId: String(card.model), rounds: steps.reduce((n, x) => n + x.calls.length, 0),
-      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: String(card.destination ?? ''),
+      costUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete, specHash: state.specHash, source: cardSource(card), destination: recordedDestination(state),
       humans: steps.flatMap((x) => x.humans), ledger: readDraftLedger(outDir),
     });
     return { text, heads: readoutHeadIndexes(text) };
@@ -1592,7 +1617,7 @@ export function createSession(card, deps = {}) {
       if (refused.length) spec.closeDecl.refused = refused; else delete spec.closeDecl.refused;
       if (view.picks.length) spec.closeDecl.picks = structuredClone(view.picks); else delete spec.closeDecl.picks;
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+      const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
       if (signing === null || !signing.ok) {
         block.rowChoice(k, op === 'drop' ? 'add' : 'drop');
         return gatesRefusal(jv, signing, op === 'drop' ? 'Dropping that check' : 'Adding that check back');
@@ -1702,7 +1727,7 @@ export function createSession(card, deps = {}) {
         spec.closeDecl.stages = spec.closeDecl.stages.filter((/** @type {any} */ st) => st.name !== name);
         spec.closeDecl.list = spec.closeDecl.list.filter((/** @type {any} */ r) => r.key !== key);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, cmdTimes, seedShare, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
+        const signing = jv.ok ? await prepareSigningFn({ spec, workdir: finalCtx.tree, seedRef: finalCtx.seedRef, timeoutMs, onTick: gatesTick, checkStore, signal: abortChecks.signal, shellCapUsd: spec.budgetUsd }) : null;
         if (signing === null || !signing.ok) return gatesRefusal(jv, signing, 'Dropping that check');
         writeFileSync(join(outDir, 'resolved-spec.json'), `${JSON.stringify(spec, null, 2)}\n`);
         writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify(signing, null, 2)}\n`);

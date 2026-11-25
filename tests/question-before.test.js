@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path, { join } from 'node:path';
-import { createSession } from '../src/panel/authorsession.js';
+import { createSession, recordedDestination } from '../src/panel/authorsession.js';
 import { runDestPoint, destQuestionText, DEST_ANSWER } from '../src/destpoint.js';
 import { boxFor, panelQuestionText, refuseChoice, CHOICE_SAYS } from '../src/questionbox.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
@@ -58,7 +58,7 @@ test('E: Yes sets the fence and the card Destination; the log row says yes with 
   assert.ok(await until(() => destAsking(s)));
   assert.deepEqual(s.send('', 'yes'), { ok: true });
   assert.deepEqual(await fence(s, got), ['src/']);
-  assert.equal(s.state.card.destination, 'src/');
+  assert.equal(recordedDestination(s.state), 'src/');
   const row = log().find((e) => e.kind === 'dest-answer');
   assert.deepEqual([row.answer, row.from, row.to], ['yes', 'docs/', 'src/']);
   assert.deepEqual(log().filter((e) => e.kind === 'human').map((e) => [e.source, e.answer, e.choice]), [['dest-point', 'yes', 'yes']], 'the human row keeps the answer words and the button');
@@ -69,7 +69,7 @@ test('E: No keeps Destination as it is', async (t) => {
   assert.ok(await until(() => destAsking(s)));
   assert.deepEqual(s.send('', 'no'), { ok: true });
   assert.deepEqual(await fence(s, got), ['docs/']);
-  assert.equal(s.state.card.destination, 'docs/');
+  assert.equal(recordedDestination(s.state), 'docs/');
 });
 
 test('E: a typed Destination that passes the card\'s own check is taken (fence, card, log row "typed")', async (t) => {
@@ -77,7 +77,7 @@ test('E: a typed Destination that passes the card\'s own check is taken (fence, 
   assert.ok(await until(() => destAsking(s)));
   assert.deepEqual(s.send('lib/', 'path'), { ok: true });
   assert.deepEqual(await fence(s, got), ['lib/']);
-  assert.equal(s.state.card.destination, 'lib/');
+  assert.equal(recordedDestination(s.state), 'lib/');
   const row = log().find((e) => e.kind === 'dest-answer');
   assert.deepEqual([row.answer, row.from, row.to], ['typed', 'docs/', 'lib/']);
 });

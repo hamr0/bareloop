@@ -455,6 +455,6 @@ test('the worker\'s rendered system prompt names the arbiter\'s books and forbid
   // FROM one home (`ARBITER_BOOK_STORES`, src/kinds.js) so they cannot drift by
   // construction — this asserts the fence still consumes that home, because a
   // deny list rewritten back to literals would quietly re-open the drift channel.
-  assert.match(src, /deny: \[auditPath, \.\.\.ARBITER_BOOK_STORES\.map\(\(s\) => join\(workdir, s\)\)\]/,
+  assert.match(src, /deny: \[auditPath, \.\.\.ARBITER_BOOK_STORES\.map\(\(s\) => join\(workdir, s\)\), \.\.\.\(stateFile \? \[resolve\(stateFile\)\] : \[\]\)\]/,
     'the deny list no longer spells from ARBITER_BOOK_STORES — the persona and the fence can drift again');
 });

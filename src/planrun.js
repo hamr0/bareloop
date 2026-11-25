@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
-import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
+import { runClose, runStages, ralph, CLOSE_FAULTS, closeFaultEnding, boundGap } from './ralph.js';
 import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, exitExampleFor, mcpToolsExample } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
@@ -54,7 +54,7 @@ import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
-  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote, treeIdentity,
+  REVIEW_DOOR, doorOpens, mechanicalStages, checkRunningNote,
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { rangeNoteOfSpec, REVIEW_DIFF_WRITE_PATTERN } from './rangereview.js';
@@ -161,6 +161,8 @@ const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn:
 // `e.body` object itself must never reach a spine record.
 const BODY_MAX = 600;
 const BODY_MARKER = ' — body: ';
+/** the limit that bound a timed-out check, when the verdict carries it (the Run tab's words name it) @param {any} v */
+const limitOf = (v) => (typeof v?.limitMs === 'number' ? { limitMs: v.limitMs } : {});
 /** @param {any} e @returns {string} '' when there is no body, else ' — body: <redacted, ≤BODY_MAX chars>' */
 const bodySuffix = (e) => {
   if (e?.body === undefined) return '';
@@ -1096,6 +1098,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   passes `false` so the three `--resume`-naming readouts below (`MONEY_OPTIONS`,
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
+ * @param {string|null} [opts.stateFile=null] the run's ONE state file (`runStateFile`, src/carrystore.js): the carry memo and every completed check result; null = nothing is written
  * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
  *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of EVERY worker
  *   (scout, plan/replan drafter, step, close-fix: the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
@@ -1108,10 +1111,10 @@ ${scoutBlob || '(no scout notes)'}`;
  *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'check-timeout' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, checkNote = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, rates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, stateFile = null, learnHints = null, checkNote = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1138,7 +1141,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, files read with their function
   // line ranges included (the old separate handoff note is folded in). ALWAYS ON, no switch (hamr 2026-11-01); a legacy spec's
   // `handoffNote` and the retired `carryNote` config key have no effect. One `carry-note` spine record (counts only) per note handed.
-  const carry = createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined });
+  const carry = createCarryStore({ workdir, stateFile, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined });
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -1800,20 +1803,18 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'abandon the task',
   ];
 
-  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words), and each
-  // command's measured time is kept for the run's later passes ("usually about N min"). Nothing reads either back to decide anything.
-  /** @type {Map<string, number>} */
-  const cmdTimes = new Map();
+  // REPORT-ONLY (hamr 2026-11-21): a declared check running past 5 minutes says so once a minute (`check-running`, in code's own words). Nothing reads it back to decide anything.
   const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
-  /** RESUME REUSE (hamr 2026-11-23): every COMPLETED check command of any close pass is kept in the carry memo file with the tree identity taken before it ran, output masked by the run's one scrub. A record, never a verdict: a failure here never breaks a run. @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
-  /** the run's seed-baseline readings (hamr 2026-11-23): loaded from the carry memo file (an earlier leg's), kept there as they complete, handed to EVERY close pass */
-  const seedBaseMap = new Map(carry.savedChecks().filter((c) => c.seed === true).map((c) => [c.key, c]));
-  const seedBase = { get: (/** @type {string} */ k) => seedBaseMap.get(k), keep: (/** @type {any} */ rec) => { try { const full = { ...rec, out: scrub(rec.out), at: new Date().toISOString() }; seedBaseMap.set(rec.key, full); carry.keepCheck(full); } catch { /* never breaks a run */ } } };
-  const cmdKeep = (rec) => { try { carry.keepCheck({ ...rec, out: scrub(rec.out), at: new Date().toISOString() }); } catch { /* never breaks a run */ } };
+  // ONE state file (hamr 2026-11-24, src/carrystore.js `runStateFile`): every COMPLETED check command of any close pass is kept in it under (command, fingerprint of
+  // the files it saw), output masked by the store's one scrub. A record, never a verdict: a failure there never breaks a run. The seed reading is just another fingerprint.
   /** raised by the person's Stop while a declared check runs; one-shot, so nothing else runs after it */
   const stopChecks = new AbortController();
   /** the Stop landed inside a close (the callers that can end `stopped` read it) */
   let stoppedInClose = false;
+  /** the Stop really killed a running check (the close pass came back `killed`); false when the stop landed while nothing was running (saved results, between stages) */
+  let stopKilledCheck = false;
+  /** the plain words a Stop inside a close ends with: the parenthesis is added only when a check was really killed */
+  const stoppedInCloseWords = () => `stopped at the person's request${stopKilledCheck ? ' (the check that was running was killed)' : ''}`;
   const STOP_POLL_MS = 1000;
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
@@ -1830,25 +1831,26 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo] a caller-owned check pass (the preflight loop); absent = a fresh pass
-   * @param {Map<string, any>} [cmdSaved] RESUME REUSE: saved results for this very tree, handed to the start pass ONLY
+   * @param {(hit: {memoKey: string, at: string}) => void} [reuse] handed to the start pass ONLY: it lets a saved result for these very files stand in for a run, and is told of each
    */
-  const runCloseStagesInner = async (stages, cmdMemo, cmdSaved) => {
+  const runCloseStagesInner = async (stages, cmdMemo, reuse) => {
     if (!declared) return runStages(stages, scrub, closeOpts);
     // THE PERSON'S STOP, read while a check runs (hamr 2026-11-21): the round seam below never fires inside a close, and a repo's own tests can run
     // for up to the check limit, so the stop request is polled while one runs and kills the check's whole process group at once. The file is
     // consumed here and the stop recorded; the caller routes a close that was stopped (the precheck and the preflight end `stopped`).
     const poll = stopFile === null ? null : setInterval(() => { if (existsSync(stopFile)) stopChecks.abort(); }, STOP_POLL_MS);
     poll?.unref();
+    // REPORT-ONLY (hamr 2026-11-24, D2): the moment a check pass begins, so the Run tab's NOW row can say "Running your tests · M:SS" from the first second
+    // (the `check-running` tick only comes after 5 minutes, and no other record names when a check started). Nothing reads it back to decide anything.
+    emit('check-start', {});
     try {
-      return await runDeclaredStages(stages, scrub, {
+      const closed = await runDeclaredStages(stages, scrub, {
       ...closeOpts,
       signal: stopChecks.signal,
       ...(cmdMemo ? { cmdMemo } : {}),
-      ...(cmdSaved && cmdSaved.size ? { cmdSaved } : {}),
-      cmdKeep,
-      seedBase,
-      onTick: (/** @type {{elapsedMs: number, knownMs: number|null}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, knownMs: t.knownMs, text: checkRunningNote(t) }),
-      cmdTimes,
+      ...(reuse ? { reuse } : {}),
+      checkStore: carry,
+      onTick: (/** @type {{elapsedMs: number}} */ t) => emit('check-running', { elapsedMs: t.elapsedMs, text: checkRunningNote(t) }),
       ...(checkNote ? { tickAfterMs: checkNote.afterMs, tickEveryMs: checkNote.everyMs } : {}),
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
       // the signer's answer reaches the human stage the same way every other
@@ -1876,12 +1878,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
       }),
       });
+      if (stopChecks.signal.aborted && closed?.verdict === 'killed') stopKilledCheck = true;
+      return closed;
     } finally {
       if (poll) clearInterval(poll);
       if (stopChecks.signal.aborted && !stoppedInClose) {
         stoppedInClose = true;
         if (stopFile !== null) { try { unlinkSync(stopFile); } catch { /* already consumed */ } }
-        emit('stop-requested', { phase: 'close', meaning: 'the person asked to stop; the check that was running was killed, with everything it started' });
+        emit('stop-requested', { phase: 'close', meaning: stopKilledCheck ? 'the person asked to stop; the check that was running was killed, with everything it started' : 'the person asked to stop; no check was running, so nothing was killed' });
       }
     }
   };
@@ -1904,16 +1908,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * never retried, never fed back as a gap.
    * @param {any[]} stages
    * @param {Map<string, Promise<any>>} [cmdMemo]
-   * @param {Map<string, any>} [cmdSaved]
+   * @param {(hit: {memoKey: string, at: string}) => void} [reuse]
    */
-  const runCloseStages = async (stages, cmdMemo, cmdSaved) => {
+  const runCloseStages = async (stages, cmdMemo, reuse) => {
     const sig = checkStageByteSignature(stages, workdir);
     if (!sig.ok) {
       const r = sig.reds[0];
       const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
       return { verdict: 'close-tampered', stage: r?.stage, detail };
     }
-    return runCloseStagesInner(stages, cmdMemo, cmdSaved);
+    return runCloseStagesInner(stages, cmdMemo, reuse);
   };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
@@ -2080,9 +2084,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   };
 
   /** the close, as ONE verdict: every stage in order, first red wins */
-  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {Map<string, any>} [cmdSaved] the start pass's saved results (resume) */
-  const judgeClose = async (cmdMemo, cmdSaved) => {
-    const v = await runCloseStages(stagedClose, cmdMemo, cmdSaved);
+  /** @param {Map<string, Promise<any>>} [cmdMemo] the start pass's shared memo (the precheck only; every other judge takes a fresh pass) @param {(hit: {memoKey: string, at: string}) => void} [reuse] the start pass's saved-result switch */
+  const judgeClose = async (cmdMemo, reuse) => {
+    const v = await runCloseStages(stagedClose, cmdMemo, reuse);
     closeStage = v.stage;
     lastCloseVerdict = v;
     // Only a RED grade is a reading. A `satisfied` ends the run and a close FAULT
@@ -2254,34 +2258,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // ONE start pass (hamr 2026-11-23, run mwsfq0pi): the precheck and the preflight loop below read the same unchanged tree back to back in this
   // process, so they share ONE memo and a command the precheck ran is not run again. The precheck is the memo's first user, so it is itself fresh.
   const startMemo = new Map();
-  // RESUME REUSE (hamr 2026-11-23): on a resumed leg, a check result saved by an earlier leg for EXACTLY these files stands in for a run of the same command
-  // in this start pass (precheck + preflight). The tree identity is read once here; no match = the command runs fresh. Nothing else ever takes a saved result.
-  /** @type {Map<string, any>} */
-  const startSaved = new Map();
-  if (resuming && declared) {
-    const saved = carry.savedChecks();
-    const here = saved.length ? await treeIdentity(workdir) : null;
-    if (here) for (const c of saved) if (c.seed !== true && c.treeId === here) startSaved.set(c.key, { ...c });
-  }
-  const startEntries = [...startSaved.values()];
-  let pre = await judgeClose(startMemo, startSaved);
+  // SAVED RESULTS (hamr 2026-11-24): in this start pass (precheck + preflight) a check result saved for EXACTLY these files - by an earlier leg, or by drafting's signing
+  // gates - stands in for a run of the same command. The fingerprint is taken fresh by the command's own lookup; no match = the command runs fresh. Nothing else ever takes one.
+  /** @type {{memoKey: string, at: string}[]} the saved results this start pass leaned on (in flight, held only until the safety rule below has looked) */
+  let startUsed = [];
+  /** @type {((hit: {memoKey: string, at: string}) => void)|undefined} */
+  let noteReuse = declared ? (/** @type {{memoKey: string, at: string}} */ hit) => { startUsed.push(hit); } : undefined;
+  let pre = await judgeClose(startMemo, noteReuse);
   // THE ONE SAFETY RULE: a pass never comes from a saved result. A satisfied precheck that leaned on one drops those entries and is judged again fresh.
-  if (pre.verdict === 'satisfied' && startEntries.some((e) => e.used)) {
-    for (const e of startEntries) if (e.used) { startMemo.delete(e.memoKey); e.used = false; }
-    startSaved.clear();
+  if (pre.verdict === 'satisfied' && startUsed.length) {
+    for (const e of startUsed) startMemo.delete(e.memoKey);
+    startUsed = [];
+    noteReuse = undefined;
     pre = await judgeClose(startMemo);
   }
   let reuseTold = false;
   /** ONE plain line, code-written, when a saved result was used (a spine record: the Audit and the run's records show it) */
   const tellReuse = () => {
     if (reuseTold) return;
-    const used = startEntries.filter((e) => e.used);
-    if (!used.length) return;
+    if (!startUsed.length) return;
     reuseTold = true;
-    const at = used.map((e) => e.at).sort().at(-1);
-    const d = new Date(at);
+    const at = startUsed.map((e) => e.at).sort().at(-1);
+    const d = new Date(/** @type {string} */ (at));
     const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    emit('check-reused', { commands: used.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
+    emit('check-reused', { commands: startUsed.length, savedAt: at, text: `Checks not run again: same files as the last check at ${hhmm}.` });
   };
   emit('close-precheck', { ...pre });
   tellReuse();
@@ -2296,7 +2296,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // is nothing to do", spend nothing, and hand back the verdict they just declined
     // to take. So the run proceeds — a plan is drafted with their words in it, the
     // work happens, and the close judges it again at the end, as it judges everything.
-    if (doorWords === null) { spendRuling('accepted'); await emitReviewDoor('already-green', pre); return 'already-green'; }
+    if (doorWords === null) { spendRuling('accepted'); await emitReviewFindings(pre); await emitReviewDoor('already-green', pre); return 'already-green'; }
     emit('door-rerun-open', {
       fromRunid: doorWords.fromRunid,
       meaning: 'the close is already satisfied and the run continues anyway — the signer asked for different work, not for a re-grade of the same work',
@@ -2310,10 +2310,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // one on the spine would be a record of work nobody did.
   if (pre.verdict === HUMAN_PAUSE) { await emitHitlPause(pre); return HITL_PAUSE; }
   if (stoppedInClose) return 'stopped';
-  const preFault = Object.hasOwn(CLOSE_FAULTS, pre.verdict) ? CLOSE_FAULTS[pre.verdict] : undefined;
-  if (preFault) {
-    emit('escalation', { category: preFault.category, decisionReady: true, decision: preFault.decision, options: preFault.options, detail: pre.detail });
-    return 'close-red';
+  const preEnding = closeFaultEnding(pre);
+  if (preEnding) {
+    emit('escalation', preEnding.escalation);
+    return preEnding.outcome ?? 'close-red';
   }
 
   // ── 0b. check preflight ($0, deterministic): every OFFERABLE stage runs once
@@ -2345,7 +2345,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // 2026-11-22 run mwsblixt; 2026-11-23 run mwsfq0pi). The memo lives only for the start; step exits, the fix-loop judge and the final close take fresh passes.
   const preflightMemo = startMemo;
   for (const m of menu) {
-    const v = await runCloseStages(m.run, preflightMemo, startSaved);
+    const v = await runCloseStages(m.run, preflightMemo, noteReuse);
     tellReuse();
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
@@ -2369,10 +2369,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     emit('check-preflight', { name: m.name, verdict: v.verdict, ...(m.run.length > 1 ? { chain: m.run.map((s2) => s2.name) } : {}) });
     if (stoppedInClose) return 'stopped';
-    const f = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
-    if (f) {
-      emit('escalation', { category: f.category, decisionReady: true, decision: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. ${f.decision}`, options: f.options, detail: `${m.name}: ${v.detail ?? ''}` });
-      return 'check-red';
+    const preflightEnding = closeFaultEnding(v, { decisionLead: `Close stage "${m.name}" rendered no judgment at preflight — every plan referencing it would fault mid-run. `, detail: `${m.name}: ${v.detail ?? ''}` });
+    if (preflightEnding) {
+      emit('escalation', preflightEnding.escalation);
+      return preflightEnding.outcome ?? 'check-red';
     }
   }
 
@@ -2472,7 +2472,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       runTrend.record(closeGrade(v));
       return { pass: false, gap: v.gap };
     }
-    return { pass: false, fault: v.verdict, gap: v.detail };
+    return { pass: false, fault: v.verdict, gap: v.detail, ...limitOf(v) };
   };
 
   /** the last escalation ralph emitted — the replan trigger reads its category
@@ -2547,7 +2547,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // uses), so this can only tighten, never widen
         writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
-        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
+        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s)), ...(stateFile ? [resolve(stateFile)] : [])],
       },
       // F178/F177's runtime belt: `.git` and `node_modules` WRITES only — never
       // fs.deny, which blocks reads too (see FORBIDDEN_WRITE_SEGMENT_PATTERN's
@@ -3838,7 +3838,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
       // THE PERSON'S STOP landed inside this step's check (the poll killed it): not a verdict and not an instrument fault. ralph files it as the
       // same `stopped` escalation a round-boundary stop gets, so the step loop ends the leg `stopped` and a resume re-enters this step.
-      if (stoppedInClose) return { verdict: 'stopped' };
+      if (stoppedInClose) return { verdict: 'stopped', killed: stopKilledCheck };
       const { pass, results: raw } = evaled;
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
@@ -3863,7 +3863,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // an instrument fault rides out by its runClose verdict NAME: ralph
       // escalates it through CLOSE_FAULTS (or F32-routes a crash after writes)
       const faulty = results.find((r) => r.fault);
-      if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail };
+      if (faulty) return { verdict: /** @type {string} */ (faulty.fault), detail: faulty.detail, ...limitOf(faulty) };
       if (pass) return { verdict: 'satisfied' };
       // AND-only: the gap names EVERY failing wall (mechanical genre, F38)
       lastGap = results.filter((r) => !r.pass).map((r) => r.detail).join('\n');
@@ -4266,7 +4266,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // it honestly — a provider-red carries the F44 spendComplete:false floor,
     // never laundered into step-red tier data. Mirrors the setup-fault catch.
     planExecuted();
-    return typeof cat === 'string' ? cat : `step-red:${step.id}`;
+    return typeof cat === 'string' ? (lastEscalation?.ends ?? cat) : `step-red:${step.id}`;
   }
 
   // ── 4. THE CLOSE — the operator's signed command, the only truth. Red →
@@ -4279,7 +4279,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // any other killed close keeps the close-fault routing below. No grade is minted and nothing is discarded.
   if (stoppedInClose) {
     planExecuted();
-    return relay(Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' }), 'close');
+    return relay(Object.assign(new Error(stoppedInCloseWords()), { category: 'stopped' }), 'close');
   }
   if (post.verdict === 'satisfied') {
     spendRuling('accepted');
@@ -4298,11 +4298,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     planExecuted();
     return HITL_PAUSE;
   }
-  const postFault = Object.hasOwn(CLOSE_FAULTS, post.verdict) ? CLOSE_FAULTS[post.verdict] : undefined;
-  if (postFault) {
-    emit('escalation', { category: postFault.category, decisionReady: true, decision: postFault.decision, options: postFault.options, detail: post.detail });
+  const postEnding = closeFaultEnding(post);
+  if (postEnding) {
+    emit('escalation', postEnding.escalation);
     planExecuted();
-    return 'close-red';
+    return postEnding.outcome ?? 'close-red';
   }
   emit('fix-loop', { gapBytes: Buffer.byteLength(post.gap ?? '') });
   // ── THE RULING IS SPENT HERE (N4 §1.5). The human's words are what OPENS this
@@ -4602,7 +4602,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       middle, judge: async () => {
         const v = await judgeClose();
         // a Stop inside a fix-loop close: ends through `relay` below, like a round-boundary stop in the fix phase
-        if (stoppedInClose) throw Object.assign(new Error('stopped at the person\'s request (the check that was running was killed)'), { category: 'stopped' });
+        if (stoppedInClose) throw Object.assign(new Error(stoppedInCloseWords()), { category: 'stopped' });
         carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
         return v;
       }, ladder: fixGovernor, emit: emitL, redact: scrub,
@@ -4662,7 +4662,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // provider-red here is a transport CASUALTY, and run.js keys the F44
     // spendComplete:false floor on the OUTCOME, so a laundered label would report
     // an exact-looking total for a call that never billed back.
-    return lastEscalation.category;
+    return lastEscalation.ends ?? lastEscalation.category;
   }
   // …and the fix loop's own green reaches the SAME door. A green the loop had to
   // work for is exactly as much a green as one the close minted first time, and a

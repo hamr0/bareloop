@@ -1267,15 +1267,15 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
  * comes back is the resolved spec, its hash, and the evidence to sign against.
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
- *   timeoutMs?: number, onTick?: ((t: {elapsedMs: number, knownMs: number|null}) => void)|null, cmdTimes?: Map<string, number>, signal?: AbortSignal|null,
- *   seedShare?: Map<string, any>, seedFn?: Function, listingFn?: Function, seedReadFn?: Function}} o
- *   `onTick`/`cmdTimes`: the still-running note's REPORT-ONLY seam and the map of each command's measured time (src/kinds.js)
- *   `seedShare`: a draft session's map of completed seed-read command results, so a later signing try on the same seed tree does not rerun them (src/kinds.js `sharedRun`)
+ *   timeoutMs?: number, onTick?: ((t: {elapsedMs: number}) => void)|null, signal?: AbortSignal|null,
+ *   checkStore?: any, seedFn?: Function, listingFn?: Function, seedReadFn?: Function}} o
+ *   `onTick`: the still-running note's REPORT-ONLY seam (src/kinds.js)
+ *   `checkStore`: the run's ONE state file (src/carrystore.js): the signing gates read and keep completed command results by (command, files fingerprint), so a later try on the same files, and the run's own start, do not rerun them
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
 export async function prepareSigning({
-  spec, workdir, seedRef = null, shellCapUsd, timeoutMs, onTick = null, cmdTimes = undefined, signal = null, seedShare = undefined,
+  spec, workdir, seedRef = null, shellCapUsd, timeoutMs, onTick = null, signal = null, checkStore = undefined,
   seedFn = seedAtHead, listingFn = seedListing, seedReadFn = runSeedRead,
 }) {
   /** @type {any} */
@@ -1354,7 +1354,7 @@ export async function prepareSigning({
   try {
     rows = await seedReadFn(
       { stages: spec.closeDecl.stages },
-      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(spec.closeDecl.source ? { source: spec.closeDecl.source } : {}), ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }), ...(onTick ? { onTick } : {}), ...(cmdTimes ? { cmdTimes } : {}), ...(seedShare ? { seedShare } : {}), ...(signal ? { signal } : {}) },
+      { workdir, seedRef: seed, gapKeep: DECLARED_GAP_PREFIX, seedTrees, ...(spec.closeDecl.source ? { source: spec.closeDecl.source } : {}), ...(timeoutMs === undefined ? {} : { timeoutMsDefault: timeoutMs }), ...(onTick ? { onTick } : {}), ...(checkStore ? { checkStore, reuse: () => {} } : {}), ...(signal ? { signal } : {}) },
     );
   } finally {
     await seedTrees.cleanup();

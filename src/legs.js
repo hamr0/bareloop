@@ -22,7 +22,9 @@ export const LEG_RESUME = 'leg-resume';
  * @property {any[]} records every record of the leg, in file order, marker included
  * @property {any|null} jobStart the leg's own `job-start` (null: it ended before runJob wrote one)
  * @property {any|null} jobEnd the leg's own LAST `job-end` (null: it died, or it is still running)
- * @property {string|null} outcome the leg's terminal: its `job-end` outcome, else a `run-end` outcome (a $0 refusal), else null
+ * @property {string|null} outcome the leg's terminal: its `job-end` outcome, else a `run-end` outcome ONLY for a leg that ended before runJob
+ *   wrote a `job-start` (a $0 refusal: nothing ran, so its `run-end` is its end), else null. A leg that HAS a `job-start` and no `job-end` is
+ *   live or died: `run-end` is written after every ralph pass inside a live leg, so reading it would call a running leg 'green'.
  * @property {string|null} after leg 1: null. Leg 2+: how the PREVIOUS leg ended, as the marker declares it
  *   (else derived from that leg's own terminal), `'died'` when it recorded none
  * @property {number|null} startMs `Date.parse` of the start record's `ts`
@@ -58,7 +60,7 @@ export function legsOf(events) {
     const jobEnd = records.findLast((r) => r.type === 'job-end') ?? null;
     const runEnd = records.findLast((r) => r.type === 'run-end') ?? null;
     const outcome = typeof jobEnd?.outcome === 'string' ? jobEnd.outcome
-      : (typeof runEnd?.outcome === 'string' ? runEnd.outcome : null);
+      : (jobStart === null && typeof runEnd?.outcome === 'string' ? runEnd.outcome : null);
     const marker = records[0].type === LEG_RESUME ? records[0] : null;
     const prev = i > 0 ? legs[i - 1] : null;
     /** @type {string|null} */
@@ -78,6 +80,79 @@ export function legsOf(events) {
     });
   });
   return legs;
+}
+
+/**
+ * @typedef {object} CurrentLegView
+ * @property {number} legIndex 1-based number of the run's latest leg (0: an empty spine)
+ * @property {number} legCount how many legs the spine holds
+ * @property {any[]} records the latest leg's OWN records (marker included)
+ * @property {boolean} live the latest leg has no `job-end` (callers still combine this with `runIsAlive` / `deriveDeath`: a died leg reads live here too)
+ * @property {any|null} jobEnd the latest leg's own last `job-end`
+ * @property {string|null} endedTs that `job-end`'s stamp (null: live, died, or an unstamped record)
+ * @property {string|null} outcome that `job-end`'s outcome and nothing else - never a `run-end`, never an earlier leg's
+ * @property {any|null} lastEscalation the latest leg's own last `escalation`
+ * @property {boolean} moneyHalt the latest leg recorded a `money-halt`
+ * @property {string|null} reused the latest leg's `check-reused` line, while it still speaks (see {@link currentLegView})
+ * @property {{endedTs: string|null, outcome: string|null}|null} previous how the leg before ended (null: this is leg 1)
+ */
+
+/**
+ * THE ONE owner of "what is true of the run's CURRENT leg" (hamr 2026-11-24, run mwuxqx4f): the run's last `job-end`, last escalation, money
+ * halt and reused-check line are facts about ONE leg. A reader that scanned the whole spine for them showed the PREVIOUS leg's end time, Stop
+ * reason and "Checks not run again" on a leg that was still running. Every panel / replay reader of those facts asks here; none scans the
+ * spine for them on its own (tests/legs-current-guard.test.js fails if one does). Pure, built on {@link legsOf}.
+ *
+ * `reused` speaks for the START PASS it was written in (src/planrun.js `tellReuse`, only ever emitted there: the precheck and the preflight
+ * loop). That pass ends at the leg's `plan-accepted`; the first `check-start` AFTER that plan is a later pass (a real test run), and it
+ * retires the line. The start pass's own `check-start` records (one per check stage, written after the `check-reused` too) never do. Nothing
+ * else retires it.
+ * @param {any[]} records one spine's parsed records, in file order
+ * @returns {CurrentLegView|null} null for an empty spine
+ */
+export function currentLegView(records) {
+  const legs = legsOf(records);
+  const cur = legs.at(-1);
+  if (!cur) return null;
+  const prev = legs.length > 1 ? legs[legs.length - 2] : null;
+  const recs = cur.records;
+  /** @type {string|null} */
+  let reused = null;
+  let planSeen = false;
+  for (const r of recs) {
+    if (r.type === 'check-reused' && typeof r.text === 'string') { reused = r.text; planSeen = false; } else if (reused !== null && r.type === 'plan-accepted') planSeen = true;
+    else if (reused !== null && planSeen && r.type === 'check-start') reused = null;
+  }
+  return {
+    legIndex: cur.leg,
+    legCount: legs.length,
+    records: recs,
+    live: cur.jobEnd === null,
+    jobEnd: cur.jobEnd,
+    endedTs: typeof cur.jobEnd?.ts === 'string' ? cur.jobEnd.ts : null,
+    outcome: typeof cur.jobEnd?.outcome === 'string' ? cur.jobEnd.outcome : null,
+    lastEscalation: recs.findLast((r) => r.type === 'escalation') ?? null,
+    moneyHalt: recs.some((r) => r.type === 'money-halt'),
+    reused,
+    previous: prev ? { endedTs: typeof prev.jobEnd?.ts === 'string' ? prev.jobEnd.ts : null, outcome: prev.outcome } : null,
+  };
+}
+
+/**
+ * THE ONE owner of "which close record is FINAL for the run's CURRENT leg" (hamr 2026-11-25, "go B", run mwvwcxvy). A leg that ended
+ * `already-green` ran no close of its own: its final close is its last `close-precheck`. Any other leg's is its last staged `close-verdict`
+ * or `outer-close`; a leg with none yet (still live) reads null. NEVER a record from an earlier leg - a whole-spine scan showed leg 1's red
+ * close under a leg 2 that went already-green. A precheck lacks the staged close's `iteration` (record) and `unclaimed` (stage): readers
+ * tolerate those being undefined. Screen readers (Result / Audit / replay) ask here and scan nothing for it
+ * (tests/legs-final-close.test.js fails if one does).
+ * @param {any[]} records one spine's parsed records, in file order
+ * @returns {any|null}
+ */
+export function finalCloseOf(records) {
+  const leg = currentLegView(records);
+  if (!leg) return null;
+  if (leg.outcome === 'already-green') return leg.records.findLast((r) => r.type === 'close-precheck') ?? null;
+  return leg.records.findLast((r) => (r.type === 'close-verdict' && Array.isArray(r.stages)) || r.type === 'outer-close') ?? null;
 }
 
 /**

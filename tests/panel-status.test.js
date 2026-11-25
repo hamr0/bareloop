@@ -17,7 +17,7 @@ const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'panel-status-')); tmps
 
 test('C6: the table is exactly the seven signs/words hamr ruled plus skipped (MCP + tickets R5)', () => {
   assert.deepEqual(Object.entries(STATUS).map(([k, v]) => `${k}:${v.sign}:${v.word}`), [
-    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:✗:capped', 'stopped:■:stopped', 'died:?:died', 'skipped:–:skipped',
+    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:■:capped', 'stopped:■:stopped', 'died:?:died', 'skipped:–:skipped',
   ]);
 });
 
@@ -211,12 +211,12 @@ test('C8: the right-side header reads `[sign] job (run-N) │ **word** — reaso
   assert.match(html, /^<span class="rp-sep">│<\/span><b class="st-word">failed<\/b> — checks said no · ended \d{1,2}\/\d{1,2}\/2026, \d{1,2}:\d{2} (AM|PM)$/);
 });
 
-test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the header, the summary box, the map and the step card — failed/capped keep [✗], died keeps [?]', () => {
+test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the header, the summary box, the map and the step card — failed keeps [✗], capped wears [■], died keeps [?]', () => {
   assert.equal(statusFor({ outcome: 'stopped' }).sign, '■');
   assert.equal(glyphForOutcome('stopped'), '■');
   assert.equal(partStatusFor({ kind: 'step', outcome: null, stopReason: 'you stopped it' }).sign, '■');
   assert.equal(statusFor({ outcome: 'plan-red' }).sign, '✗');
-  assert.equal(statusFor({ outcome: 'cap-halt' }).sign, '✗');
+  assert.equal(statusFor({ outcome: 'cap-halt' }).sign, '■'); // capped wears the stop sign too (hamr 2026-11-24)
   assert.equal(statusFor({ outcome: null, died: true }).sign, '?');
   const S = { ...RUN, glyph: '■', status: { ...STATUS.stopped } };
   assert.match(listHarness().rlRunCardHtml(S, false, false), /class="dot stopped"/); // run card
@@ -313,7 +313,7 @@ test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as th
   const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'boxStatusWord', 'boxStatusText', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   const P = (k) => ({ ...STATUS[k] });
   assert.equal(f({ state: 'done', status: P('passed') }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">passed</b></span>');
-  assert.match(f({ state: 'stopped', status: P('capped') }, 't'), /dot red"><\/span><b class="st-word">capped</);
+  assert.match(f({ state: 'stopped', status: P('capped') }, 't'), /dot stopped"><\/span><b class="st-word">capped</);
   assert.match(f({ state: 'stopped', status: P('died') }, 't'), /dot red"><\/span><b class="st-word">died</);
   assert.match(f({ state: 'died', status: P('died') }, 't'), /dot magenta/);
   assert.match(fnSrc('renderAuditGroups'), /stepStateHTML\(box, 'audit-part-state-' \+ idx\)/);
@@ -366,7 +366,7 @@ test('2026-10-07: a part wears `[sign] word` from the ONE table — never the ra
   ];
   const svg = g.buildStepMapHTML(g.buildOrderedBoxes(parts, false));
   assert.match(svg, /title="\[✓\] passed"/);
-  assert.match(svg, /title="\[✗\] capped"/);
+  assert.match(svg, /title="\[■\] capped"/);
   assert.doesNotMatch(svg, /title="done"|>done</);
 });
 

@@ -24,6 +24,19 @@ export function shapeDefaultWords(count = null) {
   return null;
 }
 
+/**
+ * M19 am11 (fwdloop v0.37.0): the words of the rule row that holds a signed item count: `the answer lists exactly N items`, or `at least N items` / `at most N items` (both: joined with "and"). Pure.
+ * @param {{minItems?: number, maxItems?: number}} part @returns {string|null}
+ */
+export function shapeCountWords(part) {
+  const lo = Number.isInteger(part.minItems) ? /** @type {number} */ (part.minItems) : null;
+  const hi = Number.isInteger(part.maxItems) ? /** @type {number} */ (part.maxItems) : null;
+  const s = (/** @type {number} */ n) => `${n} item${n === 1 ? '' : 's'}`;
+  if (lo !== null && lo === hi) return shapeDefaultWords({ min: lo, max: lo });
+  const w = [...(lo !== null ? [`at least ${s(lo)}`] : []), ...(hi !== null ? [`at most ${s(hi)}`] : [])];
+  return w.length ? `the answer lists ${w.join(' and ')}` : null;
+}
+
 /** the words of the `[default]` cite row of a source whose items quote it (code's own) */
 export const CITE_WORDS = "every item's quote is found word for word in the repo file the item names";
 
@@ -89,15 +102,18 @@ export function shapeFieldSentence(spec, said = '') {
 /**
  * The signed part of ONE shape line, from the fields that stand (the `[you]` rule fields, the `[agent]` fields the person has not dropped or left Suggested, and the source's `[default]` fields).
  * `cite` (the source's row, src/sourcedefaults.js): the label the items' quotes are found under; absent when the source has none.
- * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'|'default'}[], itemCount?: {n: number, atLeast?: boolean, rule?: number}|null, cite?: string|null}} o
+ * @param {{text: string, fields: {name: string, spec: Record<string, any>, rule?: number|null, by?: 'you'|'agent'|'default'}[], itemCount?: {n?: number, atLeast?: boolean, rule?: number, min?: number, max?: number}|null, countRules?: number[], cite?: string|null}} o `countRules` = the `~` rules whose words are the item count (`itemCount` then is `{min?, max?}`)
  * @returns {Record<string, any>}
  */
-export function buildShapePart({ text, fields, itemCount = null, cite = null }) {
-  const rules = [...new Set([...fields.filter((f) => Number.isInteger(f.rule)).map((f) => /** @type {number} */ (f.rule)), ...(itemCount?.rule ? [itemCount.rule] : [])])].sort((a, b) => a - b);
+export function buildShapePart({ text, fields, itemCount = null, countRules = [], cite = null }) {
+  const rules = [...new Set([...fields.filter((f) => Number.isInteger(f.rule)).map((f) => /** @type {number} */ (f.rule)), ...(itemCount?.rule ? [itemCount.rule] : []), ...countRules])].sort((a, b) => a - b);
+  // the count is `{n}` (code's per-input count: exactly n; `atLeast`: n or more) or `{min?, max?}` (a `~` rule's own count: at least / at most)
+  const lo = itemCount === null ? null : Number.isInteger(itemCount.n) ? itemCount.n : Number.isInteger(itemCount.min) ? itemCount.min : null;
+  const hi = itemCount === null ? null : Number.isInteger(itemCount.n) ? (itemCount.atLeast === true ? null : itemCount.n) : Number.isInteger(itemCount.max) ? itemCount.max : null;
   return {
     class: 'shape', text,
     fields: fields.map((f) => ({ name: f.name, spec: f.spec, ...(Number.isInteger(f.rule) ? { rule: f.rule } : {}), ...(f.by === 'agent' || (f.by === 'default' && !Number.isInteger(f.rule)) ? { row: f.by } : {}) })),
-    ...(itemCount ? (itemCount.atLeast === true ? { minItems: itemCount.n } : { minItems: itemCount.n, maxItems: itemCount.n }) : {}),
+    ...(lo !== null ? { minItems: lo } : {}), ...(hi !== null ? { maxItems: hi } : {}),
     ...(rules.length ? { rules } : {}),
     ...(cite !== null ? { cite } : {}),
   };
@@ -143,7 +159,15 @@ export function shapeRowsOf(closeDecl, jobLines = null) {
         ? { line: n, key: `L${n}.~${f.rule}`, by: 'you', text: shapeFieldText(f, rules), name: String(f.name), rule: f.rule, shape: true }
         : { line: n, key: shapeRowKey(n, String(f.name)), by: f.row === 'default' ? 'default' : 'agent', text: shapeFieldText(f, rules), name: String(f.name), shape: true });
     }
-    const dw = shapeDefaultWords(Number.isInteger(part.minItems) ? { min: part.minItems, max: part.maxItems } : null);
+    // M19 am11 item 1: a `~` rule whose words are the part's item count is its own [you] row on the shape part (no field is its rule); code's `[default]` count row is not drawn beside it
+    const fieldRules = new Set(part.fields.filter(isRec).map((/** @type {any} */ f) => f.rule));
+    // (a signed list that still carries the line's `[default]` count row keeps it: that count is code's own or the AI-pointed rule's, drawn as before)
+    const listed = Array.isArray(isRec(closeDecl) ? closeDecl.list : null) ? closeDecl.list : null;
+    const defaultKept = listed === null || listed.some((/** @type {any} */ x) => isRec(x) && x.key === shapeDefaultKey(n) && x.state === 'built');
+    const countRules = defaultKept ? [] : (Array.isArray(part.rules) ? part.rules : []).filter((/** @type {number} */ r) => !fieldRules.has(r) && lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === n))[r - 1] !== undefined);
+    const countWords = shapeCountWords(part);
+    for (const r of countRules) if (countWords !== null) out.push({ line: n, key: `L${n}.~${r}`, by: 'you', text: countWords, rule: r, shape: true });
+    const dw = countRules.length > 0 ? null : shapeDefaultWords(Number.isInteger(part.minItems) ? { min: part.minItems, max: part.maxItems } : null);
     if (dw !== null) out.push({ line: n, key: shapeDefaultKey(n), by: 'default', text: dw, shape: true });
     // the source's `[default]` cite: its own signed row (`L<n>.$cited`), a truth check (not a form check)
     if (typeof part.cite === 'string') out.push({ line: n, key: `L${n}.$cited`, by: 'default', text: CITE_WORDS, shape: true, truth: true });

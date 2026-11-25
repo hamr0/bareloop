@@ -25,6 +25,7 @@
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, rmdirSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { runStateFile } from './carrystore.js';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -37,7 +38,7 @@ import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
 import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
-import { skipWords } from './panel/status.js';
+import { skipWords, isReusableGreen } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { rangeAtRunStart, recordRangeOnManifest, recordedRange, writeRangeDiffs } from './rangereview.js';
 import { readShimArm } from './readshim.js';
@@ -54,7 +55,7 @@ import { makeSpine } from './spine.js';
 // signed into the job spec — a job is a repeatable SHAPE, the source/
 // destination a per-run value, exactly like `bareloop run <bundle> --repo
 // <path>` varies the repo without touching the bundle's signature).
-import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
+import { readSourceManifest, manifestDestination, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -76,7 +77,7 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList, runNumbers } from './runlist.js';
 // P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
 // one owner of where a leg starts and ends; every reader below asks it.
-import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath } from './legs.js';
+import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath, currentLegView } from './legs.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
@@ -839,7 +840,7 @@ async function execute(ctx) {
     // was shown the evidence for is the rubber stamp this whole class exists to stop.
     doorRecord = doorRecordOf(doorEvents);
     if (!doorRecord) {
-      die(`--door ${DOOR}: that run opened no review door — its verdict (${doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end')?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
+      die(`--door ${DOOR}: that run opened no review door — its verdict (${currentLegView(doorEvents)?.outcome ?? 'unrecorded'}) stands on its own and there is nothing here to dispose of.\n`
         + '  A soft-green run opens one always; a green-class run opens one only when the run was launched with --review-door.');
     }
     // …and the 60-day TTL, read HERE for the same reason the pause TTL is read with
@@ -1346,10 +1347,11 @@ async function execute(ctx) {
         const landed = staged !== null && (doorEvents ?? []).some((e) => e?.type === 'destination-written' && e.staged === staged.path);
         if (staged !== null && !landed) {
           const man = (await readSourceManifest(into)); // parenthesised on purpose: tests/source.test.js pins the FIRST `const x = await readSourceManifest(into)` as the front door's read
-          if (man.stop === null && man.present && typeof man.manifest?.destination === 'string') {
-            const land = await landStagedReport({ tree: wd, destination: man.manifest.destination, staged: staged.path });
+          const doorDestination = man.stop === null && man.present ? manifestDestination(man.manifest) : null;
+          if (doorDestination !== null) {
+            const land = await landStagedReport({ tree: wd, destination: doorDestination, staged: staged.path });
             if (land.stop === null) {
-              doorEmit('destination-written', { path: land.file.path, declared: man.manifest.destination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
+              doorEmit('destination-written', { path: land.file.path, declared: doorDestination, bytes: land.file.bytes, sha256: land.file.sha256, staged: staged.path });
               out(`\nDESTINATION  written in the repo - ${land.file.path} (${land.file.bytes}B, sha256 ${land.file.sha256.slice(0, 12)}...)`);
               try {
                 const fin = commitWork(wd, `bareloop: ${spec.job} (run ${DOOR !== null && (DOOR.includes('/') || DOOR.endsWith('.jsonl')) ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR})`, { exclude: defaultsOf(sourceOf(spec.closeDecl)).commitExclude });
@@ -2024,6 +2026,8 @@ async function execute(ctx) {
   try {
     outcome = await runJob(spec, {
       stopFile,
+      // the run's ONE state file (src/carrystore.js): beside source.json where the job has a prepared copy (drafting wrote its check results there), else beside the spine
+      stateFile: runStateFile(ctx.bundle || ctx.into === undefined ? spineDir : into),
       ...(placeValues === null ? {} : { placeValues }),
       ...(placeRead === null ? {} : { placeRead }),
       ...(ticketRecord === null ? {} : { ticketRecord }),
@@ -2189,6 +2193,7 @@ async function execute(ctx) {
   /** @type {string | null} */
   let worktreeLine = null;
   const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  const wtDestination = manifestDestination(wtManifest);
   // the ONE delivery step has a row per source (src/sourcedefaults.js): a repo source writes ONLY its report at Destination INSIDE the worktree, before the final commit below, so the run's one commit carries it (and leaves the worker's scratch `output/` out).
   // A refused delivery is reported beside the green it could not deliver and never changes `outcome`.
   const delivery = defaultsOf(sourceOf(spec.closeDecl));
@@ -2199,18 +2204,18 @@ async function execute(ctx) {
     for (const home of [deps.runlistHome, cfgHome]) { try { n = n ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
     return n;
   };
-  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && typeof wtManifest?.destination === 'string') {
+  if (isReusableGreen(outcome) && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && wtDestination !== null) {
     // ONE RULE: bareloop never writes into the judged tree after the close. With a review door open the report is STAGED under output/ (inside the fence the close judged) and lands at Destination only at an honoured Accept (below); with no door there is no Accept to wait for, so it lands now, as before.
     const staging = doorHere !== null;
-    const co = await copyOut({ tree: wd, destination: wtManifest.destination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
+    const co = await copyOut({ tree: wd, destination: wtDestination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
     if (co.stop === null) {
       for (const f of co.files) {
         if (staging) {
-          emit('report-staged', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
-          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtManifest.destination} when you Accept`);
+          emit('report-staged', { path: f.path, declared: wtDestination, bytes: f.bytes, sha256: f.sha256 });
+          out(`\nREPORT  ready for your Accept - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...); it lands in ${wtDestination} when you Accept`);
           continue;
         }
-        emit('destination-written', { path: f.path, declared: wtManifest.destination, bytes: f.bytes, sha256: f.sha256 });
+        emit('destination-written', { path: f.path, declared: wtDestination, bytes: f.bytes, sha256: f.sha256 });
         out(`\nDESTINATION  written in the repo - ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}...)`);
       }
     } else {
@@ -2219,7 +2224,7 @@ async function execute(ctx) {
     }
   }
   if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
-    if (outcome === 'green' || outcome === 'already-green') {
+    if (isReusableGreen(outcome)) {
       const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
       try {
         // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door
@@ -2327,6 +2332,12 @@ async function execute(ctx) {
     out('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
   }
+  // F393 (hamr 2026-11-24): a check that never finished inside its limit judged nothing and spent no allowance — Resume runs it again.
+  if (outcome === 'check-timeout') {
+    out('\nCHECK TIMEOUT — your tests did not finish inside their limit, so nothing was judged. The tree, the plan and the steps already finished STAND.');
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
+    out('          (no spec edit, so the hash is unchanged — the check runs again at the start of the resumed leg)');
+  }
   // PRD v1.80 TODO #4 / F115 — provider-red JOINS the resumable set. The one
   // transport retry (src/planrun.js's `withTransportRetry`) already ran and
   // still failed, so `spent` above is already a FLOOR (`je.spendComplete ===
@@ -2374,15 +2385,12 @@ async function execute(ctx) {
     out(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
   }
 
-  // PRD item 33/M2, call site 3(b) — on a MINTED green only. `outcome` never
-  // carries a distinct 'soft-green' string (src/run.js's own outcome union has
-  // none): a judged close mints the same 'green' as a hard one, and the CLASS
-  // lives on `spec.verdictType`/`REVIEW_DOOR_CLASSES` — so `outcome === 'green'`
-  // already covers both, exactly as the spec's "green/soft-green" phrasing asks
-  // for. A refused copy-out is reported beside the green it could not deliver
-  // and NEVER changes `outcome` — the verdict is the close's, never this
-  // module's to touch.
-  if (outcome === 'green' && frontDoor) {
+  // PRD item 33/M2, call site 3(b) — on a green or an already-green (`isReusableGreen`: a resumed leg whose tree already passes the close is a pass, and what the
+  // run produced must land like a green's; hamr 2026-11-25, run mwvwcxvy). `outcome` never carries a distinct 'soft-green' string (src/run.js's own outcome union
+  // has none): a judged close mints the same 'green' as a hard one, and the CLASS lives on `spec.verdictType`/`REVIEW_DOOR_CLASSES`, so this covers both. An
+  // already-green that has no output under `output/` (a cold one) is refused by `copyOut` in plain words below, never a crash. A refused copy-out is reported
+  // beside the green it could not deliver and NEVER changes `outcome` — the verdict is the close's, never this module's to touch.
+  if (isReusableGreen(outcome) && frontDoor) {
     // `into: dirname(wd)` — same review finding #3 fix as the preflight above,
     // so the two proofs of the same destination never disagree on what counts
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
@@ -2525,6 +2533,7 @@ async function execute(ctx) {
   }
 
   // the BRIDGE: on a green the agent's own plan is kept as the reusable artifact
+  // minted green ONLY on purpose: an already-green mints no bridge (accept confirms a verdict, it never mints one; guard: tests/already-green-delivers.test.js (e))
   if (outcome === 'green' && plan && !leaks.length && !ctx.bundle) {
     // one file PER GREEN, never one file per job: two cold runs of this job produced
     // two DIFFERENT plans that both green (run 1: 3 steps, run 3: 2 steps), so a

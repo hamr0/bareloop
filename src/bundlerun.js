@@ -28,6 +28,7 @@ import { jobSpecHash, oldJobWords } from './job.js';
 import { addWorktree, worktreePath, commitWork } from './worktree.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 import { startRun, resumeRun } from './userrun.js';
 
 /** the plain sentences for a raised cap (ONE spelling: the prompt, the refusal and the record's reader all read them) */
@@ -347,7 +348,7 @@ export async function bundleMain(args, {
   // a green's work is committed on its work branch, like the panel does (the folder is kept; the merge stays yours)
   let commitLine = null;
   let commitFailed = false;
-  if (outcome === 'green' || outcome === 'already-green') {
+  if (isReusableGreen(outcome)) {
     try {
       const fin = commitWork(worktree, `bareloop: ${runSpec.job} (run ${runid})`);
       commitLine = fin.committed ? `final commit ${fin.sha}` : 'nothing left to commit';
@@ -374,6 +375,7 @@ export async function bundleMain(args, {
     // one row per LEG of the one run; the first leg's row keeps the shape it always had
     ...(legs.length > 1 ? { leg: legs.length } : {}),
   });
+  // minted green ONLY on purpose: signing a bundle is arbiter territory, and an already-green proves nothing about the bundle's own work (guard: tests/already-green-delivers.test.js (e))
   if (outcome === 'green' && !bundle.blessing) {
     bless(bundleDir, {
       bundleHash: manifest.bundleHash, blessedAt: new Date(now()).toISOString(), runid, outcome, host: hostname(),
@@ -390,5 +392,5 @@ export async function bundleMain(args, {
   // `bareloop run` off its exit code cannot mistake a red for a success. The engine's own
   // 2 (refusal) / 3 (spine leak) are preserved.
   if (commitFailed) return engineCode || 1;
-  return engineCode || (outcome === 'green' || outcome === 'already-green' ? 0 : 1);
+  return engineCode || (isReusableGreen(outcome) ? 0 : 1);
 }

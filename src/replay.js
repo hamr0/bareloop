@@ -106,7 +106,8 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf } from './legs.js';
+import { legsOf, capKindOf, currentLegView, finalCloseOf } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 import { thinkingWordsFrom } from './thinking.js';
 
 /**
@@ -405,15 +406,14 @@ function gapLines(gap) {
  * `outer-close` unconditionally would have reported a run that went green as
  * still needing revision.
  * @param {any[]} spine
- * @returns {{source: 'close-verdict'|'outer-close', iteration: number|null,
+ * @returns {{source: 'close-verdict'|'outer-close'|'close-precheck', iteration: number|null,
  *   verdict: string|null, stages: any[]|null}|null}
  */
 function resolveClose(spine) {
-  const candidates = spine.filter((e) => (e.type === 'close-verdict' && Array.isArray(e.stages)) || e.type === 'outer-close');
-  const picked = candidates.length ? candidates[candidates.length - 1] : null;
+  const picked = finalCloseOf(spine);
   if (!picked) return null;
   return {
-    source: picked.type === 'outer-close' ? 'outer-close' : 'close-verdict',
+    source: picked.type,
     iteration: typeof picked.iteration === 'number' ? picked.iteration : null,
     verdict: picked.verdict ?? null,
     stages: Array.isArray(picked.stages) ? picked.stages : null,
@@ -500,10 +500,13 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   }
 
   const outcome = jobEnd ? (jobEnd.outcome ?? null) : null;
-  const isGreen = outcome === 'green' || outcome === 'already-green';
+  const isGreen = isReusableGreen(outcome);
 
+  // every escalation of the run (the per-step trip windows below are seq-bounded and span legs on purpose) ...
   const escalations = spine.filter((e) => e.type === 'escalation');
-  const lastEscalation = escalations.length ? escalations[escalations.length - 1] : null;
+  // ... but "the" last escalation, and the stop reason built from it, belong to the LATEST leg only (src/legs.js `currentLegView`): a live
+  // leg that follows a stopped one has no stop reason yet, never the earlier leg's
+  const lastEscalation = currentLegView(spine)?.lastEscalation ?? null;
   // detail field sites (grepped): src/run.js:342 (smoke-red), src/ralph.js:656
   // (the DECISIONS passthrough — `detail: String(e.message || e)`),
   // src/planrun.js:2427 (the `relay()` transport/cap/wall relay), plus every
@@ -784,12 +787,12 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     if (!end && myLeg !== null) {
       const o = myLeg.outcome;
       const isLastLeg = myLegIdx === legs.length - 1;
-      if (cutByLeg || (isLastLeg && o !== null && o !== 'green' && o !== 'already-green')) {
+      if (cutByLeg || (isLastLeg && o !== null && !isReusableGreen(o))) {
         // hamr 2026-10-08: a leg that ended `escalated` on a money-halt / wall-halt reads as the cap, exactly as the
         // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
         const capKind = legCapKind(myLeg);
         stopReason = capKind === 'money' ? 'money cap' : capKind === 'time' ? 'time cap' : o === 'provider-red' ? 'provider failed'
-          : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
+          : o === 'check-timeout' ? 'tests did not finish' : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
       }
     }
 
@@ -1051,7 +1054,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           stages: Array.isArray(oc.stages) ? oc.stages : null,
           reasons: gapLines(oc.gap),
           stop: null,
-          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || isReusableGreen(verdict) ? 'green' : 'red'),
           ...buildOccurrenceMetrics(prevSeq, prevTs, seq, ts, roundsInWindow),
           windowStartSeq: prevSeq,
           windowEndSeq: seq,
@@ -1105,7 +1108,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           // this field but has no ordering info to tell "genuinely red" from
           // "still open" apart if this field itself already lies).
           outcome: end
-            ? /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red')
+            ? /** @type {'green'|'red'} */ (verdict === 'satisfied' || isReusableGreen(verdict) ? 'green' : 'red')
             : /** @type {null} */ (null),
           ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
           windowStartSeq: startSeq,
@@ -1799,7 +1802,7 @@ function ordinal(n) {
  */
 function resultWord(v) {
   if (v === null) return 'UNKNOWN';
-  return (v === 'green' || v === 'already-green' || v === 'satisfied') ? 'GREEN' : 'RED';
+  return (isReusableGreen(v) || v === 'satisfied') ? 'GREEN' : 'RED';
 }
 
 /**
@@ -2134,7 +2137,7 @@ export function formatReplay(summary) {
  * @returns {{id: string, resumed: boolean, job: string, shape: string, class: string, model: string, outcome: string, hadTransportRetries: boolean, spend: string, wall: string, steps: string, reason: string}}
  */
 export function summarizeForAllLine(summary) {
-  const isGreen = summary.outcome === 'green' || summary.outcome === 'already-green';
+  const isGreen = isReusableGreen(summary.outcome);
   const shape = summary.timelineKind === 'iterations' ? 'loop' : 'plan';
   const units = summary.timelineKind === 'iterations' ? summary.iterations : summary.steps;
   const stepsCol = summary.timelineKind === 'iterations' ? `${units.length} it` : `${units.length}`;

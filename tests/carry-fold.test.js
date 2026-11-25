@@ -3,12 +3,13 @@
 // Scripted provider, real Loop, real Gate, real LiteCtx index.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { scriptedProvider, patientGitEnv } from './helpers.js';
 import { tcall, makePatient, JOB, go } from './planrun-fixtures.js';
+import { stateFileOf } from './carry-scenario.js';
 import { jobSpecHash, validateJob } from '../src/job.js';
 import { createCarryStore } from '../src/carrystore.js';
 import { render, HEADING, CAP, isCarryExcluded } from '../src/carrynote.js';
@@ -45,13 +46,14 @@ const stepTwoOf = (provider) => askPrompts(provider).find((p) => p.includes('Wri
 test('fold 1: a legacy job spec with handoffNote:false still gets the memo (no effect, no switch)', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
-  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS, handoffNote: false }) });
+  t.after(() => rmSync(`${wd}-spine`, { recursive: true, force: true }));
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS, handoffNote: false }), stateFile: stateFileOf(wd) });
   assert.equal(outcome, 'green');
   assert.ok(stepTwoOf(provider).includes(HEADING), 'the memo is in the prompt');
   assert.ok(askPrompts(provider).every((p) => !p.includes(OLD_HEADING)));
   assert.ok(events.some((e) => e.type === 'carry-note'));
   assert.equal(events.filter((e) => e.type === 'handoff-note').length, 0);
-  assert.equal(existsSync(join(wd, '.smoke', 'carry')), true, 'state written');
+  assert.equal(existsSync(stateFileOf(wd)), true, 'state written');
 });
 
 test('fold 2: the memo\'s files-read line carries the function line ranges', async (t) => {
@@ -95,11 +97,12 @@ test('fold 4: over the cap, the function ranges are dropped FIRST (failures, edi
 test('fold 5: runPlan always builds the memo (no option, no switch; hamr 2026-11-01)', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
-  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }) });
+  t.after(() => rmSync(`${wd}-spine`, { recursive: true, force: true }));
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }), stateFile: stateFileOf(wd) });
   assert.equal(outcome, 'green');
   assert.ok(stepTwoOf(provider).includes(HEADING), 'the memo is in the prompt with the option absent');
   assert.ok(events.some((e) => e.type === 'carry-note'));
-  assert.equal(existsSync(join(wd, '.smoke', 'carry')), true);
+  assert.equal(existsSync(stateFileOf(wd)), true);
 });
 
 test('fold 6: an old spine with handoff-note records still replays', () => {
@@ -113,9 +116,9 @@ test('fold 7: a resumed store keeps the file list (and its function ranges) on d
   const wd = mkdtempSync(join(tmpdir(), 'carry-fold-'));
   try {
     writeFileSync(join(wd, 'f.js'), 'function a() {\n}\n');
-    mkdirSync(join(wd, '.smoke', 'carry'), { recursive: true });
-    writeFileSync(join(wd, '.smoke', 'carry', 'state.json'), JSON.stringify({ n: 3, base: null, events: [{ ask: 2, tool: 'read', path: 'f.js', lines: 2 }], asks: [] }));
-    const s = createCarryStore({ workdir: wd, emit: () => {}, resume: true });
+    mkdirSync(dirname(stateFileOf(wd)), { recursive: true });
+    writeFileSync(stateFileOf(wd), JSON.stringify({ n: 3, base: null, events: [{ ask: 2, tool: 'read', path: 'f.js', lines: 2 }], asks: [] }));
+    const s = createCarryStore({ workdir: wd, stateFile: stateFileOf(wd), emit: () => {}, resume: true });
     const text = await s.beginAsk({ phase: 'step:x', iteration: 1, prompt: '', getNode: () => ({ chunks: [{ symbol: 'a', startLine: 1, endLine: 2 }] }) });
     assert.match(text, /^- f\.js \(2 lines\) · read 1x · functions: a 1-2$/m);
   } finally { rmSync(wd, { recursive: true, force: true }); }

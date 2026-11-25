@@ -23,9 +23,9 @@ function openRun({ scheduled, ageMs }) {
   const calls = [];
   const rendered = [];
   const getJSON = (url) => { calls.push(url); return Promise.resolve({ glyph: '✓', runid: 'r1', schedule: { scheduled: true, nextRed: true, next: 'The last try did not start: x' } }); };
-  const make = new Function('getJSON', 'renderRun', 'Date', `var currentRunid = 'r1', runIsLive = false, selectToken = 1, lastRunDetailSig = null,
+  const make = new Function('getJSON', 'renderRun', 'Date', `var currentRunid = 'r1', runIsLive = false, selectToken = 1, lastRunDetailSig = null, openStatusSig = null,
     openIsScheduled = ${scheduled}, lastOpenFetchAt = ${1_000_000 - ageMs}, RUNS_LIST_POLL_MS = 10000;
-    function sig(o){ return JSON.stringify(o); } function withScrollPreserved(ids, fn){ fn(); }
+    function sig(o){ return JSON.stringify(o); } function statusSigOf(r){ return r ? String(r.glyph) + "|" + (r.status && r.status.word ? r.status.word : "") : null; } function withScrollPreserved(ids, fn){ fn(); }
     ${fnSrc('refreshOpenRun')}
     return refreshOpenRun;`);
   const refreshOpenRun = make(getJSON, (d) => rendered.push(d), { now: () => 1_000_000 });

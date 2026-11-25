@@ -2432,25 +2432,45 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 ### Phrase alternatives keep only the first word, waiting for fwd (2026-11-20)
 
 - Phrase fact with alternative words keeps only the first (`src/inputlook.js:173`) — waiting for fwd's fix, copy from fwd's tag, build nothing here (hamr 2026-11-20); see the fix ledger bullet for `src/inputlook.js`.
+- Copied from fwd v0.37.0 (16dc2d8e, 5c4de0ff, bd53004a); the fix-ledger bullet for src/inputlook.js still to be revalidated.
 
 ### Next branch first: open items from chore/barebrowse-031 (2026-11-23) — RULED by hamr
 
 Hamr's rule: anything not confirmed, walked, or still open goes first into the next branch.
 
-- [ ] Resume reuse line not seen live (test-proven only). F382; build doc "Addendum 2026-11-23".
+- [x] Resume reuse line seen live 2026-11-24 (run mwue75ih leg 2); a later leg after edits correctly ran fresh (leg 3). F382, F394.
 - [x] Stop during a step check: seen live 2026-11-23, leg 1 ended stopped and Resume was offered (F388, F393).
-- [ ] Sign & run early-click fix is not proven live. F390.
-- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
-- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389.
-- [ ] Rubric report: cumulative page dumps, no answer section. F391.
-- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered.
+- [x] Sign & run early-click fix proven live (run mww606do, review-walk, 2026-11-25). F390.
+- [ ] Already-green delivery (findings + report) on a resumed leg is test-proven only, not seen live. F398. — moved to Next release (2026-11-25).
+- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387. — moved to Next release (2026-11-25).
+- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389. — moved to Next release (2026-11-25).
+- [ ] Rubric report: cumulative page dumps, no answer section. F391. — moved to Next release (2026-11-25).
+- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered. — moved to Next release (2026-11-25).
 - [ ] Copy from fwd's v0.37.0 tag (hamr picked "A", 2026-11-23: all five), from the tag only:
-  - am11, a list line counts its items: fwd 872e01f3 (P1 count = itemShape minItems/maxItems), 2295cd22 (P2 per-row run results), cc8fce50 (P3 green itemShape preflight); tests bd563c72, 4a5c81b8, cae23ba7.
-  - Phrase alternatives, the airline case (`src/inputlook.js:173`).
-  - F251: the check block is the one decider; a line with no `~` holds no signable check; Add refused with the no-guardrail words. fwd 12e15916, test 25e7c30b.
-  - F252: checkedLines gives an explicit lead per step; no stray first row on a list line. fwd 92135697, test 399a46c5.
-  - Decimal-comma quote retry: a quote check failing on the page's own number form retries in that form (fwd CHANGELOG 0.37.0).
+  - am11, a list line counts its items: fwd 872e01f3 (P1 count = itemShape minItems/maxItems), 2295cd22 (P2 per-row run results), cc8fce50 (P3 green itemShape preflight); tests bd563c72, 4a5c81b8, cae23ba7. — copied (P1, P2; P3 does not apply: no canrun preflight here). Commit a152c03b.
+  - Phrase alternatives, the airline case (`src/inputlook.js:173`). — copied. Commits 16dc2d8e, 5c4de0ff, bd53004a.
+  - F251: the check block is the one decider; a line with no `~` holds no signable check; Add refused with the no-guardrail words. fwd 12e15916, test 25e7c30b. — NOT copied. hamr 2026-11-24: one `~` per job is the minimum, not per step; a step with no `~` keeps its `!` and `$` checks. fwd's F251 differs; hamr's word relayed to fwd so both repos match.
+  - F252: checkedLines gives an explicit lead per step; no stray first row on a list line. fwd 92135697, test 399a46c5. — does not apply (bareloop has no checkedLines lead).
+  - Decimal-comma quote retry: a quote check failing on the page's own number form retries in that form (fwd CHANGELOG 0.37.0). — already in bareloop (fwd borrowed it from bareloop v0.61.0).
   - Later, from fwd's NEXT tag only (unreleased now): am12 (count-row words), am14 (draft refusal in red under the Draft button, shorter job-box hint). am13 we already have.
-- [ ] NEW, signed by hamr 2026-11-23: drafting and run progress timer. No ticking clock: one progress line updated every 30 s. Finished drafting steps show their time (e.g. "installing packages ✓ 0:42"); the running step shows elapsed (every 30 s) and "Drafting so far: M:SS"; the "usually about N min" estimate is dropped; the plan card shows one line "Drafted in M:SS · $X"; the Run tab's still-running check line uses the same 30 s elapsed form; the Audit drafting row shows total draft time only, no per-step details. Display only, from times already recorded (draft-log step-start/step-end `at`; `src/draftspend.js` wallMs), $0.
-- [ ] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch.
-- [ ] NEW, signed by hamr 2026-11-23 (option 1): a NOW row in the Run tab's ENDED / NEXT / SCHEDULE block, shown only while the run is live: "Running your tests · M:SS", "AI working · M:SS", or drafting. Time updated every 30 s (same rule as the progress timer item). It replaces the grey "Tests are still running (N min so far)" line under the map; it disappears when the run ends and ENDED fills in.
+- [x] Drafting timer and Run tab NOW row — signed by hamr 2026-11-24 (shapes agreed in chat). Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part B. Built (b3b6ca3b..d526e755), walked live 2026-11-24.
+- [x] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch. Built 2026-11-24: aae86b26 (check-timeout is resumable), 88f60280 (one 30-minute limit, drafter writes no timeoutMs); spec ITEM33-BUILD.md "Addendum 2026-11-24b". Both closed: one owner for all five check sites (7e864a6d), resume reads the plan from the last leg that had one (37d56ff3).
+- [ ] One run state file (F395, F396; folds F394) — signed by hamr 2026-11-24, POC first. Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part A. — moved to Next release (2026-11-25).
+
+### Next release (hamr 2026-11-25): start clean, then copy to and from fwd after both release
+
+Hamr: "all next come next release ... we need to start clean; also a lot of borrowing from fwd and giving to fwd after both release."
+
+- [ ] FIRST: one place per run for its readings and one for its output, for all D and R jobs (F399, F396, F395). POC first; the design extends the signed one run state file (ITEM33-BUILD.md "Addendum 2026-11-24" Part A). Covers check results of every kind (rules/truth, shape items incl. red runs, file checks, $ defaults), findings, and delivered output; every view reads it.
+- [ ] Reuse reader (src/reuse.js readTry) reads the wrong leg on already-green resumes (mwvwcxvy, mwue75ih, mvtatlxw). Left out of 6e9678b3 (hamr B: near reuse grading). F399.
+- [ ] Already-green delivery on a resumed leg is test-proven only, not seen live. F398.
+- [ ] Phone-width checks (F385, F387; and the new NOW row / ■ sign) need hamr's DevTools.
+- [ ] F389 drafter allowPrefixes vs card "unchecked".
+- [ ] F391 rubric report: cumulative page dumps, no answer section.
+- [ ] Audit tab: a step the person STOPPED reads "failed" (walk 2026-11-25, run mwue75ih, step 2; spine seq 105 stop-requested, seq 107 escalation category "stopped", seq 109 step-end "escalated"). The word comes from partStatusFor (src/panel/status.js:99), which turns "escalated" into failed; only money/time caps are mapped (cappedLastStep, src/panel/server.js:3412). Fix in one owner: a step whose own escalation is category "stopped" reads stopped. Older than this branch (same on main).
+- [ ] Audit tab: a leg that only re-ran the final check shows no row, so the parts list ends on the "resumed" line (walk 2026-11-25, run mwue75ih leg 3: seq 143 close-precheck satisfied, seq 145 job-end already-green). The parts builder (src/replay.js) has no part kind for a final close on its own; a plain green run's final close has no row either (it shows only in the checks box). Decide the row's look before building. Older than this branch (same on main).
+- [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
+- [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text.
+- [ ] One run state file pieces still open (F395, F396).
+
+Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.

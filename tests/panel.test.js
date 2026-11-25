@@ -60,7 +60,7 @@ test('glyphForOutcome: green/already-green/satisfied -> ✓, null -> ▶, anythi
   assert.equal(glyphForOutcome('already-green'), '✓');
   assert.equal(glyphForOutcome('satisfied'), '✓');
   assert.equal(glyphForOutcome(null), '▶');
-  assert.equal(glyphForOutcome('cap-halt'), '✗');
+  assert.equal(glyphForOutcome('cap-halt'), '■');
   assert.equal(glyphForOutcome('job-red'), '✗');
 });
 

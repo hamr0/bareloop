@@ -2,7 +2,8 @@
 // hamr's ruling 2026-10-04 (option A): every surface (run cards, expanded run rows, the right-side header, imported
 // rows) reads `status` from the server; the page never maps an outcome to a word itself.
 //
-//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [✗] capped · [■] stopped · [?] died
+//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [■] capped · [■] stopped · [?] died
+//   (capped wears the stop sign ■ like stopped, hamr 2026-11-24; the word stays "capped". check-timeout and provider-red stay failed ✗.)
 //
 // Outcome -> word (every outcome the panel knows; anything not listed is `failed`):
 //   green, already-green, satisfied                      -> passed
@@ -12,7 +13,7 @@
 //   escalated + money-halt record, escalated + wall-halt -> capped
 //   stopped (the person pressed Stop)                    -> stopped
 //   skipped (a Tickets job's signed filter let the ticket by)  -> skipped  (a quiet end: not a failure, not a pass, never reusable or Needs you)
-//   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, step-stalled,
+//   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, check-timeout, step-stalled,
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
 
@@ -22,7 +23,8 @@ import { capKindOf } from '../legs.js';
 export const GOAL_MET_LINE = 'goal met';
 
 /**
- * ONE spelling of "this run's outcome is a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
+ * THE ONE OWNER of "this run's outcome is a green" (green or already-green): every src site that asks it calls this, and
+ * test (d) in tests/already-green-delivers.test.js fails on a hand-spelled copy. Also the spelling of "a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
  * next line). hamr 2026-10-15: an `already-green` (fixed before any work) counts. `satisfied` is a close verdict, never a run outcome.
  * The SCHEDULE gate (schedules.js greenFor) deliberately stays on a real `green` only (T3).
  * @param {string|null|undefined} outcome
@@ -40,7 +42,7 @@ export const STATUS = Object.freeze({
   waiting: Object.freeze({ sign: '·', word: 'waiting' }),
   passed: Object.freeze({ sign: '✓', word: 'passed' }),
   failed: Object.freeze({ sign: '✗', word: 'failed' }),
-  capped: Object.freeze({ sign: '✗', word: 'capped' }),
+  capped: Object.freeze({ sign: '■', word: 'capped' }),
   stopped: Object.freeze({ sign: '■', word: 'stopped' }),
   died: Object.freeze({ sign: '?', word: 'died' }),
   // a ticket the job's signed filter did not let through (piece 2): grey, rests, ends at run start at $0
@@ -76,7 +78,7 @@ export function statusFor(o) {
   const out = o.outcome;
   if (o.died) key = 'died';
   else if (out === null || out === undefined) key = 'running';
-  else if (out === 'green' || out === 'already-green' || out === 'satisfied') key = 'passed';
+  else if (isReusableGreen(out) || out === 'satisfied') key = 'passed';
   else if (out === 'skipped') key = 'skipped';
   else if (capKindOf(o) !== null) key = 'capped';
   else if (out === 'stopped') key = 'stopped';

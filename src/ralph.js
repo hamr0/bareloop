@@ -223,7 +223,7 @@ export const CLOSE_ENV_DENY = Object.freeze({
  *   ever THREADS the value, it never invents one.
  * @returns {Promise<{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
  *   gap?: string, exitCode?: number, signal?: string, detail?: string,
- *   judgedCount?: number|null, unaudited?: boolean}>}
+ *   judgedCount?: number|null, unaudited?: boolean, limitMs?: number}>}
  */
 export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep, closeDir = null } = {}) {
   const env = { ...process.env };
@@ -250,7 +250,7 @@ export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, 
     // The runner reports BOTH "cannot run" and "ran too long" through `error`;
     // they are different human decisions, so they get different names.
     const code = /** @type {NodeJS.ErrnoException} */ (r.error).code;
-    if (code === 'ETIMEDOUT') return { verdict: 'timed-out', detail: `close exceeded ${timeoutMs}ms and was killed — it never finished judging` };
+    if (code === 'ETIMEDOUT') return { verdict: 'timed-out', detail: `close exceeded ${timeoutMs}ms and was killed — it never finished judging`, limitMs: timeoutMs };
     return { verdict: 'failed', detail: String(r.error) };
   }
   // No spawn error and no exit status: the close died by signal (OOM, an
@@ -474,6 +474,40 @@ export const CLOSE_FAULTS = Object.freeze({
   },
 });
 
+/** the leg outcome of a check that never finished (F393): a checkpoint, resumable like `provider-red` (CHECKPOINT_OUTCOMES, src/reuse.js) */
+const CHECK_TIMEOUT_OUTCOME = 'check-timeout';
+
+/**
+ * THE ONE OWNER of what a close-fault verdict does to a leg (F393, hamr 2026-11-24: one place owns each decision). Every site that meets a
+ * forbidden-zone verdict (the start precheck, the preflight pass, a step's exit check, the fix loop's close, the final close) builds the
+ * escalation it emits and reads the leg outcome it returns from HERE, and none of them branches on `timed-out` itself.
+ *
+ * A check that never finished judged nothing: its escalation keeps the arbiter's own category (`close-timeout`), carries `limitMs` (the limit that
+ * bound it) and `ends: 'check-timeout'`, and the leg ends `check-timeout` so Resume is offered. A check that could not run, was killed or crashed
+ * has no outcome of its own here (`outcome: null`): the site keeps the ending it always had for those.
+ * @param {{verdict: string, detail?: string, limitMs?: number}} v a close verdict
+ * @param {{decisionLead?: string, detail?: string}} [o] `decisionLead` is put before the fault's decision words, `detail` replaces the verdict's own
+ * @returns {{escalation: {category: string, decisionReady: true, decision: string, options: string[], detail?: string, limitMs?: number, ends?: string}, outcome: string|null}|null}
+ *   null when the verdict is not a close fault
+ */
+export function closeFaultEnding(v, o = {}) {
+  const fault = Object.hasOwn(CLOSE_FAULTS, v?.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
+  if (!fault) return null;
+  const timedOut = v.verdict === 'timed-out';
+  return {
+    escalation: {
+      category: fault.category,
+      decisionReady: true,
+      decision: `${o.decisionLead ?? ''}${fault.decision}`,
+      options: fault.options,
+      detail: o.detail ?? v.detail,
+      ...(timedOut && typeof v.limitMs === 'number' ? { limitMs: v.limitMs } : {}),
+      ...(timedOut ? { ends: CHECK_TIMEOUT_OUTCOME } : {}),
+    },
+    outcome: timedOut ? CHECK_TIMEOUT_OUTCOME : null,
+  };
+}
+
 /**
  * The exhaustion-by-PROGRESS seam, as a contract rather than "whatever one module
  * happens to return". Two governors implement it and they read different signals —
@@ -512,7 +546,7 @@ export const CLOSE_FAULTS = Object.freeze({
  * @param {object} opts
  * @param {(iteration: number, gap?: string) => void|Promise<void>} opts.middle the emergent middle; never sees close/cap
  * @param {string[]} [opts.close] argv whose exit code is truth (required unless `judge` is injected)
- * @param {() => Promise<{verdict: string, gap?: string, detail?: string}>|{verdict: string, gap?: string, detail?: string}} [opts.judge]
+ * @param {() => Promise<{verdict: string, gap?: string, detail?: string, killed?: boolean}>|{verdict: string, gap?: string, detail?: string, killed?: boolean}} [opts.judge]
  *   Layer 2 (PRD v1.12 §4): the judge generalized to a SHELL-owned seam. When
  *   present it replaces runClose for this loop — a plan STEP's micro-loop is
  *   judged by the exit evaluator (declarative form checks), not a command. It
@@ -717,7 +751,7 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
     verdicts.push(workerCrashed ? 'worker-crash' : v.verdict);
     // A judge that reports `stopped` means the PERSON's Stop killed the check — never a verdict, never a close fault; end like a stop at a round seam.
     if (v.verdict === 'stopped') {
-      emit('escalation', { category: 'stopped', decisionReady: true, verdicts, spend: { runs: iteration, capRuns }, decision: 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.', options: ['resume (the same run continues)', 'abandon the task'], detail: 'stopped at the person\'s request (the check that was running was killed)' });
+      emit('escalation', { category: 'stopped', decisionReady: true, verdicts, spend: { runs: iteration, capRuns }, decision: 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.', options: ['resume (the same run continues)', 'abandon the task'], detail: `stopped at the person's request${v.killed === true ? ' (the check that was running was killed)' : ''}` });
       emit('run-end', { outcome: 'escalated', iterations: iteration });
       return 'escalated';
     }
@@ -738,12 +772,11 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
       // Forbidden zone: no judgment was rendered, so there is no verdict. Escalate
       // by the outcome's OWN name and never retry — retrying a broken arbiter is
       // the §5b violation adaptlearn found live in its shipped shell (F25/Z-3).
-      const fault = Object.hasOwn(CLOSE_FAULTS, v.verdict) ? CLOSE_FAULTS[v.verdict] : undefined;
-      if (fault) {
+      const ending = closeFaultEnding(v);
+      if (ending) {
         emit('escalation', {
-          category: fault.category, decisionReady: true, verdicts,
+          ...ending.escalation, verdicts,
           spend: { runs: iteration, capRuns },
-          decision: fault.decision, options: fault.options, detail: v.detail,
         });
         emit('run-end', { outcome: 'escalated', iterations: iteration });
         return 'escalated';

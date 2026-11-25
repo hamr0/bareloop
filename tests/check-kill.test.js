@@ -251,12 +251,12 @@ test('runJob: a Stop during the FINAL declared close kills the check whole and e
   assert.deepEqual(resume.restart.seed.completedSteps.map((/** @type {any} */ x) => x.id), ['write-fix']);
 });
 
-test('runJob: a check killed by its own TIMEOUT in the final close is NOT a stop - it keeps the close-red routing', async (t) => {
+test('runJob: a check killed by its own TIMEOUT in the final close is NOT a stop - it ends check-timeout (F393), resumable', async (t) => {
   const w = finalCloseWorld(t);
   const outcome = await runFinal(w, { closeTimeoutMs: LIMIT_MS });
   const events = readSpine(w.spine);
   await assertGone(w.dir, 'final close timeout');
-  assert.equal(outcome, 'close-red');
+  assert.equal(outcome, 'check-timeout');
   assert.ok(!events.some((e) => e.type === 'stop-requested'), 'nobody pressed Stop');
   assert.notEqual(events.find((e) => e.type === 'job-end')?.outcome, 'stopped');
 });

@@ -206,3 +206,25 @@ test('errorKinds reads the files a quote names in linear time: a 50000-character
   assert.deepEqual(errorKinds('see ./src/a.js, x/b.mjs and c.jsx').files, ['src/a.js', 'x/b.mjs']);
   assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
 });
+
+// F397 / hamr 2026-11-24 (2A): what a resumed run teaches reads the LAST leg's ending. Real records only: leg 1 / last leg are two archived
+// spines joined by a real-shaped `leg-resume` marker (the one record written here).
+const resumeMark = (/** @type {number} */ leg, /** @type {string} */ after) => ({ type: 'leg-resume', leg, after, at: '2026-11-25T00:00:00.000Z', seq: 0, ts: '2026-11-25T00:00:00.000Z' });
+
+test('a provider-red leg 1 followed by a green last leg with a fix-after-fail still teaches (not noise)', () => {
+  const red = loadRun('battery-A3-mrnepkvq');
+  const green = loadRun('mvk2e4uy');
+  const alone = cardsOf('mvk2e4uy', { spec, questions });
+  const b = buildCards({ runid: 'x', events: [...red.events, resumeMark(2, 'provider-red'), ...green.events], audit: green.audit, workdir: green.workdir, spec, questions });
+  assert.equal(b.noise, null);
+  assert.ok(b.cards.some((c) => c.check === 'typecheck-target-zero-errors' && c.kind === 'FIXED'), 'the last leg\'s fix-after-fail is a card');
+  assert.deepEqual(b.cards.map((c) => [c.check, c.kind]), alone.cards.map((c) => [c.check, c.kind]), 'the same cards the last leg teaches alone');
+});
+
+test('a run whose LAST leg is provider-red is still noise, whatever the leg before it did', () => {
+  const red = loadRun('battery-A3-mrnepkvq');
+  const green = loadRun('mvk2e4uy');
+  const b = buildCards({ runid: 'x', events: [...green.events, resumeMark(2, 'green'), ...red.events], audit: red.audit, workdir: null, spec, questions });
+  assert.equal(b.noise, 'provider-red');
+  assert.equal(b.cards.length, 0);
+});

@@ -16753,6 +16753,7 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 
 - The Destination box reverted to a refused draft's Destination on every poll while the person typed (fixed 8df64f7a).
 - An early click on Sign & run showed the raw "no plan is waiting for a decision right now" (run mwt92ze1 draft). Now unclickable while its first click is in flight, and an early click gets plain words (c2203bf5). Cause from source; the click was not reproduced, so the fix is not proven live.
+- Proven live 2026-11-25 (run mww606do, job review-walk): hamr clicked Sign & run fast as the card appeared; one run started, no raw "no plan is waiting" text.
 
 ### F391: The rubric page job report is a cumulative dump with no answer section (run mwtc0mol, walk-r-rule, 2026-11-23)
 
@@ -16770,3 +16771,47 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - `close-red` is not in CHECKPOINT_OUTCOMES (`src/reuse.js:148`: cap-halt, wall-halt, step-stalled, provider-red, stopped, human checkpoints), so the panel offered only Reuse, not Resume. The AI's step edit stayed on disk.
 - A timeout says nothing about the job (the check never answered), so it should be resumable like provider-red. Also noted: this start check's limit was 15 min (900000 ms) while CHECK_LIMIT_MS is 30 min; look at that in the same fix.
 - hamr: fix comes in the next branch after the release.
+- Fixed: a timed-out check ends the leg `check-timeout`, a resumable checkpoint, at all five places a check runs (start precheck, preflight, step exit, fix loop, final close) through one owner, `closeFaultEnding` in `src/ralph.js`; a leg that died before re-accepting its plan resumes from the last leg's plan with no redraft (`readResume`). The 15 min came from the drafter writing `timeoutMs: 900000`, now removed, and an authored `timeoutMs` is ignored, so the one 30 min limit binds (88f60280).
+
+### F394: The Run tab shows an old Resume's "Checks not run again" line on a later Resume (run mwue75ih legs 2 and 3, 2026-11-24)
+
+- Leg 2 (resumed 07:58:49Z after a Stop right after the first check finished, before any edit) reused the saved check: spine `check-reused` "Checks not run again: same files as the last check at 08:48." All 7 checks passed the same second. F382 is now seen live.
+- Leg 3 (Stop at 08:01:36Z while the step check ran, after the AI edited tests/codeversion.test.js at 07:59:54Z; resumed 08:01:42Z) correctly did NOT reuse: no `check-reused` record in leg 3, and the tests ran fresh.
+- But the Run tab still showed "Checks not run again: same files as the last check at 08:48." in leg 3: the panel shows the newest `check-reused` record of the whole spine across legs (src/panel/server.js:742), not only the current leg's (records after the last `leg-resume`). hamr saw it live.
+- Open: scope the line to the current leg. Fix next on feat/next-branch-first.
+
+### F395: A resumed leg ran the suite twice: the seed count was never kept when the tree was the seed (run mwue75ih leg 3, 2026-11-24)
+- Leg 3 (resumed 08:01:42Z after the AI edited tests/codeversion.test.js) ran `npm test` on the run's tree (14.8 min, 886766 ms, kept 08:17:01Z), then at once ran it again in a seed worktree /tmp/bareloop-seed-*/tree for the tests-executed-floor seed baseline (~15 min). No AI work between.
+- Cause: in leg 1 the tree was the seed, so count-not-worse took the "measured IN PLACE" branch (src/kinds.js ~1555-1560) and kept nothing under the `seed:` key (src/kinds.js ~1376-1404 keeps only a run done in the seed dir). The later leg found no seed reading and measured it again.
+- Proof: the run's .smoke/carry/state.json held a `seed:` entry for typecheck but none for `npm test`; the second `node --test` process had cwd /tmp/bareloop-seed-*/tree.
+- Not patched (hamr 2026-11-24): the cause is the class in F396; fixed by the one run state file.
+
+### F396: One run's state lives in many stores that drift (audit 2026-11-24)
+- Test-check results lived in 6 stores with 4 key shapes: per-pass memo (cmdMemo/startMemo), resume list (startSaved), the carry file (.smoke/carry/state.json, src/carrystore.js), seedBaseMap, the draft-session seedShare, and three "usually about N min" time maps (cmdTimes in src/planrun.js, src/panel/authorsession.js, src/authorflow.js). A result kept by one was invisible to the others: F381, F382, F383, F394, F395 are this one class, each fixed by adding another store.
+- Other facts held twice: run position ("what is happening now") only in memory and the spine tail; leg scoping done by each reader (F394); Destination copied back onto the card by hand (src/panel/authorsession.js ~984-989); the gate audit in two files (<workdir>/gate-audit.jsonl and the spine dir's u-<runid>-gate-audit.jsonl); spend and job text/spec hash in several places, each with a ruling on which wins.
+- hamr 2026-11-24: "one place where run keeps its [state] ... a json file that keeps all necessary bits and pieces together, so you can look while it's running". Design signed the same day: ITEM33-BUILD.md "Addendum 2026-11-24".
+
+### F397: Every Run tab fact about "the last end" is read off the whole spine, so a running leg shows the leg before it (run mwuxqx4f, 6 legs, 2026-11-24)
+- While leg 2..6 ran, the header said "ended <the previous leg's end>" (leg 2 at 17:58 showed leg 1's 16:58:18Z), the summary's why was the previous leg's "You stopped the run", and "Checks not run again: same files as the last check at 17:42." stayed after a new "Running your tests" began in the same leg (spine records 130 then 172).
+- Cause: `src/legs.js` owns the leg boundary (`legsOf`, `LEG_RESUME`), but about twelve sites scanned the whole spine on their own for the last `job-end` / `escalation` / `money-halt` (src/panel/server.js `lastJobEndTs`, `endedForRow`, `stagePassedIn`, `resultKindOf`, the Result tab; src/replay.js `lastEscalation`/`stopReason`). F394 had fixed only `checkReusedOf`. And `legsOf(...).outcome` fell back to a `run-end` outcome, which a live leg writes after every pass: the walk spine read 'green' at records 107 and 472, mid-leg.
+- POC ($0, `.claude/scratch/poc-currentleg/poc.mjs`, the walk spine plus five other multi-leg spines, cut at every leg start, job-start and mid-leg check-start): today wrong on 18 of 18 cuts of the walk spine and on every cut of the five others (2, 4, 4, 2, 2); an owner built on `legsOf` right on every cut ("FINAL: owner right on every cut of every spine").
+- Fixed: `currentLegView` in src/legs.js is the one reader; the sites above ask it; `Leg.outcome` reads `run-end` only for a leg with no `job-start`; the reused line retires at the first `check-start` after the leg's plan; tests/legs-current.test.js (the real spines at every cut) and tests/legs-current-guard.test.js (no other file scans for the three). Open for a ruling: `liveStepWhy` (whole-spine plan) and `src/learn.js` (whole-spine last escalation), named in ITEM33-BUILD.md "Addendum 2026-11-24c".
+- Fixed (2A, hamr 2026-11-24): the learnings' noise check in `buildCards` (src/learn.js) now reads the last leg's escalation through `currentLegView`, so a run whose earlier leg ended provider-red but whose last leg ended on a verdict teaches; a run whose LAST leg is provider-red is still noise. Tests: tests/learn-cards.test.js (two real archived spines joined by a leg-resume marker; fails on the old code).
+
+### F398: A review run that ended already-green on Resume had an empty Result tab and no report (run mwvwcxvy, long-walk, 2026-11-25)
+
+- The run passed its close, the person pressed Stop in a leftover second step, then Resume. The resumed leg's $0 precheck read already-green and ended there.
+- Two delivery sites tested `=== 'green'` only: the review-findings record (src/planrun.js already-green precheck return) and the staged markdown report (src/userrun.js). So the Result tab said "no saved result to show" and no .md was staged.
+- Not a regression: both were built that way (3d47c75d 2026-11-20, cae1c47d 2026-11-21); already-green dates from August. A live walk was the first Stop-after-pass then Resume.
+- Fix fdca54b1: one owner `isReusableGreen` (src/panel/status.js, already existed); 16 hand-spelled copies now call it; a guard test fails on a new copy. Fail-first tests in tests/already-green-delivers.test.js. Suite on fdca54b1: exit 0, 6509 pass, 0 fail, 2 skipped; CI success.
+- Test-proven only, not seen live (hamr's call A: the plans kept coming out one step, so the Stop-after-pass case is hard to hit by hand).
+
+### F399: A run's readings and its output are spread over many records and special-cased per job kind (audit 2026-11-25, runs mwvwcxvy, mvtatlxw, mwue75ih)
+
+- Trigger: F398 needed three rounds. Each fix found another reader that picked its own records; the third round's POC (.claude/scratch/poc-finalclose/RESULTS.md, PASS 0 wrong / 112 real spines) showed replay's close line wrong on 3 real already-green resumes (mwvwcxvy, mwue75ih null; mvtatlxw showed leg 1's red). Fixed for the screens by one owner `finalCloseOf` (src/legs.js, 6e9678b3).
+- Results (what was checked, how it went) live in at least 9 spine record types: exit-eval (step file checks artifact-written/tree-changed), check-run, close-verdict, outer-close, close-precheck (stages[].rows/unclaimed/items), review-findings, review-door, rubric-evidence, output-judged. Each is read in 2 to 8 files.
+- Output (what the run made) differs by job kind: D change = worktree edits + work-branch commit, attempt-diff is the spine copy; D review = output/steps/<n>.json read to render one .md, staged under output/ then landed at Accept (step JSON not kept); R files/URL/sheet = every output/ file copied to Destination with dated names plus the paired .md, recorded as destination-written. Readers fork on resultKindOf (rubric vs generic), sourceOf==='repo', delivery.reportInRepo, doorHere, inRepo/stage flags.
+- Per check kind inside rubric: rules/truth as stage rows; shape item failures structured in stages[].items only on a final staged close - on a red run they survive only as text in the close-verdict gap and are parsed back (shapeItemOfPlain; the leg-scoped fallback kept in src/panel/server.js, hamr A 2026-11-25); file checks only in exit-eval, never in rows; $ defaults as rows with special handling (src/rowresults.js).
+- run-state.json (src/carrystore.js) holds only test-check results by command+tree fingerprint and the carry memo - no outputs, rows, items, stage verdicts or delivered files.
+- Same class as F396 (run state in many stores). The reuse reader (src/reuse.js readTry) also reads the wrong leg on those 3 runs; left out of 6e9678b3 by hamr's call B (near reuse grading).
+- hamr 2026-11-25: "clean that up once and for all: one place where a run holds its reading (what we did with tests and all) and another for reading/storing its output regardless what it is, for all D and R." Next release, POC first.

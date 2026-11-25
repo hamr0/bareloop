@@ -4,6 +4,10 @@
    "plain": "d6a8060078a9cd488c9a058550aea6738400d4ba06e3d7fdef544c1efe5b4645",
    "knobs": "a0b57edb9e39491eb9a2a1094c1d768b15472ed0674762d365330903d67cca6f"
   },
+  "already-green-result/mwvwcxvy.resolved-spec.json": {
+   "plain": "9fa719a514438a89b6433cfece979c1127e41b3957e976d6a6808b9f7150b7c4",
+   "knobs": "9bb96a198531ab74a3882b9dfa27551285fc469782ed27292c2e35894f8e7f5a"
+  },
   "audit-checks-fixloop-mwg3pov1/resolved-spec.json": {
    "plain": "5c385d0681a04e3b771df02d0aaf3b90859cc8b806ea3ea9f1fc14e152a3c099",
    "knobs": "6cdd3c00c37f05cfca2bed1cfaa1090ce277ae379c9a966223954b5492ba01e5"

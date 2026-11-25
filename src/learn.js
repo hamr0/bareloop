@@ -17,6 +17,8 @@
 
 import { homedir } from 'node:os';
 import { redactSecrets } from './validate.js';
+import { currentLegView } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 
 // ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
 /** The block the planner reads is never longer than this many characters (RULING 7). */
@@ -258,7 +260,7 @@ export function quoteLines(gap) {
 }
 
 /** terminal words that mean the run ended well */
-const isGreen = (/** @type {unknown} */ o) => o === 'green' || o === 'already-green';
+const isGreen = (/** @type {unknown} */ o) => isReusableGreen(/** @type {string} */ (o));
 /** escalation categories that make a run NOISE: the instrument, not the work, failed */
 const NOISE_CATEGORIES = new Set(['provider-red', 'close-crashed']);
 
@@ -369,7 +371,8 @@ export function buildCards({ runid, events, audit = null, workdir = null, spec =
   }
 
   // ── noise runs: the instrument failed, so no lesson about the work can be read off them ──
-  const lastEsc = ev.findLast((e) => e.type === 'escalation') ?? null;
+  // the LAST leg's ending decides (hamr 2026-11-24, 2A): an earlier leg's provider-red is history once a later leg ended on a verdict
+  const lastEsc = currentLegView(ev)?.lastEscalation ?? null;
   const cat = lastEsc && isStr(lastEsc.category) ? lastEsc.category : null;
   if (cat !== null && NOISE_CATEGORIES.has(cat)) { out.noise = cat; return out; }
   if (verdict.size === 0) { out.noise = cat === 'worker-crash' ? 'worker-crash' : 'no-close-spoke'; return out; }

@@ -5613,3 +5613,60 @@ Status: test-proven; reuse not seen in a live resume.
 2. A `~` rule on every job (460c130c, 057e510c; F387): code counts at $0 at the start of both doors, before any AI call; with none, one code-written ask. No AI judges prompt quality.
 3. "Did you mean branch: X?" / "Did you mean range: A..B?" (0c275690, d5233224; F385): `src/refguess.js`, panel only; range stays review-only; not counted in the 3-ask cap; the Job box shows the token.
 4. Run tab reused line (039570e5): the `check-reused` text as one grey line.
+
+## Addendum 2026-11-24: one run state file, and the drafting timer and NOW row (signed by hamr)
+
+### Part A: the one run state file (signed 2026-11-24; POC first, build not started)
+
+1. Where: the run's own folder beside its spine (for panel jobs the session folder, so drafting and the run share it), not inside the work copy (a green run removes the work copy). Behind the same arbiter fence: the worker never reads it. Reuse the existing carry store (`src/carrystore.js`) and move its file; no second state file.
+2. Holds: every completed check command result keyed by (command key, tree fingerprint of the files the command saw); the seed (original code) is just another tree fingerprint, so a leg-1 run on an unchanged tree IS the seed reading; each result's run time (ms); the carry memo it holds today; and nothing else. Run position (phase, step, leg, a check running and since when, a stop asked) is NOT in this file: it is read from the run's spine, scoped to the current leg (records after the last leg-resume; src/legs.js owns the boundary) — the spine is the single source for every UI (PRD Floor). (hamr 2026-11-24)
+3. Written atomically (temp file then rename).
+4. Read by drafting, signing, run start, step checks, resume and the Run tab (the NOW row and the reused line read the spine's current leg).
+5. Only completed runs are kept; a killed or timed-out run never is.
+6. Unchanged rules: the tests-executed floor still compares against the ORIGINAL code (anti-cheat: a worker must not delete tests a few at a time); a pass never comes from a saved result alone (`src/planrun.js` ~2268 rule kept).
+7. Removed: startSaved, seedBaseMap, seedShare, the three cmdTimes maps, the `seed:` key prefix, and the Destination copy-back onto the card (the card reads source.json, the one Destination record). cmdMemo stays only as in-flight dedupe of a run already going, holding nothing after the pass.
+8. Parked for hamr's separate go (arbiter books): the gate audit's two files.
+9. Known limits unchanged: the key holds no node version or gitignored files.
+10. POC done 2026-11-24: (a) PASS with item 12's rule, (b) PASS (same folder; the fingerprint is taken fresh at each read, never carried). Original: POC first ($0, throwaway copy): (a) an unchanged work folder and a detached seed worktree of the same commit get the same tree fingerprint (installed packages are linked into the seed worktree); (b) drafting's signing checks run in the same folder the run uses. Either failing goes back to hamr before any build.
+11. Proof: fail-first tests for F382, F383, F394 and F395; full suite; one hamr walk (draft, run, Stop, Resume).
+12. Tree fingerprint (POC 2026-11-24, .claude/scratch/poc-statefile/poc3.mjs, all 6 cases PASS): treeIdentity fingerprints what is BEHIND an untracked symlink, not the link: a dangling link counts nothing; a link whose target is ignored in the git folder it points into (`git -C <top> check-ignore -q`) counts nothing; otherwise the target counts as if it were at the link's path (a directory by its sorted files). Non-symlink entries unchanged, so ids of symlink-free trees do not change. hamr: 'fingerprint what's behind the symlinks'.
+
+### Part B: drafting timer and Run tab NOW row (signed 2026-11-24)
+
+- A1. Drafting list in chat: a finished step shows "took M:SS"; the running step shows "M:SS so far"; signs ✓ done, ▶ running, ✗ failed.
+- A2. Under the list: "Drafting so far: M:SS".
+- A3. Every 30 s; no ticking clock.
+- A4. "usually about N min" removed everywhere (drafting, signing, Run tab).
+- A5. Times from what is already recorded (draft-log step-start/step-end); one owner of the math (`src/draftspend.js`); $0.
+- B. Plan card: one line "Drafted in M:SS · $X".
+- C. Audit drafting row: total draft time only, no per-step times.
+- D1. NOW row in the Run tab's ENDED / NOW / NEXT / SCHEDULE block, only while the run is live.
+- D2. Shows "Running your tests · M:SS", "AI working · M:SS" or "Drafting · M:SS", every 30 s.
+- D3. When this leg reused a saved check, a line above it: "Checks not run again: same files as the last check at HH:MM", current leg only (fixes F394).
+- D4. NOW replaces the grey "Tests are still running…" and "Checks not run again…" lines under the step map; both go.
+- D5. When the run ends NOW goes; ENDED / NEXT / SCHEDULE keep today's words.
+- E. Proof: fail-first tests (30 s times, D3 current leg only, NOW gone after end, "usually about" gone); full suite + typecheck; orchestrator screenshots of the drafting list, plan card, Run tab live and ended vs these shapes; hamr's click-through and DevTools phone-width check before "done".
+
+## Addendum 2026-11-24b: F393 check timeout
+
+Spec approved by hamr 2026-11-24; revised the same day (one owner, one resume rule) after the first build handled only two of five sites.
+
+- **One owner.** `closeFaultEnding(v, opts)` in `src/ralph.js`, beside `CLOSE_FAULTS`, is the only place that decides what a close-fault verdict does to a leg. It returns the escalation to emit and the leg outcome: a timed-out check (verdict `timed-out`, category `close-timeout`) ends the leg `check-timeout`, and its escalation carries `limitMs` (the limit that bound the check) and `ends: 'check-timeout'`. A check that cannot run, is killed or crashes has no outcome of its own there (`outcome: null`) and each site keeps the ending it always gave those (`close-red`, `check-red`, the category name); a Stop that kills a check stays `stopped`.
+- **Five sites, none branches on a timeout.** The start precheck, the preflight pass, a step's exit check, the fix loop's close and the final close all build their escalation with `closeFaultEnding`. The precheck, preflight and final close return `ending.outcome ?? <their old ending>`; ralph (the step and fix loops) files the escalation through it and `planrun` returns `lastEscalation.ends ?? category`. The limit rides from the check result through `runCheck` and `evalExits` to the escalation at the step site too. A timeout is not a failed attempt: ralph escalates a fault at once and the strike ladder never counts it.
+- A guard test (`tests/check-timeout-owner.test.js`) scans `src/` and fails if any file but `ralph.js` maps a timed-out verdict to an outcome.
+- `check-timeout` is in `CHECKPOINT_OUTCOMES` (`src/reuse.js`), so Resume is offered exactly like after `provider-red`; the status sign and word are the same as provider-red's.
+- **One resume rule.** `readResume` takes the plan (and the work branch) from the last leg that HAD an accepted plan, not only the newest leg: a leg that died before it re-accepted its plan (a check timeout, a provider failure at the start, a Stop) resumes at the recorded step with no redraft. A leg that accepted its own plan (a replan, a redraft) wins over an earlier one. Money, wall and replan folds still come from the newest leg's own `job-start`.
+- **One set of words.** `checkTimeoutWords(limitMs)` in `src/kinds.js` is the one Run-tab sentence: "Your tests did not finish inside 30 minutes, so nothing was judged. Resume runs them again." The span comes from the escalation's `limitMs`, else `CHECK_LIMIT_MS`, never a hardcoded number.
+- One 30-minute limit, set by code (hamr's 2026-11-21 ruling): the drafter is no longer offered `timeoutMs` (not in the declaration schema, not in the catalogue block). `effectiveTimeoutMs` ignores an authored `timeoutMs`, so old signed specs still load and run, now under the one limit; no signed file or hash is touched. A saved check result keyed under an old authored limit just runs once more.
+
+## Addendum 2026-11-24c: one current-leg reader
+
+Approved by hamr 2026-11-24 after a passing $0 POC (`.claude/scratch/poc-currentleg/`), from walk run mwuxqx4f (6 legs). F397.
+
+- **One owner.** `currentLegView(records)` in `src/legs.js`, on top of `legsOf`, is the only reader of the run's CURRENT leg: its own records, `live`, `jobEnd`, `endedTs`, `outcome` (the `job-end`'s, nothing else), `lastEscalation`, `moneyHalt`, `reused`, and how the leg before it ended.
+- **Moved onto it:** the Run tab header's ended time, the summary's stop reason (`replayRun`'s last escalation), the "Checks not run again" line, the Ended block's money-halt and destination-refused reads, the Result tab's green end, the Result-tab gate, the audit-path "is the leg live" read, and the `--door` message.
+- **Leg.outcome.** A live leg never reads an outcome from `run-end` (written after every pass, it called a running leg green). `run-end` still names the end of a leg that wrote no `job-start`: the $0 refusals from `src/userrun.js`.
+- **The reused line** speaks for its leg's start pass. That pass ends at the leg's `plan-accepted`; the first `check-start` after the plan is a later test run and retires the line. Nothing else does. The start pass's own `check-start` records (written after `check-reused`) never do.
+- **Whole-run on purpose, untouched:** `chainSpend`, `legsWallMs`, `floorsFromRecords`, money folds, replay's part filters and trip windows, parts and leg dividers.
+- **Guard.** `tests/legs-current-guard.test.js` fails if a src file other than `legs.js` scans a spine for the last job-end, escalation or money-halt outside a named allow-list (each entry carries its reason).
+- **Left for a ruling:** the Runs list's `liveStepWhy` still reads the whole spine's last plan (a leg that has not accepted its plan yet shows the earlier leg's "step N of M"); `src/learn.js` reads the whole spine's last escalation (a resumed run that ends green after a provider-red leg may be set aside as noise).

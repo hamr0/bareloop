@@ -272,7 +272,7 @@ export const KIND_CATALOGUE = Object.freeze({
     required: Object.freeze(['cmd', 'args', 'expectExit']),
     optional: Object.freeze(['timeoutMs', 'env']),
     pathParams: Object.freeze([]),
-    shape: 'cmd: string, args: string[], expectExit: integer, timeoutMs?: integer, env?: {NAME: value}',
+    shape: 'cmd: string, args: string[], expectExit: integer, env?: {NAME: value}',
     asserts: 'run cmd/args in the repository; the exit code must equal expectExit.',
   }),
   'count-not-worse': Object.freeze({
@@ -285,7 +285,7 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'aggregate: "first" | "sum", region: "whole-output" | {anchor: regex-string, capture: integer}}]} '
       + '— or the short form {lineMatch: regex-string, capture?: integer}, '
       + 'scope: {includePrefixes?: string[], excludePrefixes?: string[]}, '
-      + 'direction: "lower-is-better" | "higher-is-better", baseline: "seed" | 0, timeoutMs?: integer, env?: {NAME: value}',
+      + 'direction: "lower-is-better" | "higher-is-better", baseline: "seed" | 0, env?: {NAME: value}',
     asserts: 'run cmd/args; read a NUMBER out of the output with parser, keep only what scope selects, and '
       + 'require that number to be not-worse than baseline in the stated direction. baseline "seed" is the same '
       + 'number taken from this run\'s own starting point, measured every run; baseline 0 is literally zero. '
@@ -1621,6 +1621,16 @@ function checkEnvComplete({ params: p, at, red, kind, catalogue, envInjected }) 
       + 'that moves', { name, expected: envInjected[name] });
   }
 }
+
+/**
+ * Parameters the loader still ACCEPTS on an old signed spec but the drafter is no longer offered (F393, hamr 2026-11-24: an AI-drafted
+ * check has ONE fixed limit, set by code). `timeoutMs` is the one: an old spec that carries it still loads and runs, and the runner
+ * ignores the number (`effectiveTimeoutMs`, src/kinds.js).
+ */
+export const LEGACY_PARAMS = Object.freeze(['timeoutMs']);
+
+/** a kind's optional parameters the drafter is offered (the legacy ones left out) @param {{optional: readonly string[]}} spec @returns {string[]} */
+export const offeredOptional = (spec) => spec.optional.filter((p) => !LEGACY_PARAMS.includes(p));
 
 /**
  * The per-kind parameter checks, plus the two halves of the one-population law.

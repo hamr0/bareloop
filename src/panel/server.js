@@ -43,13 +43,13 @@ import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
 import { jobTypeLine, sourceOf } from '../sourcedefaults.js';
 import { rangeTokens } from '../rangereview.js';
-import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger, mmss, stepped } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
-import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
+import { legsOf, legsWallMs, stopFilePath, capKindOf, currentLegView, finalCloseOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -77,6 +77,7 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
+import { checkTimeoutWords } from '../kinds.js';
 import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
@@ -89,7 +90,7 @@ import { shapeResultModel } from '../shaperesult.js';
 import { shapeItemOfPlain } from '../shapewords.js';
 import { rowResultsOf } from '../rowresults.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
-import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
+import { factPartOf, factSentence, ruleWords, moneyAs, quotedWords } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec, auditChecksOf } from './jobplan.js';
 import { stageQuestionsByName } from '../stagewords.js';
@@ -440,6 +441,7 @@ export function legDividersFor(spineRecords, parts) {
     if (a === 'cap-halt') stopped = `money cap reached (${money})`;
     else if (a === 'wall-halt') stopped = 'time cap reached';
     else if (a === 'provider-red') stopped = 'the model provider failed';
+    else if (a === 'check-timeout') stopped = 'your tests did not finish';
     else if (a === 'step-stalled') stopped = 'a step stopped making progress';
     else if (a === 'stopped') stopped = 'you stopped it';
     else if (a === 'hitl-pause') stopped = 'paused for a decision';
@@ -485,7 +487,7 @@ export function endedFor(summary, death, o = {}) {
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
   // removed by the engine) and the merge stays the person's — the two commands are shown as TEXT, never run by a button.
   // Any other ending: the worktree folder stays (Resume needs it), so the block names it.
-  const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
+  const green = !death.died && (isReusableGreen(summary.outcome) || summary.outcome === 'satisfied');
   if (green) {
     if (!wt.branch) return base;
     // one instruction per row (fwdloop's shape): `in:` names the repo as its own first row, then the commands, then the kept folder
@@ -615,7 +617,7 @@ function endedBase(summary, death, o) {
     }
   }
 
-  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
+  if (isReusableGreen(outcome) || outcome === 'satisfied') {
     if (o.destinationRefused) {
       // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); every ending offers Reuse workflow
       // (withReuseAction adds it) and is told to change the job
@@ -656,6 +658,15 @@ function endedBase(summary, death, o) {
       reason: 'You stopped it.',
       ...resumeOr('Resume.'),
       line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'check-timeout') {
+    // F393: the check never finished, so nothing was judged; the words are kinds.js's one sentence
+    return {
+      reason: checkTimeoutWords(esc?.limitMs),
+      ...resumeOr('Resume.'),
+      line: resumeOk ? 'tests did not finish — resume' : 'tests did not finish',
       actions: resumeOk ? RESUME : [],
     };
   }
@@ -723,34 +734,48 @@ function endedBase(summary, death, o) {
  * @param {{died: boolean, lastThing: string|null}} death
  */
 /**
- * The newest `check-running` record's own text (code-written by src/kinds.js `checkRunningNote`, shown verbatim), or null. It stands only while the
- * tests are running NOW: the tick must be the newest record of the whole spine — every record that ends a check (close-verdict, check-run,
- * outer-close, check-preflight, close-precheck), a step (step-end) or the run (run-end, job-end, escalation) is written after it and so retires it,
- * and so does anything else (a worker round, a new step): a stale line is the failure, a missing one is not.
+ * The Run tab's NOW row (hamr 2026-11-24, D1-D2), read from the run's own spine alone - the caller asks only while the run is live. One of
+ * "Running your tests · M:SS", "AI working · M:SS", "Drafting · M:SS", or null (nothing is made up between them). The time moves in 30 s steps
+ * (`stepped`, src/draftspend.js, the one owner of the time math), never a ticking clock.
+ *  - tests: the newest record is a `check-start` (written when a check pass begins; src/planrun.js) or a `check-running` tick (its own time minus
+ *    its `elapsedMs` is when the check began, so a spine from before `check-start` reads the same). Anything written after either retires it:
+ *    a stale line is the failure, a missing one is not.
+ *  - otherwise the NEAREST phase marker decides: `iteration-start` = the worker is in an attempt, counted from it; `scout-start` = the scout (a worker too) is looking, counted from it until the planner starts (hamr 2026-11-24); `materials` = the planner is
+ *    drafting a plan (a refused draft, `plan-validate` not ok, keeps it going), counted from it; any marker that ends the stretch
+ *    (`middle-done`, `plan-accepted`, `plan-red`, `step-end`, `run-end`, `outer-close`, `job-end`, or a check's own records) = null.
  * @param {any[]} records
+ * @param {number} nowMs
+ * @returns {string|null}
  */
-export function checkRunningOf(records) {
+export function nowOf(records, nowMs) {
+  const ms = (/** @type {any} */ r) => Date.parse(r?.ts);
+  const since = (/** @type {number} */ from) => (Number.isFinite(from) ? mmss(stepped(nowMs - from)) : null);
   const last = records[records.length - 1];
-  return last && last.type === 'check-running' && typeof last.text === 'string' ? last.text : null;
-}
-
-/**
- * The newest `check-reused` record's own text (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. Unlike the running tick it stays true for the whole run: it says the start pass took a saved check result.
- * @param {any[]} records
- */
-export function checkReusedOf(records) {
-  for (let i = records.length - 1; i >= 0; i -= 1) if (records[i]?.type === 'check-reused' && typeof records[i].text === 'string') return records[i].text;
-  return null;
-}
-
-/** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
-function lastJobEndTs(/** @type {any[]} */ records) {
+  if (last && typeof last === 'object' && (last.type === 'check-start' || last.type === 'check-running')) {
+    const t = since(last.type === 'check-start' ? ms(last) : ms(last) - (Number.isFinite(last.elapsedMs) ? last.elapsedMs : 0));
+    return t === null ? null : `Running your tests \u00B7 ${t}`;
+  }
   for (let i = records.length - 1; i >= 0; i -= 1) {
     const r = records[i];
-    if (r && r.type === 'job-end') return typeof r.ts === 'string' ? r.ts : null;
+    if (!r || typeof r !== 'object') continue;
+    if (r.type === 'iteration-start' || r.type === 'scout-start') { const t = since(ms(r)); return t === null ? null : `AI working \u00B7 ${t}`; }
+    if (r.type === 'materials') { const t = since(ms(r)); return t === null ? null : `Drafting \u00B7 ${t}`; }
+    if (NOW_ENDS.has(r.type)) return null;
   }
   return null;
 }
+/** the records that end a stretch `nowOf` could be counting (a refused `plan-validate` is not one) */
+const NOW_ENDS = new Set(['middle-done', 'plan-accepted', 'plan-red', 'step-end', 'run-end', 'outer-close', 'job-end', 'check-start', 'check-running', 'check-run', 'check-preflight', 'close-precheck']);
+
+/**
+ * The current leg's `check-reused` line (code-written in src/planrun.js `tellReuse`, shown verbatim), or null. The ONE owner is src/legs.js
+ * `currentLegView`: the line speaks for this leg's start pass and is gone once a later test run begins (F394, F397). It says this leg's start pass took a saved check result.
+ * @param {any[]} records
+ */
+export function checkReusedOf(records) {
+  return currentLegView(records)?.reused ?? null;
+}
+
 
 /** the timestamp of the spine's LAST record that carries one, or null (a died run has no job-end: this is when it went quiet) */
 function lastRecordTs(/** @type {any[]} */ records) {
@@ -779,10 +804,12 @@ function endedForRow(row, records, summary, death, withWorktree = false, /** @ty
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
   const resume = maybeResumable ? resumePlanFor(row, records) : null;
-  const refused = [...records].reverse().find((r) => r && r.type === 'destination-refused') ?? null;
+  const view = currentLegView(records);
+  const refused = (view?.records ?? []).findLast((/** @type {any} */ r) => r && r.type === 'destination-refused') ?? null;
+  const moneyHalt = view?.moneyHalt === true;
   const ended = endedFor(summary, death, {
     resume,
-    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
+    moneyHalt,
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
     worktree: withWorktree ? worktreeOfRun(row, records) : null,
     exportName,
@@ -790,7 +817,7 @@ function endedForRow(row, records, summary, death, withWorktree = false, /** @ty
   const esc = summary.lastEscalation;
   const status = statusFor({
     outcome: out, died: death.died, category: typeof esc?.category === 'string' ? esc.category : null,
-    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
+    moneyHalt,
   });
   return { ended, resume, status };
 }
@@ -947,7 +974,7 @@ function summarizeRow(row, nowMs = Date.now(), removals = undefined, events = []
   const { ended, status, resume } = endedForRow(row, rawRecords, summary, death);
   // P9 v2: the server decides every state the runs list draws (the page works out nothing).
   const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
-  const stoppedAt = live ? null : (lastJobEndTs(rawRecords) ?? (death.died ? lastRecordTs(rawRecords) : null));
+  const stoppedAt = live ? null : (currentLegView(rawRecords)?.endedTs ?? (death.died ? lastRecordTs(rawRecords) : null));
   const legs = legsOf(rawRecords);
   const priorWall = legs.length <= 1 ? { ms: 0, complete: true } : legsWallMs(legs.slice(0, -1));
   const liveStart = live ? legs.at(-1)?.startMs ?? null : null;
@@ -1277,11 +1304,11 @@ function rubricStagesOf(spec) {
  * @param {any[]} records @param {string} stageName @param {number|null} [line] the job line (to read a red run's plain gap lines) @returns {string[]}
  */
 export function shapeRedsFromRecords(records, stageName, line = null) {
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  const oc = finalCloseOf(records);
   const st = oc ? oc.stages.find((/** @type {any} */ x) => x && x.name === stageName) : null;
   if (st && Array.isArray(st.items)) return st.items.filter((/** @type {unknown} */ x) => typeof x === 'string');
   // a red run records the close's plain gap lines only (the per-row record is the final close's): read our own sentences back (src/shapewords.js `shapeItemOfPlain`)
-  const gapRec = records.findLast((r) => r && r.type === 'close-verdict' && typeof r.gap === 'string' && r.gap.includes(': item '));
+  const gapRec = currentLegView(records)?.records.findLast((/** @type {any} */ r) => r && r.type === 'close-verdict' && typeof r.gap === 'string' && r.gap.includes(': item ')) ?? null;
   if (!gapRec || line === null) return [];
   return [...new Set(String(gapRec.gap).split('\n').flatMap((l) => { const m = new RegExp(`line ${line}: (item \\d+.*)$`).exec(l); const red = m ? shapeItemOfPlain(m[1]) : null; return red ? [red] : []; }))];
 }
@@ -1297,7 +1324,7 @@ export function rowResultsFromRecords(records, spec) {
   const results = new Map();
   /** @type {Map<number, string[]>} */
   const unclaimed = new Map();
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  const oc = finalCloseOf(records);
   const lineOf = new Map(rubricStagesOf(spec).map((/** @type {any} */ s) => [s.name, s.params.step]));
   // shape jobs: a red run recorded no per-row results (the final close's), only the close's plain gap lines; the rows of a shape line are read from them, through the same mapper the close uses (src/rowresults.js)
   const list = Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : null;
@@ -1389,8 +1416,10 @@ function stepOfDelivered(path) {
  * @returns {boolean}
  */
 function stagePassedIn(records, stageName) {
-  const end = records.findLast((r) => r && r.type === 'job-end');
-  if (!end || end.outcome !== 'green') return false;
+  const outcome = currentLegView(records)?.outcome;
+  if (!isReusableGreen(outcome)) return false;
+  // an already-green leg ran no check of its own: its stages' verdicts are on the close precheck it ended on
+  if (outcome === 'already-green') return finalCloseOf(records)?.stages.find((/** @type {any} */ x) => x && x.name === stageName)?.verdict === 'satisfied';
   const run = records.findLast((r) => r && r.type === 'check-run' && r.name === stageName);
   return !!run && run.verdict === 'satisfied';
 }
@@ -1510,7 +1539,7 @@ function cellText(v) {
 function resultKindOf(row, records, spec) {
   const start = records.findLast((r) => r && r.type === 'job-start');
   if (checkTypeLabel(typeof start?.verdictType === 'string' ? start.verdictType : null, row.at ?? null) === 'rubric' && rubricStagesOf(spec).length > 0) return 'rubric';
-  return records.some((r) => r && r.type === 'job-end') ? 'generic' : null;
+  return currentLegView(records)?.jobEnd ? 'generic' : null;
 }
 
 /** the Job type line of a payload, from the ONE owner (src/sourcedefaults.js `jobTypeLine`): `{jobType}` or nothing (a rubric job on files, no spec) @param {any} spec @returns {{jobType?: string}} */
@@ -1671,8 +1700,9 @@ function repoRowChecks(base, row, records, spec, opts) {
  * @param {any[]} records @param {any} spec
  */
 function checksOf(records, spec) {
-  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1)
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1);
+  // a resumed already-green leg's is its own `close-precheck`: one owner (finalCloseOf), shared with the Result tab (live run mwvwcxvy)
+  const oc = finalCloseOf(records);
   if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
@@ -1957,7 +1987,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const bottom = [...plan.notChecked];
   for (const t of prosePool) { const k = bottom.indexOf(t); if (k >= 0) bottom.splice(k, 1); }
   const pageUrls = pageUrlsByLabel(row.spine);
-  const greenEnd = records.findLast((r) => r && r.type === 'job-end')?.outcome === 'green';
+  const greenEnd = isReusableGreen(currentLegView(records)?.outcome);
   const lines = stages.map((/** @type {any} */ st) => {
     const n = st.params.step;
     const jl = jobLines.find((/** @type {any} */ l) => l && l.n === n) ?? null;
@@ -2033,7 +2063,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
           quote,
           ...(proof ? { proof } : {}),
           // a money amount is shown the way the check read it off the page; without evidence (or nothing located) it is the fact's own spelling
-          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? String(f.phrase)
+          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? (Array.isArray(f.anyOf) ? `one of the words ${quotedWords(f.anyOf)}` : String(f.phrase))
             : ((f.shape === 'money' && proof ? moneyAsRead(ev, j) : null) ?? resultCell(f, values[f.name])))),
         };
       });
@@ -2047,10 +2077,10 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     }
     return out;
   });
-  const end = records.findLast((r) => r && r.type === 'job-end');
+  const end = currentLegView(records)?.jobEnd ?? null;
   // a run that did not end green delivered nothing: say the check's own first gap (the Audit's try line words), never rows
   let gap = null;
-  if (!end || end.outcome !== 'green') {
+  if (!end || !isReusableGreen(end.outcome)) {
     const ev = records.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false));
     const bad = ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null;
     const g = bad ? gapOneLine(bad.detail) : null;
@@ -2243,7 +2273,7 @@ function getRunDetailBody(runid, opts) {
 
   /** @param {string|null} outcome @param {boolean} isLast */
   const stateFor = (outcome, isLast) => {
-    const isGreen = outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied';
+    const isGreen = isReusableGreen(outcome) || outcome === 'satisfied';
     if (outcome !== null && outcome !== undefined) return isGreen ? 'done' : 'stopped';
     if (isLast && death.died) return 'died';
     if (isLast && summary.outcome === null) return 'running';
@@ -2266,7 +2296,7 @@ function getRunDetailBody(runid, opts) {
     const attempts = units.map((u, idx) => ({
       n: idx + 1,
       iteration: u.iteration,
-      outcome: (u.verdict === 'green' || u.verdict === 'already-green' || u.verdict === 'satisfied') ? 'green' : 'red',
+      outcome: (isReusableGreen(u.verdict) || u.verdict === 'satisfied') ? 'green' : 'red',
     }));
     const rounds = units.reduce((acc, u) => acc + u.rounds, 0);
     const allToolsKnown = units.every((u) => typeof u.toolCalls === 'number');
@@ -2364,6 +2394,8 @@ function getRunDetailBody(runid, opts) {
   // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
   const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
   const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, lines: auditChecksAll.lines, jobNotChecked: auditChecksAll.jobNotChecked, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
+  /** the NOW row's words, only while the run is live (null once it ends or when no stretch is being counted) */
+  const nowText = row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? nowOf(rawSpineRecords, typeof opts.now === 'number' ? opts.now : Date.now()) : null;
   return {
     // build item (2026-09-26): the LISTED runid (this function's own
     // `runid` parameter, from `runlist`'s row) is the identity — never
@@ -2386,7 +2418,7 @@ function getRunDetailBody(runid, opts) {
     status,
     // the header's times: when the run started (its list row) and when its last job-end was written (null while live / died)
     startedAt: typeof row.at === 'string' ? row.at : null,
-    endedAt: lastJobEndTs(rawSpineRecords),
+    endedAt: currentLegView(rawSpineRecords)?.endedTs,
     outcome: summary.outcome,
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,
@@ -2397,7 +2429,7 @@ function getRunDetailBody(runid, opts) {
     ended,
     // aligned with fwdloop M9 am7: `MM/DD HH:MM · <outcome word> · <reason>` (local end time); null while the run is live
     endedText: (() => {
-      const ts = lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null);
+      const ts = currentLegView(rawSpineRecords)?.endedTs ?? (death.died ? lastRecordTs(rawSpineRecords) : null);
       const ms = ts === null ? NaN : Date.parse(ts);
       return ended && Number.isFinite(ms) ? `${dateTimeWords(ms)} · ${status.word} · ${ended.reason}` : null;
     })(),
@@ -2405,11 +2437,10 @@ function getRunDetailBody(runid, opts) {
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
     stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
-    // hamr 2026-11-22: "Tests are still running (8 min so far), usually about 12 min." under the step map — only while the run is live and the
-    // tick is the spine's newest record (see checkRunningOf); the page draws the string as is
-    checkRunning: row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? checkRunningOf(rawSpineRecords) : null,
-    // hamr 2026-11-23: "Checks not run again: same files as the last check at 14:05." — the newest `check-reused` record's own text, one grey line beside the check-running one
-    checkReused: row.via !== 'import' ? checkReusedOf(rawSpineRecords) : null,
+    // hamr 2026-11-24 (D1-D2): the NOW row, only while the run is live: "Running your tests · M:SS" / "AI working · M:SS" / "Drafting · M:SS" (see nowOf); null once it ends
+    now: nowText,
+    // D3: this leg's "Checks not run again: same files as the last check at 14:05." - the current leg's own `check-reused` record, shown above the NOW text (so only while NOW shows)
+    nowReused: nowText ? checkReusedOf(rawSpineRecords) : null,
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
@@ -2512,7 +2543,7 @@ function getRunDetailBody(runid, opts) {
     ...(() => {
       const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
       const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
-      const stoppedAt = live ? null : (lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null));
+      const stoppedAt = live ? null : (currentLegView(rawSpineRecords)?.endedTs ?? (death.died ? lastRecordTs(rawSpineRecords) : null));
       const st = needsStateFor({ live, records: rawSpineRecords, resume, stoppedAt, nowMs, removedMs: readNeedsRemovals(opts).get(row.runid) });
       /** @type {string|null} */
       let needsAudit = null;
@@ -2645,8 +2676,8 @@ function resolveAuditPathsForRow(row, spineRecords) {
   if (auditPath && existsSync(auditPath)) paths.push(auditPath);
   // P5-R: a resumed run's LIVE leg writes its tool log in the patient tree while the earlier legs' rows already sit in
   // the run's own file — both are the run's, in that order. "Live" = the LATEST leg has no job-end yet.
-  const last = legsOf(spineRecords).at(-1);
-  const hasJobEnd = last ? last.jobEnd !== null : spineRecords.some((r) => r && r.type === 'job-end');
+  const last = currentLegView(spineRecords);
+  const hasJobEnd = last ? last.jobEnd !== null : false;
   if (hasJobEnd) return paths;
   if (paths.length > 0 && legsOf(spineRecords).length <= 1) return paths; // a never-resumed run's sibling is the whole log
   if (typeof row.patient !== 'string' || row.patient.length === 0) return paths;
@@ -4091,11 +4122,13 @@ export function trackRecordFor(key, opts = {}) {
     if (opts.worker !== undefined && (opts.worker === null || workerId(workerOfSpec(signed.spec)) !== workerId(opts.worker))) continue;
     const outcome = legs.at(-1)?.outcome ?? null;
     if (outcome === null && runIsAlive(row)) { live += 1; continue; }
-    if (outcome === 'green') green += 1; else notGreen += 1;
+    if (isReusableGreen(outcome)) green += 1; else notGreen += 1;
     // the averages read FINISHED runs only (a recorded terminal), and only figures that are exact: an unpriced run
     // or one with unreadable stamps is left out, never counted as $0 or 0 min (unknown is never zero)
     if (outcome === null) continue;
     finished += 1;
+    // an already-green run counts as green above, but its ~$0 spend and near-zero wall are not a real run's cost: it stays out of the averages
+    if (outcome === 'already-green') continue;
     const sp = chainSpend(records);
     if (sp.complete) { spendSum += sp.usd; spendN += 1; }
     const wall = legsWallMs(legs);
@@ -4244,6 +4277,7 @@ export function jobRunsOf(job, opts = {}) {
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
     // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
     out.push({
+      // real green ONLY on purpose: the schedule gate's held-green rule (guard: tests/already-green-delivers.test.js (e))
       runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records,
       // a Tickets run's ticket number (the run list row carries it): the schedule signed with the job starts after this one (R7)
       ...(Number.isInteger(row.ticket) ? { ticket: row.ticket } : {}),

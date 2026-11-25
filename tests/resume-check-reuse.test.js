@@ -4,7 +4,7 @@
 // The command here counts its own runs in a gitignored file, so "spawned N times" is read off the world, never off a mock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, appendFileSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, appendFileSync, utimesSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -14,6 +14,7 @@ import { makeSpine } from '../src/spine.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 import { treeIdentity } from '../src/kinds.js';
+import { runStateFile } from '../src/carrystore.js';
 import { readSpine, scriptedProvider, initPatientRepo, patientGitEnv } from './helpers.js';
 
 function makePatient(t) {
@@ -56,9 +57,9 @@ const dropped = () => ({
 });
 
 /** one leg. `resumeBranch` null = a cold leg. */
-async function leg(ctx, job, provider, resumeBranch, tag) {
+async function leg(ctx, job, provider, resumeBranch, tag, closeTimeoutMs) {
   const spine = join(ctx.spineDir, `${tag}.jsonl`);
-  const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: ctx.dir, provider, emit: makeSpine(spine), ...(resumeBranch ? { resumeBranch } : {}) });
+  const outcome = await runJob(job, { approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }], workdir: ctx.dir, provider, emit: makeSpine(spine), stateFile: runStateFile(ctx.spineDir), ...(resumeBranch ? { resumeBranch } : {}), ...(closeTimeoutMs ? { closeTimeoutMs } : {}) });
   const events = readSpine(spine);
   return { outcome, events, branch: events.find((e) => e.type === 'work-branch')?.branch ?? null };
 }
@@ -149,8 +150,7 @@ test('e. a tampered close script is refused close-tampered at the very start, wi
     goal: 'x', verdictType: 'green', close: [{ name: 'verdict', cmd: 'node verdict-close.mjs', expect: 0, sha256: hashCloseScriptBytes(signedSrc) }],
     tools: ['read', 'write'], escalation: { mode: 'decision-ready' },
   };
-  mkdirSync(join(ctx.dir, '.smoke', 'carry'), { recursive: true });
-  writeFileSync(join(ctx.dir, '.smoke', 'carry', 'state.json'), JSON.stringify({ n: 0, base: null, events: [], asks: [], startFailure: null, checks: [{ key: 'k', treeId: await treeIdentity(ctx.dir), code: 0, out: 'ok', ms: 1, at: new Date().toISOString() }] }));
+  writeFileSync(runStateFile(ctx.spineDir), JSON.stringify({ n: 0, base: null, events: [], asks: [], startFailure: null, checks: [{ key: 'k', treeId: await treeIdentity(ctx.dir), code: 0, out: 'ok', ms: 1, at: new Date().toISOString() }] }));
   writeFileSync(join(ctx.dir, 'verdict-close.mjs'), 'process.exit(1); // tampered after signing\n');
   const provider = scriptedProvider([{ text: 'never' }]);
   const l = await leg(ctx, job, provider, 'bareloop-rb', 'l2');
@@ -158,18 +158,18 @@ test('e. a tampered close script is refused close-tampered at the very start, wi
   assert.equal(provider.calls.length, 0);
 });
 
-test('f. a command that TIMED OUT saves nothing: the carry file holds no result, and the next leg runs it fresh', async (t) => {
+test('f. a command that TIMED OUT saves nothing: the state file holds no result, and the next leg runs it fresh', async (t) => {
   const ctx = makePatient(t);
   git(ctx.dir, ['branch', 'bareloop-rb']);
   startRed(ctx);
-  const job = jobOf([counter('slow', 'a', { hang: true, timeoutMs: 3000 })]);
-  const l1 = await leg(ctx, job, dropped(), null, 'l1');
+  const job = jobOf([counter('slow', 'a', { hang: true })]);
+  const l1 = await leg(ctx, job, dropped(), null, 'l1', 3000);
   assert.ok(l1.events.some((e) => e.type === 'close-precheck'), `the precheck ran and hit the limit: ${JSON.stringify(l1.events.filter((e) => e.type === 'escalation')).slice(0, 600)}`);
   assert.equal(ctx.runs(), 1);
   let saved = [];
-  try { saved = JSON.parse(readFileSync(join(ctx.dir, '.smoke', 'carry', 'state.json'), 'utf8')).checks ?? []; } catch { /* no file = nothing saved */ }
+  try { saved = JSON.parse(readFileSync(runStateFile(ctx.spineDir), 'utf8')).checks ?? []; } catch { /* no file = nothing saved */ }
   assert.deepEqual(saved, [], 'a timed-out run is never kept');
-  await leg(ctx, job, dropped(), 'bareloop-rb', 'l2');
+  await leg(ctx, job, dropped(), 'bareloop-rb', 'l2', 3000);
   assert.equal(ctx.runs(), 2, 'leg 2 ran it fresh');
 });
 
@@ -199,4 +199,42 @@ test('g. treeIdentity: edit changes it, revert returns it, untracked add/remove,
   writeFileSync(join(ctx.dir, '.smoke', 'book'), 'x');
   assert.equal(await treeIdentity(ctx.dir), id0, 'the arbiter books are left out');
   assert.equal(await treeIdentity(tmpdir()), null, 'no git answer = null, never a throw');
+});
+
+test('h. results are kept by (command, files), not latest per command: leg 1 on A, leg 2 on B, leg 3 back on A reads A\'s result without a run', async (t) => {
+  const ctx = makePatient(t);
+  startRed(ctx);
+  const job = jobOf([counter('one', 'a')]);
+  const l1 = await leg(ctx, job, dropped(), null, 'l1');
+  assert.equal(ctx.runs(), 1);
+  appendFileSync(join(ctx.dir, 'src', 'mod.js'), 'x');
+  await leg(ctx, job, dropped(), l1.branch, 'l2');
+  assert.equal(ctx.runs(), 2, 'B is a new fingerprint: a fresh run');
+  writeFileSync(join(ctx.dir, 'src', 'mod.js'), '// nothing yet\n');
+  const l3 = await leg(ctx, job, dropped(), l1.branch, 'l3');
+  assert.equal(ctx.runs(), 2, `leg 3 on A's files again spawned the command ${ctx.runs() - 2} more times`);
+  assert.ok(l3.events.some((e) => e.type === 'check-reused'));
+});
+
+test('i. old runs are not repaired: a state kept in the OLD place (<workdir>/.smoke/carry/state.json) is never read, so the resume runs its checks fresh', async (t) => {
+  const ctx = makePatient(t);
+  startRed(ctx);
+  const job = jobOf([counter('one', 'a')]);
+  const l1 = await leg(ctx, job, dropped(), null, 'l1');
+  assert.equal(ctx.runs(), 1);
+  // move the leg-1 state to where an older release kept it, and take the new file away
+  mkdirSync(join(ctx.dir, '.smoke', 'carry'), { recursive: true });
+  writeFileSync(join(ctx.dir, '.smoke', 'carry', 'state.json'), readFileSync(runStateFile(ctx.spineDir)));
+  rmSync(runStateFile(ctx.spineDir));
+  const l2 = await leg(ctx, job, dropped(), l1.branch, 'l2');
+  assert.equal(ctx.runs(), 2, 'the old-place state was not read: leg 2 ran the command fresh');
+  assert.ok(!l2.events.some((e) => e.type === 'check-reused'));
+});
+
+test('j. the state file lives outside the work copy: a run leaves nothing of it under the workdir', async (t) => {
+  const ctx = makePatient(t);
+  startRed(ctx);
+  await leg(ctx, jobOf([counter('one', 'a')]), dropped(), null, 'l1');
+  assert.ok(readFileSync(runStateFile(ctx.spineDir), 'utf8').includes('"checks"'), 'the file is where runStateFile says');
+  assert.equal(existsSync(join(ctx.dir, '.smoke', 'carry')), false, 'no carry state inside the work copy');
 });

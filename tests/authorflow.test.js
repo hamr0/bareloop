@@ -37,6 +37,7 @@ import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '.
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
   DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration, catalogueForLang,
+  LEGACY_PARAMS, offeredOptional,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
@@ -436,13 +437,24 @@ test('declarationSchema: one branch per LIVE kind, required derived from the cat
     assert.deepEqual(b.properties.params.required, [...spec.required], `${kind}: required is the catalogue's own`);
     assert.deepEqual(
       Object.keys(b.properties.params.properties).sort(),
-      [...spec.required, ...spec.optional].sort(),
-      `${kind}: the schema offers exactly the catalogue's parameter names`,
+      [...spec.required, ...offeredOptional(spec)].sort(),
+      `${kind}: the schema offers exactly the catalogue's parameter names, minus the legacy ones the drafter is no longer offered`,
     );
     assert.equal(b.properties.params.additionalProperties, false, 'a parameter name outside the catalogue is inexpressible');
   }
   assert.equal(schema.properties.stages.maxItems, MAX_STAGES);
   assert.equal(schema.additionalProperties, false);
+});
+
+test('F393: the drafter is not offered timeoutMs - not in the schema, not in the catalogue block - and the schema still covers the catalogue', () => {
+  assert.equal(Object.hasOwn(PARAM_SCHEMAS, 'timeoutMs'), false);
+  assert.deepEqual(schemaCoverage(), { ok: true, missing: [], orphan: [] });
+  const branches = declarationSchema().properties.stages.items.oneOf;
+  for (const b of branches) assert.equal(Object.hasOwn(b.properties.params.properties, 'timeoutMs'), false, `${b.properties.kind.const}: no timeoutMs in the schema`);
+  assert.doesNotMatch(catalogueBlock(), /timeoutMs/);
+  // the loader still ACCEPTS it: an old signed spec carries it
+  assert.ok(KIND_CATALOGUE['command-exit'].optional.includes('timeoutMs'));
+  assert.ok(LEGACY_PARAMS.includes('timeoutMs'));
 });
 
 test('declarationSchema: a LOCKED kind is INEXPRESSIBLE — no branch, no mention', () => {
@@ -2826,7 +2838,7 @@ test('authorClose: a refused try announces WHY — a validation red names its re
   assert.ok(!ok.includes('author-try-failed'));
 });
 
-// ── the still-running note (hamr 2026-11-21): the seed read is given a tick seam and a draft-wide map of measured times ──
+// ── the still-running note (hamr 2026-11-21): the seed read is given a tick seam ──
 test('authorClose: the seed read gets a tick seam; each note reaches onPhase as check-running, in code\'s own words', async () => {
   const decl = goodDeclaration();
   const { generate } = scriptGenerate([{ declaration: decl }, { declaration: decl }]);
@@ -2834,8 +2846,8 @@ test('authorClose: the seed read gets a tick seam; each note reaches onPhase as 
   let sawTick = false;
   const seedReadFn = async (/** @type {any} */ declaration, /** @type {any} */ ctx) => {
     assert.equal(typeof ctx.onTick, 'function', 'authorClose gives the seed read a tick seam');
-    assert.ok(ctx.cmdTimes instanceof Map, 'and the draft-wide map of measured times');
-    ctx.onTick({ elapsedMs: 7 * 60_000, knownMs: null });
+    assert.equal('cmdTimes' in ctx, false, 'and no map of measured times (hamr 2026-11-24, A4)');
+    ctx.onTick({ elapsedMs: 7 * 60_000 });
     sawTick = true;
     return declaration.stages.map((/** @type {any} */ s) => ({ verdict: 'red', exitCode: EXIT_RED, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {} }));
   };

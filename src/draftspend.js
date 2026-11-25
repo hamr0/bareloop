@@ -19,6 +19,7 @@ import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { readRunList, runlistHome } from './runlist.js';
 import { tallyCalls } from './text.js';
+import { panelMoney2 } from './panelmoney.js';
 
 /** the OLD per-session total, no longer written; read only for a session folder that predates the log's call lines carrying it */
 export const DRAFT_SPEND_FILE = 'draft-spend.json';
@@ -259,6 +260,76 @@ export function readDraftSteps(dir) {
   return steps;
 }
 
+/** hamr 2026-11-24: a running time moves in 30 s steps, never a ticking clock (the page polls often; the words change every 30 s) */
+export const TIME_STEP_MS = 30_000;
+
+/**
+ * M:SS, the ONE spelling of a drafting or run-tab time ("took 0:42", "Drafting so far: 2:00", "Running your tests · 7:30").
+ * @param {number} ms @returns {string}
+ */
+export function mmss(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** a running time floored to its 30 s step @param {number} ms @returns {number} */
+export const stepped = (ms) => Math.floor(Math.max(0, ms) / TIME_STEP_MS) * TIME_STEP_MS;
+
+/**
+ * The drafting's whole time: the first step's start to the last step's end (the same figure the Audit's drafting row and the plan card say).
+ * `null` when the log has no step with both times.
+ * @param {{startedAt: string, endedAt: string|null}[]} steps `readDraftSteps`' records
+ * @returns {number|null}
+ */
+export function draftWallMs(steps) {
+  const starts = steps.map((x) => Date.parse(x.startedAt)).filter(Number.isFinite);
+  const ends = steps.map((x) => (x.endedAt === null ? NaN : Date.parse(x.endedAt))).filter(Number.isFinite);
+  return starts.length && ends.length ? Math.max(0, Math.max(...ends) - Math.min(...starts)) : null;
+}
+
+/**
+ * The session's state as the page reads it while drafting (hamr 2026-11-24, A1-A5): every progress line carries its `time` ("took M:SS" when it
+ * ended, "M:SS so far" while it runs) and `draftSoFar` is "Drafting so far: M:SS" while a step runs. Read from the drafting log's step-start /
+ * step-end lines at the moment of reading (the log's step `no` is the line's index); nothing is kept. A line the log never saw has no time.
+ * @param {{outDir?: string, steps?: any[], [k: string]: any}} state
+ * @param {number} [nowMs]
+ * @returns {any} a copy of `state`
+ */
+export function withDraftTimes(state, nowMs = Date.now()) {
+  const logged = typeof state.outDir === 'string' ? readDraftSteps(state.outDir) : [];
+  const byNo = new Map(logged.map((x) => [x.no, x]));
+  const steps = (Array.isArray(state.steps) ? state.steps : []).map((/** @type {any} */ s, /** @type {number} */ i) => {
+    const x = byNo.get(i);
+    const a = x ? Date.parse(x.startedAt) : NaN;
+    let time = null;
+    if (x && Number.isFinite(a)) {
+      if (x.status === 'running') time = `${mmss(stepped(nowMs - a))} so far`;
+      else if (x.wallMs !== null) time = `took ${mmss(x.wallMs)}`;
+    }
+    return { ...s, time };
+  });
+  const starts = logged.map((x) => Date.parse(x.startedAt)).filter(Number.isFinite);
+  const running = logged.some((x) => x.status === 'running');
+  return { ...state, steps, draftSoFar: running && starts.length ? `Drafting so far: ${mmss(stepped(nowMs - Math.min(...starts)))}` : null };
+}
+
+/**
+ * The plan card's one line (hamr 2026-11-24, B): "Drafted in M:SS · $X" - the drafting's whole time ({@link draftWallMs}) and its spend (the log's
+ * `call` lines, the same reader as the money views; "at least" when a call was unpriced). `null` when the log has no step time or no call
+ * (a Reuse has no drafting), so nothing is made up.
+ * @param {string} dir the session's folder
+ * @returns {string|null}
+ */
+export function draftedLine(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return null; }
+  const ms = draftWallMs(readDraftSteps(dir));
+  const spend = spendFromLog('', text);
+  if (ms === null || spend === null) return null;
+  return `Drafted in ${mmss(ms)} \u00B7 ${spend.spendComplete ? '' : 'at least '}${panelMoney2(spend.spentUsd)}`;
+}
+
 /**
  * fwd am14 item 6: the label this draft's record carries (`revise 1`, `revise 2`, `start over`; src/revises.js `draftLabelOf` owns the words), or null for a first draft.
  * @param {string} dir
@@ -358,12 +429,10 @@ export function draftingPartFor(row, spine, opts = {}) {
   const steps = readDraftSteps(dir);
   const calls = steps.reduce((n, x) => n + x.calls.length, 0);
   if (calls === 0) return null;
-  const starts = steps.map((x) => Date.parse(x.startedAt)).filter(Number.isFinite);
-  const ends = steps.map((x) => (x.endedAt === null ? NaN : Date.parse(x.endedAt))).filter(Number.isFinite);
   return {
     kind: 'drafting', id: 'drafting', label: 'drafting', occurrence: 1, leg: 1, outcome: null, blocked: 0,
     attempts: [], rounds: calls, toolCalls: 0, byTool: null,
-    wallMs: starts.length && ends.length ? Math.max(0, Math.max(...ends) - Math.min(...starts)) : null,
+    wallMs: draftWallMs(steps),
     spentUsd: spine.draftSpentUsd, spendComplete: spine.draftSpendComplete !== false, unpricedRounds: 0,
     draftSteps: steps,
     draftLabel: readDraftLabel(dir),

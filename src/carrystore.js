@@ -1,20 +1,27 @@
 // The carry note's store (M1, F258): the run-level record behind src/carrynote.js. It captures the worker's read-class tool
 // calls AT THE SOURCE (the worker's tool objects, result SUMMARIES only, never file
 // content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
-// the note and persists its state under `<workdir>/.smoke/carry/state.json` (an arbiter book: the worker's fs.deny covers
-// `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). There is no switch: the memo is
+// the note and persists its state in the ONE run state file (`runStateFile`, hamr 2026-11-24): beside the run's source.json, OUTSIDE the work copy
+// (a green run removes the work copy), so drafting's signing gates and the run read and write the same file; outside the worker's readScope, so it
+// cannot read it. The same file holds every COMPLETED check command result by (command key, tree fingerprint). There is no switch: the memo is
 // always on (hamr 2026-11-01).
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
-import { SMOKE_STORE } from './kinds.js';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { redactSecrets } from './validate.js';
 import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
 import { DIFF_DIR } from './rangereview.js';
 
 const exec = promisify(execFile);
-export const CARRY_DIR = 'carry';
+/**
+ * THE one path of a run's state file (hamr 2026-11-24, ITEM33 addendum Part A): `dir` is the source door's own directory (`source.json` lives there;
+ * the panel's `<session>/source-seed`, a prepared copy's `source-*`), or the spine directory for a bundle / a run with no prepared copy.
+ * Drafting reaches it as `prep.into`, the run as its `into`; it is never inside the work tree. @param {string} dir
+ */
+export const runStateFile = (dir) => join(dir, 'run-state.json');
+/** per command, the saved results kept: its first (the seed reading, whenever it was taken) and the newest few; a dropped one only means a rerun */
+const KEEP_NEWEST_PER_COMMAND = 3;
 /** the retry marker the next prompt of a retried step / fix try carries; kept as a pinned fact about the prompts, no longer read to decide an outcome */
 export const RED_MARKER = /Previous attempt failed (this step's checks|the verification):/;
 
@@ -71,12 +78,12 @@ export function orderEditsByRecency(edits, settled) {
 
 /**
  * Run-level store. Asks are sequential, so "the current ask" is one counter.
- * @param {{workdir: string, emit: (type: string, rec: any) => void, strikeLimit?: number, resume?: boolean}} o
+ * `stateFile` = `runStateFile(dir)`; absent = nothing is written (a library caller that never resumes). The check results are always loaded
+ * from it (drafting wrote some); the carry memo only on a resume.
+ * @param {{workdir: string, stateFile?: string|null, emit: (type: string, rec: any) => void, strikeLimit?: number, resume?: boolean}} o
  */
-export function createCarryStore({ workdir, emit, strikeLimit, resume = false }) {
+export function createCarryStore({ workdir, stateFile = null, emit, strikeLimit, resume = false }) {
   workdir = resolve(workdir);
-  const dir = join(workdir, SMOKE_STORE, CARRY_DIR);
-  const stateFile = join(dir, 'state.json');
   /** @type {string|null} */
   let base = null;
   let n = 0;
@@ -86,13 +93,26 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   let loaded = false;
   /** @type {string|null} the job's own count-check text at start (the seed note's body), the oldest entry of the memo's earlier failures */
   let startFailure = null;
-  /** @type {Map<string, {key: string, treeId: string, code: number, out: string, ms: number, at: string, seed?: boolean}>} the latest COMPLETED check-command result per command key (resume reuse); an old state file has none */
+  /** @type {Map<string, {key: string, treeId: string, code: number, out: string, ms: number, at: string}>} every COMPLETED check command result, by (command key, tree fingerprint) */
   const checks = new Map();
-  if (resume && existsSync(stateFile)) {
-    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; for (const c of Array.isArray(s.checks) ? s.checks : []) if (c && typeof c.key === 'string' && typeof c.treeId === 'string' && typeof c.out === 'string') checks.set(c.key, c); loaded = true; } catch { /* a bad file starts empty */ }
+  const slot = (/** @type {string} */ key, /** @type {string} */ treeId) => `${key}\0${treeId}`;
+  /** read the file once: the check results always, the carry memo only on a resume (a bad or missing file starts empty) */
+  if (stateFile && existsSync(stateFile)) {
+    try {
+      const s = JSON.parse(readFileSync(stateFile, 'utf8'));
+      for (const c of Array.isArray(s.checks) ? s.checks : []) if (c && typeof c.key === 'string' && typeof c.treeId === 'string' && typeof c.out === 'string') checks.set(slot(c.key, c.treeId), c);
+      if (resume) { n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; loaded = true; }
+    } catch { /* a bad file starts empty */ }
   }
   const save = () => {
-    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure, checks: [...checks.values()] })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
+    if (!stateFile) return;
+    // atomic: a temp file, then a rename (src/learnstore.js does the same); a record, never a verdict: a failed save never breaks a run
+    try {
+      mkdirSync(dirname(stateFile), { recursive: true });
+      const tmp = `${stateFile}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify({ n, base, events, asks, startFailure, checks: [...checks.values()] }));
+      renameSync(tmp, stateFile);
+    } catch { /* see above */ }
   };
   const rel = (/** @type {string} */ p) => (isAbsolute(p) ? relative(workdir, p) : p).split('\\').join('/') || '.';
   const diskLines = (/** @type {string} */ r, /** @type {string|undefined} */ fallback) => { try { return lineCount(readFileSync(resolve(workdir, r), 'utf8')); } catch { return fallback === undefined ? null : lineCount(fallback); } };
@@ -271,7 +291,16 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /** The seed note's body (already secret-masked), set once per run; a resume keeps the one it persisted. @param {string} text */
   const setStartFailure = (text) => { if (!startFailure && text) { startFailure = text; save(); } };
 
-  /** keep a COMPLETED check command's result (latest per key); the caller already scrubbed `out` @param {{key: string, treeId: string, code: number, out: string, ms: number, at: string, seed?: boolean}} rec */
-  const keepCheck = (rec) => { checks.set(rec.key, rec); save(); };
-  return { wrapTools, beginAsk, setStartFailure, keepCheck, savedChecks: () => [...checks.values()], endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /** the saved result of this command on exactly these files, or undefined @param {string} key @param {string} treeId */
+  const findCheck = (key, treeId) => checks.get(slot(key, treeId));
+  /** keep a COMPLETED check command's result under (command key, tree fingerprint); the one scrub of its output happens here @param {{key: string, treeId: string, code: number, out: string, ms: number}} rec */
+  const keepCheck = (rec) => {
+    try {
+      checks.set(slot(rec.key, rec.treeId), { key: rec.key, treeId: rec.treeId, code: rec.code, out: redactSecrets(rec.out), ms: rec.ms, at: new Date().toISOString() });
+      const mine = [...checks.entries()].filter(([, c]) => c.key === rec.key);
+      for (const [k] of mine.slice(1, Math.max(1, mine.length - KEEP_NEWEST_PER_COMMAND))) checks.delete(k);
+      save();
+    } catch { /* never breaks a run */ }
+  };
+  return { wrapTools, beginAsk, setStartFailure, keepCheck, findCheck, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }

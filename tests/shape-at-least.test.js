@@ -21,7 +21,7 @@ test('"at least N" in the rule the AI pointed at (no field holds it) is the coun
   assert.deepEqual(rubricStepShapeReds({ step: 1, parts: [part] }, 'x'), []);
   assert.equal(shapeDefaultWords({ min: part.minItems, max: part.maxItems }), 'the answer lists at least 3 items');
   assert.deepEqual(shapeRowsOf({ stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part] } }] }, [LINE]).filter((x) => x.by === 'default').map((x) => x.text), ['the answer lists at least 3 items']);
-  assert.match(lineBriefs({ stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part] } }] })[0].text, /at least 3 items, one for every one you find/);
+  assert.match(lineBriefs({ stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part] } }] })[0].text, /at least 3 items\./);
 });
 
 test('bareguard enforces it: 2 items is red, 3 and 10 are green (no ceiling)', async () => {

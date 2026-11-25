@@ -170,7 +170,8 @@ export const isSheetInput = (input) => typeof input?.value === 'string' && input
 export function lookFactOf(k, source) {
   /** @type {LookFact} */
   const out = { line: k.line, name: k.name, shape: k.shape, source, example: '', words: [...k.words] };
-  if (k.shape === 'phrase') out.phrase = k.words[0];
+  // a phrase fact with several words keeps ALL of them (`words`; signed as one any-of fact); `phrase` is only the one-word fact's (fwdloop v0.37.0, M19 am5)
+  if (k.shape === 'phrase' && k.words.length <= 1) out.phrase = k.words[0];
   else { out.labels = [...k.words]; if (k.words.length) out.label = k.words[0]; }
   if (k.unit) out.unit = [...k.unit];
   if (k.currency) out.currency = [...k.currency];

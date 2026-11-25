@@ -485,8 +485,8 @@ test('THE FORBIDDEN ZONE: an instrument stop routes by its TYPED fault, not by i
   //     option list. Pooling this into `failed` would hand a human "fix the argv"
   //     for a close that simply needs longer.
   const timedOut = await runDeclaredStages(
-    declaredStages({ stages: [stage('s', 'command-exit', { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0, timeoutMs: 400 })] }),
-    (s) => s, OPTS(r),
+    declaredStages({ stages: [stage('s', 'command-exit', { cmd: 'node', args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0 })] }),
+    (s) => s, OPTS(r, { timeoutMs: 400 }),
   );
   assert.equal(timedOut.verdict, 'timed-out');
   assert.equal(CLOSE_FAULTS[timedOut.verdict].category, 'close-timeout');
