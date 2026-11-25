@@ -2472,7 +2472,7 @@ Hamr: "all next come next release ... we need to start clean; also a lot of borr
 - [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
 - [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
 - [ ] One run state file pieces still open (F395, F396).
-- [ ] F399 one place per run: POC plan to be shown to hamr before any build (after the fwd swap lands).
+- [ ] F399 one place per run: hamr picked option 1 (readers over the spine, simple > clever) 2026-11-25; POC pre-registered in ITEM33-BUILD Addendum 2026-11-25b. Whole next-release list rides this branch (hamr: "we take it all in").
 
 Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.
 
@@ -2480,6 +2480,7 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
 
 - [ ] S1 typed refusal `{box, words}` set at the call site; six boxes get a red line (Job, Inputs, Cap $, Model, Destination, Job name). Spec: ITEM33-BUILD.md "Addendum 2026-11-25"; F400.
 - [ ] S2 one page writer for a refusal; pointer under Draft; no poll tick wipes it.
+  Seen live 2026-11-25 (hamr): name, Destination and no-~ refusals paint under their box. A no-box refusal under Draft is test-proven only, not seen live: every no-box start refusal is blocked by the card first (e.g. picking mcp auto-selects the first MCP). hamr: leave it.
 - [ ] S3 Job box hint: one step per line, a `~` line is its rule.
 - [ ] S4 count-row words pinned by a test (no wording change).
 - [ ] Phone width of the red lines: hamr's DevTools.

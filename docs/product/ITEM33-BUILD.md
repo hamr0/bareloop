@@ -5731,3 +5731,28 @@ Build spec. A fresh session can build from this alone. Finding: F400 (docs/wiki/
 - `bareloop.context.md` updated if the start route's answer shape is documented there.
 - `prompt-commit-check` passes.
 - Not checked by us: phone width of the new red lines (hamr's DevTools).
+
+## Addendum 2026-11-25b: F399 POC pre-registration (frozen before any data; hamr picked option 1)
+
+**Ruling (hamr 2026-11-25): option 1.** A run's checks and its output each get ONE reader over the run's spine (the log), current leg only, used by every view. No new state file: run-state.json keeps only test results and the memo (Addendum 2026-11-24 Part A item 2). A new spine record is added only where today's records lose a fact. Simple > clever and cleaner.
+
+**Question.** Can two readers, `checksOf` and `outputOf`, built only from today's spine records and the run folder's files, give every fact today's views show, for every job kind, for the run's current leg?
+
+**Corpus.** Every real run listed in hamr's `~/.config/bareloop/runs.jsonl` whose spine still exists, read-only. Spines and run folders are COPIED to the POC scratch folder first, never read in place or written. Report the count per job kind: D change, D review, R file/URL/sheet, shape, tickets, already-green resumes. A kind with fewer than 3 runs is named UNDERPOWERED in the result, never counted as a pass for that kind.
+
+**Method.** A throwaway git worktree of the branch in `.claude/scratch/poc-f399/` (never the original tree). The POC readers live there only and never ship. For each run, the readers' answer is compared with what today's code shows, by calling today's real view functions on the same copied spine: Result tab, Audit checks box, replay CLOSE line, and the reuse reader (`src/reuse.js` readTry). $0: no provider call. The POC runs with no API key in its env and asserts that.
+
+**Compared fields.**
+
+- Checks: per row, the job line, the rule or stage, and the state (passed / failed / not checked / not reached), plus shape items and their failures; file checks (exit-eval); $ defaults.
+- Output: kind, the files or paths made, staged, or delivered to Destination, and whether they landed.
+
+**PASS (all must hold).**
+
+1. 0 mismatches on every run, except where today's view is a KNOWN bug. On runs mwvwcxvy, mwue75ih and mvtatlxw the reader must match the current leg's final close (`finalCloseOf`, `src/legs.js`); today's wrong value counts as today's bug, not a reader miss.
+2. Every mismatch is classed as one of: reader bug, today's-view bug (named, with run id and screen), or fact missing from the records. The "fact missing" list is the list of new spine records the build needs, each named with the run it was found on.
+3. Simple bar: each reader is at most 150 lines, and job kinds fork in ONE table per reader, not in scattered ifs. Line counts and the table are reported.
+
+A reader bug left at the end is a FAIL. A FAIL goes back to hamr, no build. A FAIL is reported as FAIL; a second round, if any, is pre-registered anew, never re-tuned.
+
+**Results** go to `.claude/scratch/poc-f399/RESULTS.md` with a verdict line `VERDICT: PASS` or `VERDICT: FAIL`, the per-kind counts, every mismatch with its class, and the missing-facts list.
