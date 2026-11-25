@@ -21,7 +21,7 @@ function page(boxes) {
   const els = Object.fromEntries(Object.entries(boxes).map(([k, v]) => [k, { value: v }]));
   const doc = { getElementById: (/** @type {string} */ id) => els[id] };
   const src = `var sessionLive = false, lastState = null; var CLIENT_TERMINAL_PHASES = ["refused", "abandoned", "error", "signed", "signing-failed"];
-var errEl = {}; function renderProgress(){ return false; } function renderQuestionBox(){} function refreshStartEnabled(){} function fitCardBoxes(){}
+var errEl = {}; var refusalKey = "", dismissedRefusalId = null; function paintRefusal(){} function renderProgress(){ return false; } function renderQuestionBox(){} function refreshStartEnabled(){} function fitCardBoxes(){}
 var progressRow = {};
 function setVal(id, v){ document.getElementById(id).value = v; }
 ${fnSrc('syncDestinationFromSession')}\n${fnSrc('syncJobBoxFromSession')}\n${fnSrc('renderActions')}

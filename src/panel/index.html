@@ -972,10 +972,12 @@
               <!-- P8: the job's "Thinking on" tick (drafting + the rubric judge; never the worker). The SERVER's per-line `thinking.canChange` decides. -->
               <label class="jf-thinking" id="jf-thinking-label"><input type="checkbox" id="jf-thinking" data-testid="jf-thinking"> Thinking on</label>
               <div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"></div>
+              <div class="jf-err" id="jf-err-model" data-testid="jf-err-model"></div>
             </div>
             <div class="field">
               <label for="jf-name">Job name <span class="req">required</span></label>
               <input id="jf-name" type="text" placeholder="kebab-case, unique">
+              <div class="jf-err" id="jf-err-name" data-testid="jf-err-name"></div>
             </div>
             <div class="field">
               <label for="jf-job">The job <span class="req">required</span></label>
@@ -983,6 +985,7 @@
                 <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
               </div>
+              <div class="jf-err" id="jf-err-job" data-testid="jf-err-job"></div>
               <div class="hint" id="jf-range-tip" data-testid="jf-range-tip">Review only some changes? Add a line:<br>range: v1.2..v1.3 or commit..commit&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;branch: my-feature</div>
             </div>
             <div class="field">
@@ -991,6 +994,7 @@
                 <div class="gut" id="jf-inputs-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
+              <div class="jf-err" id="jf-err-inputs" data-testid="jf-err-inputs"></div>
             </div>
             <!-- ITEM33-BUILD piece 8 (fwd M13 p4): Flow type and the MCP pick. Signed WITH the job by code; the MCP list is Settings > MCP's (the page only reads it). -->
             <div class="field" id="jf-flowtype-field" data-testid="jf-flowtype-field">
@@ -1024,6 +1028,7 @@
             <div class="field">
               <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
+              <div class="jf-err" id="jf-err-dest" data-testid="jf-err-dest"></div>
             </div>
 
             <!-- T Part 7: the When field, only on the card opened by Schedule run / Cancel-modify schedule. Every word is filled from the server's table. -->
@@ -1052,6 +1057,7 @@
                 <label for="jf-cap-money">Cap $ <span class="req">required</span></label>
                 <input id="jf-cap-money" type="text">
                 <div class="hint" id="jf-cap-note" data-testid="cap-note"></div>
+                <div class="jf-err" id="jf-err-capUsd" data-testid="jf-err-capUsd"></div>
               </div>
               <div class="cap-field">
                 <label for="jf-cap-time">Time cap (min)</label>
@@ -5668,6 +5674,27 @@
     var lastState = null;
     var startOk = false;
     var errEl = document.getElementById("chat-card-error");
+    // fwd v0.38.0 (M19 am14b, F400): the ONE writer of a draft refusal's lines. A refusal with a box paints its words in a red line under that box plus one pointer
+    // under the Draft button; a refusal with no box paints its words under the button. Painted once per refusal (a poll never brings back a line the person cleared by pressing Draft).
+    var REFUSAL_POINTER = "Not drafted: fix the red line above.";
+    var REFUSAL_ERR_IDS = {job: "jf-err-job", inputs: "jf-err-inputs", capUsd: "jf-err-capUsd", model: "jf-err-model", dest: "jf-err-dest", name: "jf-err-name"};
+    var refusalKey = "";      // which refusal is painted ("" = none)
+    var dismissedRefusalId = null; // the session whose refusal the person answered by pressing Draft
+    var refusalBoxEl = null;  // the box line it was painted into (null: none)
+    function clearRefusal(){
+      if(refusalBoxEl) refusalBoxEl.textContent = "";
+      refusalBoxEl = null; refusalKey = ""; errEl.textContent = "";
+    }
+    function paintRefusal(id, r){
+      var key = r ? String(id) + "|" + r.box + "|" + r.words : "";
+      if(key === refusalKey) return;
+      clearRefusal();
+      refusalKey = key;
+      if(!r) return;
+      var boxEl = r.box && REFUSAL_ERR_IDS[r.box] ? document.getElementById(REFUSAL_ERR_IDS[r.box]) : null;
+      if(boxEl){ boxEl.textContent = r.words; refusalBoxEl = boxEl; errEl.textContent = REFUSAL_POINTER; }
+      else errEl.textContent = r.words;
+    }
     var actionErrEl = document.getElementById("chat-action-error");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
@@ -5945,6 +5972,7 @@
       renderQuestionBox(null);
       thread.innerHTML = ""; lastMsgSig = null;
       errEl.textContent = "";
+      clearRefusal();
       actionErrEl.textContent = "";
       sessionId = null;
       sessionLive = false;
@@ -6539,8 +6567,11 @@
     function renderActions(state){
       lastState = state;
       // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
-      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
-      errEl.textContent = "";
+      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice.
+      // F400: a standing refusal (its box line and pointer) is the one writer's (paintRefusal / clearRefusal); no tick wipes it.
+      if(refusalKey === "") errEl.textContent = "";
+      // a draft refused at $0 before any AI call that names its box: the words go under that box too (a refusal with no box stays in the progress line only)
+      if(state.refusal && typeof state.refusal === "object" && state.refusal.box && state.id !== dismissedRefusalId) paintRefusal(state.id, state.refusal);
       var progressChanged = renderProgress(state);
       renderQuestionBox(state);
       // build item 4 — re-enable Start only once the session has settled
@@ -6585,8 +6616,11 @@
       }).catch(function(){ /* transient — next poll tries again */ });
     }
 
+    var startAttempt = 0;
     function doStart(){
-      errEl.textContent = "";
+      // pressing Draft answers the refusal on screen: that session's refusal is never painted again (its poll may still tick)
+      if(sessionId) dismissedRefusalId = sessionId;
+      clearRefusal();
       actionErrEl.textContent = "";
       // build item 4 — disable the moment it's clicked, not just once the
       // response comes back; re-enabled below only if the start is refused.
@@ -6596,7 +6630,8 @@
       if(startFrom) body.startFrom = startFrom.importId ? {importId: startFrom.importId} : startFrom.runid;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
-          errEl.textContent = (r.body && r.body.error) || "refused";
+          startAttempt += 1;
+          paintRefusal("start" + startAttempt, {box: (r.body && r.body.box) || null, words: (r.body && r.body.error) || "refused"});
           // the refusal is the answer to the click: bring it into view (it sits under the cap fields, above the progress list)
           try { errEl.scrollIntoView({block: "nearest"}); } catch(e){}
           sessionLive = false;
