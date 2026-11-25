@@ -5710,6 +5710,7 @@ Build spec. A fresh session can build from this alone. Finding: F400 (docs/wiki/
 - Painted once per refusal key (session id or start attempt, plus box, plus words).
 - Cleared on the next Draft click (`doStart`, index.html:6588).
 - No poll tick and no `renderActions` call may wipe a standing refusal's box line or pointer. Today `renderActions` blanks `#chat-card-error` every tick (index.html:6543).
+- **Amendment 2026-11-25 (hamr "2"):** a SESSION refusal with box null ALSO shows its words under the Draft button (`#chat-card-error`), like a start refusal with box null; the drafting list keeps its ✗ step. This supersedes the 2026-10-04 "a session stop is shown once, in the progress line" note for refusals only (phase refused); other session stops and errors are unchanged.
 
 **S3. Job box hint.** Under the Job box, for both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip (`jf-range-tip`, index.html:986) is unchanged.
 
