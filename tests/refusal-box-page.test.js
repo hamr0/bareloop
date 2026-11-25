@@ -107,10 +107,21 @@ test('a session refusal that names a box paints once; a tick never wipes it; pre
   assert.equal(w.els['jf-err-capUsd'].textContent, 'Cap is bad');
 });
 
-test('a session refusal with no box leaves the card line to the progress list (no second copy under the button)', () => {
+test('a session refusal with no box paints its words under the Draft button, no box line; a tick keeps it; the next Draft clears it (hamr 2026-11-25)', async () => {
   const w = world();
-  w.api.renderActions({ phase: 'refused', id: 's2', error: 'look failed', refusal: { box: null, words: 'look failed' } });
-  assert.equal(w.els['chat-card-error'].textContent, '');
+  const st = { phase: 'refused', id: 's2', error: 'look failed', refusal: { box: null, words: 'look failed' } };
+  w.api.renderActions(st);
+  assert.equal(w.els['chat-card-error'].textContent, 'look failed');
+  for (const k of ['job', 'inputs', 'capUsd', 'model', 'dest', 'name']) assert.equal(w.els[`jf-err-${k}`].textContent, '', k);
+  w.api.renderActions(st);
+  assert.equal(w.els['chat-card-error'].textContent, 'look failed', 'a tick does not wipe it');
+  w.api.setSession('s2');
+  w.ctl.reply = { status: 400, body: { ok: false, error: 'Cap is bad', box: 'capUsd' } };
+  w.api.doStart();
+  assert.equal(w.els['chat-card-error'].textContent, '', 'cleared at the click');
+  await flush();
+  w.api.renderActions(st);
+  assert.equal(w.els['chat-card-error'].textContent, POINTER, 'the ended session never paints again; only the new refusal shows');
 });
 
 test('the page has a red line under each of the six boxes', () => {

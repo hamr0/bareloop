@@ -6567,12 +6567,12 @@
     }
     function renderActions(state){
       lastState = state;
-      // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
-      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice.
+      // a session's stop or error is shown ONCE, in the progress line (renderProgress); echoing state.error here made the same stop appear twice.
+      // The one exception (hamr 2026-11-25, "2", copying fwd): a REFUSAL (phase refused, state.refusal) also shows its words under the Draft button, through paintRefusal.
       // F400: a standing refusal (its box line and pointer) is the one writer's (paintRefusal / clearRefusal); no tick wipes it.
       if(refusalKey === "") errEl.textContent = "";
-      // a draft refused at $0 before any AI call that names its box: the words go under that box too (a refusal with no box stays in the progress line only)
-      if(state.refusal && typeof state.refusal === "object" && state.refusal.box && state.id !== dismissedRefusalId) paintRefusal(state.id, state.refusal);
+      // a draft refused at $0 before any AI call: its words go under its box (box null: under the Draft button); the drafting list keeps its failed step
+      if(state.refusal && typeof state.refusal === "object" && state.id !== dismissedRefusalId) paintRefusal(state.id, state.refusal);
       var progressChanged = renderProgress(state);
       renderQuestionBox(state);
       // build item 4 — re-enable Start only once the session has settled
