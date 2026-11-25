@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **A refused draft names the box it is about (copied from fwdloop v0.38.0, M19 am14b; F400).** A refusal is now `{box, words}`: `POST /api/author/start` answers `{ok: false, error, box}` (`error` stays for old callers) and a draft that stops at $0 before any AI call records `refusal` beside `error` in the session state. `box` is one of `job`, `inputs`, `capUsd`, `model`, `dest`, `name`, or null (the words stay under the Draft button), set as a literal at each refusing check (`src/panel/refusal.js` owns the names). The drafting list keeps its failed step as before.
+
 ## [0.63.0] - 2026-11-25
 
 ### Added
