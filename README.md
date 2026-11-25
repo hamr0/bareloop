@@ -47,7 +47,7 @@ Software factories run a flow someone wrote in advance. bareloop builds the flow
 **Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. The agent picks its checks from a fixed set of check types it can't extend; whatever none of them can check is listed as Not checked.
 > *"Fix the lint errors."* · *"Add doc comments to every function."* · *"Split this 3,000-line file without breaking a test."*
 
-**Rubric (research, sheets and lists)**: it reads the pages, files and sheets you give it and hands you a report. Every fact is quoted from its saved source, and code works out sheet totals and checks each list item's form. An AI only points; code decides. What code can't check is listed as Not checked, for you at Accept.
+**Rubric (research, sheets and lists)**: it reads the pages, files and sheets you give it and hands you a report. Every fact is quoted from its saved source, and code works out sheet totals and checks each list item's form, like a Pydantic model: the right fields and types, not whether they are true. An AI only points; code decides. What code can't check is listed as Not checked, for you at Accept.
 > *"Find flights LAX→SFO under $400, nonstop, no red-eye."* · *"Total the expenses over $500 in this sheet."* · *"List every item in this tracker: a title, a status, a summary under 200 characters."*
 
 ## What it won't do
@@ -178,13 +178,6 @@ with your permissions, so give bareloop a repo you would let an agent touch.
 - **Apps** · [fwdloop](https://github.com/hamr0/fwdloop) · **bareloop**
 
 Built from [bareagent](https://github.com/hamr0/bareagent), [barebrowse](https://github.com/hamr0/barebrowse), [bareguard](https://github.com/hamr0/bareguard) and [litectx](https://github.com/hamr0/litectx). → [The whole suite](https://github.com/hamr0)
-
-## Background
-
-bareloop is the productization of **[adaptlearn](https://github.com/hamr0/adaptlearn)**, a
-closed experimental record on whether agent-authored workflows improve under an honest gate.
-The design laws it inherited, and the open questions it has not answered yet, are in
-[`docs/product/PRD.md`](docs/product/PRD.md).
 
 ## License
 
