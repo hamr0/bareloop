@@ -21,7 +21,6 @@ const ALLOWED = {
   'src/ledger.js|job-end': { n: 1, why: 'legSpend: its input IS one leg\'s records (documented), read for that leg\'s own spend' },
   'src/monthly.js|job-end': { n: 3, why: 'per-leg slices: legWallOne / inFlightCapUsd get ONE leg\'s records; readLegs walks every leg on its own date' },
   'src/learn.js|job-end': { n: 1, why: 'buildCards folds the WHOLE spine (all legs) into cards at run end, where the last job-end is the leg that just ended' },
-  'src/learn.js|escalation': { n: 1, why: 'buildCards noise check over the whole spine; reading it per leg would change what a resumed run teaches (reported as F397 follow-up, not moved)' },
   'src/learnstore.js|job-end': { n: 1, why: 'the stamp of the run-end tally of the whole spine (same call as buildCards)' },
   'src/reuse.js|job-end': { n: 2, why: 'the legacy try loop reads one try\'s own events (a try is one run, both attempts folded) and checkpointAgeGate reads the latest leg it was handed' },
   'src/u-readout.js|job-end': { n: 1, why: 'deathAtOf already scopes to the latest leg through legsOf before it asks' },
