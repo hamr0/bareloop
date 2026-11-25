@@ -14,6 +14,8 @@ import { jobSpecHash } from '../src/job.js';
 import { main } from '../src/userrun.js';
 import { rubricGoal, listMatchesClose, lineBriefs, cardOfClose } from '../src/rubricstep.js';
 import { scriptedProvider } from './helpers.js';
+import { checksOf } from '../src/runread.js';
+import { shapeItemRecordsOf } from '../src/rowresults.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */ const made = [];
@@ -159,4 +161,32 @@ test('"under 200 characters" is exclusive: a 200-character summary is RED, a 199
   const at199 = await run(r, file, ITEMS([{ summary: 's'.repeat(199) }]));
   assert.equal(at199.rc, 0, at199.text);
   assert.match(at199.text, /outcome\s+green/);
+});
+
+// F399 (Addendum 2026-11-25d): a red shape run's raw item reds are written to the spine as `shape-items` where they happen (a red STEP check: src/planrun.js runCheck),
+// so the readers never parse our own gap sentences back. The record carries the same raw strings a final close keeps in `stages[].items`.
+test('F399: a red shape run writes `shape-items` {step, line, items}; checksOf.shapeItems reads them with no gap prose', async () => {
+  const { r, file } = await draft();
+  const bad = await run(r, file, ITEMS([undefined, undefined, { status: 'done' }, { summary: 's'.repeat(236) }]));
+  const recs = bad.spine.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const got = recs.filter((e) => e.type === 'shape-items');
+  assert.ok(got.length >= 1, 'a shape-items record was written');
+  assert.equal(got[0].step, 'line-1');
+  assert.equal(got[0].line, 1);
+  const items = [...new Set(got.flatMap((e) => e.items))];
+  assert.equal(items.length, 2, JSON.stringify(items));
+  assert.ok(items.every((x) => /^#\d+:/.test(x)), JSON.stringify(items));
+  // the reader: no close-verdict gap prose in the way (drop every gap) and the same items still come back
+  const noGap = recs.map((e) => (e.type === 'close-verdict' ? { ...e, gap: undefined } : e));
+  const stageName = closeDeclStage(bad.closeDecl);
+  assert.deepEqual([...checksOf(noGap, null, { spec: { closeDecl: bad.closeDecl } }).shapeItems.get(stageName)].sort(), items.slice().sort());
+});
+
+const closeDeclStage = (/** @type {any} */ cd) => cd.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step').name;
+
+test('F399: shapeItemRecordsOf: a stage entry with items becomes one record; none, a command close and junk make none', () => {
+  assert.deepEqual(shapeItemRecordsOf({ stages: [{ name: 'line-2', items: ['#0:title:missing'] }, { name: 'guard', verdict: 'satisfied' }, { name: 'x', items: [] }] }), [{ step: 'line-2', line: 2, items: ['#0:title:missing'] }]);
+  assert.deepEqual(shapeItemRecordsOf({ verdict: 'needs_revision', gap: 'x' }), []);
+  assert.deepEqual(shapeItemRecordsOf(null), []);
+  assert.deepEqual(shapeItemRecordsOf({ stages: [{ name: 'other', items: ['a'] }] }), [{ step: 'other', line: null, items: ['a'] }]);
 });

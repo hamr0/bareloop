@@ -42,6 +42,7 @@ import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createCarryStore } from './carrystore.js';
 import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
+import { shapeItemRecordsOf } from './rowresults.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { reviewFindingsRecords, REVIEW_FINDINGS } from './reviewfindings.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -2453,6 +2454,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     if (!chain) return { pass: false, fault: 'failed', gap: `no offered close stage named "${name}"` };
     const v = await runCloseStages(chain);
     emit('check-run', { name, verdict: v.verdict, ...(v.stage && v.stage !== name ? { stage: v.stage } : {}), ...(v.exitCode !== undefined ? { exitCode: v.exitCode } : {}) });
+    // REPORT-ONLY (F399): a red STEP check's shape item reds live only here (evalExits drops the stage entries): written once, where they happen
+    for (const rec of shapeItemRecordsOf(v)) emit('shape-items', rec);
     if (v.verdict === 'satisfied') return { pass: true };
     if (v.verdict === 'needs_revision') {
       // The run trend is fed by EVERY grade the arbiter renders, and a check IS an
@@ -2479,7 +2482,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * (only exhaustion replans; an instrument stop stays a stop) */
   let lastEscalation = /** @type {any} */ (null);
   /** @type {(type: string, data?: object) => object} */
-  const emitL = (type, data) => { if (type === 'escalation') lastEscalation = data; return emit(type, data); };
+  const emitL = (type, data) => {
+    if (type === 'escalation') lastEscalation = data;
+    const out = emit(type, data);
+    // REPORT-ONLY (F399): a red shape line's raw item reds, written where the close-verdict happens (src/rowresults.js `shapeItemRecordsOf`; ralph.js stays import-free). No verdict path reads it
+    if (type === 'close-verdict') for (const rec of shapeItemRecordsOf(data)) emit('shape-items', rec);
+    return out;
+  };
 
   /**
    * Assemble one bounded worker: fresh Gate (the fence, the arbiter's books
@@ -4274,6 +4283,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // still red → the escalation ralph already emitted stands.
   const post = await judgeClose();
   emit('outer-close', { ...post });
+  for (const rec of shapeItemRecordsOf(post)) emit('shape-items', rec); // REPORT-ONLY (F399): same record, same writer helper as ralph's close-verdict
   // THE PERSON'S STOP landed inside this close (the poll killed the check): the same `stopped` terminal and records as a Stop at a round boundary
   // (`stop-requested` was written by the poll; `relay` files the `stopped` escalation). Only a kill CAUSED by the stop routes here; a timeout or
   // any other killed close keeps the close-fault routing below. No grade is minted and nothing is discarded.

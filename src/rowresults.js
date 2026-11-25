@@ -118,3 +118,19 @@ export function rowResultsOf(list, params, graded) {
     ...(items.length ? { items } : {}),
   };
 }
+
+/**
+ * The `shape-items` spine records a close's stage entries call for (F399, report-only): one `{step, line, items}` per stage entry that carries raw shape item reds.
+ * `step` is the stage's name; `line` the job line its name says (`line-<n>`), else null. A stage entry is already masked (src/declaredclose.js `rowsRecordOf`).
+ * The three writers (src/ralph.js, src/planrun.js outer close, src/planrun.js `runCheck`) ask here; no verdict path reads the record back.
+ * @param {any} close a close result, or anything else (a command close has no stages)
+ * @returns {{step: string, line: number|null, items: string[]}[]}
+ */
+export function shapeItemRecordsOf(close) {
+  const stages = Array.isArray(close?.stages) ? close.stages : [];
+  return stages.flatMap((/** @type {any} */ s) => {
+    if (!s || typeof s.name !== 'string' || !Array.isArray(s.items) || s.items.length === 0) return [];
+    const m = /^line-(\d+)$/.exec(s.name);
+    return [{ step: s.name, line: m ? Number(m[1]) : null, items: s.items.filter((/** @type {unknown} */ x) => typeof x === 'string') }];
+  });
+}
