@@ -15,6 +15,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **A hint under the Job box (copied from fwdloop v0.38.0, M19 am14b).** For both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip is unchanged.
 
+### Development only
+
+- A test pins the list-line count words on the card, the Audit and the worker text: `exactly N items`, `at least N items`, `at most N items`, and `item` for 1 (fwdloop am15a). No wording changed.
+
 ## [0.63.0] - 2026-11-25
 
 ### Added
