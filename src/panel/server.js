@@ -49,7 +49,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
-import { legsOf, legsWallMs, stopFilePath, capKindOf, currentLegView } from '../legs.js';
+import { legsOf, legsWallMs, stopFilePath, capKindOf, currentLegView, finalCloseOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -1300,29 +1300,15 @@ function rubricStagesOf(spec) {
 }
 
 /**
- * The close record the run ENDED on, the one that carries per-stage verdicts and rows: the latest `close-verdict` / `outer-close`, or, for a leg that ended
- * `already-green` (a resumed run whose tree already passed - no work, no `check-run`), that leg's own last `close-precheck`. Read only.
- * @param {any[]} records @returns {any|null}
- */
-function finalCloseRecordOf(records) {
-  const leg = currentLegView(records);
-  if (leg?.outcome === 'already-green') {
-    const pre = leg.records.findLast((/** @type {any} */ r) => r && r.type === 'close-precheck' && Array.isArray(r.stages));
-    if (pre) return pre;
-  }
-  return records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages)) ?? null;
-}
-
-/**
  * Shape jobs: the raw item reds (`#<i>:<path>:<reason>`, names and counts only) the run's FINAL close recorded for one stage, `[]` when it recorded none.
  * @param {any[]} records @param {string} stageName @param {number|null} [line] the job line (to read a red run's plain gap lines) @returns {string[]}
  */
 export function shapeRedsFromRecords(records, stageName, line = null) {
-  const oc = finalCloseRecordOf(records);
+  const oc = finalCloseOf(records);
   const st = oc ? oc.stages.find((/** @type {any} */ x) => x && x.name === stageName) : null;
   if (st && Array.isArray(st.items)) return st.items.filter((/** @type {unknown} */ x) => typeof x === 'string');
   // a red run records the close's plain gap lines only (the per-row record is the final close's): read our own sentences back (src/shapewords.js `shapeItemOfPlain`)
-  const gapRec = records.findLast((r) => r && r.type === 'close-verdict' && typeof r.gap === 'string' && r.gap.includes(': item '));
+  const gapRec = currentLegView(records)?.records.findLast((/** @type {any} */ r) => r && r.type === 'close-verdict' && typeof r.gap === 'string' && r.gap.includes(': item ')) ?? null;
   if (!gapRec || line === null) return [];
   return [...new Set(String(gapRec.gap).split('\n').flatMap((l) => { const m = new RegExp(`line ${line}: (item \\d+.*)$`).exec(l); const red = m ? shapeItemOfPlain(m[1]) : null; return red ? [red] : []; }))];
 }
@@ -1338,7 +1324,7 @@ export function rowResultsFromRecords(records, spec) {
   const results = new Map();
   /** @type {Map<number, string[]>} */
   const unclaimed = new Map();
-  const oc = finalCloseRecordOf(records);
+  const oc = finalCloseOf(records);
   const lineOf = new Map(rubricStagesOf(spec).map((/** @type {any} */ s) => [s.name, s.params.step]));
   // shape jobs: a red run recorded no per-row results (the final close's), only the close's plain gap lines; the rows of a shape line are read from them, through the same mapper the close uses (src/rowresults.js)
   const list = Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : null;
@@ -1433,7 +1419,7 @@ function stagePassedIn(records, stageName) {
   const outcome = currentLegView(records)?.outcome;
   if (!isReusableGreen(outcome)) return false;
   // an already-green leg ran no check of its own: its stages' verdicts are on the close precheck it ended on
-  if (outcome === 'already-green') return finalCloseRecordOf(records)?.stages.find((/** @type {any} */ x) => x && x.name === stageName)?.verdict === 'satisfied';
+  if (outcome === 'already-green') return finalCloseOf(records)?.stages.find((/** @type {any} */ x) => x && x.name === stageName)?.verdict === 'satisfied';
   const run = records.findLast((r) => r && r.type === 'check-run' && r.name === stageName);
   return !!run && run.verdict === 'satisfied';
 }
@@ -1715,8 +1701,8 @@ function repoRowChecks(base, row, records, spec, opts) {
  */
 function checksOf(records, spec) {
   // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1);
-  // a resumed already-green leg's is its own `close-precheck`: one owner (finalCloseRecordOf), shared with the Result tab (live run mwvwcxvy)
-  const oc = finalCloseRecordOf(records);
+  // a resumed already-green leg's is its own `close-precheck`: one owner (finalCloseOf), shared with the Result tab (live run mwvwcxvy)
+  const oc = finalCloseOf(records);
   if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {

@@ -42,6 +42,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **One owner for "the final close of this run's current leg" (hamr 2026-11-25, run mwvwcxvy).** The Result tab, Audit tab and replay each scanned the whole run for it, so a resumed already-green run showed no close (or the earlier leg's red one) in the replay CLOSE line; all three now ask `finalCloseOf` in `src/legs.js`, and a guard test fails if another file scans for it.
+
 - **The Audit tab's checks on a resumed already-green run are the resumed leg's own (hamr 2026-11-25, run mwvwcxvy).** Audit read only the staged close records, so it showed an earlier leg's close for a run whose last leg ended already-green. It now reads the same final close the Result tab does (the resumed leg's own check), so both tabs show the same checks.
 
 - **The Reuse estimate line counts an already-green run as green (hamr 2026-11-25, run mwvwcxvy).** "Same job — G green · N not green" put a resumed run whose check already passed under "not green". It now counts as green; its near-zero cost and time are left out of the "about $X and M min a run" averages, which stay the real runs' own figures.

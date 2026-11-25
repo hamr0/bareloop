@@ -139,6 +139,23 @@ export function currentLegView(records) {
 }
 
 /**
+ * THE ONE owner of "which close record is FINAL for the run's CURRENT leg" (hamr 2026-11-25, "go B", run mwvwcxvy). A leg that ended
+ * `already-green` ran no close of its own: its final close is its last `close-precheck`. Any other leg's is its last staged `close-verdict`
+ * or `outer-close`; a leg with none yet (still live) reads null. NEVER a record from an earlier leg - a whole-spine scan showed leg 1's red
+ * close under a leg 2 that went already-green. A precheck lacks the staged close's `iteration` (record) and `unclaimed` (stage): readers
+ * tolerate those being undefined. Screen readers (Result / Audit / replay) ask here and scan nothing for it
+ * (tests/legs-final-close.test.js fails if one does).
+ * @param {any[]} records one spine's parsed records, in file order
+ * @returns {any|null}
+ */
+export function finalCloseOf(records) {
+  const leg = currentLegView(records);
+  if (!leg) return null;
+  if (leg.outcome === 'already-green') return leg.records.findLast((r) => r.type === 'close-precheck') ?? null;
+  return leg.records.findLast((r) => (r.type === 'close-verdict' && Array.isArray(r.stages)) || r.type === 'outer-close') ?? null;
+}
+
+/**
  * The legs' WORKING time, gap excluded (hamr 2026-10-02, 2A: only working time charges the wall). Each leg
  * counts first record → last record; the quiet time between one leg's end and the next leg's marker is
  * nobody's. `null` = unknown (no leg carries two parseable stamps) — never 0. A leg whose stamps are

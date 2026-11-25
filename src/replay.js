@@ -106,7 +106,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf, currentLegView } from './legs.js';
+import { legsOf, capKindOf, currentLegView, finalCloseOf } from './legs.js';
 import { isReusableGreen } from './panel/status.js';
 import { thinkingWordsFrom } from './thinking.js';
 
@@ -406,15 +406,14 @@ function gapLines(gap) {
  * `outer-close` unconditionally would have reported a run that went green as
  * still needing revision.
  * @param {any[]} spine
- * @returns {{source: 'close-verdict'|'outer-close', iteration: number|null,
+ * @returns {{source: 'close-verdict'|'outer-close'|'close-precheck', iteration: number|null,
  *   verdict: string|null, stages: any[]|null}|null}
  */
 function resolveClose(spine) {
-  const candidates = spine.filter((e) => (e.type === 'close-verdict' && Array.isArray(e.stages)) || e.type === 'outer-close');
-  const picked = candidates.length ? candidates[candidates.length - 1] : null;
+  const picked = finalCloseOf(spine);
   if (!picked) return null;
   return {
-    source: picked.type === 'outer-close' ? 'outer-close' : 'close-verdict',
+    source: picked.type,
     iteration: typeof picked.iteration === 'number' ? picked.iteration : null,
     verdict: picked.verdict ?? null,
     stages: Array.isArray(picked.stages) ? picked.stages : null,
