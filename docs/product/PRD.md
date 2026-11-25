@@ -2432,6 +2432,7 @@ Discussed with hamr 2026-11-19 (open discussion: "give agents a job, not a task"
 ### Phrase alternatives keep only the first word, waiting for fwd (2026-11-20)
 
 - Phrase fact with alternative words keeps only the first (`src/inputlook.js:173`) — waiting for fwd's fix, copy from fwd's tag, build nothing here (hamr 2026-11-20); see the fix ledger bullet for `src/inputlook.js`.
+- Copied from fwd v0.37.0 (16dc2d8e, 5c4de0ff, bd53004a); the fix-ledger bullet for src/inputlook.js still to be revalidated.
 
 ### Next branch first: open items from chore/barebrowse-031 (2026-11-23) — RULED by hamr
 
@@ -2440,11 +2441,11 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
 - [x] Resume reuse line seen live 2026-11-24 (run mwue75ih leg 2); a later leg after edits correctly ran fresh (leg 3). F382, F394.
 - [x] Stop during a step check: seen live 2026-11-23, leg 1 ended stopped and Resume was offered (F388, F393).
 - [x] Sign & run early-click fix proven live (run mww606do, review-walk, 2026-11-25). F390.
-- [ ] Already-green delivery (findings + report) on a resumed leg is test-proven only, not seen live. F398.
-- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387.
-- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389.
-- [ ] Rubric report: cumulative page dumps, no answer section. F391.
-- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered.
+- [ ] Already-green delivery (findings + report) on a resumed leg is test-proven only, not seen live. F398. — moved to Next release (2026-11-25).
+- [ ] Phone-width checks of the new asks ("Did you mean", `~` refusal) need hamr's DevTools. F385, F387. — moved to Next release (2026-11-25).
+- [ ] Drafter `allowPrefixes` vs the card's "unchecked" mismatch. F389. — moved to Next release (2026-11-25).
+- [ ] Rubric report: cumulative page dumps, no answer section. F391. — moved to Next release (2026-11-25).
+- [ ] Fix-ledger items from the 2026-11-23 self-review: range two-dot diff, resume reuses a saved red, refguess on common-word branch names with "No" not remembered. — moved to Next release (2026-11-25).
 - [ ] Copy from fwd's v0.37.0 tag (hamr picked "A", 2026-11-23: all five), from the tag only:
   - am11, a list line counts its items: fwd 872e01f3 (P1 count = itemShape minItems/maxItems), 2295cd22 (P2 per-row run results), cc8fce50 (P3 green itemShape preflight); tests bd563c72, 4a5c81b8, cae23ba7. — copied (P1, P2; P3 does not apply: no canrun preflight here). Commit a152c03b.
   - Phrase alternatives, the airline case (`src/inputlook.js:173`). — copied. Commits 16dc2d8e, 5c4de0ff, bd53004a.
@@ -2452,6 +2453,20 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
   - F252: checkedLines gives an explicit lead per step; no stray first row on a list line. fwd 92135697, test 399a46c5. — does not apply (bareloop has no checkedLines lead).
   - Decimal-comma quote retry: a quote check failing on the page's own number form retries in that form (fwd CHANGELOG 0.37.0). — already in bareloop (fwd borrowed it from bareloop v0.61.0).
   - Later, from fwd's NEXT tag only (unreleased now): am12 (count-row words), am14 (draft refusal in red under the Draft button, shorter job-box hint). am13 we already have.
-- [ ] Drafting timer and Run tab NOW row — signed by hamr 2026-11-24 (shapes agreed in chat). Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part B.
-- [x] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch. Built 2026-11-24: aae86b26 (check-timeout is resumable), 88f60280 (one 30-minute limit, drafter writes no timeoutMs); spec ITEM33-BUILD.md "Addendum 2026-11-24b". Open from it: preflight, step-exit and fix-loop timeouts route differently; a resumed leg that dies before re-accepting its plan loses it.
-- [ ] One run state file (F395, F396; folds F394) — signed by hamr 2026-11-24, POC first. Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part A.
+- [x] Drafting timer and Run tab NOW row — signed by hamr 2026-11-24 (shapes agreed in chat). Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part B. Built (b3b6ca3b..d526e755), walked live 2026-11-24.
+- [x] A check timeout (esp. a resumed leg's start check) ends close-red and removes Resume; make it resumable like provider-red, and check why the start check limit is 15 min vs the 30 min check limit (F393). RULED by hamr 2026-11-23: fix next branch. Built 2026-11-24: aae86b26 (check-timeout is resumable), 88f60280 (one 30-minute limit, drafter writes no timeoutMs); spec ITEM33-BUILD.md "Addendum 2026-11-24b". Both closed: one owner for all five check sites (7e864a6d), resume reads the plan from the last leg that had one (37d56ff3).
+- [ ] One run state file (F395, F396; folds F394) — signed by hamr 2026-11-24, POC first. Spec: ITEM33-BUILD.md "Addendum 2026-11-24" Part A. — moved to Next release (2026-11-25).
+
+### Next release (hamr 2026-11-25): start clean, then copy to and from fwd after both release
+
+Hamr: "all next come next release ... we need to start clean; also a lot of borrowing from fwd and giving to fwd after both release."
+
+- [ ] FIRST: one place per run for its readings and one for its output, for all D and R jobs (F399, F396, F395). POC first; the design extends the signed one run state file (ITEM33-BUILD.md "Addendum 2026-11-24" Part A). Covers check results of every kind (rules/truth, shape items incl. red runs, file checks, $ defaults), findings, and delivered output; every view reads it.
+- [ ] Reuse reader (src/reuse.js readTry) reads the wrong leg on already-green resumes (mwvwcxvy, mwue75ih, mvtatlxw). Left out of 6e9678b3 (hamr B: near reuse grading). F399.
+- [ ] Already-green delivery on a resumed leg is test-proven only, not seen live. F398.
+- [ ] Phone-width checks (F385, F387; and the new NOW row / ■ sign) need hamr's DevTools.
+- [ ] F389 drafter allowPrefixes vs card "unchecked".
+- [ ] F391 rubric report: cumulative page dumps, no answer section.
+- [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
+- [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text.
+- [ ] One run state file pieces still open (F395, F396).
