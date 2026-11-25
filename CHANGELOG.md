@@ -13,6 +13,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The refusal shows in red under its box, with one pointer under Draft (copied from fwdloop v0.38.0, M19 am14b; F400).** The Job, Inputs, Cap $, Model, Destination and Job name boxes each have a red line; a refusal that names one of them shows its words there and `Not drafted: fix the red line above.` under the Draft button. A refusal with no box (flow type, MCP pick, ticket list address, a session already live, and so on) stays under the Draft button. One page writer paints both a refused start and a refused session; it paints once, the next Draft click clears it, and the poll never wipes it (it used to blank the card line on every tick). A session refusal with no box stays in the drafting list only, as before.
 
+- **A hint under the Job box (copied from fwdloop v0.38.0, M19 am14b).** For both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip is unchanged.
+
 ## [0.63.0] - 2026-11-25
 
 ### Added

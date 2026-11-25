@@ -116,3 +116,10 @@ test('a session refusal with no box leaves the card line to the progress list (n
 test('the page has a red line under each of the six boxes', () => {
   for (const k of ['job', 'inputs', 'capUsd', 'model', 'dest', 'name']) assert.match(PAGE, new RegExp(`<div class="jf-err" id="jf-err-${k}" data-testid="jf-err-${k}"></div>`), k);
 });
+
+test('S3: the Job box carries the one-step-per-line hint, for both job types', () => {
+  assert.match(PAGE, /<div class="hint" id="jf-job-hint" data-testid="jf-job-hint">One step per line\. A ~ line under a step is its rule; add at least one\.<\/div>/);
+  // the hint is not the range tip: the rubric toggle hides only the tip
+  assert.doesNotMatch(PAGE, /jf-job-hint"\)\.hidden/);
+  assert.match(PAGE, /id="jf-range-tip"/);
+});
