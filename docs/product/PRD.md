@@ -2467,6 +2467,10 @@ Hamr: "all next come next release ... we need to start clean; also a lot of borr
 - [ ] Phone-width checks (F385, F387; and the new NOW row / ■ sign) need hamr's DevTools.
 - [ ] F389 drafter allowPrefixes vs card "unchecked".
 - [ ] F391 rubric report: cumulative page dumps, no answer section.
+- [ ] Audit tab: a step the person STOPPED reads "failed" (walk 2026-11-25, run mwue75ih, step 2; spine seq 105 stop-requested, seq 107 escalation category "stopped", seq 109 step-end "escalated"). The word comes from partStatusFor (src/panel/status.js:99), which turns "escalated" into failed; only money/time caps are mapped (cappedLastStep, src/panel/server.js:3412). Fix in one owner: a step whose own escalation is category "stopped" reads stopped. Older than this branch (same on main).
+- [ ] Audit tab: a leg that only re-ran the final check shows no row, so the parts list ends on the "resumed" line (walk 2026-11-25, run mwue75ih leg 3: seq 143 close-precheck satisfied, seq 145 job-end already-green). The parts builder (src/replay.js) has no part kind for a final close on its own; a plain green run's final close has no row either (it shows only in the checks box). Decide the row's look before building. Older than this branch (same on main).
 - [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
 - [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text.
 - [ ] One run state file pieces still open (F395, F396).
+
+Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.
