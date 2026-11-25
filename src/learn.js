@@ -18,6 +18,7 @@
 import { homedir } from 'node:os';
 import { redactSecrets } from './validate.js';
 import { currentLegView } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 
 // ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
 /** The block the planner reads is never longer than this many characters (RULING 7). */
@@ -259,7 +260,7 @@ export function quoteLines(gap) {
 }
 
 /** terminal words that mean the run ended well */
-const isGreen = (/** @type {unknown} */ o) => o === 'green' || o === 'already-green';
+const isGreen = (/** @type {unknown} */ o) => isReusableGreen(/** @type {string} */ (o));
 /** escalation categories that make a run NOISE: the instrument, not the work, failed */
 const NOISE_CATEGORIES = new Set(['provider-red', 'close-crashed']);
 

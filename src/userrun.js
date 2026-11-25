@@ -38,7 +38,7 @@ import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
 import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
-import { skipWords } from './panel/status.js';
+import { skipWords, isReusableGreen } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { rangeAtRunStart, recordRangeOnManifest, recordedRange, writeRangeDiffs } from './rangereview.js';
 import { readShimArm } from './readshim.js';
@@ -2204,7 +2204,7 @@ async function execute(ctx) {
     for (const home of [deps.runlistHome, cfgHome]) { try { n = n ?? runNumbers(readRunList({ home }).rows).get(runid) ?? null; } catch { /* no number: the title is the job name alone */ } }
     return n;
   };
-  if (outcome === 'green' && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && wtDestination !== null) {
+  if (isReusableGreen(outcome) && delivery.reportInRepo && typeof wtManifest?.worktree === 'string' && wtDestination !== null) {
     // ONE RULE: bareloop never writes into the judged tree after the close. With a review door open the report is STAGED under output/ (inside the fence the close judged) and lands at Destination only at an honoured Accept (below); with no door there is no Accept to wait for, so it lands now, as before.
     const staging = doorHere !== null;
     const co = await copyOut({ tree: wd, destination: wtDestination, inRepo: true, stage: staging, report: { name: spec.job, render: deliveredReporter({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, job: spec.job, runNo: runNoOfThisRun() }) } });
@@ -2224,7 +2224,7 @@ async function execute(ctx) {
     }
   }
   if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
-    if (outcome === 'green' || outcome === 'already-green') {
+    if (isReusableGreen(outcome)) {
       const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
       try {
         // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door

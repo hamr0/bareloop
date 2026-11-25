@@ -17,6 +17,7 @@ import { legsOf, legsWallMs } from './legs.js';
 import { jobSpecHash } from './job.js';
 import { closeStagesOf } from './plan.js';
 import { readTry } from './reuse.js';
+import { isReusableGreen } from './panel/status.js';
 import { mintBridge, saveBridge, makeRegistry } from './bridges.js';
 import { exportBundle } from './bundle.js';
 
@@ -56,7 +57,7 @@ const isUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v.trim());
 export function checkExportable(row, name) {
   if (typeof row.spine !== 'string' || !existsSync(row.spine)) return { ok: false, why: `"${name}" has no log file on this machine any more (${row.spine ?? 'none recorded'})` };
   const { records, outcome } = readSpineOutcome(row.spine);
-  if (outcome !== 'green' && outcome !== 'already-green') return { ok: false, why: `"${name}" did not end green (${outcome ?? 'no ending recorded'}) — only a green run can be exported` };
+  if (!isReusableGreen(outcome)) return { ok: false, why: `"${name}" did not end green (${outcome ?? 'no ending recorded'}) — only a green run can be exported` };
   const signed = signedSpecForRun(row, records);
   if (!signed) return { ok: false, why: `the signed job file for "${name}" is not beside its log, or none matches the hash it ran under` };
   const spec = signed.spec;

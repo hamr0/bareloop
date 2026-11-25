@@ -53,6 +53,7 @@ import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
 import { legsOf } from './legs.js';
+import { isReusableGreen } from './panel/status.js';
 
 /** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
  * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
@@ -532,7 +533,7 @@ export function readTry(events) {
  * ROW saying "casualty" was the one place the machinery still mis-described itself.
  * @param {string} outcome @returns {'green'|'red'|'checkpoint'|'casualty'} */
 function verdictClassOf(outcome) {
-  if (outcome === 'green' || outcome === 'already-green') return 'green';
+  if (isReusableGreen(outcome)) return 'green';
   if (HUMAN_CHECKPOINTS.includes(outcome)) return 'checkpoint';
   return REUSE_GRADED_RED.includes(outcome) ? 'red' : 'casualty';
 }

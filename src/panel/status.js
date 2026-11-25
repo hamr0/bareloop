@@ -23,7 +23,8 @@ import { capKindOf } from '../legs.js';
 export const GOAL_MET_LINE = 'goal met';
 
 /**
- * ONE spelling of "this run's outcome is a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
+ * THE ONE OWNER of "this run's outcome is a green" (green or already-green): every src site that asks it calls this, and
+ * tests/green-outcome-owner.test.js fails on a hand-spelled copy. Also the spelling of "a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
  * next line). hamr 2026-10-15: an `already-green` (fixed before any work) counts. `satisfied` is a close verdict, never a run outcome.
  * The SCHEDULE gate (schedules.js greenFor) deliberately stays on a real `green` only (T3).
  * @param {string|null|undefined} outcome
@@ -77,7 +78,7 @@ export function statusFor(o) {
   const out = o.outcome;
   if (o.died) key = 'died';
   else if (out === null || out === undefined) key = 'running';
-  else if (out === 'green' || out === 'already-green' || out === 'satisfied') key = 'passed';
+  else if (isReusableGreen(out) || out === 'satisfied') key = 'passed';
   else if (out === 'skipped') key = 'skipped';
   else if (capKindOf(o) !== null) key = 'capped';
   else if (out === 'stopped') key = 'stopped';

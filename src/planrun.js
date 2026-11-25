@@ -2296,7 +2296,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // is nothing to do", spend nothing, and hand back the verdict they just declined
     // to take. So the run proceeds — a plan is drafted with their words in it, the
     // work happens, and the close judges it again at the end, as it judges everything.
-    if (doorWords === null) { spendRuling('accepted'); await emitReviewDoor('already-green', pre); return 'already-green'; }
+    if (doorWords === null) { spendRuling('accepted'); await emitReviewFindings(pre); await emitReviewDoor('already-green', pre); return 'already-green'; }
     emit('door-rerun-open', {
       fromRunid: doorWords.fromRunid,
       meaning: 'the close is already satisfied and the run continues anyway — the signer asked for different work, not for a re-grade of the same work',

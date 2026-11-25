@@ -11,7 +11,7 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { replayOne, parseJsonl } from '../replayio.js';
-import { statusFor } from './status.js';
+import { statusFor, isReusableGreen } from './status.js';
 
 /** the most run folders one bundle is searched through (newest first) */
 export const MAX_RUN_DIRS = 40;
@@ -100,7 +100,7 @@ export function latestGreenRun(dir) {
   for (const r of bundleRuns(dir)) {
     let outcome = null;
     try { outcome = replayOne(r.spine, { skipAudit: true }).outcome; } catch { continue; }
-    if (outcome === 'green' || outcome === 'already-green') return { runid: r.runid, spine: r.spine, at: spineStartedAt(r.spine) };
+    if (isReusableGreen(outcome)) return { runid: r.runid, spine: r.spine, at: spineStartedAt(r.spine) };
   }
   return null;
 }

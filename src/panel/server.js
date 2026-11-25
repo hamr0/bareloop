@@ -487,7 +487,7 @@ export function endedFor(summary, death, o = {}) {
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
   // removed by the engine) and the merge stays the person's — the two commands are shown as TEXT, never run by a button.
   // Any other ending: the worktree folder stays (Resume needs it), so the block names it.
-  const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
+  const green = !death.died && (isReusableGreen(summary.outcome) || summary.outcome === 'satisfied');
   if (green) {
     if (!wt.branch) return base;
     // one instruction per row (fwdloop's shape): `in:` names the repo as its own first row, then the commands, then the kept folder
@@ -617,7 +617,7 @@ function endedBase(summary, death, o) {
     }
   }
 
-  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
+  if (isReusableGreen(outcome) || outcome === 'satisfied') {
     if (o.destinationRefused) {
       // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); every ending offers Reuse workflow
       // (withReuseAction adds it) and is told to change the job
@@ -2269,7 +2269,7 @@ function getRunDetailBody(runid, opts) {
 
   /** @param {string|null} outcome @param {boolean} isLast */
   const stateFor = (outcome, isLast) => {
-    const isGreen = outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied';
+    const isGreen = isReusableGreen(outcome) || outcome === 'satisfied';
     if (outcome !== null && outcome !== undefined) return isGreen ? 'done' : 'stopped';
     if (isLast && death.died) return 'died';
     if (isLast && summary.outcome === null) return 'running';
@@ -2292,7 +2292,7 @@ function getRunDetailBody(runid, opts) {
     const attempts = units.map((u, idx) => ({
       n: idx + 1,
       iteration: u.iteration,
-      outcome: (u.verdict === 'green' || u.verdict === 'already-green' || u.verdict === 'satisfied') ? 'green' : 'red',
+      outcome: (isReusableGreen(u.verdict) || u.verdict === 'satisfied') ? 'green' : 'red',
     }));
     const rounds = units.reduce((acc, u) => acc + u.rounds, 0);
     const allToolsKnown = units.every((u) => typeof u.toolCalls === 'number');
