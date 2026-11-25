@@ -343,7 +343,8 @@ test('the panel page: a refused Start (a $0 refusal such as an Inputs line) is d
   assert.match(html, /<div class="hint bad card-refusal" id="chat-card-error" data-testid="chat-card-error" role="alert"><\/div>/);
   assert.match(html, /\.card-refusal:not\(:empty\)\{font-size:13px/);
   assert.match(html, /\.hint\.bad\{color:var\(--red\);\}/);
-  assert.match(html, /errEl\.textContent = \(r\.body && r\.body\.error\) \|\| "refused";\s*\/\/[^\n]*\n\s*try \{ errEl\.scrollIntoView/);
+  // F400: the refusal goes through the page's one writer (paintRefusal), then is brought into view
+  assert.match(html, /words: \(r\.body && r\.body\.error\) \|\| "refused"\}\);\s*\/\/[^\n]*\n\s*try \{ errEl\.scrollIntoView/);
 });
 
 test('proveRubricInputs: the refusal for an unreadable page ends in one full stop, not two', async (t) => {
