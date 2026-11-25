@@ -65,3 +65,53 @@ test('(d) the "is this outcome a green" test has ONE owner: no src file outside 
   const hits = files.filter((p) => p !== owner).flatMap((p) => readFileSync(p, 'utf8').split('\n').map((l, i) => (spelled.test(l) ? `${path.relative(root, p)}:${i + 1}: ${l.trim()}` : null)).filter((x) => x !== null));
   assert.deepEqual(hits, [], 'use isReusableGreen from src/panel/status.js');
 });
+
+// (e) EVERY test of a run OUTCOME against 'green' alone (`outcome === 'green'`, `!== 'green'`, in any spelling ending in "outcome") must be a classified, deliberate one. "The run passed" is
+// isReusableGreen (green or already-green); a site that means MINTED green only, or that reads a different thing named outcome (a bridge ROW, a step, a fix-loop result), is listed here with
+// its reason. A NEW green-only test fails until its author reads this list and either calls isReusableGreen or adds the site WITH a reason (key = file + the line's own text).
+const GREEN_ONLY = [
+  // minted green only, on purpose
+  ['bundlerun.js', "if (outcome === 'green' && !bundle.blessing) {", 'signing a bundle is arbiter territory; an already-green proves nothing about the bundle\'s own work'],
+  ['userrun.js', "if (outcome === 'green' && plan && !leaks.length && !ctx.bundle) {", 'an already-green mints no bridge: accept confirms a verdict, it never mints one'],
+  ['reuse.js', "if (outcome !== 'green') {", 'writeRunGreenRow: an already-green predates the run and mints no registry row (reason green-predates-run)'],
+  [path.join('panel', 'schedules.js'), 'r.outcome === \'green\'', 'the schedule gate takes a real green only (T3)'],
+  [path.join('panel', 'server.js'), "outcome: outcome === 'green' && heldScheduled(", 'the schedule gate\'s held-green rule (T D.2)'],
+  // UNDECIDED, reported to hamr: counts a pass as "not green" in the reuse estimate line
+  [path.join('panel', 'server.js'), "if (outcome === 'green') green += 1; else notGreen += 1;", 'UNDECIDED (reported 2026-11-25): trackRecordFor counts an already-green run as "not green" in the Reuse estimate line'],
+  // a bridge ROW's own outcome (appendGreen mints only 'green' rows; an already-green never becomes one)
+  ['bridges.js', "r.outcome === 'green'", 'bridge history rows: only minted greens are rows'],
+  ['bridges.js', "h.outcome === 'green'", 'bridge history rows: only minted greens are rows'],
+  ['bridges.js', "o.outcome === 'green' && o.failingStage", 'bridge row validation'],
+  ['bridges.js', "o.outcome !== 'green'", 'bridge row validation'],
+  ['bridges.js', "o.outcome === 'green') red(", 'bridge row validation'],
+  ['userrun.js', "h.outcome === 'green' && h.quarantined === true", 'a bridge history row held for the door'],
+  [path.join('panel', 'importrun.js'), "h.outcome === 'green'", 'a bridge history row of an imported bundle'],
+  [path.join('panel', 'importroutes.js'), "r.outcome === 'green'", 'a bridge history row of an imported bundle'],
+  // a different thing named outcome: a STEP's, a fix attempt's, the fix loop's own result (never the run's ending)
+  ['replay.js', "a.outcome === 'green'", 'a fix attempt\'s own result'],
+  ['planrun.js', 'res.outcome === \'green\'', 'a step\'s own result'],
+  ['planrun.js', "fixOutcome", 'the fix loop\'s own result; the run ending is decided from it just below'],
+  ['reuse.js', "e.type === 'step-end' && e.outcome === 'green'", 'a step-end record\'s own result'],
+  // the owner
+  [path.join('panel', 'status.js'), "return outcome === 'green' || outcome === 'already-green';", 'isReusableGreen itself'],
+];
+
+test('(e) every green-only test of an outcome is classified: a new one fails until it uses isReusableGreen or is listed with its reason', () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
+  /** @type {string[]} */ const files = [];
+  const walk = (/** @type {string} */ d) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|mjs)$/.test(e.name)) files.push(p); } };
+  walk(root);
+  const greenOnly = /[oO]utcome\s*[!=]==\s*'green'/;
+  /** @type {string[]} */ const unclassified = [];
+  const used = new Set();
+  for (const p of files) {
+    const rel = path.relative(root, p);
+    readFileSync(p, 'utf8').split('\n').forEach((line, i) => {
+      if (!greenOnly.test(line) || /^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      const k = GREEN_ONLY.findIndex(([f, snip]) => f === rel && line.includes(snip));
+      if (k < 0) unclassified.push(`${rel}:${i + 1}: ${line.trim().slice(0, 140)}`); else used.add(k);
+    });
+  }
+  assert.deepEqual(unclassified, [], 'a green-only outcome test: use isReusableGreen (src/panel/status.js) if the run PASSED means green or already-green, else add the site to GREEN_ONLY with its reason');
+  assert.deepEqual(GREEN_ONLY.map((_, k) => k).filter((k) => !used.has(k)).map((k) => GREEN_ONLY[k][1]), [], 'a stale allow-list entry (the site is gone or reworded): remove or fix it');
+});

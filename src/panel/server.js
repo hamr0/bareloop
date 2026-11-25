@@ -1300,11 +1300,25 @@ function rubricStagesOf(spec) {
 }
 
 /**
+ * The close record the run ENDED on, the one that carries per-stage verdicts and rows: the latest `close-verdict` / `outer-close`, or, for a leg that ended
+ * `already-green` (a resumed run whose tree already passed - no work, no `check-run`), that leg's own last `close-precheck`. Read only.
+ * @param {any[]} records @returns {any|null}
+ */
+function finalCloseRecordOf(records) {
+  const leg = currentLegView(records);
+  if (leg?.outcome === 'already-green') {
+    const pre = leg.records.findLast((/** @type {any} */ r) => r && r.type === 'close-precheck' && Array.isArray(r.stages));
+    if (pre) return pre;
+  }
+  return records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages)) ?? null;
+}
+
+/**
  * Shape jobs: the raw item reds (`#<i>:<path>:<reason>`, names and counts only) the run's FINAL close recorded for one stage, `[]` when it recorded none.
  * @param {any[]} records @param {string} stageName @param {number|null} [line] the job line (to read a red run's plain gap lines) @returns {string[]}
  */
 export function shapeRedsFromRecords(records, stageName, line = null) {
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  const oc = finalCloseRecordOf(records);
   const st = oc ? oc.stages.find((/** @type {any} */ x) => x && x.name === stageName) : null;
   if (st && Array.isArray(st.items)) return st.items.filter((/** @type {unknown} */ x) => typeof x === 'string');
   // a red run records the close's plain gap lines only (the per-row record is the final close's): read our own sentences back (src/shapewords.js `shapeItemOfPlain`)
@@ -1324,7 +1338,7 @@ export function rowResultsFromRecords(records, spec) {
   const results = new Map();
   /** @type {Map<number, string[]>} */
   const unclaimed = new Map();
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  const oc = finalCloseRecordOf(records);
   const lineOf = new Map(rubricStagesOf(spec).map((/** @type {any} */ s) => [s.name, s.params.step]));
   // shape jobs: a red run recorded no per-row results (the final close's), only the close's plain gap lines; the rows of a shape line are read from them, through the same mapper the close uses (src/rowresults.js)
   const list = Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : null;
@@ -1416,7 +1430,10 @@ function stepOfDelivered(path) {
  * @returns {boolean}
  */
 function stagePassedIn(records, stageName) {
-  if (currentLegView(records)?.outcome !== 'green') return false;
+  const outcome = currentLegView(records)?.outcome;
+  if (!isReusableGreen(outcome)) return false;
+  // an already-green leg ran no check of its own: its stages' verdicts are on the close precheck it ended on
+  if (outcome === 'already-green') return finalCloseRecordOf(records)?.stages.find((/** @type {any} */ x) => x && x.name === stageName)?.verdict === 'satisfied';
   const run = records.findLast((r) => r && r.type === 'check-run' && r.name === stageName);
   return !!run && run.verdict === 'satisfied';
 }
@@ -1983,7 +2000,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const bottom = [...plan.notChecked];
   for (const t of prosePool) { const k = bottom.indexOf(t); if (k >= 0) bottom.splice(k, 1); }
   const pageUrls = pageUrlsByLabel(row.spine);
-  const greenEnd = currentLegView(records)?.outcome === 'green';
+  const greenEnd = isReusableGreen(currentLegView(records)?.outcome);
   const lines = stages.map((/** @type {any} */ st) => {
     const n = st.params.step;
     const jl = jobLines.find((/** @type {any} */ l) => l && l.n === n) ?? null;
@@ -2076,7 +2093,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const end = currentLegView(records)?.jobEnd ?? null;
   // a run that did not end green delivered nothing: say the check's own first gap (the Audit's try line words), never rows
   let gap = null;
-  if (!end || end.outcome !== 'green') {
+  if (!end || !isReusableGreen(end.outcome)) {
     const ev = records.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false));
     const bad = ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null;
     const g = bad ? gapOneLine(bad.detail) : null;
@@ -4271,6 +4288,7 @@ export function jobRunsOf(job, opts = {}) {
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
     // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
     out.push({
+      // real green ONLY on purpose: the schedule gate's held-green rule (guard: tests/already-green-delivers.test.js (e))
       runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records,
       // a Tickets run's ticket number (the run list row carries it): the schedule signed with the job starts after this one (R7)
       ...(Number.isInteger(row.ticket) ? { ticket: row.ticket } : {}),

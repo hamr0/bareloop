@@ -375,6 +375,7 @@ export async function bundleMain(args, {
     // one row per LEG of the one run; the first leg's row keeps the shape it always had
     ...(legs.length > 1 ? { leg: legs.length } : {}),
   });
+  // minted green ONLY on purpose: signing a bundle is arbiter territory, and an already-green proves nothing about the bundle's own work (guard: tests/already-green-delivers.test.js (e))
   if (outcome === 'green' && !bundle.blessing) {
     bless(bundleDir, {
       bundleHash: manifest.bundleHash, blessedAt: new Date(now()).toISOString(), runid, outcome, host: hostname(),

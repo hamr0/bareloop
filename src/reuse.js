@@ -2190,6 +2190,7 @@ export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
  */
 export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record }) {
   if (!isNonEmptyString(registryDir)) return { minted: false, reason: 'no-registry', write: null };
+  // minted green ONLY on purpose: an already-green predates the run and mints no registry row (guard: tests/already-green-delivers.test.js (e))
   if (outcome !== 'green') {
     return { minted: false, reason: outcome === 'already-green' ? 'green-predates-run' : 'not-green', write: null };
   }

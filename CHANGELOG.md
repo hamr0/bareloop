@@ -42,6 +42,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A resumed already-green run now delivers and shows its result like a green one (run mwvwcxvy).** A plain-folder job that ended already-green copied nothing to Destination, and a resumed already-green review run's Result tab showed its checks as not passed; both now follow the green path. A guard test lists every place that tests for a green alone, each with its reason.
+
 - **A run that ended `already-green` now delivers what a green delivers (run mwvwcxvy).** A review run that passed, was stopped and resumed showed "no saved result to show" on the Result tab and left no markdown report, because the already-green ending skipped the findings record and the report staging that only a plain green did. It now writes the findings record before the door and stages the report. "Is this outcome a green" now has one owner (`isReusableGreen`, `src/panel/status.js`) used by every site that asked it by hand, and a guard test fails if a file spells it again.
 
 - **A resumed run teaches from how its last leg ended (hamr 2026-11-24, F397).** A run whose first leg ended on a provider failure but whose last leg ended on a real verdict used to be set aside as noise and taught nothing; the learnings now read the last leg's ending (through `currentLegView`), so it teaches, and a run whose last leg ended on a provider failure is still set aside.
