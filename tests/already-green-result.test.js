@@ -3,13 +3,13 @@
 // panel-authored run in a scratch dir with an injected scratch HOME. The already-green leg writes no `check-run`; its stages' verdicts and rows live on
 // the `close-precheck` / `review-door` records, so that is what the tab reads.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { appendRun } from '../src/runlist.js';
-import { getRunResult } from '../src/panel/server.js';
+import { getRunResult, checksLineOf } from '../src/panel/server.js';
 import { track } from './tmp-track.mjs';
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'already-green-result');
@@ -42,4 +42,17 @@ test('a resumed already-green review run: every check row of its Result tab read
     assert.deepEqual(l.checkRows.map((x) => x.result), l.checkRows.map(() => 'passed'), `line ${l.n} rows`);
   }
   assert.equal(r.gap, null, 'a passed run states no gap');
+});
+
+// Audit's checks read through the same owner as the Result tab (finalCloseRecordOf): a resumed already-green leg's checks are ITS OWN close-precheck's,
+// never an earlier leg's staged close. The real spine's leg 1 closes without a staged record, so one is added to it (a leg-1 staged `close-verdict` with a red stage,
+// placed before `leg-resume`) to make the earlier leg's close readable; the resumed leg's real close-precheck (2 stages, both satisfied) must still win.
+test('Audit checks of a resumed already-green run come from the resumed leg\'s close-precheck, not an earlier leg\'s close-verdict', () => {
+  const records = readFileSync(join(FX, 'u-mwvwcxvy.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const spec = JSON.parse(readFileSync(join(FX, 'mwvwcxvy.resolved-spec.json'), 'utf8'));
+  const at = records.findIndex((r) => r.type === 'leg-resume');
+  assert.ok(at > 0);
+  const early = { type: 'close-verdict', iteration: 1, verdict: 'needs_revision', stages: [{ name: 'changed-from-seed', verdict: 'needs_revision', rows: [{ key: 'J.$guard.changed-from-seed', result: 'failed' }] }] };
+  const withEarly = [...records.slice(0, at), early, ...records.slice(at)];
+  assert.equal(checksLineOf(withEarly, spec), '2 run · 2 passed · 0 failed', 'the resumed leg\'s own close-precheck, not leg 1\'s red close');
 });

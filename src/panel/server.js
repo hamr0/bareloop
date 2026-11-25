@@ -1714,8 +1714,9 @@ function repoRowChecks(base, row, records, spec, opts) {
  * @param {any[]} records @param {any} spec
  */
 function checksOf(records, spec) {
-  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1)
-  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  // the run's FINAL close: the last staged record by position — the `outer-close` precheck runs once BEFORE the fix loop, whose own staged `close-verdict`s come after it (live run mwg3pov1);
+  // a resumed already-green leg's is its own `close-precheck`: one owner (finalCloseRecordOf), shared with the Result tab (live run mwvwcxvy)
+  const oc = finalCloseRecordOf(records);
   if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
