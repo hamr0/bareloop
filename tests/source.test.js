@@ -1245,8 +1245,8 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
 
   assert.match(src, new RegExp(`const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ into: ${intoVar} \\}\\);|const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ ${intoVar} \\}\\);`),
     'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
-  assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
-    'the copy-out gate fires on the ONE outcome string a graded close mints');
+  assert.match(src, new RegExp(`if \\(isReusableGreen\\(outcome\\) && ${frontDoorVar}\\)`),
+    'the copy-out gate fires on a green or an already-green (the one owner, isReusableGreen)');
   assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination(, \\.\\.\\.\\(amend \\? \\{ amend \\} : \\{\\}\\))?(, report: \\{ name: spec\\.job, render: deliveredReporter\\(\\{ closeDecl: spec\\.closeDecl, jobLines: spec\\.jobLines, job: spec\\.job, runNo \\}\\) \\})? \\}\\);`),
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');

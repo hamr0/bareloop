@@ -2385,15 +2385,12 @@ async function execute(ctx) {
     out(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
   }
 
-  // PRD item 33/M2, call site 3(b) — on a MINTED green only. `outcome` never
-  // carries a distinct 'soft-green' string (src/run.js's own outcome union has
-  // none): a judged close mints the same 'green' as a hard one, and the CLASS
-  // lives on `spec.verdictType`/`REVIEW_DOOR_CLASSES` — so `outcome === 'green'`
-  // already covers both, exactly as the spec's "green/soft-green" phrasing asks
-  // for. A refused copy-out is reported beside the green it could not deliver
-  // and NEVER changes `outcome` — the verdict is the close's, never this
-  // module's to touch.
-  if (outcome === 'green' && frontDoor) {
+  // PRD item 33/M2, call site 3(b) — on a green or an already-green (`isReusableGreen`: a resumed leg whose tree already passes the close is a pass, and what the
+  // run produced must land like a green's; hamr 2026-11-25, run mwvwcxvy). `outcome` never carries a distinct 'soft-green' string (src/run.js's own outcome union
+  // has none): a judged close mints the same 'green' as a hard one, and the CLASS lives on `spec.verdictType`/`REVIEW_DOOR_CLASSES`, so this covers both. An
+  // already-green that has no output under `output/` (a cold one) is refused by `copyOut` in plain words below, never a crash. A refused copy-out is reported
+  // beside the green it could not deliver and NEVER changes `outcome` — the verdict is the close's, never this module's to touch.
+  if (isReusableGreen(outcome) && frontDoor) {
     // `into: dirname(wd)` — same review finding #3 fix as the preflight above,
     // so the two proofs of the same destination never disagree on what counts
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
@@ -2536,6 +2533,7 @@ async function execute(ctx) {
   }
 
   // the BRIDGE: on a green the agent's own plan is kept as the reusable artifact
+  // minted green ONLY on purpose: an already-green mints no bridge (accept confirms a verdict, it never mints one; guard: tests/already-green-delivers.test.js (e))
   if (outcome === 'green' && plan && !leaks.length && !ctx.bundle) {
     // one file PER GREEN, never one file per job: two cold runs of this job produced
     // two DIFFERENT plans that both green (run 1: 3 steps, run 3: 2 steps), so a
