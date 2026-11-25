@@ -5670,3 +5670,63 @@ Approved by hamr 2026-11-24 after a passing $0 POC (`.claude/scratch/poc-current
 - **Whole-run on purpose, untouched:** `chainSpend`, `legsWallMs`, `floorsFromRecords`, money folds, replay's part filters and trip windows, parts and leg dividers.
 - **Guard.** `tests/legs-current-guard.test.js` fails if a src file other than `legs.js` scans a spine for the last job-end, escalation or money-halt outside a named allow-list (each entry carries its reason).
 - **Left for a ruling:** the Runs list's `liveStepWhy` still reads the whole spine's last plan (a leg that has not accepted its plan yet shows the earlier leg's "step N of M"); `src/learn.js` reads the whole spine's last escalation (a resumed run that ends green after a provider-red leg may be set aside as noise).
+
+## Addendum 2026-11-25: refusal under its box (copied from fwd v0.38.0, M19 am14b) — RULED by hamr
+
+Build spec. A fresh session can build from this alone. Finding: F400 (docs/wiki/FINDINGS.md). PRD entry: "fwd v0.38.0 swap". Cites read at main 7bc2719b.
+
+**Rulings (hamr 2026-11-25).**
+
+- Copy fwd am14b's look. Six boxes get a red line (hamr "go 1"): Job, Inputs, Cap $, Model, Destination, Job name.
+- Every other refusal stays under the Draft button (hamr "1", like fwd). That includes flow type, MCP pick and the ticket list address.
+- Copy from fwd's tag v0.38.0 only: `git -C ../fwdloop show v0.38.0:src/panel/index.html` (`paintRefusal` / `clearRefusal`, about lines 7060-7080) and `bin/fwdloop` (`refuseDraft`, about line 154).
+- Not copied: fwd's F259 fix and its 23777c8b fix (neither bug exists here, F400); fwd's step-with-no-`~` checks and the "no guardrail of yours" removal (bareloop has no hitl step class); typecheck, `isRec`, `buildLine` (fwd internals); the Ask part of the hint.
+
+**S1. Typed refusal, one shape.**
+
+- Shape: `{box, words}`. `box` is one of `job | inputs | capUsd | model | dest | name | null`.
+- The box is set at the refusing call site as a literal. It is never read from the words and never guessed.
+- One small constant table owns the legal box names (one owner). Every site uses it.
+- Start route: POST /api/author/start answers `{ok:false, error, box}`. `error` stays for old callers and the tests.
+- Mapping, start route (src/panel/authorroutes.js and src/panel/authorsession.js):
+  - name: job name not a slug (authorsession.js:496); job name taken (497-499); reuse with a changed job and a taken name (authorroutes.js:411).
+  - model: `judgePick` fails (authorsession.js:501-502).
+  - job: `parseJobBlock` error (authorsession.js:504-505; the words come from src/jobblock.js:37, 49, 52, 61); `REPO_RUBRIC_WORDS` (authorsession.js:509).
+  - inputs: `cardInputs` error (authorsession.js:506-507); `parseInputs` error (authorroutes.js:438-439); `proveInputFiles` error (authorroutes.js:196); `ticketBoxProblem` (authorroutes.js:188-189); tickets "nothing new" (authorroutes.js:210).
+  - dest: "Destination is required" (authorsession.js:510); `startDestinationProblem` (authorroutes.js:199-200).
+  - capUsd: "$ cap is required and must be a positive number" (authorsession.js:511-513).
+  - null (stays under the Draft button): a session already live (authorroutes.js:388 and 197); no such run to reuse (405); waiting for Accept (416); `OLD_JOB_REUSE_WORDS` (427, and 177 in `startSession`); `validateReuseCard` error (419-420); check type (authorsession.js:500); thinking value (503); time cap; flow error incl. "Pick an MCP." and the ticket list address (authorroutes.js:183, `resolveFlowCard` authorsession.js:~338-352); schedule error (authorroutes.js:194); revise refusal (authorroutes.js:168-169, src/revises.js:39).
+- Session, before any AI call only: `refuse()` (authorsession.js:873-879) records `state.refusal = {box, words}` beside `state.error`.
+  - Boxed: no model, provider cannot be built, key not set, key looks wrong -> model (896, 899, 904, 916); destination -> dest (929); range or branch `draftRefusal` -> job (934-936); no `~` rule -> job (939-942); prepare-source stop, language refusal, non-repo source -> inputs (994, 1022, 1076).
+  - Everything else in `refuse()` (old job 920, look 1093, spec, signing, draft stop, internal error, and so on) -> null.
+  - The builder must confirm each boxed one really runs before any AI call. If one does not, it stays null.
+- The drafting list keeps its ✗ step and detail exactly as today.
+
+**S2. Page: one writer.**
+
+- One function paints a refusal (fwd's `paintRefusal` shape). Start refusals and session refusals both go through it.
+- A box refusal: its words in a red `.jf-err` line under the box (reuse the existing style, index.html:603-604; box ids jf-job, jf-inputs, jf-cap-money, jf-model, jf-dest, jf-name), and `Not drafted: fix the red line above.` in `#chat-card-error`.
+- A null refusal: its words in `#chat-card-error`, as today.
+- Painted once per refusal key (session id or start attempt, plus box, plus words).
+- Cleared on the next Draft click (`doStart`, index.html:6588).
+- No poll tick and no `renderActions` call may wipe a standing refusal's box line or pointer. Today `renderActions` blanks `#chat-card-error` every tick (index.html:6543).
+
+**S3. Job box hint.** Under the Job box, for both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip (`jf-range-tip`, index.html:986) is unchanged.
+
+**S4. Count-row words pinned (test only, fwd am15a).** One test pins the list-line count words on every surface that shows them (card, Audit, worker text): `exactly N items`, `at least N items`, `at most N items`, and `item` for 1. No wording change.
+
+**Tests (fail-first: each shown red on today's source, then green).**
+
+- A table test of the start route: the right box for every mapped refusal, and null for the null list.
+- A session test: each boxed session refusal sets `state.refusal` with its box, and the drafting step still shows ✗.
+- A browser page test: a refusal paints under its box plus the pointer; a null one paints in `#chat-card-error`; a poll tick does not wipe it; the next Draft click clears it.
+- The hint text (S3).
+- S4.
+
+**Done means.**
+
+- typecheck, build:types and full `npm test` exit 0 on the final commit (quote the exit codes and the last line).
+- CHANGELOG [Unreleased] lines for S1-S3 (S4 under Development only).
+- `bareloop.context.md` updated if the start route's answer shape is documented there.
+- `prompt-commit-check` passes.
+- Not checked by us: phone width of the new red lines (hamr's DevTools).

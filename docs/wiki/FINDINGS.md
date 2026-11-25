@@ -16815,3 +16815,14 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - run-state.json (src/carrystore.js) holds only test-check results by command+tree fingerprint and the carry memo - no outputs, rows, items, stage verdicts or delivered files.
 - Same class as F396 (run state in many stores). The reuse reader (src/reuse.js readTry) also reads the wrong leg on those 3 runs; left out of 6e9678b3 by hamr's call B (near reuse grading).
 - hamr 2026-11-25: "clean that up once and for all: one place where a run holds its reading (what we did with tests and all) and another for reading/storing its output regardless what it is, for all D and R." Next release, POC first.
+
+### F400: fwd's refusal-under-its-box fix does not map onto bareloop as written (fwd v0.38.0 swap, 2026-11-25)
+
+- fwd v0.38.0 (M19 am14b) paints a draft refusal `{box, words}` in red under the box it is about, plus `Not drafted: fix the red line above.` under the Draft button. The box is named by the refusing check's call site, never read from the words.
+- Read-only check of bareloop at main 7bc2719b: there is no typed refusal here. A start refusal is `{ok:false, error}` (HTTP 400/404/409) from POST /api/author/start (src/panel/authorroutes.js:386-446, via `validateJobCard` src/panel/authorsession.js:493-514, `parseInputs`, and `startSession` authorroutes.js:166-215). The page shows it in one line, `#chat-card-error` (src/panel/index.html:1061, written at 6597-6603).
+- A refusal inside the session (`refuse()`, authorsession.js:873-879) shows only as the failed step's ✗ and detail in the drafting list (`renderProgress`, index.html:6313-6330). `state.error` is painted nowhere on the card. This covers the no-`~` refusal (`NEEDS_RULE_WORDS` src/reviewpick.js:23, called at authorsession.js:939-942) and "key not set".
+- No box has its own error line. `.jf-err` (index.html:603-604) is used once, `#jf-err-when` (index.html:1047).
+- fwd's F259 (the poll writes the old job back) does not exist here: `syncJobBoxFromSession` (index.html:6533-6538) returns when `sessionLive` is false, and a refused or error session is terminal (`CLIENT_TERMINAL_PHASES`, index.html:5699). Not copied.
+- fwd's late-first-read race (fwd commit 23777c8b, `clearFieldErrors`) does not exist here: bareloop has no /api/author/flows, `loadFlows`, `paintedFlow` or `clearFieldErrors`. Not copied. Its lesson carries over: once box lines exist, any repaint that clears error lines must skip the refusal's own line. `renderActions` blanks `#chat-card-error` on every tick (index.html:6543).
+- The monthly limit is not a Draft refusal here. It is a note while typing (`#jf-cap-note`, index.html:6043-6050) and a refusal at sign (authorroutes.js, `signRun` area, 536-541).
+- Fix: PRD "fwd v0.38.0 swap" entry and ITEM33-BUILD.md "Addendum 2026-11-25" (the build spec).
