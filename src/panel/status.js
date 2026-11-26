@@ -17,7 +17,12 @@
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
 
-import { capKindOf } from '../legs.js';
+import { capKindOf, endKindOfWords, endOf } from '../legs.js';
+
+/** the owner's end kind (src/legs.js endOf) -> the status table key; ONE table, no new sign or word */
+export const END_TO_KEY = Object.freeze({
+  passed: 'passed', failed: 'failed', stopped: 'stopped', 'capped-money': 'capped', 'capped-time': 'capped', provider: 'failed', stalled: 'failed', 'check-timeout': 'failed', died: 'died', open: 'running',
+});
 
 /** the sentence a passed run carries as its reason (the Ended block's `line`) */
 export const GOAL_MET_LINE = 'goal met';
@@ -100,16 +105,16 @@ export function statusFor(o) {
  */
 export function partStatusFor(part, ctx = {}) {
   if (part.kind === 'drafting') return statusFor({ outcome: 'green' });
-  const why = part.stopReason;
-  const isCap = why === 'money cap' || why === 'time cap';
+  const kind = endKindOfWords(part.stopReason);
+  const isCap = kind === 'capped-money' || kind === 'capped-time';
   const passedOutcome = isReusableGreen(part.outcome) || part.outcome === 'satisfied';
-  // a step or piece a cap ended wears the cap word whatever outcome it carries (src/panel/server.js cappedLastStep)
+  // a step or piece a cap ended wears the cap word whatever outcome it carries (src/legs.js endOf)
   if (isCap && typeof part.outcome === 'string' && !passedOutcome) return { key: 'capped', ...STATUS.capped };
   // a step the person stopped ends `escalated` too (src/replay.js: its own escalation was `stopped`)
-  if (part.outcome === 'escalated' && why === 'you stopped it') return { key: 'stopped', ...STATUS.stopped };
+  if (part.outcome === 'escalated' && kind === 'stopped') return { key: 'stopped', ...STATUS.stopped };
   if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
-  if (why) {
-    const key = isCap ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
+  if (kind !== null) {
+    const key = END_TO_KEY[kind];
     return { key, ...STATUS[key] };
   }
   if (ctx.live) return { key: 'running', ...STATUS.running };
@@ -130,16 +135,18 @@ export function attemptStatusFor(a, part, ctx = {}) {
   /** @param {StatusKey} key */
   const pick = (key) => ({ key, ...STATUS[key] });
   if (a.outcome === 'green') return pick('passed');
-  const partWhy = part.stopReason ?? null;
-  const partCap = partWhy === 'money cap' || partWhy === 'time cap';
+  const partKind = endKindOfWords(part.stopReason ?? null);
+  const partCap = partKind === 'capped-money' || partKind === 'capped-time';
   const what = a.stop?.what ?? null;
   const noVerdict = a.cutOff === true || (typeof a.noVerdict === 'string' && a.noVerdict !== '') || a.stop != null;
   const cutByPart = a.cutOff === true || a.outcome === 'stopped';
-  if (what === 'wall-halt' || (what === 'cap-halt' && (ctx.runCapped === true || partWhy === 'money cap'))) return pick('capped');
-  if (what === 'stopped') return pick('stopped');
+  // the try's own stop first: its boundary is read by the owner, a `cap-halt` being the money cap only when the run (or the part) ended on it
+  const own = a.stop == null ? null : endOf({ own: { green: false, outcome: 'escalated' }, trip: { category: what }, legCap: ctx.runCapped === true || partKind === 'capped-money' ? 'money' : null }).end;
+  if (own === 'capped-money' || own === 'capped-time') return pick('capped');
+  if (own === 'stopped') return pick('stopped');
   if (a.stop == null && cutByPart) {
     if (partCap) return pick('capped');
-    if (partWhy === 'you stopped it') return pick('stopped');
+    if (partKind === 'stopped') return pick('stopped');
   }
   if (noVerdict) return pick('died');
   if (a.outcome === null || a.outcome === undefined) return pick(ctx.live === true ? 'running' : 'died');

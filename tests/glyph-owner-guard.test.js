@@ -40,7 +40,7 @@ test('owner: a part a cap ended wears capped on ANY outcome (a fix piece ends re
   assert.equal(partStatusFor({ kind: 'step', outcome: 'escalated', stopReason: 'time cap' }).key, 'capped');
   assert.equal(partStatusFor({ kind: 'step', outcome: 'green', stopReason: 'time cap' }).key, 'passed');
   assert.equal(partStatusFor({ kind: 'fix', outcome: 'red' }).key, 'failed');
-  assert.equal(partStatusFor({ kind: 'fix', outcome: 'red', stopReason: 'provider failed' }).key, 'failed');
+  assert.equal(partStatusFor({ kind: 'fix', outcome: 'red', stopReason: 'the model provider failed' }).key, 'failed');
 });
 
 test('owner: the live part is running (the server says it, the page no longer decides)', () => {
@@ -56,7 +56,7 @@ test('owner: an attempt wears the table entry its own end earned (passed, stoppe
   // a step try the person's Stop cut: the replay marks its outcome 'stopped', the part says why
   assert.equal(attemptStatusFor({ outcome: 'stopped' }, { stopReason: 'you stopped it' }).key, 'stopped');
   assert.equal(attemptStatusFor({ outcome: 'stopped' }, { stopReason: 'time cap' }).key, 'capped');
-  assert.equal(attemptStatusFor({ outcome: 'stopped' }, { stopReason: 'provider failed' }).key, 'failed');
+  assert.equal(attemptStatusFor({ outcome: 'stopped' }, { stopReason: 'the model provider failed' }).key, 'failed');
   // a fix try its own window's end names
   assert.equal(attemptStatusFor({ outcome: 'red', stop: { by: 'escalation', what: 'stopped' }, noVerdict: 'x' }, part).key, 'stopped');
   assert.equal(attemptStatusFor({ outcome: 'red', stop: { by: 'escalation', what: 'wall-halt' }, noVerdict: 'x' }, part).key, 'capped');

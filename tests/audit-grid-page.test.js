@@ -104,7 +104,7 @@ test('errors list: the verdict-less try is a faint "?" row with the code-owned w
   const html = g.gridErrorsHtml('p5', fixModel, { open: {}, more: {} });
   const q = html.split('<div class="fx-row').find((x) => x.startsWith(' fx-row-q'));
   assert.ok(q, 'the ? row exists');
-  assert.match(q, /<span class="fx-try">try 4<\/span><span class="fx-chk"><span class="glyph-q">\?<\/span><\/span><span class="fx-first fx-faint">provider dropped \(socket hang up\), no check ran<\/span>/);
+  assert.match(q, /<span class="fx-try">try 4<\/span><span class="fx-chk"><span class="glyph-q">\?<\/span><\/span><span class="fx-first fx-faint">the model provider failed \(socket hang up\), no check ran<\/span>/);
   assert.doesNotMatch(q, /<button|data-fxrow|aria-expanded/);
 });
 

@@ -106,7 +106,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf, currentLegView, finalCloseOf } from './legs.js';
+import { legsOf, endOf, currentLegView, finalCloseOf } from './legs.js';
 import { isReusableGreen } from './panel/status.js';
 import { thinkingWordsFrom } from './thinking.js';
 
@@ -237,29 +237,6 @@ const ALL_REASON_MAX = 60;
  * (an older archive predating the field, or a run that died before the
  * record fired) — printed literally, never blank, never a fabricated 0. */
 const NONE_RECORDED = 'none recorded';
-
-/**
- * Did this leg end on a cap? Reads the leg's own last escalation and `money-halt` record.
- * @param {import('./legs.js').Leg} leg
- * @returns {'money'|'time'|null}
- */
-function legCapKind(leg) {
-  const esc = leg.outcome === 'escalated' ? leg.records.findLast((r) => r && r.type === 'escalation') : null;
-  return capKindOf({ outcome: leg.outcome, category: esc?.category ?? null, moneyHalt: leg.records.some((r) => r && r.type === 'money-halt') });
-}
-
-/**
- * The code-owned words for why a leg's halt cut a part off (a step, or a piece of a part that spans legs): the cap it ended on, else the
- * outcome's plain words. ONE owner for the step rule and the per-leg rows (src/replay.js).
- * @param {import('./legs.js').Leg} leg
- * @returns {string}
- */
-function legStopReasonOf(leg) {
-  const o = leg.outcome;
-  const capKind = legCapKind(leg);
-  return capKind === 'money' ? 'money cap' : capKind === 'time' ? 'time cap' : o === 'provider-red' ? 'provider failed'
-    : o === 'check-timeout' ? 'tests did not finish' : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
-}
 
 /**
  * `stopReason` for a non-green outcome: `category — decision — detail`, every
@@ -689,6 +666,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     unpricedRounds: unpricedRoundsInFile,
   };
 
+  /** the leg a record's `seq` belongs to (the one leg of an unresumed run) @param {number|undefined} seq */
+  const legOfSeq = (seq) => (legs.length > 1 && typeof seq === 'number' ? legs.reduce((acc, l) => (typeof l.start?.seq === 'number' && seq >= l.start.seq ? l : acc), legs[0]) : (legs[0] ?? null));
+
   /** @param {any} e */
   const tripOf = (e) => (e ? {
     category: e.category ?? null,
@@ -701,7 +681,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     detail: trimTo(e.detail, TRIP_DETAIL_MAX) ?? trimTo(e.decision, TRIP_DETAIL_MAX),
     // the step ladder's own stop is ALSO category `cap-halt` (real spine u-mshcpdg4 seq 185) but carries `spend.strikes`; a money cap's
     // escalation does not (u-msi0w2i5 seq 143). An ADDED field, only when the ladder ended the step.
-    ...(typeof e.spend?.strikes === 'number' ? { ladder: true } : {}),
+    ...(endOf({ own: { green: false, outcome: 'escalated' }, trip: e, leg: legOfSeq(e.seq) }).ladder ? { ladder: true } : {}),
   } : null);
 
   /**
@@ -766,7 +746,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const usedEndSeqs = new Set();
   const idOccurrence = new Map();
-  /** @type {Map<string, {stopReason: string|null, legIdx: number, tryNumber: number}>} */
+  /** @type {Map<string, {cut: boolean, legIdx: number, tryNumber: number}>} */
   const prevOccurrence = new Map();
 
   const steps = stepStarts.map((ss) => {
@@ -787,28 +767,17 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     const cutByLeg = !end && myLeg !== null && Number.isFinite(legEndSeq);
     const endSeq = end && typeof end.seq === 'number' ? end.seq : (cutByLeg ? legEndSeq : Infinity);
     const endTs = end ? parseTs(end.ts) : (cutByLeg ? parseTs(myLeg?.end?.ts) : null);
-    // why this leg stopped the step (code-owned words); null for a step that ended itself or is still running
+    // how this step ended (src/legs.js endOf: the ONE owner): code-owned words for a step a halt cut (its leg's, or its own escalation: a cap, the
+    // person's Stop, a provider failure), null for a step that ended itself or is still running
+    const stepEnd = endOf({
+      own: end ? { green: isReusableGreen(end.outcome), outcome: end.outcome ?? null } : null,
+      trip: end ? findTrip(escalations, startSeq, endSeq) : null,
+      leg: myLeg ?? legs[0] ?? null,
+      cutBy: end ? null : (myLeg === null ? 'single-leg' : (cutByLeg ? 'leg' : (myLegIdx === legs.length - 1 ? 'last-leg' : null))),
+      legGreen: isReusableGreen(myLeg?.outcome),
+    });
     /** @type {string|null} */
-    let stopReason = null;
-    // a single-leg run has no leg boundary to cut a step, but a cap still ends it: its open step reads capped too
-    // (hamr 2026-10-08), from the same rule (`capKindOf`) the run's own status word uses
-    if (!end && myLeg === null) {
-      const only = legs[0];
-      const capKind = only ? legCapKind(only) : null;
-      if (capKind !== null) stopReason = capKind === 'money' ? 'money cap' : 'time cap';
-    }
-    if (!end && myLeg !== null) {
-      const o = myLeg.outcome;
-      const isLastLeg = myLegIdx === legs.length - 1;
-      if (cutByLeg || (isLastLeg && o !== null && !isReusableGreen(o))) {
-        // hamr 2026-10-08: a leg that ended `escalated` on a money-halt / wall-halt reads as the cap, exactly as the
-        // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
-        stopReason = legStopReasonOf(myLeg);
-      }
-    }
-
-    // a step the person stopped ends `escalated` with its OWN escalation `stopped` (F405): it reads stopped, and its re-run in a later leg is a continuation
-    if (end && stopReason === null && end.outcome === 'escalated' && findTrip(escalations, startSeq, endSeq)?.category === 'stopped') stopReason = 'you stopped it';
+    const stopReason = stepEnd.words;
 
     const phaseTag = `step:${id}`;
     // `judge-round` (a close's paid seam) carries no `.phase` at all
@@ -931,9 +900,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // the SAME step continuing across a leg boundary (the previous occurrence of this id was cut off by its leg's
     // halt, and this one starts in a later leg) is "continued", never a retry; `tryNumber` counts real retries only
     const prevOcc = prevOccurrence.get(id) ?? null;
-    const continued = myLeg !== null && prevOcc !== null && prevOcc.stopReason !== null && prevOcc.legIdx < myLegIdx;
+    const continued = myLeg !== null && prevOcc !== null && prevOcc.cut && prevOcc.legIdx < myLegIdx;
     const tryNumber = prevOcc === null ? 1 : (continued ? prevOcc.tryNumber : prevOcc.tryNumber + 1);
-    prevOccurrence.set(id, { stopReason, legIdx: myLegIdx, tryNumber });
+    prevOccurrence.set(id, { cut: stepEnd.words !== null, legIdx: myLegIdx, tryNumber });
 
     return {
       id,
@@ -1519,7 +1488,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
             wallMs: windowWallMs(first ? w.wallLo : legStartTs(k), lastPiece ? w.wallHi : lastRoundTs),
             spentUsd,
             unpricedRounds,
-            ...(lastPiece ? {} : { stopReason: legStopReasonOf(legs[k]) }),
+            ...(lastPiece ? {} : { stopReason: endOf({ leg: legs[k], cutBy: 'leg' }).words }),
             attempts: wholePartAttempt(startSeq, startTs, endSeq, endTs),
           };
         });
@@ -1566,7 +1535,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
               spentUsd: unpricedRounds > 0 ? null : as.reduce((acc, a) => acc + (a.spentUsd ?? 0), 0),
               unpricedRounds,
               outcome: as[as.length - 1].outcome,
-              ...(n === idxs.length - 1 ? {} : { stopReason: legStopReasonOf(legs[k]) }),
+              ...(n === idxs.length - 1 ? {} : { stopReason: endOf({ leg: legs[k], cutBy: 'leg' }).words }),
               attempts: ix.map((i, at) => ({ ...old.attempts[i], n: at + 1 })),
             };
           });

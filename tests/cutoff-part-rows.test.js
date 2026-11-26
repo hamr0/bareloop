@@ -93,7 +93,7 @@ test('a fix part over three legs is one row per leg; each row\'s attempts read 1
     assert.deepEqual(f.attempts.map((a) => a.n), [1, 2], 'numbered 1..n inside the piece');
     assert.deepEqual(f.attempts.map((a) => a.source), ['outer-close', 'iteration'], 'in time order: the precheck, then the fix try');
   }
-  assert.equal(fixes[1].stopReason, 'provider failed');
+  assert.equal(fixes[1].stopReason, 'the model provider failed');
   assert.equal(partStatusFor(fixes[1]).key, 'failed');
   assert.equal(fixes[0].rounds + fixes[1].rounds + fixes[2].rounds, s.fixLoop.rounds, 'the pieces add up to the old row (the run-level fix loop, unchanged)');
 });
@@ -139,5 +139,5 @@ test('every leg with worker activity owns a part, so no check-only line shows on
   }
   // the provider-failed middle leg of the fix run (the mwuxqx4f leg-5 shape) says so through its own part, not a check-only line
   const f = replayRun(fixAcrossLegs(), [], { runId: 'p' }).parts.filter((p) => p.kind === 'fix');
-  assert.equal(f[1].stopReason, 'provider failed');
+  assert.equal(f[1].stopReason, 'the model provider failed');
 });

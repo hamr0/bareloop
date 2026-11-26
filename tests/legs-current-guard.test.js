@@ -27,8 +27,7 @@ const ALLOWED = {
   'src/userrun.js|job-end': { n: 1, why: 'the run-end settle reads `events`, already the latest leg\'s records (legsOf(...).at(-1))' },
   'src/userrun.js|escalation': { n: 1, why: 'the CLI prints every escalation of the run' },
   'src/userrun.js|money-halt': { n: 1, why: 'the CLI footer reads the same latest-leg `events`' },
-  'src/replay.js|escalation': { n: 3, why: 'legCapKind reads ONE leg; the per-step trip windows and the part boundaries are seq-bounded and span the whole run on purpose' },
-  'src/replay.js|money-halt': { n: 1, why: 'legCapKind reads ONE leg (the history of each leg, not the current one)' },
+  'src/replay.js|escalation': { n: 2, why: 'the per-step trip windows and the part boundaries are seq-bounded and span the whole run on purpose (a leg\'s own cap is asked of endOf, src/legs.js, since Addendum 2026-11-26m)' },
 };
 
 test('no src file other than legs.js scans a spine for the last job-end / escalation / money-halt outside the named allow-list', () => {

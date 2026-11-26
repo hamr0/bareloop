@@ -46,7 +46,7 @@ test('panel: fix tries worded for the page: lines without the close prefix, the 
   const stepLines = step.attempts[0].checks.find((c) => !c.pass).reasons;
   assert.ok(stepLines.some((l) => /^error TS\d+: /.test(l)) && !stepLines.some((l) => /^src\/checks\.js\(/.test(l)), 'step reasons are unchanged: their path-dropping cut stays');
   assert.equal(fix.attempts[0].noVerdict, undefined);
-  assert.equal(fix.attempts[3].noVerdict, 'provider dropped (socket hang up), no check ran');
+  assert.equal(fix.attempts[3].noVerdict, 'the model provider failed (socket hang up), no check ran');
   assert.equal(fix.attempts[3].thinking, 'thinking on');
   assert.equal(fix.attempts[0].thinking, undefined, 'the opening close made no model call, so it has no thinking words');
 });

@@ -49,7 +49,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
-import { legsOf, legsWallMs, stopFilePath, capKindOf, currentLegView, finalCloseOf } from '../legs.js';
+import { legsOf, legsWallMs, stopFilePath, capKindOf, currentLegView, finalCloseOf, endOf, END_WORDS, endKindOfWords } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -436,15 +436,17 @@ export function legDividersFor(spineRecords, parts) {
     const spent = chainSpend(legs.slice(0, k).flatMap((x) => x.records));
     const money = `${spent.complete ? '' : 'at least '}${panelMoney2(spent.usd)}`;
     const a = l.after;
+    // the kind of ending comes from the owner (src/legs.js endOf); only the sentence is spelled here
+    const e = endOf({ leg: { outcome: a === 'died' || a === null ? null : a, records: [] }, cutBy: 'leg' });
     let stopped;
-    if (a === 'cap-halt') stopped = `money cap reached (${money})`;
-    else if (a === 'wall-halt') stopped = 'time cap reached';
-    else if (a === 'provider-red') stopped = 'the model provider failed';
-    else if (a === 'check-timeout') stopped = 'your tests did not finish';
-    else if (a === 'step-stalled') stopped = 'a step stopped making progress';
-    else if (a === 'stopped') stopped = 'you stopped it';
+    if (e.end === 'capped-money') stopped = `money cap reached (${money})`;
+    else if (e.end === 'capped-time') stopped = 'time cap reached';
+    else if (e.end === 'provider') stopped = END_WORDS.provider;
+    else if (e.end === 'check-timeout') stopped = 'your tests did not finish';
+    else if (e.end === 'stalled') stopped = 'a step stopped making progress';
+    else if (e.end === 'stopped') stopped = 'you stopped it';
     else if (a === 'hitl-pause') stopped = 'paused for a decision';
-    else if (a === 'died' || a === null) stopped = 'no ending was recorded';
+    else if (e.end === 'died') stopped = 'no ending was recorded';
     else stopped = String(a);
     const at = typeof l.start?.at === 'string' ? l.start.at : (typeof l.start?.ts === 'string' ? l.start.ts : null);
     const hasParts = parts.some((p) => typeof p.leg === 'number' && p.leg === l.leg);
@@ -615,14 +617,16 @@ function endedBase(summary, death, o) {
   if (outcome === 'escalated') {
     const strikes = esc?.spend?.strikes;
     const limit = esc?.spend?.strikeLimit;
-    if (capKindOf({ outcome, category: cat, moneyHalt: o.moneyHalt }) === 'money') {
+    // the kind of ending comes from the owner (src/legs.js endOf): a money cap, the strike ladder, a time cap, a provider failure
+    const e = endOf({ own: { green: false, outcome }, trip: { category: cat }, legCap: capKindOf({ outcome, category: cat, moneyHalt: o.moneyHalt }) });
+    if (e.end === 'capped-money') {
       const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
         ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
       return {
         reason: `Money cap reached${money}.`, next: CHANGE, line: 'money cap', actions: [],
       };
     }
-    if (cat === 'cap-halt' && typeof strikes === 'number' && typeof limit === 'number') {
+    if (e.ladder && typeof strikes === 'number' && typeof limit === 'number') {
       return {
         reason: `The fix loop stopped improving (${strikes} of ${limit} tries, no check got better).`,
         next: CHANGE,
@@ -630,10 +634,10 @@ function endedBase(summary, death, o) {
         actions: [],
       };
     }
-    if (capKindOf({ outcome, category: cat, moneyHalt: o.moneyHalt }) === 'time') {
+    if (e.end === 'capped-time') {
       return { reason: 'Time cap reached.', next: CHANGE, line: 'time cap', actions: [] };
     }
-    if (cat === 'provider-red') {
+    if (e.end === 'provider') {
       const d = detailOf(summary.stopReason);
       return {
         reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: CHANGE, line: 'provider failed', actions: [],
@@ -2241,7 +2245,7 @@ function getRunDetailBody(runid, opts) {
         id: u.id,
         occurrence: u.occurrence,
         outcome: u.outcome ?? null,
-        state: u.stopReason ? 'stopped' : stateFor(u.outcome, isLast),
+        state: endKindOfWords(u.stopReason) !== null ? 'stopped' : stateFor(u.outcome, isLast),
         rounds: u.rounds,
         toolCalls: u.toolCalls,
         wallMs: u.wallMs,
@@ -3309,34 +3313,26 @@ const DIED_WORDS = 'died, no check ran';
  * @returns {string}
  */
 function noVerdictWords(stop) {
-  if (stop.what === 'provider-red') return stop.detail ? `provider dropped (${stop.detail}), no check ran` : 'provider dropped, no check ran';
-  if (stop.by === 'run-end' && stop.what === 'stopped') return STOPPED_WORDS;
+  // the kind of ending comes from the owner (src/legs.js endOf); the provider failure has ONE wording (hamr 2026-11-26, ruling 4)
+  const e = endOf({ own: { green: false, outcome: 'escalated' }, trip: { category: stop.what } });
+  if (e.end === 'provider') return stop.detail ? `${END_WORDS.provider} (${stop.detail}), no check ran` : `${END_WORDS.provider}, no check ran`;
+  if (stop.by === 'run-end' && e.end === 'stopped') return STOPPED_WORDS;
   return CUT_OFF_WORDS;
 }
 
 /**
- * A run that ended capped (money or time) cut its LAST part, a step the cap escalated: that step's own `step-end` reads
- * `escalated` and carries no `stopReason`, so its card said failed under a capped header (real spines msi0w2i5, msx87qqs: the
- * cap-halt / wall-halt escalation lands just before the step-end). The verdict is known only here, like the died marking, so the
- * LAST part alone gets the cap word, and only when the step's OWN escalation (`part.tripped`, src/replay.js) was the cap: `wall-halt`
- * reads 'time cap', a `cap-halt` that is not the ladder's (`tripped.ladder`) reads 'money cap'. A step its strike limit escalated
- * stays failed even if the run then ended on the cap (real spine u-mshcpdg4: the ladder's stop is also category `cap-halt`), and so
- * does an earlier escalated step (a later part follows).
- * @param {any} part @param {boolean} isLast @param {string} runStatusKey
+ * The end a part has that replay could not give it (the verdict is known only here: the run's died flag, and a capped run's fix loop). A step a halt
+ * cut is ended by replay itself (src/legs.js endOf); the fix loop's LAST try, when the run ended capped, is read through the same owner from its own
+ * `stop` (the cap's escalation closed its window). `died` is an external fact (pid / mtime), never in the spine.
+ * @param {any} part @param {boolean} isLast @param {string} runStatusKey @param {boolean} isDied
  */
-function cappedLastStep(part, isLast, runStatusKey) {
-  if (isLast && runStatusKey === 'capped' && part.kind === 'fix' && !part.stopReason && part.outcome !== 'green' && Array.isArray(part.attempts)) {
-    // the fix loop's last try a cap ended (its window closed on the cap's escalation): the part wears the cap word too
-    const stop = part.attempts[part.attempts.length - 1]?.stop;
-    if (stop?.what === 'wall-halt') return { ...part, stopReason: 'time cap' };
-    if (stop?.what === 'cap-halt') return { ...part, stopReason: 'money cap' };
-    return part;
-  }
-  if (!isLast || runStatusKey !== 'capped' || part.kind !== 'step' || part.outcome !== 'escalated' || part.stopReason) return part;
-  const t = part.tripped;
-  if (t?.category === 'wall-halt') return { ...part, stopReason: 'time cap' };
-  if (t?.category === 'cap-halt' && !t.ladder) return { ...part, stopReason: 'money cap' };
-  return part;
+function endedByHalt(part, isLast, runStatusKey, isDied) {
+  if (part.stopReason) return part;
+  if (isDied && part.outcome == null) return { ...part, stopReason: endOf({ died: true }).words };
+  if (!isLast || runStatusKey !== 'capped' || part.kind !== 'fix' || part.outcome === 'green' || !Array.isArray(part.attempts)) return part;
+  const stop = part.attempts[part.attempts.length - 1]?.stop;
+  const e = stop ? endOf({ own: { green: false, outcome: 'escalated' }, trip: { category: stop.what }, legCap: 'money' }) : null;
+  return e && (e.end === 'capped-money' || e.end === 'capped-time') ? { ...part, stopReason: e.words } : part;
 }
 
 
@@ -3348,7 +3344,7 @@ function cappedLastStep(part, isLast, runStatusKey) {
 export function withStatuses(p, isLast, runStatusKey, died) {
   const isDied = died && isLast && p.kind !== 'drafting';
   const base = isDied ? diedFixTry(p) : p;
-  const resolved = isDied && p.outcome == null && !p.stopReason ? { ...base, stopReason: 'died' } : cappedLastStep(base, isLast, runStatusKey);
+  const resolved = endedByHalt(base, isLast, runStatusKey, isDied);
   const live = isLast && runStatusKey === 'running' && p.kind !== 'drafting';
   const status = partStatusFor(resolved, { live });
   const ctx = { live: status.key === 'running', runCapped: isLast && runStatusKey === 'capped' };
