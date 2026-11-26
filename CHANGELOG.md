@@ -20,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **`replay.js` no longer imports `runread.js` (F399).** The replay CLOSE line reads the final close from `legs.js` `finalCloseOf`, so the replay<->runread import cycle is gone; the older import cycles are planned separately.
 - **The Result tab said "none" for the lines of a green run.** It read a step check, not the run's final close (runs mv5e1ktb and four more).
 - **The Result tab said "none" for a failed line where the Audit said "failed".** Both say "failed" now (run mv73swnx and eight more).
 - **A resumed run showed an earlier leg's checks in a later leg.** Checks are the current leg's (runs muuvmmul, mwtf8p8s, mwsfq0pi).
@@ -28,6 +29,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Development only
 
+- `tests/import-cycle-replay.test.js` walks the static imports under `src/` and fails if any cycle passes through both `replay.js` and `runread.js` (it does not assert there are no cycles at all).
 - A test pins the list-line count words on the card, the Audit and the worker text: `exactly N items`, `at least N items`, `at most N items`, and `item` for 1 (fwdloop am15a). No wording changed.
 
 ## [0.63.0] - 2026-11-25

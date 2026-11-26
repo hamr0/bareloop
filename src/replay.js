@@ -106,8 +106,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf, currentLegView } from './legs.js';
-import { checksOf } from './runread.js';
+import { legsOf, capKindOf, currentLegView, finalCloseOf } from './legs.js';
 import { isReusableGreen } from './panel/status.js';
 import { thinkingWordsFrom } from './thinking.js';
 
@@ -411,13 +410,13 @@ function gapLines(gap) {
  *   verdict: string|null, stages: any[]|null}|null}
  */
 function resolveClose(spine) {
-  const c = checksOf(spine, null);
-  if (!c || !c.close) return null;
+  const close = finalCloseOf(spine);
+  if (!close) return null;
   return {
-    source: c.source,
-    iteration: c.iteration,
-    verdict: c.verdict,
-    stages: Array.isArray(c.close.stages) ? c.close.stages : null,
+    source: close.type ?? null,
+    iteration: typeof close.iteration === 'number' ? close.iteration : null,
+    verdict: close.verdict ?? null,
+    stages: Array.isArray(close.stages) ? close.stages : null,
   };
 }
 

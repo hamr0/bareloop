@@ -5987,3 +5987,5 @@ The cycle: `src/runread.js` (`checksOf.stepParts`) calls `replayRun` from `src/r
 4. The single test files touching replay, runread and legs stay green (run one at a time via `node scripts/hermetic.mjs <file>`).
 
 Any miss is FAIL and goes back to hamr. No re-tune.
+
+hamr 2026-11-26: counted PASS for the replay<->runread cycle; bar 1's "none in src" wording was the operator's error; the 12 older cycles are planned separately (see the cycles plan).
