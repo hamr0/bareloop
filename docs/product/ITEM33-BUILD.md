@@ -5875,10 +5875,10 @@ Audit tab
 Replay (CLI and panel)
 
 - [x] Replay · CLOSE line source, verdict, stage pass/fail · today: resolveClose replay.js:412 over finalCloseOf, closeLine replay.js:1859, renderStages 1848 · new: checksOf.source, verdict, stages · POC: compared ✓ (0 mismatches, 97 runs) · proof: replay-close-line-parity · TICKED: tests/legs-final-close.test.js (replay close on mvtatlxw); built parity run (97 runs, 0 unnamed differences)
-- [ ] Replay · CLOSE line "iteration N ·" prefix and each stage's verdict word (`FAIL(needs_revision)`) · today: closeLine replay.js:1859, renderStages 1848 · new: checksOf keeps `iteration` and each stage's `verdict` (POC kept pass/fail only) · POC: not compared · proof: replay-close-line-words-parity
-- [ ] Replay · "none — the run ended before any close ran" · today: closeLine replay.js:1860 · new: checksOf.closeReached false · POC: compared ✓ · proof: replay-close-none-parity
-- [ ] Replay · per-iteration close line "close: verdict — failing stage" · today: closeStageLine replay.js:1824 · new: unchanged, history · POC: not compared · proof: existing replay tests
-- [ ] Replay · FIX LOOP precheck and iteration sequence · today: replay.js:2087-2090 · new: unchanged, history · POC: not compared · proof: existing replay tests
+- [x] Replay · CLOSE line "iteration N ·" prefix and each stage's verdict word (`FAIL(needs_revision)`) · today: closeLine replay.js:1859, renderStages 1848 · new: checksOf keeps `iteration` and each stage's `verdict` (POC kept pass/fail only) · POC: not compared · proof: replay-close-line-words-parity · TICKED: tests/f399-parity-replay.test.js replay-close-line-words-parity (mutation: resolveClose iteration nulled, red)
+- [x] Replay · "none — the run ended before any close ran" · today: closeLine replay.js:1860 · new: checksOf.closeReached false · POC: compared ✓ · proof: replay-close-none-parity · TICKED: tests/f399-parity-replay.test.js replay-close-none-parity (real mwtf8p8s)
+- [x] Replay · per-iteration close line "close: verdict — failing stage" · today: closeStageLine replay.js:1824 · new: unchanged, history · POC: not compared · proof: existing replay tests · TICKED: tests/f399-parity-replay.test.js replay-iteration-close-line-parity (hand-built old-style loop spine, no real fixture has one)
+- [x] Replay · FIX LOOP precheck and iteration sequence · today: replay.js:2087-2090 · new: unchanged, history · POC: not compared · proof: existing replay tests · TICKED: tests/f399-parity-replay.test.js replay-fixloop-sequence-parity (real mvtatlxw, mv5e1ktb)
 
 Reuse
 
