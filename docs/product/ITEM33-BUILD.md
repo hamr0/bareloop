@@ -6169,3 +6169,18 @@ Frozen bars (same corpus, same scripts `.claude/scratch/poc-stopped/`):
 - R2-P3: a fail-first test, red before and green after. The mwue75ih-shape spine's step reads stopped. A second leg re-running the same step reads continued with try 1. A control step escalated by the strike ladder still reads failed and its next run still counts as a retry.
 
 **Round 2 result 2026-11-26 (`.claude/scratch/poc-stopped/RESULTS-round2.md`): PASS on R2-P1 and R2-P2.** Same corpus (97 runs, 562 parts), NEW byte-identical to round 1's. 0 run-level changes. The 6 changed parts are the round-1 six; the only other changes are the four expected `continued`/`tryNumber` ones (muutlcko #4, mwuxqx4f #5 (also one of the six), #6, #7), each on the same step directly after a stopped occurrence. R2-P3 is the build's fail-first test.
+
+
+#### Addendum 2026-11-26g: a final-check-only leg shows one line
+
+**Defect (live walk 2026-11-25, run mwue75ih).** The run has 3 legs. Leg 3 only re-ran the final check (spine `u-mwue75ih.jsonl`: seq 143 `close-precheck` satisfied, seq 145 `job-end` already-green) and has no step, so the Audit parts list ends on the leg divider ("stopped: ... · resumed ...", `legDividersFor`, `src/panel/server.js`) with nothing under it. It reads as if nothing happened. `src/replay.js` has no part kind for a final close on its own.
+
+**Ruling (hamr, 2026-11-26, option B).** ONE plain line, only for a leg that has no parts of its own (only the final check ran). No new part kind, no new fold or row on normal runs; a plain green run's final close stays in the checks box only. Words are code-owned fixed sentences. Sign and word come from the existing status table (`statusFor`, `isReusableGreen`, `STATUS` in `src/panel/status.js`). Leg outcome green / satisfied / already-green: `final check only: every check already passed, nothing left to do` with the passed sign. Any other leg outcome: `final check only: ` plus the run's existing plain stop words for that outcome (the owner is `endedFor`'s `reason`, `src/panel/server.js`), with that outcome's sign and word.
+
+**Owner.** `legDividersFor` (`src/panel/server.js`) adds a `checkOnly` field (`{sign, word, text}` or null) to the divider of a leg that has no part of its own. `src/panel/index.html` `legDividerEl` renders it under the divider with the existing `.dot` / `.st-word` markup (`stateDotHTML`). Audit only.
+
+**Frozen bars.**
+- P1: a $0 replay, the same corpus the F405 POC used (`getRunDetail` over every `runs.jsonl` row with a spine, deduplicated by run id; scripts reused from `.claude/scratch/poc-stopped/`), the full `getRunDetail` output OLD vs NEW (a scratch copy of `src/` carrying the change; the repo tree is untouched until the POC passes). Bar: the ONLY difference is the new `checkOnly` field on a divider, and only on legs with zero parts. Every run and leg that gets one is listed with its words. mwue75ih leg 3 gets the passed line. Zero other field changes.
+- P2: `index.html` renders it: a fail-first DOM test in the existing panel test style shows the line under the divider for a check-only leg, and NO line for a normal multi-leg run and for a plain single-leg green run.
+
+If P1 fails: stop, commit only this addendum and the results, report.
