@@ -16759,6 +16759,7 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 
 - File: `/home/hamr/bareloop-out/walk-r-rule-2026-11-23.md`, 22 KB. Each Result is a raw page-snapshot dump, cumulative (Result 10 repeats all 10 versions), and there is no AI answer section. The run passed by code.
 - Predates this branch: the self-review found `src/resultmd.js` stepSection path unchanged. Parked for the next branch.
+- Closed 2026-11-26 by hamr's ruling A: works as ruled (ITEM33-BUILD Addendum 2026-10-21 item 2, ruling 3a: a line with no kept money fact has no result lines, so its phrase facts pass through). Root cause: an [agent] phrase 'Status' was the table header. The facts were sent to fwd; nothing built here.
 
 ### F392: Two suites at once pushed the load to 37 and slowed a signing check to 16+ min (2026-11-23)
 

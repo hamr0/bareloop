@@ -2473,8 +2473,10 @@ hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here ride
   - state 2026-11-26: still hamr's DevTools. Add the new red refusal lines under the six boxes (fwd v0.38.0 swap below).
 - [ ] F389 drafter allowPrefixes vs card "unchecked".
   - state 2026-11-26: open, not started.
+  - state 2026-11-26: ruled A, building (ITEM33-BUILD Addendum 2026-11-26d).
 - [ ] F391 rubric report: cumulative page dumps, no answer section.
   - state 2026-11-26: open, not started.
+  - state 2026-11-26: closed by hamr's ruling A — works as ruled (ITEM33-BUILD Addendum 2026-10-21 item 2, ruling 3a: a line with no kept money fact has no result lines, so its phrase facts pass through); root cause: an [agent] phrase 'Status' was the table header; the facts were sent to fwd; nothing built.
 - [ ] Audit tab: a step the person STOPPED reads "failed" (walk 2026-11-25, run mwue75ih, step 2; spine seq 105 stop-requested, seq 107 escalation category "stopped", seq 109 step-end "escalated"). The word comes from partStatusFor (src/panel/status.js:99), which turns "escalated" into failed; only money/time caps are mapped (cappedLastStep, src/panel/server.js:3412). Fix in one owner: a step whose own escalation is category "stopped" reads stopped. Older than this branch (same on main).
   - state 2026-11-26: open, not started.
 - [ ] Audit tab: a leg that only re-ran the final check shows no row, so the parts list ends on the "resumed" line (walk 2026-11-25, run mwue75ih leg 3: seq 143 close-precheck satisfied, seq 145 job-end already-green). The parts builder (src/replay.js) has no part kind for a final close on its own; a plain green run's final close has no row either (it shows only in the checks box). Decide the row's look before building. Older than this branch (same on main).

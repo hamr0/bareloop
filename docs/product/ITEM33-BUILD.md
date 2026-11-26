@@ -6094,3 +6094,16 @@ Any miss is FAIL for that batch. It goes back to hamr, never re-tuned.
   - remove the older POC git worktrees under `.claude/scratch/poc-cycles` (A, B, C, D, E, F, Bundle, Base) and `.claude/scratch/poc-f399/wt`, `.claude/scratch/poc-untangle/wt`. Keep each RESULTS file.
   - `git worktree prune`.
   - the branch commits are unpushed: push after the H2 gate.
+
+#### Addendum 2026-11-26d: F389 code fills the repo guard's allowPrefixes from the Destination
+
+**Ruling (hamr, 2026-11-26, "A", "build it and poc").** In a repo job the drafting AI fills the `changed-from-seed` guard's `allowPrefixes` slot (`src/authorflow.js` `authorPrompt`: the slot is shown as `<FILL IN>` and the model is told to fill it "from the facts object and the interview"). In run mwt89eey the AI wrote `["src/"]` while the signed writeScope (Destination) was `["src/","tests/"]`, so the guard silently narrowed the fence. Fix A: code fills the guard's fill slot from writeScope for repo jobs, as the rubric path already does in `assemble` ("a guard's one fill slot (`allowPrefixes`) is the signed write fence"). The model no longer gets a fill slot. Intended behaviour change: a repo run's files-changed guard equals its Destination. Old signed specs are not repaired. No new question, no new stage-to-rule tie (`fenceKept` stays dead; a `~` rule is kept only via `CheckBlock.provesFence`).
+
+**The build in plain words.** One owner function in `src/authorflow.js` turns "guards + a fence" into the guard stages with each fill slot set to the fence. The rubric `assemble` calls it (its inline copy is replaced) and the repo path calls it on the model's declaration before the draft gate, overwriting the guard stage's fill slots. The drafter prompt shows the guards already filled with the fence and no longer says "you fill each slot" when a writeScope is given (a caller with no writeScope keeps the old marker; nothing in the product does that for a repo).
+
+**POC (a $0 replay, no model call).** Over every saved signed REPO spec on disk (`~/.config/bareloop/panel-sessions/*/resolved-spec*.json`, read-only; plus any other spec archive found, stated in RESULTS). Filter: the file parses as JSON, has a non-empty `writeScope` array, and `closeDecl.stages` has a stage named `changed-from-seed` with `params.allowPrefixes`. (a) Compare the AI-written allowPrefixes to writeScope: equal / AI narrower (a strict subset) / AI wider (a strict superset) / other. (b) For each spec, substitute allowPrefixes := writeScope and run the existing signing validator `validateDeclaration` (src/authoring.js) with the genre's `classGuards`, the same way as with the AI value; count passes.
+
+**Frozen bars.**
+- B1: every spec that validated with the AI value also validates with the code value (0 new refusals). If B1 fails: STOP, commit nothing beyond this addendum and the POC results.
+- B2: the (a) counts are reported in full, with every "AI wider" case listed by session id (a wider AI value means the fix TIGHTENS that job: report, do not judge).
+- B3: the fail-first test (a repo draft with writeScope `["src/","tests/"]` signs `allowPrefixes ["src/","tests/"]` even when the stubbed model writes `["src/"]`, and the repo drafter prompt carries no FILL_MARKER for the guards) is red before the code change and green after.
