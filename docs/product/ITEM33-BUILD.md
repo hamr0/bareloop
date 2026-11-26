@@ -5890,9 +5890,9 @@ Reuse
 
 Shape grid
 
-- [ ] Shape · item reds from a final staged close (`stages[].items`) · today: shapeRedsFromRecords server.js:1306 · new: checksOf.shapeItems · POC: not compared (no corpus run carries stage `items`) · proof: shape-items-structured-close-parity
+- [x] Shape · item reds from a final staged close (`stages[].items`) · today: shapeRedsFromRecords server.js:1306 · new: checksOf.shapeItems · POC: not compared (no corpus run carries stage `items`) · proof: shape-items-structured-close-parity · TICKED: tests/f399-parity-shape.test.js shape-items-structured-close-parity (real mwndngl5 + planted stage items; mutation: stage items ignored, red)
 - [x] Shape · item reds on a red run (gap prose read back) · today: shapeRedsFromRecords server.js:1311-1318 via shapeItemOfPlain · new: checksOf.shapeItems from the new `shape-items` record; fallback the prose · POC: UNDERPOWERED (mwnbs3np only) · proof: shape-items-red-run-record, shape-items-red-run-fallback-prose · TICKED: tests/shape-e2e.test.js F399 (fail-first), tests/runread-parity.test.js shape-items-red-run-fallback-prose
-- [ ] Shape · grid cells: items as rows, signed fields as columns, values clipped, failed items open · today: shapeResultModel shaperesult.js:57, called at getRunResult ~2098 · new: checksOf.shapeItems plus outputOf.content (GAP-5, ruled) · POC: not compared · proof: hamr walk and shape-grid-model-parity
+- [x] Shape · grid cells: items as rows, signed fields as columns, values clipped, failed items open · today: shapeResultModel shaperesult.js:57, called at getRunResult ~2098 · new: checksOf.shapeItems plus outputOf.content (GAP-5, ruled) · POC: not compared · proof: hamr walk and shape-grid-model-parity · TICKED: tests/f399-parity-shape.test.js shape-grid-model-parity (data: rows, columns in signed order, clip at 40, red cells with reasons; mutation: shapeItems key shifted, red; the grid drawing is NOT pinned → hamr walk)
 
 Review (D review)
 
