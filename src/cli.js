@@ -25,9 +25,8 @@ import {
   dirname, isAbsolute, join, resolve,
 } from 'node:path';
 
-import {
-  exportBundle, loadRegistry, listingRow,
-} from './index.js';
+import { loadRegistry, listingRow } from './bridges.js';
+import { exportBundle } from './bundle.js';
 // One runner: `bareloop run <bundle>` is a thin door to the `run-u` engine (`src/userrun.js`).
 import { bundleMain } from './bundlerun.js';
 // PANEL-BUILD.md P0 task 2/4 — `bareloop run-u` wraps the person-path run
