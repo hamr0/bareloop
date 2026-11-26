@@ -41,3 +41,54 @@ export function world({ id, job, records, spec, source = { kind: 'folder', sourc
   return { home, opts: { home }, dir, spine, runid: id };
 }
 export { copyFileSync };
+
+import { existsSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+
+/**
+ * A REAL archived run (a fixture folder holding `resolved-spec.json`, optional `draft-log.jsonl`, `u-<id>.jsonl`, optional gate-audit) laid out the way a panel session is, in a scratch HOME.
+ * `mutate` edits the parsed records first (a planted record or a planted file path); `files` writes planted delivered files into the scratch dir and points the `destination-written` records at them.
+ * @param {{fixture: string, id: string, job: string, mutate?: (recs: any[]) => any[], source?: Record<string, any>, spineName?: string}} o
+ */
+export function realWorld({ fixture, id, job, mutate = (r) => r, source = { kind: 'folder', source: '/x', destination: '/y' }, spineName }) {
+  const root = track(mkdtempSync(join(tmpdir(), 'f399r-')));
+  const home = join(root, 'home');
+  mkdirSync(home, { recursive: true });
+  const out = join(root, 'session');
+  const into = join(out, 'source-seed');
+  const dir = join(into, `${job}-bareloop`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(into, 'source.json'), JSON.stringify(source));
+  const src = join(FX, fixture);
+  const names = readdirSync(src);
+  const specName = names.find((n) => n.endsWith('resolved-spec.json')) ?? 'resolved-spec.json';
+  copyFileSync(join(src, specName), join(out, 'resolved-spec.json'));
+  if (names.includes('draft-log.jsonl')) copyFileSync(join(src, 'draft-log.jsonl'), join(out, 'draft-log.jsonl'));
+  const sp = spineName ?? `u-${id}.jsonl`;
+  const recs = readFileSync(join(src, sp), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const spine = join(dir, `u-${id}.jsonl`);
+  writeFileSync(spine, `${mutate(recs).map((r) => JSON.stringify(r)).join('\n')}\n`);
+  const ga = `u-${id}-gate-audit.jsonl`;
+  if (names.includes(ga)) copyFileSync(join(src, ga), join(dir, ga));
+  appendRun({ at: '2026-11-13T07:34:26.189Z', runid: id, job, spine, patient: null, via: 'run-u' }, { home });
+  return { home, opts: { home }, root, dir, spine, runid: id, session: out };
+}
+
+/**
+ * Point each `destination-written` record (in order) at a planted file in `dir`, with the planted bytes' size and sha256. A planted copy of a real run's output.
+ * @param {any[]} recs @param {string} dir @param {Record<string, string|Buffer>[]|(string|Buffer)[]} contents one file's bytes per destination-written record, in order
+ */
+export function plantDelivered(recs, dir, contents) {
+  mkdirSync(dir, { recursive: true });
+  let k = 0;
+  return recs.map((r) => {
+    if (r.type !== 'destination-written') return r;
+    const body = /** @type {string|Buffer} */ (contents[k]);
+    k += 1;
+    mkdirSync(join(dir, String(k)), { recursive: true });
+    const path = join(dir, String(k), String(r.path).split('/').pop() ?? 'x');
+    writeFileSync(path, body);
+    return { ...r, path, bytes: Buffer.byteLength(body), sha256: createHash('sha256').update(body).digest('hex') };
+  });
+}
+export { existsSync };
