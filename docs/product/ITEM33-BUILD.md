@@ -6295,3 +6295,10 @@ Left alone, named: (i) index.html 3788 `"stopped — " + part.stopReason` (a fix
 - P3: the new guard test plus every tests/*guard*.test.js and the replay/panel/status/legs/p5r-*/cutoff-part-rows test files green; each exit code quoted.
 
 If P1 or P1b fails: stop, commit only the addendum and results, report.
+
+**Result 2026-11-26 (`.claude/scratch/poc-glyph/RESULTS.md`): PASS on P1 and P1b.** 97 runs (8 spines missing), 567 parts, 565 attempts, 262 graded tries; real `getRunDetail`, OLD (HEAD) vs a scratch copy; OLD page functions extracted verbatim from HEAD's index.html. 1941 (sign, word) readings unchanged; 20 changed, all inside the bars; every non-status field, run-level field, money, parts count and order byte-identical; every new status is an existing STATUS entry. Changes (run, where, old -> new):
+- (b) stopped by the person, 6 steps x (attempt + its cut-off graded try): muutlcko `step:strict-clean-src-and-gates:1`, mwtf8p8s `step:green-suite-fixloop:1`, mwue75ih `step:fix-codeversion-head-resolution:1` (the required row, step 2 attempt 1), mwuxqx4f `step:implement-and-green-suite:1` and `:2`, mwvwcxvy `step:fix-answer-file:1`: attempt ✗ failed -> ■ stopped; the Audit grid try ? -> ■ stopped. The part word of these was already stopped (11h).
+- (b) muux1x96 fix:L2 attempt 2 (the try the person's Stop ended): ? -> ■ stopped; the part's result signs "✗?" -> "✗■".
+- (d)/(c) mwuxqx4f fix:L4 (the required row): part ✗ failed -> ■ capped; attempt 2 (ended by the wall) ? -> ■ capped; result signs "✗?" -> "✗■".
+- (d)/(c) mvki7iqf fix (not a split piece; the run's money cap ended its 4th try): part ✗ failed -> ■ capped; attempt 4 ? -> ■ capped; result signs "✗✗✗?" -> "✗✗✗■". It rides the owner rule (c) written above; flagged for hamr as the one change outside the two named rows.
+- (a) has no corpus instance (no part reads capped in the archive); the unit tests cover it.
