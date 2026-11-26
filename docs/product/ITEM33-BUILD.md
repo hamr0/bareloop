@@ -6201,3 +6201,14 @@ If P1 fails: stop, commit only this addendum and the results, report.
 If P1 fails: stop, commit only this addendum and the results, report.
 
 **POC result 2026-11-26 (`.claude/scratch/poc-firstleg/RESULTS.md`): P1 FAIL. Stopped, nothing built.** 97 runs, 13 resumed. No leg 1 has zero parts and no worker, so no first-leg line would appear anywhere. mwue75ih leg 1 has zero parts but is NOT worker-free: it ran the scout (`scout-start`, one `worker-round` phase scout, seq 27) and was stopped during it (seq 28-31); a stopped scout leaves no part. The required row fails by the frozen rule. Fix 1 and the rest wait for hamr's ruling.
+
+##### Round 2 (2026-11-26): Fix 1 alone
+
+Fix 2 (the empty first leg) is WITHDRAWN pending hamr's choice; nothing of it is built (round 1's P1 FAIL text above stands). Fix 1 (the stopped step's result glyph) is built alone, on hamr's "yes".
+
+Owner: `partResultGlyph` (`src/panel/index.html`) reads the part's server-computed `status` (`partStatusFor`, `src/panel/status.js`): a part whose `status.key` is `stopped` shows that table entry's own sign (the stopped sign), with no second derivation of "stopped" from `outcome`/`stopReason`/attempts in the page. Capped, failed, passed and multi-attempt parts keep the existing path.
+
+Frozen bars:
+- P1 (Fix 1): `getRunDetail` has 0 field changes over the 97 runs. The glyph is computed in `index.html`, so no server field changes by construction; stated, not replayed. Fix 1 is proven by P2.
+- P2: fail-first page tests (`tests/p5r-page.test.js`): a stopped part renders the stopped sign and not the failed sign; a capped, a failed, a passed and a multi-try part render exactly as before. Red before, green after.
+- Capped check: a capped part's word against its glyph today is reported, not changed.
