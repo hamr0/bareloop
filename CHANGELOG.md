@@ -20,6 +20,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A cut-off part's card no longer glues a fixed "stopped —" word onto its reason (F408 follow-up).** The Run and Audit cards read "stopped — time cap" for a part the server calls capped; they now show only the reason ("capped · … · time cap"), the state word being the server's.
+
 - **A part's and a try's sign now comes from the server's one status table (F408, runs mwue75ih and mwuxqx4f).** A capped part read the word "capped" under a failed ✗, a try you stopped inside a multi-try part read ✗, and a time-capped fix piece read "failed"; the page used to work the sign out from the outcome. The server now mints the sign and word of every part, try and Audit-grid column in one place and the page only shows them.
 
 - **A part that spans legs is one row per leg (F407, runs mwue75ih and mwuxqx4f).** A scout the person stopped, or a fix try the provider killed, sat inside a LATER leg's row (the whole part was dated by its last attempt), so its own leg read empty under the Audit divider. The scout, plan and fix parts now split into one row per leg, each with exactly that leg's calls and cost; a row the leg's halt cut off carries the leg's plain stop words ("you stopped it", "provider failed", ...). A split fix row numbers its attempts 1..n in time order. The "resumed after" mark sits on the last part of each leg. Replay-proven on 97 archived runs: 4 parts split (mwue75ih, mwuxqx4f, mwezqp5w, muux1x96), sums exact, no run-level word changes.

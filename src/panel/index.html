@@ -3767,8 +3767,8 @@
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
-    // P5-R: a part its leg's halt cut off says why, in words
-    if(part && part.stopReason) bits.push("stopped &mdash; " + escapeXml(part.stopReason));
+   
+    if(part && part.stopReason) bits.push(escapeXml(part.stopReason));
     return bits.join(" &middot; ");
   }
   /**

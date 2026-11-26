@@ -144,11 +144,12 @@ test('page map: a part its leg\'s halt cut off reads STOPPED (the existing state
   assert.doesNotMatch(stepTitleText(num[1], boxes[1]), /✓/);
 });
 
-test('page card: the stopped part says why, in words, beside its figures', () => {
+test('page card (2026-11-26k): a part its halt cut off says only the reason beside its figures; the state word is the server\'s, never a fixed "stopped" prefix', () => {
   // eslint-disable-next-line no-new-func
   const f = new Function('liveWallPhrase', 'duration', 'liveSpendText', 'panelMoney', 'attemptChecksLine', 'escapeXml', `${fnSrc('partLine1Text')}\nreturn partLine1Text;`)(
     () => '', (ms) => `${ms}ms`, () => '', (n) => `$${n}`, () => '', (x) => x);
-  assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /stopped &mdash; money cap/);
+  assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /5ms &middot; \$3 &middot; money cap$|&middot; money cap$/);
+  assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'time cap' }, {}), /stopped/);
   assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
 });
 
