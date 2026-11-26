@@ -6158,3 +6158,12 @@ Frozen bars, in order:
 If P1 or P2 fails: stop, commit only this addendum and the results, report.
 
 **POC result 2026-11-26 (`.claude/scratch/poc-stopped/RESULTS.md`): P2 PASS, P1 FAIL. Stopped, nothing built.** 97 runs (8 spines missing), 562 parts, real `getRunDetail`, OLD vs a scratch copy carrying the change. P2: 0 run-level changes. P1: six parts changed failed -> stopped, each a step with `tripped.category` `stopped` (muutlcko step strict-clean-src-and-gates:1; mwtf8p8s green-suite-fixloop:1; mwue75ih fix-codeversion-head-resolution:1; mwuxqx4f implement-and-green-suite:1 and :2; mwvwcxvy fix-answer-file:1), their open attempts `[null]` -> `['stopped']`. But four parts changed `continued`/`tryNumber` (muutlcko :2, mwuxqx4f :2 (a changed part), :3, :4): `prevOccurrence` in `src/replay.js` records `stopReason`, so a stopped-and-ended step re-run in the next leg reads "continued" instead of a retry. No status word moved on those. The frozen bar says zero other changes, so the fix is not built; hamr rules whether the continuation reading is right or the word is kept apart from `prevOccurrence`.
+
+##### Round 2 (2026-11-26)
+
+Round 1 stays reported as FAIL (text above unchanged). hamr's ruling (2026-11-26, "a"): take both the word and the continuation reading; a stop is not a failed try. The change is the one designed in round 1 (a step ending `escalated` with its own escalation `stopped` gets `stopReason: 'you stopped it'` in `src/replay.js`; `partStatusFor` maps it to stopped), with no extra variable.
+
+Frozen bars (same corpus, same scripts `.claude/scratch/poc-stopped/`):
+- R2-P1: the changed parts are exactly the same 6 (failed -> stopped, each with `tripped.category` `stopped`, attempts `[null]` -> `['stopped']`). The ONLY other allowed changes are `continued`/`tryNumber` on a later occurrence of the SAME step in a later leg, directly after one of those 6 stopped occurrences: `continued` false -> true on the first re-run (tryNumber reset as the existing continuation rule computes), or a tryNumber shift on that step's following tries. Every one is listed. Expected: the 4 seen in round 1 (muutlcko #4, mwuxqx4f #5, #6, #7). Any other change of any field = FAIL.
+- R2-P2: run-level words unchanged (as round 1).
+- R2-P3: a fail-first test, red before and green after. The mwue75ih-shape spine's step reads stopped. A second leg re-running the same step reads continued with try 1. A control step escalated by the strike ladder still reads failed and its next run still counts as a retry.
