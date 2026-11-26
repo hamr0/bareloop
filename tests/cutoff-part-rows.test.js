@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { replayRun } from '../src/replay.js';
 import { partStatusFor } from '../src/panel/status.js';
+import { legsOf } from '../src/legs.js';
+import { legDividersFor } from '../src/panel/server.js';
 
 const T = (m, s = 0) => `2026-11-26T10:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.000Z`;
 let seq = 0;
@@ -118,4 +120,24 @@ test('a single-leg run keeps one row per part (no :L ids) and a stopped step sti
     { type: 'job-end', outcome: 'stopped', spentUsd: 0.02, spendComplete: true },
   ]);
   assert.deepEqual(replayRun(stoppedStep, [], { runId: 'r4' }).parts.map((p) => p.id), ['scout', 'plan', 'step:s1:1']);
+});
+
+// Addendum 2026-11-26k: "did this leg run a worker" has ONE owner, the part list. A leg with worker activity always owns a part (one row per leg),
+// so the check-only line (checkOnlyLineFor) never appears there, including the provider-failed leg of the mwuxqx4f leg-5 shape.
+test('every leg with worker activity owns a part, so no check-only line shows on it', () => {
+  for (const [name, recs] of [['stoppedScout', stoppedScout()], ['fixAcrossLegs', fixAcrossLegs()]]) {
+    const s = replayRun(recs, [], { runId: name });
+    const legs = legsOf(recs);
+    const dividers = legDividersFor(recs, s.parts);
+    assert.ok(legs.length > 1, name);
+    for (const l of legs) {
+      const worker = l.records.some((r) => r?.type === 'worker-round' || r?.type === 'run-start' || r?.type === 'step-start');
+      assert.equal(worker, true, `${name} leg ${l.leg} has worker activity`);
+      assert.ok(s.parts.some((p) => p.leg === l.leg), `${name} leg ${l.leg} owns a part`);
+    }
+    for (const d of dividers) assert.equal('checkOnly' in d, false, `${name} leg ${d.leg}: no check-only line`);
+  }
+  // the provider-failed middle leg of the fix run (the mwuxqx4f leg-5 shape) says so through its own part, not a check-only line
+  const f = replayRun(fixAcrossLegs(), [], { runId: 'p' }).parts.filter((p) => p.kind === 'fix');
+  assert.equal(f[1].stopReason, 'provider failed');
 });

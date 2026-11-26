@@ -20,6 +20,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The check-only line asks only the part list whether a leg ran a worker (F406 follow-up, Addendum 2026-11-26k).** `checkOnlyLineFor` no longer scans the leg's records for worker-round / run-start / step-start: since F407 a leg with worker activity always owns a part, so "no part of its own" already means no worker. A replay of 97 archived runs shows 0 differences in any field, and 0 of 107 worker legs lack a part.
+
 - **A cut-off part's card no longer glues a fixed "stopped —" word onto its reason (F408 follow-up).** The Run and Audit cards read "stopped — time cap" for a part the server calls capped; they now show only the reason ("capped · … · time cap"), the state word being the server's.
 
 - **A part's and a try's sign now comes from the server's one status table (F408, runs mwue75ih and mwuxqx4f).** A capped part read the word "capped" under a failed ✗, a try you stopped inside a multi-try part read ✗, and a time-capped fix piece read "failed"; the page used to work the sign out from the outcome. The server now mints the sign and word of every part, try and Audit-grid column in one place and the page only shows them.

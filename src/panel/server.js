@@ -462,7 +462,7 @@ export function legDividersFor(spineRecords, parts) {
 
 /**
  * hamr 2026-11-26 (option B): the ONE line under a leg divider for a leg that has no part of its own (only the final check ran, run mwue75ih
- * leg 3). CODE-OWNED fixed sentences: a green leg says every check already passed; any other ending reuses {@link endedFor}'s plain stop
+ * leg 3). A leg whose worker ran always owns a part (F407, one row per leg), so "no part" alone means no worker. CODE-OWNED fixed sentences: a green leg says every check already passed; any other ending reuses {@link endedFor}'s plain stop
  * words, with that outcome's sign and word from the status table. A last leg with no ending yet (live, or died: the run's own status says
  * which) gets none.
  * @param {{outcome: string|null, records: any[]}} leg
@@ -471,8 +471,7 @@ export function legDividersFor(spineRecords, parts) {
  */
 function checkOnlyLineFor(leg, hasNext) {
   const outcome = leg.outcome ?? (hasNext ? 'died' : null);
-  // a leg whose worker ran (a provider failure before any part still left worker rounds) did more than the final check
-  if (outcome === null || leg.records.some((r) => r?.type === 'worker-round' || r?.type === 'run-start' || r?.type === 'step-start')) return {};
+  if (outcome === null) return {};
   // the leg's own last escalation and money halt, from the ONE owner (a leg's records open with its marker, so they read as one leg)
   const view = currentLegView(leg.records);
   const esc = view?.lastEscalation ?? null;

@@ -182,7 +182,7 @@ test('P5-R legDividersFor: the "after" words are fixed sentences; a leg that has
   assert.equal(legDividersFor(rec('cap-halt'), [{ leg: 1 }])[0].beforePart, 1, 'no part in the new leg yet: the divider closes the list');
 });
 
-test('2026-11-26g legDividersFor: a leg with no part of its own and no worker (only the final check ran) carries ONE code-owned line; a normal leg and a leg whose worker ran carry none', () => {
+test('2026-11-26g legDividersFor: a leg with no part of its own (only the final check ran) carries ONE code-owned line; a normal leg carries none (a leg whose worker ran always owns a part: tests/cutoff-part-rows.test.js)', () => {
   const head = [{ type: 'job-start', ts: at(10, 0), seq: 1 }, { type: 'step-start', step: 's', ts: at(10, 1), seq: 2 },
     { type: 'job-end', outcome: 'stopped', spentUsd: 1, spendComplete: true, ts: at(10, 5), seq: 3 }];
   const leg2 = (recs) => [...head, { type: 'leg-resume', leg: 2, after: 'stopped', at: at(12, 0), ts: at(12, 0), seq: 4 },
@@ -195,8 +195,6 @@ test('2026-11-26g legDividersFor: a leg with no part of its own and no worker (o
   assert.equal(red.sign, '\u2717');
   assert.equal(red.word, 'failed');
   assert.match(red.text, /^final check only: Goal not met/);
-  // the leg's worker ran (a provider failure before any part): not "only the final check"
-  assert.equal('checkOnly' in legDividersFor(only('provider-red', [{ type: 'worker-round', ts: at(12, 1), seq: 7 }]), parts)[0], false);
   // a leg with a part of its own: no line
   assert.equal('checkOnly' in legDividersFor(only('already-green'), [{ kind: 'step', leg: 1 }, { kind: 'step', leg: 2 }])[0], false);
   // the plain two-leg run in this file: no line
