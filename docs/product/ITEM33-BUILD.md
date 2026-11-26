@@ -6051,3 +6051,46 @@ Any miss is FAIL for that batch. It goes back to hamr, never re-tuned.
 **The zero-cycle test lands last.** `tests/import-cycles.test.js`, from `.claude/scratch/poc-cycles/import-cycles.test.js`. It must be red on 98af5e6e with exactly the 2 cycles and green once both batches land. If either batch fails, the test is not committed.
 
 **Result 2026-11-26.** G PASS (POC `.claude/scratch/poc-cycles/G/RESULTS.md`, landed as 5a1507db): cycles 2 -> 1, 97-run dump byte-identical, 167 root exports identical, moved lines equal. H FAIL on bar 1 (POC `.claude/scratch/poc-cycles/H/RESULTS.md`), as the finding above predicted: `git.js` has to import `sh` and `STOP_FAULTS` back from `kinds.js`, and the walk prints `git.js -> kinds.js -> sheetrun.js -> source.js`. H is stopped and goes back to hamr; the zero-cycle test (red on 98af5e6e with exactly the 2 cycles, red now with the 1) is not committed. Cite fixes to the block above: `renderRejectBlock` is `src/authorflow.js:1432-1459` (not :1458); `git` with its doc is `src/kinds.js:570-590` (function at :583, doc :570-582).
+
+#### Ruling 2026-11-26c: batch H moves the whole run-a-command family (hamr "1"; "continue cleaning, no leftovers")
+
+**Why.** H failed bar 1 (POC `.claude/scratch/poc-cycles/RESULTS-H.md`, `VERDICT: FAIL`). `git` (`src/kinds.js:583`) wraps `sh` (`src/kinds.js:479`). A `git.js` holding only `git` and `MAX_BUFFER` must import `sh` and `STOP_FAULTS` back from kinds.js, and the walk printed `git.js -> kinds.js -> sheetrun.js -> source.js`. hamr's ruling (2026-11-26, "1"; "continue cleaning, no leftovers"): move the whole family. Batch H is replaced by H2; the H text above is superseded and not edited. hamr gave his word for a verbatim move of `sh` (it runs the declared checks and closes, so it is arbiter-adjacent).
+
+**Batch H2.** Move the run-a-command family out of `src/kinds.js` into ONE new leaf, `src/shell.js`. I pick `shell.js` and not `git.js` because the file is mostly the spawn primitive and its process boxes (`sh` and its box helpers are about 200 of the 230 lines); `git` is a 6-line wrapper over `sh`, so the file is named for the owner, not the wrapper. Facts read from source at HEAD 61a81501. What moves, with its line:
+
+- Check-limit constants: `CHECK_LIMIT_MS` (`:106`, doc `:101-105`), `CHECK_NOTE_AFTER_MS` (`:108`, doc `:107`), `CHECK_NOTE_EVERY_MS` (`:109`), `DEFAULT_TIMEOUT_MS` (`:143`, doc `:141-142`), `MAX_BUFFER` (`:146`, doc `:144-145`).
+- `STOP_FAULTS`: `:167` (doc `:153-166`). `git` and `sh` use it (`:560-566`, `:589`); kinds.js uses it in about 30 places (`:696` to `:2052`), so kinds.js imports it back.
+- `stageEnv` (`:364`, doc `:350-363`): not exported, used by `sh` (`:480`) and `runCmd` (`:1418`). Moves; it must be exported, and kinds.js imports it back.
+- Process-box helpers, with their section lines: `liveBoxes` (`:390`), `killLiveBoxes` (`:392`), `boxHooks` (`:397`), `dropBoxHooks` (`:398`), `trackBox` (`:404`), `untrackBox` (`:420`), `boxMembers` (`:430`), `survivorsText` (`:452`), `boxSurvivors` (`:457`). `boxHooks` and `dropBoxHooks` are used only inside this block, so they stay private. `boxMembers` is also used at `:293` (a default in the `Gap`/stage code; read it before moving) and `survivorsText` is imported by `src/authorreadout.js:27`.
+- `sh` (`:479-573`, doc above it): not exported today. It becomes exported. kinds.js uses it at `:1387`, `:1400`, `:1421` and `git` at `:584`.
+- `git` (`:583`, doc `:570-582`).
+
+**What stays in kinds.js.** The four plain-words helpers `checkRunningNote` (`:115`), `checkTimedOutText` (`:123`), `checkLimitSpan` (`:127`), `checkTimeoutWords` (`:137`). They call no spawn code, only `CHECK_LIMIT_MS`, so kinds.js imports that constant from shell.js. They are not in the cycle. Moving them is not needed to clear it.
+
+**Imports for shell.js.** `spawn`, `execFile` from `node:child_process`, `CLOSE_ENV_DENY` from `./ralph.js` (ralph imports only `node:child_process`, so no new edge), plus whatever node built-ins the moved lines use (`join`, a `stat`-named `ps` column is a string, not an import). shell.js must import NOTHING from kinds.js. If a moved line needs a kinds.js name, the builder stops and reports; it does not import it back.
+
+**Importers to re-point, no re-export shim** (kinds.js name list checked by grep on 2026-11-26): `src/source.js:31,33` (`git`, `MAX_BUFFER`), `src/closetimeout.js:18` (`CHECK_LIMIT_MS`), `src/authorreadout.js:27` (`survivorsText`; `checkTimedOutText` stays on kinds.js), `src/declaredclose.js:71` (`STOP_FAULTS`), `src/authorflow.js:80` (`STOP_FAULTS`; the rest stay), `src/panel/authorsession.js:78` (`CHECK_LIMIT_MS`; `checkRunningNote` stays), `src/authorrun.js` (`DEFAULT_TIMEOUT_MS`), `src/exportnames.js` and `src/index.js` (`STOP_FAULTS`; read how they reach it before editing, the 167 root exports must not change), and the tests that import any moved name: `tests/source.test.js:772,786,957` (dynamic `MAX_BUFFER`), `tests/check-once-signing.test.js:16`, `tests/check-timeout-resume.test.js:16`, `tests/pr-checkout-git.test.js:13` (`seedAtHead`, `seedListing`, `GATE_AUDIT_FILE` stay on kinds.js; check there is no moved name), plus any other test the builder finds with `grep -rn "kinds.js"` for a moved name. The builder lists the final set. A comment that names `src/kinds.js` for a moved name (`src/source.js:402`, `src/panel/authorsession.js:648,767`, `src/closetimeout.js:141`) gets its path fixed in the same change.
+
+**Bars.** The same 4 frozen bars as the addendum, unchanged:
+
+1. the cycle is gone, and no new one appears (walk prints zero cycles, counted as strongly connected groups, not printed lines);
+2. the 97-run dump is byte-identical;
+3. the 167 root exports are identical in a clean consumer via `npm pack`;
+4. move-not-rewrite: every non-import line that changed is listed (expected: `export` added to `sh` and `stageEnv`, and the comment paths above).
+
+**Process and close-env tests.** `sh` runs the declared checks and closes, so each of these existing files must stay green as a SINGLE file via `node scripts/hermetic.mjs <file>`, before and after: `tests/check-kill.test.js` (process-group kill), `tests/check-survivors.test.js`, `tests/check-limit.test.js`, `tests/check-note.test.js`, `tests/check-timeout-words.test.js`, `tests/check-timeout-resume.test.js`, `tests/check-once-signing.test.js`, `tests/kinds.test.js`, `tests/ralph.test.js` (close-env stripping, `CLOSE_ENV_DENY`), `tests/declaredclose.test.js`, `tests/seed-baseline-once.test.js`, `tests/source.test.js`. A file that was already red before H2 is reported as such, not blamed on the move. No full suite while another test run is live.
+
+**The zero-cycle test lands last.** `tests/import-cycles.test.js`, copied from `.claude/scratch/poc-cycles/import-cycles.test.js`. It must be RED on 61a81501 with the one cycle (`kinds.js -> sheetrun.js -> source.js`, found by running it there) and GREEN after H2. If H2 fails a bar, the test is not committed.
+
+### Cleanup status 2026-11-26
+
+- Landed, each PASS on all bars: B `a2f2334a`, C `5adcfda2`, A `c3bb4348`, E `9264a01d`, Bundle `9ec8926f`, F `c4f297bc`, G `5a1507db`.
+- D failed and is superseded by G: `ledgerRecord` stayed in `src/checklist.js`.
+- Cycles went 13 -> 1. The one left is `kinds -> sheetrun -> source`, which is H2.
+- Gate on 61a81501: typecheck 0, build:types 0, npm test 0. 6626 tests, 6624 pass, 0 fail, 2 skipped. Last line `prompt-commit-check: OK — 46 commit(s) checked`.
+- F399 parity on 97 runs: PASS.
+- Verified honest (2026-11-26, read-only check of the raw spines): the 4 runs the build had added to the bug lists. mwhkhfyw, mwibd3am, mwvx28a5 are bug 1. mwsfq0pi is bug 3. Evidence: `.claude/scratch/verify-4runs/`.
+- Housekeeping still to do (hamr: "no leftovers"):
+  - remove the older POC git worktrees under `.claude/scratch/poc-cycles` (A, B, C, D, E, F, Bundle, Base) and `.claude/scratch/poc-f399/wt`, `.claude/scratch/poc-untangle/wt`. Keep each RESULTS file.
+  - `git worktree prune`.
+  - the branch commits are unpushed: push after the H2 gate.

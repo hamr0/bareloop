@@ -2461,17 +2461,30 @@ Hamr's rule: anything not confirmed, walked, or still open goes first into the n
 
 Hamr: "all next come next release ... we need to start clean; also a lot of borrowing from fwd and giving to fwd after both release."
 
+hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here rides this branch; next: H2, then the zero-cycle test, then housekeeping, then the open items above in order.
+
 - [ ] FIRST: one place per run for its readings and one for its output, for all D and R jobs (F399, F396, F395). POC first; the design extends the signed one run state file (ITEM33-BUILD.md "Addendum 2026-11-24" Part A). Covers check results of every kind (rules/truth, shape items incl. red runs, file checks, $ defaults), findings, and delivered output; every view reads it.
+  - state 2026-11-26: build done. 79 of 80 checklist boxes ticked; the 1 left is hamr's walk (whether a Result tab shows at all). The sheet arm is UNDERPOWERED. The shape grid look and the Audit head wording need hamr's walk. Parity PASS on 97 runs.
 - [ ] Reuse reader (src/reuse.js readTry) reads the wrong leg on already-green resumes (mwvwcxvy, mwue75ih, mvtatlxw). Left out of 6e9678b3 (hamr B: near reuse grading). F399.
+  - state 2026-11-26: fixed by F399 (bugs 4, 5), test-proven, not seen live.
 - [ ] Already-green delivery on a resumed leg is test-proven only, not seen live. F398.
+  - state 2026-11-26: still test-proven only, not seen live.
 - [ ] Phone-width checks (F385, F387; and the new NOW row / ■ sign) need hamr's DevTools.
+  - state 2026-11-26: still hamr's DevTools. Add the new red refusal lines under the six boxes (fwd v0.38.0 swap below).
 - [ ] F389 drafter allowPrefixes vs card "unchecked".
+  - state 2026-11-26: open, not started.
 - [ ] F391 rubric report: cumulative page dumps, no answer section.
+  - state 2026-11-26: open, not started.
 - [ ] Audit tab: a step the person STOPPED reads "failed" (walk 2026-11-25, run mwue75ih, step 2; spine seq 105 stop-requested, seq 107 escalation category "stopped", seq 109 step-end "escalated"). The word comes from partStatusFor (src/panel/status.js:99), which turns "escalated" into failed; only money/time caps are mapped (cappedLastStep, src/panel/server.js:3412). Fix in one owner: a step whose own escalation is category "stopped" reads stopped. Older than this branch (same on main).
+  - state 2026-11-26: open, not started.
 - [ ] Audit tab: a leg that only re-ran the final check shows no row, so the parts list ends on the "resumed" line (walk 2026-11-25, run mwue75ih leg 3: seq 143 close-precheck satisfied, seq 145 job-end already-green). The parts builder (src/replay.js) has no part kind for a final close on its own; a plain green run's final close has no row either (it shows only in the checks box). Decide the row's look before building. Older than this branch (same on main).
+  - state 2026-11-26: open, not started.
 - [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
-- [ ] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
+  - state 2026-11-26: open, not started.
+- [x] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
+  - state 2026-11-26: done. Sent, and copied am14b as the refusal boxes.
 - [ ] One run state file pieces still open (F395, F396).
+  - state 2026-11-26: unclear, check at /refactor. F399 built one place per run for readings and output (it names F396, F395 in its title), but no doc here says whether it covers every piece of the signed Part A.
 - [ ] F399 one place per run: hamr picked option 1 (readers over the spine, simple > clever) 2026-11-25; POC pre-registered in ITEM33-BUILD Addendum 2026-11-25b. Whole next-release list rides this branch (hamr: "we take it all in").
   - round 2 PASS by hamr's ruling 2026-11-25; build spec + parity checklist: ITEM33-BUILD Addendum 2026-11-25d
   - build state 2026-11-26: 79 of 80 boxes ticked, parity PASS on 97 runs; ITEM33-BUILD Addendum 2026-11-25d
@@ -2488,3 +2501,4 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
 - [ ] S4 count-row words pinned by a test (no wording change).
 - [ ] Phone width of the red lines: hamr's DevTools.
 - Not copied: fwd's F259 fix, fwd 23777c8b, no-`~` step checks (F400).
+- /self-review, hamr's click-through of Result/Audit/Run on a resumed and a plain run, and push: not done yet.
