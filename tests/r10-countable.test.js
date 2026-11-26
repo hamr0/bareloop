@@ -57,6 +57,14 @@ test('countable reader: words, list items, lines and sections; nothing else', ()
   assert.equal(guardrailItemCount('be friendly'), null);
 });
 
+test('guardrailItemCount: a number glued to a decimal point, a comma or a currency sign is not an item count (fwd M20 am8)', () => {
+  for (const t of ['2.5 items', '1,5 items', '$5 per item', 'under $3 each line', '€4 per item', '£2 each point']) assert.equal(guardrailItemCount(t), null, t);
+  assert.equal(guardrailItemCount('at most 5 bullets'), 5);
+  assert.equal(guardrailItemCount('3 bullet points'), 3);
+  assert.equal(guardrailItemCount('five items'), 5);
+  assert.equal(guardrailItemCount('price 2.5 then exactly 4 items'), 4);
+});
+
 test('guard: a rule that is not a count keeps today\'s behaviour - a look-tied or look-dropped one is NOT scoped', () => {
   const lines = [{ n: 1, text: 'a', rule: 'be friendly; under $80', rules: ['be friendly', 'under $80'] }];
   const look = { facts: [{ line: 1, forRule: 1, name: 'tone' }], dropped: [{ line: 1, rule: 2, fact: 'under $80', reason: 'no-label' }] };
