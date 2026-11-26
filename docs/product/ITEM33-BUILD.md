@@ -6141,3 +6141,18 @@ Frozen bars, in order:
 
 **Re-run on the src function 2026-11-26 (`.claude/scratch/poc-destglob/replay-src.mjs`, importing the real `scoutCodePaths` from `src/destpoint.js`, after the one-owner change).** Same numbers as the inlined run: 27 sessions with scout facts, (a) identical 26, (b) NEW more 1 (smwxlttvfz78h, `["src/","tests/"]`), (c) fewer or different 0; P2 smwxlttvfz78h Destination `docs/` flips to asked, no other flip. The cut is now `globFolder` in `src/validate.js`, used by `scoutCodePaths` and `destinationMissingInRepo`; it uses source.js's wider wildcard set `*?[{`, so `scoutCodePaths` now also cuts at `[` and `{`. No saved session holds such a path.
 
+
+#### Addendum 2026-11-26f: a step the person stopped reads stopped
+
+**Defect (live 2026-11-26, run mwue75ih).** The Audit tab, the step map and the cards show a step the person STOPPED as "failed". Spine `u-mwue75ih.jsonl`: seq 105 `stop-requested`, seq 107 escalation category `stopped`, seq 108 `run-end` escalated, seq 109 `step-end` step `fix-codeversion-head-resolution` outcome `escalated`, seq 112 `job-end` `stopped`. The word comes from `partStatusFor` (`src/panel/status.js`): an outcome `escalated` reads failed, and only a money/time cap is excepted (fed by `cappedLastStep`, `src/panel/server.js`). `src/replay.js` already derives a step's `stopReason` in code-owned words ('you stopped it' for a leg outcome `stopped`), but only for a step with NO step-end; it already records the step's own escalation as `tripped` (`tripOf(findTrip(...))`).
+
+**Ruling (hamr, 2026-11-26, "ok").** One owner: `src/replay.js`, where a step's `stopReason` is already derived. A step that ENDED `escalated` and whose OWN escalation (`tripped.category`) is `stopped` gets `stopReason: 'you stopped it'` (the same words). `partStatusFor` then maps `outcome === 'escalated'` with that `stopReason` to `stopped`, beside the existing cap exception. Every view reads `partStatusFor`, so all follow. `cappedLastStep`'s cap logic is not moved or changed. The attempts mapping at `src/replay.js` (`step.stopReason ? stepAttempts.map(null outcome -> 'stopped')`) is checked: it must change no attempt word.
+
+**POC (a $0 replay, no model call; scripts in `.claude/scratch/poc-stopped/`).** The real `getRunDetail` (`src/panel/server.js`, the path the panel uses: replay parts, then died marking and `cappedLastStep`, then `partStatusFor`) is run read-only over EVERY run row in `~/.config/bareloop/runs.jsonl` whose spine exists (the corpus the F399 parity dump used: `runs.jsonl` rows with a `spine`, deduplicated by run id), once on the unchanged code (OLD) and once on a scratch copy of `src/` carrying the change (NEW; the repo tree is untouched until the POC passes). Each part's status word, `stopReason`, `tripped.category` and each attempt's outcome are compared.
+
+**Frozen bars.**
+- P1: every changed part is a step whose `tripped.category === 'stopped'`, and it changed failed -> stopped. Zero other changes, in parts or attempts. Every changed part is listed (run id, step, old -> new). Run mwue75ih's step `fix-codeversion-head-resolution` is among them.
+- P2: the run-level status word is unchanged for every run (this fix is part-level only).
+- P3: a fail-first test, red before and green after, built from a minimal spine of the mwue75ih shape (stop-requested, escalation stopped, run-end escalated, step-end escalated, job-end stopped): the part reads stopped. A control spine whose step's own escalation is a strike/ladder escalation still reads failed.
+
+If P1 or P2 fails: stop, commit only this addendum and the results, report.
