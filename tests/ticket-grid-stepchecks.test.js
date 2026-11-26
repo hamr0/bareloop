@@ -7,6 +7,8 @@ import { readRunList } from '../src/runlist.js';
 import { getRunResult, getRunDetail } from '../src/panel/server.js';
 import { makeAuditGridWorld, RUNID } from './audit-grid-world.mjs';
 
+/** F399: checks are the CURRENT leg's. The real run's leg 2 is its already-green leg (no steps), so these tests cut the spine at the resume marker: leg 1, whose steps ran the checks, becomes the current leg. */
+const leg1Only = (/** @type {string} */ text) => { const lines = text.split('\n').filter(Boolean); const k = lines.findIndex((l) => /"type":"leg-resume"/.test(l)); return `${(k < 0 ? lines : lines.slice(0, k)).join('\n')}\n`; };
 function noCloseWorld() {
   const w = makeAuditGridWorld();
   const detail = getRunDetail(RUNID, w.opts);
@@ -20,7 +22,7 @@ test('a step\'s check that was red on try 1 and green on try 2 stands green; the
   assert.match(before.checks.head, /the close ran them after the worker stopped$/);
   // remove the outer close from the spine (the file the run list points at)
   const row = readRunList(w.opts).rows.find((r) => r.runid === RUNID);
-  const text = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-precheck"|"type":"close-verdict".*"stages"/.test(l)).join('\n') + '\n';
+  const text = leg1Only(readFileSync(row.spine, 'utf8')).split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-precheck"|"type":"close-verdict".*"stages"/.test(l)).join('\n') + '\n';
   writeFileSync(row.spine, text);
   const k = getRunResult(RUNID, w.opts).checks;
   assert.ok(k, 'the steps\' own checks stand in');
@@ -38,7 +40,7 @@ test('a step\'s check that was red on try 1 and green on try 2 stands green; the
 test('a check a LATER step ran again takes that later standing (the same name red in a later step reads red)', () => {
   const w = noCloseWorld();
   const row = readRunList(w.opts).rows.find((r) => r.runid === RUNID);
-  const lines = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-precheck"|"type":"close-verdict".*"stages"/.test(l)).map((l) => {
+  const lines = leg1Only(readFileSync(row.spine, 'utf8')).split('\n').filter((l) => l && !/"type":"outer-close"|"type":"close-precheck"|"type":"close-verdict".*"stages"/.test(l)).map((l) => {
     const r = JSON.parse(l);
     // the second step's artifact check goes red; the first step's stays green
     if (r.type === 'exit-eval' && r.step === 'annotate-cfg-params') r.results = r.results.map((x) => (x.type === 'artifact-written' ? { ...x, pass: false, detail: 'x was not written' } : x));

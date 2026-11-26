@@ -21,6 +21,7 @@ import { shapePartOf } from './shaperows.js';
 import { shapeItemOfPlain } from './shapewords.js';
 import { stepFileRel } from './rubricstep.js';
 import { placeRuleLines } from './placerule.js';
+import { replayRun } from './replay.js';
 
 /** @param {string} p @returns {any} */
 const jsonOf = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
@@ -173,6 +174,8 @@ export function checksOf(spine, runDir, opts = {}) {
     fence,
     placeRules: placeRuleLines(spine),
     outcome: leg.outcome,
+    /** a run the close never reached: the steps' own checks, as the replay parts of THIS leg's records (never the whole spine: an earlier leg's tries do not leak in). `null` when there is a close or none could be built */
+    stepParts: () => { if (close) return null; try { return replayRun(legRecords).parts ?? null; } catch { return null; } },
     /** the file a check judged for job line `n`, read honestly (GAP-3) @param {number} n @param {string|null} root */
     judged: (n, root) => judgedFile(spine, n, root),
     /** what the line's check read (GAP-4): the run's LAST `rubric-evidence` record for job line `n`, or null @param {number} n */

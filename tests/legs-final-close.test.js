@@ -8,7 +8,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { finalCloseOf, currentLegView } from '../src/legs.js';
 import { replayRun, formatReplay } from '../src/replay.js';
-import { shapeRedsFromRecords } from '../src/panel/server.js';
+import { checksOf } from '../src/runread.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -59,7 +59,8 @@ test('replay: the run\'s CLOSE on the resumed already-green mvtatlxw reads leg 2
   for (const [name, recs] of [['mwvwcxvy', GREEN], ['mwue75ih', MWUE]]) assert.equal(replayRun(recs, []).close?.verdict, 'satisfied', `${name}: not "none - the run ended before any close ran"`);
 });
 
-test('shapeRedsFromRecords reads only the current leg\'s final close: an earlier leg\'s gap never leaks into a resumed already-green leg', () => {
+const shapeRedsFromRecords = (/** @type {any[]} */ recs, /** @type {string} */ stage, /** @type {number} */ line) => checksOf(recs, null, { spec: { closeDecl: { stages: [{ name: stage, kind: 'rubric-step', params: { step: line, parts: [{ class: 'shape', fields: [] }] } }], list: [] } } })?.shapeItems.get(stage) ?? [];
+test('checksOf.shapeItems reads only the current leg\'s final close: an earlier leg\'s gap never leaks into a resumed already-green leg', () => {
   const red = { seq: 1, type: 'close-verdict', verdict: 'needs_revision', stages: [{ name: 's', verdict: 'needs_revision' }], gap: 'line 2: item 1: "status" is not one of the allowed values' };
   const recs = [red, { seq: 2, type: 'job-end', outcome: 'red' }, { seq: 3, type: 'leg-resume' }, { seq: 4, type: 'close-precheck', verdict: 'satisfied', stages: [{ name: 's', verdict: 'satisfied' }] }, { seq: 5, type: 'job-end', outcome: 'already-green' }];
   assert.deepEqual(shapeRedsFromRecords(recs, 's', 2), []);
@@ -75,7 +76,7 @@ const SCAN = /(findLast\(|\.some\(|\.filter\(|\.find\(|\blast\()/;
 const TYPES = ['close-verdict', 'outer-close', 'close-precheck'];
 /** @type {Record<string, {n: number, why: string}>} the sites that scan for a close on purpose: history, trend or emitters, NOT "the final close of the current leg" (reuse.js is a separate, later ruling) */
 const ALLOWED = {
-  'src/panel/server.js': { n: 1, why: 'shapeRedsFromRecords gap fallback: a RED run has no staged final close (its fix-loop close-verdicts carry the plain gap lines and no stages), so it reads the current leg\'s last gap-bearing close-verdict; leg-scoped, never an earlier leg\'s' },
+  'src/runread.js': { n: 1, why: 'checksOf shape-items fallback for a run recorded before the `shape-items` record: a RED run has no staged final close (its close-verdicts carry the plain gap lines and no stages), so it reads the current leg\'s last gap-bearing close-verdict; leg-scoped, never an earlier leg\'s' },
   'src/reuse.js': { n: 3, why: 'readTry / last-red-stage readers answer a different question over the whole spine (out of scope of go B)' },
   'src/replay.js': { n: 2, why: 'the fix-loop timeline: per-iteration boundaries and the precheck, seq-bounded across the whole run (history)' },
   'src/userrun.js': { n: 1, why: 'the CLI run-end reads the outer-close of its own `events` (the latest leg, already scoped)' },
