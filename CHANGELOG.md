@@ -20,6 +20,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A part that spans legs is one row per leg (F407, runs mwue75ih and mwuxqx4f).** A scout the person stopped, or a fix try the provider killed, sat inside a LATER leg's row (the whole part was dated by its last attempt), so its own leg read empty under the Audit divider. The scout, plan and fix parts now split into one row per leg, each with exactly that leg's calls and cost; a row the leg's halt cut off carries the leg's plain stop words ("you stopped it", "provider failed", ...). A split fix row numbers its attempts 1..n in time order. The "resumed after" mark sits on the last part of each leg. Replay-proven on 97 archived runs: 4 parts split (mwue75ih, mwuxqx4f, mwezqp5w, muux1x96), sums exact, no run-level word changes.
+
 - **A leg that only re-ran the final check shows one line under its divider (F406).** A resumed leg with no step of its own and no worker (only the final check ran) had nothing under the Audit tab's "stopped: ... · resumed ..." line. It now shows `final check only: every check already passed, nothing left to do` with the passed sign when the leg ended green, or `final check only: ` and the run's usual plain stop words with that ending's sign and word. Shown in both Audit views; no new row on any other run.
 
 - **A stopped step's result sign now matches its word (F405 follow-up, run mwue75ih).** The Audit and Run tabs showed the failed ✗ after a step that read "stopped"; the page now takes the sign from the part's own status table entry. A capped step still shows ✗ beside its "capped" word (open, unchanged).
