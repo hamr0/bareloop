@@ -2474,15 +2474,18 @@ hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here ride
 - [ ] F389 drafter allowPrefixes vs card "unchecked".
   - state 2026-11-26: open, not started.
   - state 2026-11-26: ruled A, building (ITEM33-BUILD Addendum 2026-11-26d).
+  - state 2026-11-26: built today, 350e24ca and a8962c69; a live draft (session smwxlttvfz78h) showed the guard equal to Destination docs/, and the `~` rule kept by the fence.
 - [ ] F391 rubric report: cumulative page dumps, no answer section.
   - state 2026-11-26: open, not started.
   - state 2026-11-26: closed by hamr's ruling A — works as ruled (ITEM33-BUILD Addendum 2026-10-21 item 2, ruling 3a: a line with no kept money fact has no result lines, so its phrase facts pass through); root cause: an [agent] phrase 'Status' was the table header; the facts were sent to fwd; nothing built.
 - [ ] Audit tab: a step the person STOPPED reads "failed" (walk 2026-11-25, run mwue75ih, step 2; spine seq 105 stop-requested, seq 107 escalation category "stopped", seq 109 step-end "escalated"). The word comes from partStatusFor (src/panel/status.js:99), which turns "escalated" into failed; only money/time caps are mapped (cappedLastStep, src/panel/server.js:3412). Fix in one owner: a step whose own escalation is category "stopped" reads stopped. Older than this branch (same on main).
   - state 2026-11-26: built (test- and replay-proven; hamr's click-through pending): a step ending `escalated` on its own `stopped` escalation reads stopped, and its re-run in the next leg reads continued (ITEM33-BUILD Addendum 2026-11-26f, F405).
   - state 2026-11-26: follow-up built (page test-proven; hamr's click-through pending): the stopped step's result sign is the stopped ■, not ✗ (Addendum 2026-11-26h round 2, F405). Open: a capped step's glyph is still ✗ against its ■ word; an empty first leg (mwue75ih leg 1 ran a scout round) waits for hamr's choice, P1 FAIL.
+  - state 2026-11-26: built today, F405 0f012ca3 and Fix 1 4293cecb, replay- and test-proven; hamr saw "stopped" on mwue75ih live 2026-11-26; the glyph split is in the result-sign item below.
 - [ ] Audit tab: a leg that only re-ran the final check shows no row, so the parts list ends on the "resumed" line (walk 2026-11-25, run mwue75ih leg 3: seq 143 close-precheck satisfied, seq 145 job-end already-green). The parts builder (src/replay.js) has no part kind for a final close on its own; a plain green run's final close has no row either (it shows only in the checks box). Decide the row's look before building. Older than this branch (same on main).
   - state 2026-11-26: built, option B (replay- and test-proven; hamr's click-through and phone width pending).
   - state 2026-11-26: open, not started.
+  - state 2026-11-26: built today, F406 ab683e53 plus 92a0425f; hamr saw the line on mwue75ih live 2026-11-26.
 - [ ] Fix ledger: 33 bullets (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
   - state 2026-11-26: open, not started.
 - [x] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
@@ -2493,6 +2496,16 @@ hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here ride
   - round 2 PASS by hamr's ruling 2026-11-25; build spec + parity checklist: ITEM33-BUILD Addendum 2026-11-25d
   - build state 2026-11-26: 79 of 80 boxes ticked, parity PASS on 97 runs; ITEM33-BUILD Addendum 2026-11-25d
   - import-cycle cleanup plan (batches B, D, C, A, E, Bundle, F) and frozen bars: ITEM33-BUILD Addendum 2026-11-26; F403
+- [ ] A part that started but never finished shows no row: a scout the person stopped (run mwue75ih leg 1: scout-start seq 24, one scout worker-round seq 27, stop-requested 28, escalation stopped 29, job-end stopped 31) and a leg whose provider failed before any part (mwuxqx4f leg 5). hamr ruled A (2026-11-26): the parts builder (src/replay.js) shows the cut-off part as its own row, e.g. `[■] stopped  scout · 1 call · $0.0004 · you stopped it`. POC first: a $0 replay over the 97-run corpus where the only allowed change is new rows for parts that started and never ended. The first try (ITEM33-BUILD Addendum 2026-11-26h, a 'starting checks only' line) FAILED its POC because its premise was wrong: the orchestrator had claimed leg 1 ran only the starting checks, and that claim was withdrawn (leg 1 held a scout round).
+  - state 2026-11-26: ruled, not started; FIRST next session.
+- [ ] Result-sign (glyph) owner is still split: partResultGlyph (src/panel/index.html) reads the server's status only for a stopped single-attempt part (4293cecb). A capped part's word is capped while its glyph is ✗, and a stopped try inside a multi-attempt part shows ✗. One owner for the glyph is the fix (one-owner rule: no more per-case patches).
+  - state 2026-11-26: found by the Fix 1 builder, not started; ride the same branch.
+- [ ] New job card Schedule row offers all schedule kinds. hamr 2026-11-26: on a new flow you can pick any schedule, not only Every day at; the same rule applies whether the schedule is set on the New job card or on a scheduled run (Cancel / modify schedule): it starts after the first green (rubric: after the honoured Accept). Today the card offers only By hand / When a new ticket arrives / Every day at HH:MM (src/schedulewords.js SCHEDULE_WORDS.card.options, copied from fwd R7, ITEM33-BUILD 2026-11-05 R7 line), while the existing-job card offers daily, weekdays, weekly, file-updated, new-file, new-ticket. Proposed (asked, NOT answered by hamr yet): (1) the same per-flow-type rules as the existing-job card (file kinds only for plain-folder jobs, new-ticket only for Tickets MCP jobs), ONE option list read by both cards; (2) tell fwd facts-only after we build; (3) build right after the Audit fixes, on this branch.
+  - state 2026-11-26: asked, not answered; spec and POC first.
+- [ ] The check-only line's 'did this leg run a worker' test (src/panel/server.js checkOnlyLineFor, F406) is a local scan of the leg's records. No single owner exists for that fact yet, and no guard polices it.
+  - state 2026-11-26: logged, not started.
+- [x] F404 Destination glob.
+  - state 2026-11-26: built, e0374749 and 884b6dfc.
 
 Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.
 

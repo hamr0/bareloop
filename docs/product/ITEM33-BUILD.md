@@ -6212,3 +6212,5 @@ Frozen bars:
 - P1 (Fix 1): `getRunDetail` has 0 field changes over the 97 runs. The glyph is computed in `index.html`, so no server field changes by construction; stated, not replayed. Fix 1 is proven by P2.
 - P2: fail-first page tests (`tests/p5r-page.test.js`): a stopped part renders the stopped sign and not the failed sign; a capped, a failed, a passed and a multi-try part render exactly as before. Red before, green after.
 - Capped check: a capped part's word against its glyph today is reported, not changed.
+
+**Ruling 2026-11-26 (hamr, later):** hamr ruled A for the cut-off part row (see PRD next-release item); the "starting checks only" line is withdrawn for good.
