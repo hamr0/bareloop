@@ -424,11 +424,11 @@ export function resumePlanFor(row, records) {
  * started a part yet). Money is the chain's own spend at that leg's end on the ONE basis ({@link chainSpend}).
  * @param {any[]} spineRecords the run's raw records
  * @param {any[]} parts `summary.parts` (each carries `leg` on a resumed run)
- * @returns {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]}
+ * @returns {{leg: number, beforePart: number, after: string|null, at: string|null, text: string, checkOnly?: {sign: string, word: string, text: string}}[]}
  */
 export function legDividersFor(spineRecords, parts) {
   const legs = legsOf(spineRecords);
-  /** @type {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]} */
+  /** @type {{leg: number, beforePart: number, after: string|null, at: string|null, text: string, checkOnly?: {sign: string, word: string, text: string}}[]} */
   const out = [];
   for (let k = 1; k < legs.length; k += 1) {
     const l = legs[k];
@@ -447,15 +447,39 @@ export function legDividersFor(spineRecords, parts) {
     else if (a === 'died' || a === null) stopped = 'no ending was recorded';
     else stopped = String(a);
     const at = typeof l.start?.at === 'string' ? l.start.at : (typeof l.start?.ts === 'string' ? l.start.ts : null);
+    const hasParts = parts.some((p) => typeof p.leg === 'number' && p.leg === l.leg);
     out.push({
       leg: l.leg,
       beforePart: first === -1 ? parts.length : first,
       after: a,
       at,
       text: `stopped: ${stopped} · resumed ${at ? formatTimestamp(at) : 'at an unknown time'}`,
+      ...(hasParts ? {} : checkOnlyLineFor(l, k + 1 < legs.length)),
     });
   }
   return out;
+}
+
+/**
+ * hamr 2026-11-26 (option B): the ONE line under a leg divider for a leg that has no part of its own (only the final check ran, run mwue75ih
+ * leg 3). CODE-OWNED fixed sentences: a green leg says every check already passed; any other ending reuses {@link endedFor}'s plain stop
+ * words, with that outcome's sign and word from the status table. A last leg with no ending yet (live, or died: the run's own status says
+ * which) gets none.
+ * @param {{outcome: string|null, records: any[]}} leg
+ * @param {boolean} hasNext a later leg exists, so a leg with no `job-end` died
+ * @returns {{checkOnly?: {sign: string, word: string, text: string}}} `{}` when the leg shows none
+ */
+function checkOnlyLineFor(leg, hasNext) {
+  const outcome = leg.outcome ?? (hasNext ? 'died' : null);
+  // a leg whose worker ran (a provider failure before any part still left worker rounds) did more than the final check
+  if (outcome === null || leg.records.some((r) => r?.type === 'worker-round' || r?.type === 'run-start' || r?.type === 'step-start')) return {};
+  const esc = leg.records.findLast((r) => r?.type === 'escalation') ?? null;
+  const moneyHalt = leg.records.some((r) => r?.type === 'money-halt');
+  const st = statusFor({ outcome: outcome === 'died' ? null : outcome, died: outcome === 'died', category: typeof esc?.category === 'string' ? esc.category : null, moneyHalt });
+  const words = st.key === 'passed'
+    ? 'every check already passed, nothing left to do'
+    : (endedFor({ outcome, stopReason: null, spentUsd: null, budgetUsd: null, lastEscalation: esc }, { died: outcome === 'died', lastThing: null, }, { moneyHalt })?.reason ?? outcome);
+  return { checkOnly: { sign: st.sign, word: st.word, text: `final check only: ${words}` } };
 }
 
 /** outcomes whose ending is "the checks said no" (a graded answer from a working close) */

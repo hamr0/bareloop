@@ -97,6 +97,25 @@ test('page Audit: legDividerEl paints the server\'s code-owned text between rule
   assert.match(groups, /dv\.beforePart >= boxes\.length\) container\.appendChild\(legDividerEl\(dv\)\)/, 'a leg with no part yet closes the list');
 });
 
+test('page Audit: a leg that only re-ran the final check shows ONE plain line under its divider (state dot + word + the server\'s words); a divider without it shows none (P2, 2026-11-26g)', () => {
+  const doc = fakeDoc();
+  const escapeXml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // eslint-disable-next-line no-new-func
+  const { legDividerEl } = new Function('document', 'escapeXml', `${fnSrc('stateDotHTML')}\n${fnSrc('checkOnlyHtml')}\n${fnSrc('legDividerEl')}\nreturn { legDividerEl: legDividerEl };`)(doc, escapeXml);
+  const text = 'final check only: every check already passed, nothing left to do';
+  const withLine = legDividerEl({ leg: 3, text: 'stopped: you stopped it · resumed 2026-11-25 10:00', checkOnly: { sign: '\u2713', word: 'passed', text } });
+  assert.equal(withLine.children.length, 1, 'one line under the divider');
+  const line = withLine.children[0];
+  assert.equal(line.attrs['data-testid'], 'audit-leg-checkonly-3');
+  assert.match(line.innerHTML, /class="dot green"/);
+  assert.match(line.innerHTML, /<b class="st-word">passed<\/b>/);
+  assert.ok(line.innerHTML.includes(text));
+  const red = legDividerEl({ leg: 2, text: 'x', checkOnly: { sign: '\u2717', word: 'failed', text: 'final check only: Goal not met.' } });
+  assert.match(red.children[0].innerHTML, /class="dot red"/);
+  // a normal leg (and any run nobody resumed) has no checkOnly: nothing under the divider
+  assert.equal(legDividerEl({ leg: 2, text: 'stopped: you stopped it · resumed 2026-11-25 10:00' }).children.length, 0);
+});
+
 test('page Audit (flat): a divider row is placed by time — before the first call made at or after the leg picked up — and never counted as a filterable row', () => {
   const src = fnSrc('renderAudit');
   assert.match(src, /dividerAtMs\(pendingDividers\[0\]\) <= Date\.parse\(r\.time\)/);

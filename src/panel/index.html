@@ -4101,11 +4101,25 @@
     dividers.forEach(function(dv){ if(dv.beforePart >= boxes.length) container.appendChild(legDividerEl(dv)); });
     applyAuditFilter(currentAuditFilter);
   }
+  // 2026-11-26g: a leg that only re-ran the final check has no part, so the server's `checkOnly` ({sign, word, text}) is its one line
+  // under the divider: the existing state dot + word, then the server's own words
+  function checkOnlyHtml(dv){
+    var c = dv.checkOnly;
+    if(!c) return "";
+    var cls = c.sign === "\u2713" ? "green" : (c.sign === "\u25A0" ? "stopped" : (c.sign === "?" ? "magenta" : "red"));
+    return stateDotHTML(cls, c.word, "audit-leg-checkonly-state-" + dv.leg) + " " + escapeXml(c.text);
+  }
   function legDividerEl(dv){
     var d = document.createElement("div");
     d.className = "audit-leg-divider";
     d.setAttribute("data-testid", "audit-leg-divider-" + dv.leg);
     d.textContent = "\u2500\u2500 " + dv.text + " \u2500\u2500";
+    if(dv.checkOnly){
+      var line = document.createElement("div");
+      line.setAttribute("data-testid", "audit-leg-checkonly-" + dv.leg);
+      line.innerHTML = checkOnlyHtml(dv);
+      d.appendChild(line);
+    }
     return d;
   }
   // build item B: a Run-tab card (or map box) click switches to the Audit
@@ -4156,7 +4170,7 @@
       var dividerRow = document.createElement("tr");
       dividerRow.className = "audit-leg-divider-row";
       dividerRow.setAttribute("data-testid", "audit-leg-divider-row-" + dv.leg);
-      dividerRow.innerHTML = '<td colspan="6">\u2500\u2500 ' + escapeXml(dv.text) + ' \u2500\u2500</td>';
+      dividerRow.innerHTML = '<td colspan="6">\u2500\u2500 ' + escapeXml(dv.text) + ' \u2500\u2500' + (dv.checkOnly ? '<div>' + checkOnlyHtml(dv) + '</div>' : '') + '</td>';
       return dividerRow;
     }
     result.rows.forEach(function(r){
