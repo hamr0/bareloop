@@ -29,6 +29,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Development only
 
+- F399 parity pins: every checklist item of Addendum 2026-11-25d has its own test of the fact a view shows, read against the records (`tests/f399-parity-*.test.js`: Run tab, Result rubric, Result generic, Audit, Replay, Reuse, Shape grid, Review, Sheet, Tickets, Destination, CLI readout; scaffolding in `tests/f399-raw.mjs`). Where no real run has the case the test says so (planted records or files on a real spine, a hand-built spine, or the real engine over an authored sheet); pure look items stay `→ hamr walk`.
 - `tests/import-cycle-replay.test.js` walks the static imports under `src/` and fails if any cycle passes through both `replay.js` and `runread.js` (it does not assert there are no cycles at all).
 - A test pins the list-line count words on the card, the Audit and the worker text: `exactly N items`, `at least N items`, `at most N items`, and `item` for 1 (fwdloop am15a). No wording changed.
 
