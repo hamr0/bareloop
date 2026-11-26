@@ -5903,8 +5903,8 @@ Review (D review)
 
 Sheet results
 
-- [ ] Sheet · a passed sheet row's "found" line (claim count or value) · today: sheetFoundLine sheetrows.js:58, used at getRunResult ~2046 · new: outputOf.content (GAP-5, ruled; reads the delivered file's claims) · POC: UNDERPOWERED (0 sheet runs in the corpus) · proof: sheet-found-line-parity on a fixture authored to the real shape, then hamr walk
-- [ ] Sheet · the code-written Count and Total lines at the end of the report · today: resultmd.js:204 report writer · new: outputOf.content (GAP-5, ruled) · POC: UNDERPOWERED (0 sheet runs) · proof: sheet-report-totals-parity
+- [x] Sheet · a passed sheet row's "found" line (claim count or value) · today: sheetFoundLine sheetrows.js:58, used at getRunResult ~2046 · new: outputOf.content (GAP-5, ruled; reads the delivered file's claims) · POC: UNDERPOWERED (0 sheet runs in the corpus) · proof: sheet-found-line-parity on a fixture authored to the real shape, then hamr walk · UNDERPOWERED (no real sheet run) · TICKED: tests/f399-parity-sheet.test.js sheet-found-line-parity (engine run over an authored sheet; mutation: destination-written handler disabled, red)
+- [x] Sheet · the code-written Count and Total lines at the end of the report · today: resultmd.js:204 report writer · new: outputOf.content (GAP-5, ruled) · POC: UNDERPOWERED (0 sheet runs) · proof: sheet-report-totals-parity · UNDERPOWERED (no real sheet run) · TICKED: tests/f399-parity-sheet.test.js sheet-report-totals-parity pins the rows and Count lines; the Total (sumIf) line is pinned only by the existing tests/sheet-run-e2e.test.js:86, NOT re-pinned here
 
 Tickets
 
