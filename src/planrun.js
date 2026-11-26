@@ -914,7 +914,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
  *   the runner sets it, the plan cannot express it, and no step may tighten or raise
  *   it.
- * @param {{afterMs: number, everyMs: number}|null} [opts.checkNote] TEST SEAM ONLY: when the still-running note starts and how often it repeats (production: kinds.js CHECK_NOTE_*)
+ * @param {{afterMs: number, everyMs: number}|null} [opts.checkNote] TEST SEAM ONLY: when the still-running note starts and how often it repeats (production: shell.js CHECK_NOTE_*)
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory).
  *   OPTIONAL as of PRD item 27/M3: absent, this run autosets it from a $0 seed
  *   timing pass (or the spec's own signed `closeTimeoutMs` override) — an

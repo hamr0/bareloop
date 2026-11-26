@@ -13,7 +13,7 @@ import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE, prepareSigning } from '../src/authorjob.js';
-import { CHECK_LIMIT_MS } from '../src/kinds.js';
+import { CHECK_LIMIT_MS } from '../src/shell.js';
 import { createCarryStore, runStateFile } from '../src/carrystore.js';
 import { readSpine, scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
 

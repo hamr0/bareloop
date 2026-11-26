@@ -77,7 +77,8 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute, dirname } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, STOP_FAULTS, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { STOP_FAULTS } from './shell.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,

@@ -769,7 +769,7 @@ test('prepareSource: an environment file refuses source-env-file by NAME, whatev
 });
 
 test('prepareSource: a file over the REAL MAX_BUFFER refuses source-file-oversize (M2b fix 3) — folder file and single file', { timeout: 60_000 }, async () => {
-  const { MAX_BUFFER } = await import('../src/kinds.js');
+  const { MAX_BUFFER } = await import('../src/shell.js');
   const big = Buffer.alloc(MAX_BUFFER + 1024, 0x61); // past the REAL ceiling, no crafted shortcut
   const folder = tmp('bareloop-src-big-');
   writeFileSync(join(folder, 'ok.txt'), 'small');
@@ -783,7 +783,7 @@ test('prepareSource: a file over the REAL MAX_BUFFER refuses source-file-oversiz
 });
 
 test('prepareSource: a file just UNDER the ceiling passes (the per-file cap does not false-positive)', { timeout: 60_000 }, async () => {
-  const { MAX_BUFFER } = await import('../src/kinds.js');
+  const { MAX_BUFFER } = await import('../src/shell.js');
   const folder = tmp('bareloop-src-nearly-big-');
   writeFileSync(join(folder, 'nearly.txt'), Buffer.alloc(MAX_BUFFER - 1024, 0x61));
   const into = join(tmp('bareloop-into-parent-'), 'job1');
@@ -954,7 +954,7 @@ test('prepareSource: a URL source answering a binary content-type refuses source
 });
 
 test('prepareSource: an oversize URL body refuses source-fetch-oversize, over the REAL MAX_BUFFER ceiling', { timeout: 30_000 }, async () => {
-  const { MAX_BUFFER } = await import('../src/kinds.js');
+  const { MAX_BUFFER } = await import('../src/shell.js');
   const chunk = Buffer.alloc(1024 * 1024, 0x61); // 1MB chunks, streamed over loopback — fast, no disk
   const chunksToSend = Math.ceil(MAX_BUFFER / chunk.length) + 2; // comfortably past the ceiling
   const srv = await serverWith((req, res) => {

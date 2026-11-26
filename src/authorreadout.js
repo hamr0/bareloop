@@ -24,7 +24,8 @@
 // not because they are readouts: the runner is a script, and a rule no test can
 // reach is a rule nothing checks.
 import { scrubRaw } from './text.js';
-import { checkTimedOutText, survivorsText } from './kinds.js';
+import { checkTimedOutText } from './kinds.js';
+import { survivorsText } from './shell.js';
 export { checkTimedOutText };
 import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';

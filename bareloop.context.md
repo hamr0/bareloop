@@ -3167,7 +3167,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 ##### The check limit — an AI-drafted check (hamr 2026-11-21, `src/kinds.js`, `src/closetimeout.js`)
 
 A panel job's checks are AI-drafted (`closeDecl`, kind stages), not hand-written commands. They run under **one**
-code-owned limit, `CHECK_LIMIT_MS` (`src/kinds.js`, **30 minutes per command**), at every place a check runs: the drafting
+code-owned limit, `CHECK_LIMIT_MS` (`src/shell.js`, **30 minutes per command**), at every place a check runs: the drafting
 seed read, the signing gates (`prepareSigning`, the panel passes the same number), and the run's precheck, preflight and final
 close. `resolveCloseTimeoutMs` returns it for a declared close with `source: 'check-limit'` and no timing pass (the pass cannot
 time a kind stage, which used to read 0 and fall to the 120 s floor); a signed `job.closeTimeoutMs` override still wins. The AI no
