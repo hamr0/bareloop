@@ -2474,6 +2474,8 @@ Hamr: "all next come next release ... we need to start clean; also a lot of borr
 - [ ] One run state file pieces still open (F395, F396).
 - [ ] F399 one place per run: hamr picked option 1 (readers over the spine, simple > clever) 2026-11-25; POC pre-registered in ITEM33-BUILD Addendum 2026-11-25b. Whole next-release list rides this branch (hamr: "we take it all in").
   - round 2 PASS by hamr's ruling 2026-11-25; build spec + parity checklist: ITEM33-BUILD Addendum 2026-11-25d
+  - build state 2026-11-26: 79 of 80 boxes ticked, parity PASS on 97 runs; ITEM33-BUILD Addendum 2026-11-25d
+  - import-cycle cleanup plan (batches B, D, C, A, E, Bundle, F) and frozen bars: ITEM33-BUILD Addendum 2026-11-26; F403
 
 Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" is correct for an old job. 9 = 6 job checks + 2 guards + the write fence (held counts as passed); the 8 Not checked rows are the drafter's own notes (closeDecl.notes) from a 2026-10-29 spec made before check lists (src/panel/jobplan.js:134). Old runs are not repaired for new rules.
 

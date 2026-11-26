@@ -16863,3 +16863,8 @@ The round 3 rewrite of the shape look prompt dropped "for no other rule", which 
 - hamr ruled it PASS on 2026-11-25. This is a ruling on a clash in our own wording, not a re-tune: no bar moved, no run was added or dropped, the frozen addenda stay unedited. The strict reading is kept here so the record shows the clash.
 - Still not compared (unchanged from F401): fence row state and blocked count; unkeyed Audit guard rows; Audit Not-checked texts; shape grid cells; a structured close with stage `items`; R sheet (0 runs); ticket-job reds; D review report content; branch and commit existence. Each gets its own parity test in the build.
 - Build approved by hamr: "pass, and make sure you parity match what's there with the new one, make a checklist". Spec and checklist: ITEM33-BUILD.md Addendum 2026-11-25d.
+
+### F403: 13 import cycles in src (2026-11-26)
+
+- A static import walk of `src/` found 13 cycles. One was made by the F399 reader (runread <-> replay) and is already fixed. 12 were older. Cause per cycle: a shared piece lives in its first user's file (`isOutputCutOff` in authorflow, `ledgerRecord` in checklist, `lineRules` in rubricstep, `DIFF_DIR` in rangereview), or `src` imports its own package entry (cli and bundle import `index.js`). None was harmful at module load: no import is read at module top level. Plan and frozen bars: ITEM33-BUILD.md Addendum 2026-11-26.
+- Two reader fields are wired to no view: `checksOf.notReached` and `checksOf.placeRules` (`src/runread.js:170,175`). The Audit derives not-reached from the signed spec and calls `placeRuleLines` directly (`src/panel/server.js:1601, 2417`). Planned as batch F.

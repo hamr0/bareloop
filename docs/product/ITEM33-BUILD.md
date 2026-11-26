@@ -5975,6 +5975,8 @@ CLI readout
 - Run `/self-review` after the code change (code lines and test asserts change).
 - Build goes to a sonnet builder, one piece at a time: the two readers and the guard first, then one view per commit. The builder commits after each piece.
 
+**F399 build done 2026-11-26.** 79 of 80 boxes ticked. 2 are UNDERPOWERED (sheet). 1 is `→ hamr walk` (Run tab: whether a Result tab shows at all). PARITY: PASS on 97 runs. Items only partly pinned need hamr's walk: the shape grid drawing and the Audit head wording.
+
 ### Untangle POC (hamr "1 and poc first", 2026-11-26), bar frozen before the POC
 
 The cycle: `src/runread.js` (`checksOf.stepParts`) calls `replayRun` from `src/replay.js`, and `src/replay.js` imports `src/runread.js` (its `resolveClose`, replay.js:413). hamr ruled "1": untangle it so nothing points in a circle. POC first, on a throwaway worktree; the branch's src and tests are not touched until this passes.
@@ -5991,3 +5993,36 @@ The cycle: `src/runread.js` (`checksOf.stepParts`) calls `replayRun` from `src/r
 Any miss is FAIL and goes back to hamr. No re-tune.
 
 hamr 2026-11-26: counted PASS for the replay<->runread cycle; bar 1's "none in src" wording was the operator's error; the 12 older cycles are planned separately (see the cycles plan).
+
+
+## Addendum 2026-11-26: import-cycle cleanup and two unwired reader fields (hamr: "redesign and clean up; if something should/could be cleaned up properly, clean it")
+
+**Facts.** After the replay<->runread fix, a static import walk of `src/` (`.claude/scratch/poc-untangle/cycles.mjs`, output `cycles-after.txt`) shows 12 older cycles. No file reads an import at module top level, so none is harmful today. Cites checked against source on 2026-11-26.
+
+**Goal.** No import cycle left in `src/` at all. Extend `tests/import-cycle-replay.test.js` (or add `tests/import-cycles.test.js`) to assert zero cycles in `src/` once all batches land. Show it red on today's source first.
+
+**Order.** B, D, C, A, E, Bundle, F. Batches that touch `src/authorflow.js` run strictly one after another.
+
+**Batches (cause, then fix).**
+
+- **B.** `isOutputCutOff` lives in `src/authorflow.js:234`, its first user. Move it to `src/transport.js`. Re-point authorflow (uses it at :1801), sheetlook, pagemap, shapelook, noteask, destpoint, reviewpick (each imports it from authorflow today). Clears authorflow -> sheetoffer -> sheetlook -> authorflow and sheetlook -> pagemap -> authorflow.
+- **D.** `ledgerRecord` lives in `src/checklist.js:54-57`. Move it to `src/checkblock.js`. Re-point `src/authorflow.js:89` and `src/authorjob.js:132`. Clears authorflow <-> checklist.
+- **C.** `lineRules` lives in `src/rubricstep.js:849-852`. Move it to a new leaf `src/jobline.js`. Re-point every importer, src and tests (src: pagerules, resultmd, shaperows, rowedit, sheetlook, authorreadout, authorflow, panel/server; 29 test hits), with NO re-export shim (one path per name). Clears rubricstep <-> sheetrows and rubricstep <-> shaperows.
+- **A.** `DIFF_DIR` lives in `src/rangereview.js:15`. Move it to `src/repocite.js`; rangereview imports it. Clears kinds -> repocite -> rangereview -> source.
+- **E (hamr "2a").** `src/cli.js:28-30` imports `loadRegistry`, `listingRow` and `exportBundle` from `./index.js`. Import `loadRegistry` and `listingRow` from `./bridges.js` and `exportBundle` from `./bundle.js` instead. Clears cli <-> index.
+- **Bundle (hamr "1b" then "1").** `src/bundle.js:36` imports `* as bareloopExports from './index.js'` (read at :395, rule at :426). Stop that. A new leaf `src/exportnames.js` holds the root export names, one per line, frozen. bundle.js reads it for the `close-import-unexported` rule. A test asserts that set equals `Object.keys(await import('../src/index.js'))` in both directions, with a diff message, and that it matches the list `bareloop.context.md` documents (via the existing guard). Root API unchanged; `cliMain` stays (`src/index.js:253`). The rule needs the FULL root set because `rewriteSrcImports` (`src/bundle.js:270-272`) turns src imports into `from 'bareloop'`. Sources: `bareloop.context.md:3223`, `tests/bundle.test.js:437-449`. Arbiter-adjacent (close-import legality in bundle export); hamr gave his word.
+- **F (hamr "clean it properly").** `checksOf.notReached` (`src/runread.js:152,170`) and `checksOf.placeRules` (`:175`) are read by no view. The Audit derives not-reached from the signed spec (`src/panel/server.js:1601-1608`, `checksBoxOf`) and calls `placeRuleLines` itself (`src/panel/server.js:2417`). Wire the Audit to read both from `checksOf`, delete the duplicate derivation, extend the runread guard.
+
+**Cite fixes.** The brief said bundle.js ~392 for the rule; the import is :36, the read :395, the red :426. The brief placed the Audit's own not-reached derivation nowhere; it is `src/panel/server.js:1601-1608`.
+
+### POC bar, frozen per batch (hamr: POC first)
+
+A batch is accepted only if ALL hold, checked on a throwaway worktree before it lands on the branch:
+
+1. The cycle walk shows none of that batch's cycles left, and no new cycle.
+2. On the 97 run copies in `.claude/scratch/poc-f399/corpus`, with an empty env, the dump (`.claude/scratch/poc-untangle/dump.mjs`: replayRun, formatReplay, checksOf, stepParts, outputOf, getRunResult, getRunDetail) is BYTE-IDENTICAL before and after. F is the exception: the Audit's output must be byte-identical; only its source changes.
+3. In a clean consumer installed from `npm pack`, `import * as r from 'bareloop'` gives the same key set as before (count and names, incl. `cliMain`).
+4. Move, not rewrite: the lines removed from the source file equal the lines added to the destination file; elsewhere only import-line edits. For Bundle and F, list every non-import changed line in full.
+5. For Bundle: `exportBundle` gives the same accept/refuse on `tests/bundle.test.js` and on the close scripts of the 3 real bundles in `/home/hamr/PycharmProjects/bareloop-patients/bundles/` (read only). The drift test is shown red once (an extra root export in a scratch copy).
+
+Any miss is FAIL for that batch. It goes back to hamr, never re-tuned.
