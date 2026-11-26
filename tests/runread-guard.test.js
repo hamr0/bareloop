@@ -45,3 +45,19 @@ test('no src file other than runread.js hand-scans spine records of the types th
 test('every ALLOWED entry carries a reason', () => {
   for (const [rel, a] of Object.entries(ALLOWED)) assert.ok(a.why.length > 20, rel);
 });
+
+// checksOf.notReached and checksOf.placeRules are read by the Audit, not derived again beside it: no src file other than src/runread.js
+// calls placeRuleLines (src/placerule.js owns it, runread.js asks it) or builds its own "declared but not run" set from the stages that ran.
+const codeLines = (/** @type {string} */ file) => readFileSync(file, 'utf8').split('\n').map((l, i) => ({ n: i + 1, t: l.trim() })).filter(({ t }) => !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'));
+test('a view reads placeRules and notReached from checksOf, never a second derivation of either', () => {
+  const problems = [];
+  for (const file of walk(join(ROOT, 'src'))) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/runread.js' || rel === 'src/placerule.js') continue;
+    for (const { n, t } of codeLines(file)) {
+      if (/\bplaceRuleLines\(/.test(t)) problems.push(`${rel}:${n}: calls placeRuleLines; ask checksOf(..).placeRules`);
+      if (/\bran\.has\(/.test(t) || /new Set\(stages\.map\(/.test(t)) problems.push(`${rel}:${n}: derives the stages the close never reached; ask checksOf(..).notReached`);
+    }
+  }
+  assert.deepEqual(problems, []);
+});

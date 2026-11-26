@@ -55,7 +55,6 @@ import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
-import { placeRuleLines } from '../placerule.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { buildJobGrid } from './jobgrid.js';
@@ -1597,12 +1596,14 @@ function checksBoxOf(c, spec) {
     };
   });
   const ok = stages.filter((/** @type {any} */ s) => s.passed).length;
-  // a stage the signed close declares but this LATEST close never reached (it stops at the first red) is "not reached" — never the precheck's old reading
-  const ran = new Set(stages.map((/** @type {any} */ s) => s.name));
-  const unreached = [...(kindMeta ?? new Map())].filter(([n]) => !ran.has(n)).map(([name, m]) => ({
-    name, question: m.question, passed: false, notReached: true, status: NOT_REACHED,
-    value: null, baseline: null, direction: m.direction, baselineKind: m.baselineKind, notes: null,
-  }));
+  // a stage the signed close declares but this LATEST close never reached (it stops at the first red) is "not reached" — never the precheck's old reading; checksOf names them, this adds each one's question and direction
+  const unreached = c.notReached.flatMap((/** @type {string} */ name) => {
+    const m = kindMeta?.get(name);
+    return m ? [{
+      name, question: m.question, passed: false, notReached: true, status: NOT_REACHED,
+      value: null, baseline: null, direction: m.direction, baselineKind: m.baselineKind, notes: null,
+    }] : [];
+  });
   const shown = kindMeta ? [...kindMeta.keys()].map((n) => stages.find((/** @type {any} */ s) => s.name === n) ?? unreached.find((u) => u.name === n)).concat(stages.filter((/** @type {any} */ s) => !kindMeta.has(s.name))) : stages;
   return {
     head: `${ok} of ${stages.length} passed${unreached.length ? ` · ${unreached.length} not reached` : ''} · the close ran them after the worker stopped`,
@@ -2280,7 +2281,8 @@ function getRunDetailBody(runid, opts) {
     });
   }
   // the page draws checks / notChecked / always; `loose` is the Result tab's server-side reader only, never shipped twice
-  const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts);
+  const checksRead = checksReadOf(row, rawSpineRecords, specForParts);
+  const auditChecksAll = auditChecksFor(row, rawSpineRecords, specForParts, opts, checksRead);
   const auditChecks = auditChecksAll === null ? null : { checks: auditChecksAll.checks, notChecked: auditChecksAll.notChecked, always: auditChecksAll.always, lines: auditChecksAll.lines, jobNotChecked: auditChecksAll.jobNotChecked, ...(auditChecksAll.shapeHead ? { shapeHead: auditChecksAll.shapeHead } : {}), ...(auditChecksAll.suggested ? { suggested: auditChecksAll.suggested } : {}) };
   /** the NOW row's words, only while the run is live (null once it ends or when no stretch is being counted) */
   const nowText = row.via !== 'import' && runIsAlive(row) && !death.died && summary.outcome === null ? nowOf(rawSpineRecords, typeof opts.now === 'number' ? opts.now : Date.now()) : null;
@@ -2415,7 +2417,7 @@ function getRunDetailBody(runid, opts) {
     auditChecks,
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
-    placeRules: placeRuleLines(rawSpineRecords),
+    placeRules: checksRead ? checksRead.placeRules : null,
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
