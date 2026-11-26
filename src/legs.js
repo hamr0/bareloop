@@ -276,7 +276,15 @@ export const END_WORDS = Object.freeze({
 
 /** @typedef {'passed'|'failed'|'stopped'|'capped-money'|'capped-time'|'provider'|'stalled'|'check-timeout'|'died'|'open'} EndKind */
 
-const KIND_OF_WORDS = new Map(Object.entries(END_WORDS).map(([kind, words]) => [words, kind]));
+/** @type {Map<string, EndKind>} */
+const KIND_OF_WORDS = new Map(/** @type {[string, EndKind][]} */ (Object.entries(END_WORDS).map(([kind, words]) => [words, /** @type {EndKind} */ (kind)])));
+
+/**
+ * The end kind of an outcome / escalation category the ENGINE already wrote (a lookup, never a mapping of a check verdict: a timed-out verdict becomes
+ * `check-timeout` only in `closeFaultEnding`, src/ralph.js, F393; this module never reads a verdict).
+ * @type {Record<string, EndKind>}
+ */
+const KIND_OF_WRITTEN = { 'provider-red': 'provider', 'check-timeout': 'check-timeout', 'step-stalled': 'stalled', stopped: 'stopped' };
 
 /**
  * The end kind a stop-reason sentence stands for: one of {@link END_WORDS}' kinds, `'failed'` for any other sentence (a raw outcome the
@@ -286,21 +294,23 @@ const KIND_OF_WORDS = new Map(Object.entries(END_WORDS).map(([kind, words]) => [
  */
 export function endKindOfWords(words) {
   if (typeof words !== 'string' || words === '') return null;
-  return /** @type {EndKind} */ (KIND_OF_WORDS.get(words) ?? 'failed');
+  return KIND_OF_WORDS.get(words) ?? 'failed';
 }
 
 /** a leg's own cap and last escalation: the facts a window's end is read against @param {Leg} leg */
-function legFactsOf(leg) {
+function legFactsOf(/** @type {LegEnd} */ leg) {
   const esc = leg.records.findLast((r) => r && r.type === 'escalation') ?? null;
   const cap = capKindOf({ outcome: leg.outcome, category: leg.outcome === 'escalated' ? (esc?.category ?? null) : null, moneyHalt: leg.records.some((r) => r && r.type === 'money-halt') });
   return { cap, esc };
 }
 
+/** @typedef {Pick<Leg, 'outcome'|'records'>} LegEnd */
+
 /**
  * @typedef {object} EndOfInput
  * @property {{green: boolean, outcome: string|null}|null} [own] the window's own end record (a step-end): whether it is a green, and its outcome. Absent: the window has no end of its own
  * @property {{seq?: number, category?: string|null, spend?: any}|null} [trip] the window's own last escalation (a `stop`'s category for a fix try)
- * @property {Leg|null} [leg] the leg the window ran in
+ * @property {LegEnd|null} [leg] the leg the window ran in (a real {@link Leg}, or just its outcome and records)
  * @property {'leg'|'last-leg'|'single-leg'|null} [cutBy] a window with no end of its own: `'leg'` a later leg started so the leg's halt cut it,
  *   `'last-leg'` it ran in the run's last leg of a resumed run (cut only when that leg ended non-green), `'single-leg'` a one-leg run (only a cap ends it)
  * @property {'money'|'time'|null} [legCap] the cap the window's leg ended on when the caller has no leg slice (the run's own cap)
@@ -329,11 +339,8 @@ export function endOf(w) {
     if (facts.cap === 'time') return res('capped-time', 'leg');
     if (leg === null) return null;
     const o = leg.outcome;
-    if (o === 'provider-red') return res('provider', 'leg');
-    if (o === 'check-timeout') return res('check-timeout', 'leg');
-    if (o === 'step-stalled') return res('stalled', 'leg');
-    if (o === 'stopped') return res('stopped', 'leg');
     if (o === null) return res('died', 'leg');
+    if (Object.hasOwn(KIND_OF_WRITTEN, o)) return res(KIND_OF_WRITTEN[o], 'leg');
     return res('failed', 'leg', o);
   };
   if (w.own) {
@@ -349,9 +356,9 @@ export function endOf(w) {
         if (facts.cap === 'money' && isLegsLast) return res('capped-money', 'own-end');
         return res('failed', 'own-end', null, true);
       }
-      if (c === 'provider-red' && (leg === null || (isLegsLast && leg.outcome === 'provider-red'))) return res('provider', 'own-end');
-      if (c === 'step-stalled' && (leg === null || (isLegsLast && leg.outcome === 'step-stalled'))) return res('stalled', 'own-end');
-      if (c === 'check-timeout' && (leg === null || (isLegsLast && leg.outcome === 'check-timeout'))) return res('check-timeout', 'own-end');
+      const k = c !== null && Object.hasOwn(KIND_OF_WRITTEN, c) && c !== 'stopped' ? KIND_OF_WRITTEN[c] : null;
+      // a provider / stall / timeout counts when the leg ended on that very outcome (the category and the outcome share a name)
+      if (k !== null && (leg === null || (isLegsLast && leg.outcome === c))) return res(k, 'own-end');
     }
     return res('failed', 'own-end', null);
   }
