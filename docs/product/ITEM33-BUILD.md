@@ -6214,3 +6214,21 @@ Frozen bars:
 - Capped check: a capped part's word against its glyph today is reported, not changed.
 
 **Ruling 2026-11-26 (hamr, later):** hamr ruled A for the cut-off part row (see PRD next-release item); the "starting checks only" line is withdrawn for good.
+
+
+#### Addendum 2026-11-26i: one row per leg for a part that spans legs
+
+**Defect (found 2026-11-26 when the cut-off part row was first specced).** The PRD next-release item "A part that started but never finished shows no row" had a wrong premise (the orchestrator's framing, withdrawn). The cut-off work is NOT missing: it sits inside a later leg's row, and that row is dated by its LAST attempt (`src/replay.js`, `p.leg = legOfSeq(Math.max(...finiteEnds))`), so the earlier leg reads empty. Run mwue75ih: scout `worker-round` seqs 27, 54-59, 61, 62, 67 (leg-resume markers at seq 32 and 113); seq 27 is leg 1's stopped scout round (scout-start 24, stop-requested 28, escalation stopped 29, job-end stopped 31); the one `scout` part (builder `src/replay.js` ~1279: every `phase:'scout'` round before the first step-start, across legs) holds all 10 rounds and is dated leg 2, so leg 1 shows nothing. Run mwuxqx4f: leg 5 (seq 489-542: outer-close, fix-loop, run-start, 3 worker-rounds, 2 transport-retry, escalation provider-red, job-end provider-red) is attempt 5 [530..538] of the one `fix` part, which spans legs 3-6 and is dated leg 6, so leg 5 shows no part.
+
+**Ruling A (hamr, 2026-11-26).** The parts builder shows the cut-off part as its own row, e.g. `[■] stopped  scout · 1 call · $0.0004 · you stopped it`.
+
+**Ruling "1" (hamr, 2026-11-26, after the premise check).** Split a cross-leg part into one row per leg. Owner: `src/replay.js` only (the parts builder and its leg dating); views keep reading `getRunDetail` / `partStatusFor`.
+
+**Frozen bars.**
+- P1: a $0 replay, same corpus and scripts as the F405/F406 POCs (real `getRunDetail` over every `runs.jsonl` row with a spine, deduplicated by run id), FULL output OLD (repo HEAD) vs NEW (a scratch copy of `src/` in `.claude/scratch/poc-cutoff/`). Allowed changes ONLY: a non-step part whose rounds/attempts fall in more than one leg is replaced by one row per leg, in leg order, each row holding exactly that leg's rounds/attempts (attempt objects keep every field unchanged, only regrouped). For each split: the pieces' calls and cost sum EXACTLY to the old row's; list every split (run id, kind, old row -> new rows with leg, sign, word, calls, cost, reason). Later pieces may carry `continued: true` by the existing continuation rule (list each). Divider fields `beforePart`/`hasParts` may change only for a leg that gains a piece (list each). Required: mwue75ih scout -> leg 1 row 1 call $0.00041868 stopped with reason 'you stopped it', leg 2 row 9 calls; mwuxqx4f fix -> one row per leg it spans, leg 5's row being attempt 5 with the provider-failed words. Zero changes to: any part whose activity is in one leg (every field), step parts, run-level status/outcome/stopReason/spend, checkOnly lines. Any other diff = FAIL.
+- P1b: sign/word only from the existing status table (`src/panel/status.js`); reason text only from existing code-owned words (replay.js `stopReason` words, `endedFor` reason in `src/panel/server.js`). No new STATUS entry, no new sentence; if needed, STOP and report.
+- P2: fail-first tests, red before the src change and green after: a mwue75ih-shape spine (scout round, stop, resume, more scout rounds, steps) gives two scout rows split by leg, the first stopped 'you stopped it' with 1 call and its cost; a fix part spanning legs with a provider-red middle leg gives one row per leg; a single-leg run's parts are unchanged.
+- P3: every `tests/*guard*.test.js` plus the replay/panel/status/legs/p5r-page test files green after the build; each exit code quoted.
+- P4: render check: does `src/panel/index.html` show the split rows correctly with existing markup (Audit parts list under the right divider, step map, Result)? Report; any page change needed is reported, not invented.
+
+If P1 or P1b fails: stop, commit only the addendum and results, report.
