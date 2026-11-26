@@ -86,3 +86,8 @@ export function isTransportFailure(err) {
   }
   return false;
 }
+
+/** The honest truncation signal: bare-agent's Loop tags a round cut off at the output cap `error: 'truncated:max_tokens'`
+ * with the neutral `stopReason: 'max_tokens'` (node_modules/bare-agent/src/loop.js, BA-6/BA-13).
+ * @param {any} r */
+export const isOutputCutOff = (r) => r?.error === 'truncated:max_tokens' || (Boolean(r?.error) && r?.stopReason === 'max_tokens');

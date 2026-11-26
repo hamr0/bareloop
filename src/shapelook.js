@@ -7,9 +7,8 @@
 //                       attempt is booked UNPRICED, each call's scrubbed answer rides `onCall`); an unreadable answer twice is ABSENT in plain words (the caller does not let that stop the draft: it goes on without a shape).
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { isTransportFailure } from './transport.js';
+import { isTransportFailure, isOutputCutOff } from './transport.js';
 import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
-import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { MAP_UNREADABLE, defaultLoop } from './pagemap.js';
 import { lineRules } from './rubricstep.js';

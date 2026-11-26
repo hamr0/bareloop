@@ -9,9 +9,8 @@
 // A rule the model gave no word for is left alone: this look adds checks, it removes none. A .docx's headings (fwd's applyDocWords) are not in bareloop.
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { isTransportFailure } from './transport.js';
+import { isTransportFailure, isOutputCutOff } from './transport.js';
 import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
-import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { parseCsv } from './csv.js';
 import { MAP_UNREADABLE, runPageMap, defaultLoop } from './pagemap.js';
