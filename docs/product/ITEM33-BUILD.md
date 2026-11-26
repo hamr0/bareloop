@@ -5816,13 +5816,13 @@ Results go to `.claude/scratch/poc-f399/RESULTS-round2.md` with `VERDICT: PASS` 
 
 Run tab
 
-- [ ] Run tab · summary row "N run · P passed · F failed · K not reached" · today: checksLineOf server.js:3464 (drawn index.html:3085) · new: checksOf.stages + notReached · POC: compared ✓ · proof: run-checks-line-reads-checksOf
-- [ ] Run tab · "Checks not run again: same files as the last check at …" · today: checkReusedOf server.js:775 over currentLegView().reused legs.js:113 · new: unchanged, stays currentLegView().reused (a start-pass note, not a result) · POC: not compared · proof: tests/legs-current-guard.test.js (exists)
-- [ ] Run tab · Ended block "Goal met — not delivered" · today: endedForRow server.js:808 reads `destination-refused`; words at endedBase server.js:620-629 · new: outputOf.refused (current leg) · POC: not compared · proof: ended-not-delivered-reads-outputOf
-- [ ] Run tab · delivered files list (path, bytes, sha256) · today: deliveredOf server.js:1284, used at 2518 · new: outputOf.files role delivered/staged · POC: compared ✓ · proof: run-delivered-list-reads-outputOf
-- [ ] Run tab · Ended block names the kept worktree folder and branch (Resume text) · today: worktreeOfRun server.js:3200 · new: outputOf.landing (`branch`, `folderKept`) · POC: not compared · proof: ended-worktree-reads-outputOf
-- [ ] Run tab · whether a Result tab shows at all · today: resultKindOf server.js:1539 (spec + currentLegView().jobEnd) · new: unchanged, view rule · POC: not compared · proof: hamr walk
-- [ ] Run tab · "Accept" waiting tag and flag · today: doorWaiting reviewdoor.js:83 (server.js:931, 2520) · new: unchanged, door state not a result · POC: not compared · proof: existing needs-tag tests
+- [x] Run tab · summary row "N run · P passed · F failed · K not reached" · today: checksLineOf server.js:3464 (drawn index.html:3085) · new: checksOf.stages + notReached · POC: compared ✓ · proof: run-checks-line-reads-checksOf · TICKED: tests/f399-parity-runtab.test.js run-checks-line-reads-checksOf (2 tests; mutation: checksOf.stages cut, both red)
+- [x] Run tab · "Checks not run again: same files as the last check at …" · today: checkReusedOf server.js:775 over currentLegView().reused legs.js:113 · new: unchanged, stays currentLegView().reused (a start-pass note, not a result) · POC: not compared · proof: tests/legs-current-guard.test.js (exists) · TICKED: tests/f399-parity-runtab.test.js run-checks-not-run-again-line
+- [x] Run tab · Ended block "Goal met — not delivered" · today: endedForRow server.js:808 reads `destination-refused`; words at endedBase server.js:620-629 · new: outputOf.refused (current leg) · POC: not compared · proof: ended-not-delivered-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js ended-not-delivered-reads-outputOf (mutation: outputOf.refused nulled, red)
+- [x] Run tab · delivered files list (path, bytes, sha256) · today: deliveredOf server.js:1284, used at 2518 · new: outputOf.files role delivered/staged · POC: compared ✓ · proof: run-delivered-list-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js run-delivered-list-reads-outputOf
+- [x] Run tab · Ended block names the kept worktree folder and branch (Resume text) · today: worktreeOfRun server.js:3200 · new: outputOf.landing (`branch`, `folderKept`) · POC: not compared · proof: ended-worktree-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js ended-worktree-reads-outputOf
+- [ ] Run tab · whether a Result tab shows at all · today: resultKindOf server.js:1539 (spec + currentLegView().jobEnd) · new: unchanged, view rule · POC: not compared · proof: hamr walk · → hamr walk
+- [x] Run tab · "Accept" waiting tag and flag · today: doorWaiting reviewdoor.js:83 (server.js:931, 2520) · new: unchanged, door state not a result · POC: not compared · proof: existing needs-tag tests · TICKED: tests/f399-parity-runtab.test.js run-accept-waiting-tag
 
 Result tab (rubric jobs)
 
