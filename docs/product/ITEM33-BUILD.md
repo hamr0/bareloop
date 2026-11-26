@@ -5972,3 +5972,18 @@ CLI readout
 - A hamr walk of the Result, Audit and Run tabs on a resumed run and on a plain run. Phone width is hamr's own DevTools check; barebrowse cannot emulate it.
 - Run `/self-review` after the code change (code lines and test asserts change).
 - Build goes to a sonnet builder, one piece at a time: the two readers and the guard first, then one view per commit. The builder commits after each piece.
+
+### Untangle POC (hamr "1 and poc first", 2026-11-26), bar frozen before the POC
+
+The cycle: `src/runread.js` (`checksOf.stepParts`) calls `replayRun` from `src/replay.js`, and `src/replay.js` imports `src/runread.js` (its `resolveClose`, replay.js:413). hamr ruled "1": untangle it so nothing points in a circle. POC first, on a throwaway worktree; the branch's src and tests are not touched until this passes.
+
+**Where the shared piece goes.** Read before the freeze: replay's only use of `checksOf` is `resolveClose`, which takes `source`, `iteration`, `verdict` and `close.stages` of the final close. Those come from `finalCloseOf` in `src/legs.js`, which is pure with no IO, already imports nothing from replay or runread, and is already the one owner of "which close is final" (Addendum 2026-11-25d). So the home is `legs.js`, no new file: `resolveClose` reads `finalCloseOf` directly and replay stops importing runread. `replayRun`'s own try-windowing (the parts build, replay.js 1249-1590) is interleaved with replayRun's closure and is not moved; runread keeps calling `replayRun`, which is a one-way edge (runread -> replay) once replay no longer points back.
+
+**PASS needs all of:**
+
+1. No import cycle among `src/` files: a small script walks the static `import` lines from `src/` and prints every cycle; it must print none. It must print the runread/replay cycle on today's tree (proof it can see one).
+2. On the same 97 copies in `.claude/scratch/poc-f399/corpus`, with an empty env and no keys, replay's output (the `replayRun` result plus the CLOSE line) and `checksOf`/`outputOf` output are BYTE-IDENTICAL (JSON.stringify) before and after, for every run.
+3. The change is a move or a re-point, not a rewrite: any moved function body diffs as identical apart from imports and exports; if a call is re-pointed to an existing owner instead, the diff is limited to that call's lines and is listed in full.
+4. The single test files touching replay, runread and legs stay green (run one at a time via `node scripts/hermetic.mjs <file>`).
+
+Any miss is FAIL and goes back to hamr. No re-tune.
