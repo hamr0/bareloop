@@ -5913,14 +5913,14 @@ Tickets
 
 Destination delivery
 
-- [ ] Destination · files delivered with dated name (-2 same day), path, bytes, sha256, landed · today: deliveredOf server.js:1284; writers userrun.js:2212-2222 and copyOut · new: outputOf.files role delivered · POC: compared ✓ (0 mismatches) · proof: destination-delivered-parity
-- [ ] Destination · download route serves file i only while sha256 still matches · today: getRunDownload server.js:2126 with readDelivered 1372 · new: outputOf.files[].state (one shared state check) · POC: not compared · proof: download-route-state-parity
-- [ ] Destination · a review report landing at Accept (staged path replaced by the delivered one) · today: userrun.js:1346-1362 (reads `report-staged` and `destination-written` to decide landed) · new: outputOf.files `replaces`; the door code is a writer and stays allow-listed · POC: not compared · proof: door-accept-landing-parity
+- [x] Destination · files delivered with dated name (-2 same day), path, bytes, sha256, landed · today: deliveredOf server.js:1284; writers userrun.js:2212-2222 and copyOut · new: outputOf.files role delivered · POC: compared ✓ (0 mismatches) · proof: destination-delivered-parity · TICKED: tests/f399-parity-destination.test.js destination-delivered-parity (real copyOut twice; mutation: outputOf bytes off by one, red)
+- [x] Destination · download route serves file i only while sha256 still matches · today: getRunDownload server.js:2126 with readDelivered 1372 · new: outputOf.files[].state (one shared state check) · POC: not compared · proof: download-route-state-parity · TICKED: tests/f399-parity-destination.test.js download-route-state-parity (mutation: sha256 check removed in fileState, red)
+- [x] Destination · a review report landing at Accept (staged path replaced by the delivered one) · today: userrun.js:1346-1362 (reads `report-staged` and `destination-written` to decide landed) · new: outputOf.files `replaces`; the door code is a writer and stays allow-listed · POC: not compared · proof: door-accept-landing-parity · TICKED: tests/f399-parity-destination.test.js door-accept-landing-parity (real landStagedReport; destination-written assembled as userrun.js emits it; mutation: staged name no longer replaced, red)
 - [x] Destination · D change: final commit, branch, folder kept or removed · today: userrun.js:2231-2246 prints a WORKTREE line only; no record · new: outputOf.landing from the new `work-committed` record · POC: not compared · proof: work-committed-record, work-committed-fallback-git · TICKED: tests/p6-worktree-run.test.js and tests/review-accept-report.test.js work-committed (fail-first), tests/runread-parity.test.js work-committed-fallback-git
 
 CLI readout
 
-- [ ] CLI readout · "checks N runs · menu [...]" and "close first judgment … → fix loop ran" · today: userrun.js:2271-2277 (the leg's own events) · new: unchanged, leg-local stdout of the run itself; allow-listed · POC: not compared · proof: existing readout tests
+- [x] CLI readout · "checks N runs · menu [...]" and "close first judgment … → fix loop ran" · today: userrun.js:2271-2277 (the leg's own events) · new: unchanged, leg-local stdout of the run itself; allow-listed · POC: not compared · proof: existing readout tests · TICKED: tests/f399-parity-cli.test.js cli-readout-parity (real engine over an authored sheet; no reader involved: mutation on the readout line in src/userrun.js, red)
 
 **Rulings 2026-11-25 (hamr: "1 1 1").**
 
