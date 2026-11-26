@@ -32,7 +32,7 @@ import { git } from './shell.js';
 import { addWorktree, hideBareloopDir } from './worktree.js';
 import { MAX_BUFFER } from './shell.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
-import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
+import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES, globFolder } from './validate.js';
 import { fetchPageText, isWebUrl } from './pagefetch.js';
 import { parseTicketList } from './ticketshape.js';
 import { readTicket } from './ticket.js';
@@ -206,9 +206,8 @@ export function destinationMissingInRepo(root, destination) {
     if (piece === '') continue;
     const t = piece.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     if (t === '' || t === '.') continue;
-    const wild = t.search(/[*?[{]/);
-    if (wild !== -1) {
-      const dir = t.slice(0, wild).includes('/') ? t.slice(0, t.slice(0, wild).lastIndexOf('/')) : '';
+    const dir = globFolder(t);
+    if (dir !== null) {
       if (dir === '' || hasDir(dir)) continue;
       return piece;
     }

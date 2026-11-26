@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { globToPrefix, scopeContained, scanSecrets, sweepSecretLiterals, redactSecrets } from '../src/validate.js';
+import { globToPrefix, globFolder, scopeContained, scanSecrets, sweepSecretLiterals, redactSecrets } from '../src/validate.js';
 
 test('R2 CRITICAL: a "./"+"//" spelling normalizes to a CONTAINED prefix, never an absolute escape', () => {
   // ".//src/**" is a sloppy-but-legal spelling of "src/**" (leading dot = relative).
@@ -195,4 +195,14 @@ test('scopeContained rejects a fence naming the frozen-ticket folder ".bareloop-
   }
   assert.equal(scopeContained('src/**'), true);
   assert.equal(scopeContained('.bareloop-input-notes/**'), true);
+});
+
+test('globFolder: the literal leading folder of a glob path, null with no wildcard, empty with no folder (F404; both Destination readers use it)', () => {
+  const table = [
+    ['src/**/*.js', 'src'], ['tests/**/*.test.js', 'tests'], ['src/a?.js', 'src'], ['src/*', 'src'], ['a/b/**', 'a/b'], ['a/b*/c', 'a'],
+    ['src/[ab].js', 'src'], ['src/{a,b}.js', 'src'], ['a/b{c,d}/e', 'a'],
+    ['*.js', ''], ['**/x.js', ''], ['?.js', ''], ['{a,b}/x', ''],
+    ['src', null], ['src/a.js', null], ['docs/wiki', null],
+  ];
+  for (const [p, want] of table) assert.equal(globFolder(p), want, p);
 });

@@ -6,7 +6,7 @@
 
 import { createRequire } from 'node:module';
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
-import { redactSecrets } from './validate.js';
+import { redactSecrets, globFolder } from './validate.js';
 import { isTransportFailure, isOutputCutOff } from './transport.js';
 import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS } from './authorscout.js';
@@ -122,9 +122,7 @@ export function scoutCodePaths(facts, files) {
       if (typeof raw !== 'string') continue;
       const t = raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '');
       if (t.startsWith('/') || t.includes('\\') || t.split('/').includes('..')) continue;
-      const segs = t.split('/');
-      const wild = segs.findIndex((x) => /[*?]/.test(x));
-      const e = wild === -1 ? t : segs.slice(0, wild).join('/');
+      const e = globFolder(t) ?? t;
       if (e === '' || e === '.') continue;
       const entry = files.includes(e) ? e : (files.some((f) => f.startsWith(`${e}/`)) ? `${e}/` : null);
       if (entry !== null && !out.includes(entry)) out.push(entry);
