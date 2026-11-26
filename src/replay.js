@@ -796,6 +796,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       }
     }
 
+    // a step the person stopped ends `escalated` with its OWN escalation `stopped` (F405): it reads stopped, and its re-run in a later leg is a continuation
+    if (end && stopReason === null && end.outcome === 'escalated' && findTrip(escalations, startSeq, endSeq)?.category === 'stopped') stopReason = 'you stopped it';
+
     const phaseTag = `step:${id}`;
     // `judge-round` (a close's paid seam) carries no `.phase` at all
     // (src/planrun.js:1333's `onJudgeCost` emit — stage/path/attempt/label/model,

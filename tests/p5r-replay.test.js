@@ -115,3 +115,36 @@ test('B2: on a single-leg run an open step cut by a money cap / wall cap carries
   const closed = replayRun([...base(), { type: 'step-end', step: 's1', outcome: 'green', ts: T(10, 5), seq: 4 }, jobEnd('cap-halt')], [], { runId: 'r1' });
   assert.equal(closed.steps.find((x) => x.id === 's1').stopReason, undefined, 'a step that ended itself is not cut');
 });
+
+// 2026-11-26 (run mwue75ih, step fix-codeversion-head-resolution): a step the person STOPPED ends `escalated` with its OWN escalation
+// `stopped`; it must read stopped (not failed) and its re-run in the next leg is a continuation, not a retry. A step the strike
+// ladder escalated stays failed and its re-run still counts as a retry.
+test('F405: a step ending escalated on its own `stopped` escalation reads stopped and its next leg run is continued; a ladder-escalated step stays failed and its re-run is a retry', async () => {
+  const { partStatusFor } = await import('../src/panel/status.js');
+  const run = (esc) => [
+    { type: 'job-start', job: 'j', specHash: 'h1', budgetUsd: 8, shape: 'plan', goal: 'g', ts: T(10, 0), seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: T(10, 1), seq: 2 },
+    { type: 'step-start', step: 's1', ts: T(10, 2), seq: 3 },
+    ...(esc.category === 'stopped' ? [{ type: 'stop-requested', ts: T(10, 3), seq: 4 }] : []),
+    { type: 'escalation', decisionReady: true, ts: T(10, 4), seq: 5, ...esc },
+    { type: 'run-end', outcome: 'escalated', ts: T(10, 4), seq: 6 },
+    { type: 'step-end', step: 's1', outcome: 'escalated', ts: T(10, 5), seq: 7 },
+    { type: 'job-end', outcome: esc.category === 'stopped' ? 'stopped' : 'escalated', spentUsd: 1, engagementSpentUsd: 1, spendComplete: true, ts: T(10, 6), seq: 8 },
+    { type: 'leg-resume', leg: 2, after: 'x', at: T(14, 0), ts: T(14, 0), seq: 9 },
+    { type: 'job-start', job: 'j', specHash: 'h2', budgetUsd: 8, shape: 'plan', goal: 'g', priorSpentUsd: 1, priorSpendComplete: true, priorWallMs: 6 * MIN, ts: T(14, 0), seq: 10 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: T(14, 1), seq: 11 },
+    { type: 'step-start', step: 's1', ts: T(14, 2), seq: 12 },
+    { type: 'step-end', step: 's1', outcome: 'green', ts: T(14, 5), seq: 13 },
+    { type: 'job-end', outcome: 'green', spentUsd: 2, engagementSpentUsd: 1, spendComplete: true, ts: T(14, 6), seq: 14 },
+  ];
+  const word = (s) => partStatusFor({ kind: 'step', outcome: s.outcome, stopReason: s.stopReason }).word;
+  const stopped = replayRun(run({ category: 'stopped' }), [], { runId: 'r1' }).steps.filter((x) => x.id === 's1');
+  assert.equal(stopped[0].stopReason, 'you stopped it');
+  assert.equal(word(stopped[0]), 'stopped');
+  assert.equal(stopped[1].continued, true);
+  assert.equal(stopped[1].tryNumber, 1);
+  const ladder = replayRun(run({ category: 'cap-halt', spend: { strikes: 3 } }), [], { runId: 'r2' }).steps.filter((x) => x.id === 's1');
+  assert.equal(word(ladder[0]), 'failed');
+  assert.equal(ladder[1].continued, false);
+  assert.equal(ladder[1].tryNumber, 2, 'a ladder-escalated step\'s next run is still a retry');
+});

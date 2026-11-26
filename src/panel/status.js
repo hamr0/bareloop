@@ -91,7 +91,7 @@ export function statusFor(o) {
  * part with no verdict and no cut-off is `passed` here.
  *   drafting, green/satisfied/already-green outcome, or a part that simply happened (scout/plan/replan/judge) -> passed
  *   a red outcome -> its run-outcome word (failed; a cap/stop outcome keeps capped/stopped)
- *   a part its leg's halt cut off (`stopReason`): 'money cap' / 'time cap' -> capped, 'you stopped it' -> stopped,
+ *   a part its leg's halt cut off (`stopReason`): 'money cap' / 'time cap' -> capped, 'you stopped it' -> stopped (also on a step that ended `escalated`),
  *     'died' -> died, anything else (provider failed, step stalled, a raw outcome) -> failed
  * @param {{kind?: string, outcome?: string|null, stopReason?: string|null}} part
  * @returns {{key: StatusKey, sign: string, word: string}}
@@ -101,6 +101,8 @@ export function partStatusFor(part) {
   const why = part.stopReason;
   // a step the run's cap escalated ends `escalated` yet wears the cap word (src/panel/server.js cappedLastStep)
   if (part.outcome === 'escalated' && (why === 'money cap' || why === 'time cap')) return { key: 'capped', ...STATUS.capped };
+  // a step the person stopped ends `escalated` too (src/replay.js: its own escalation was `stopped`)
+  if (part.outcome === 'escalated' && why === 'you stopped it') return { key: 'stopped', ...STATUS.stopped };
   if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
   if (why) {
     const key = why === 'money cap' || why === 'time cap' ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
