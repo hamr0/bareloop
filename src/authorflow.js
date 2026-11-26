@@ -134,7 +134,13 @@ export const FILL_MARKER = '<FILL IN>';
  * @returns {{name: string, kind: string, params: Record<string, any>}}
  */
 export function fencedGuardStage(g, fence) {
-  return { name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((f) => [f, [...fence]])) } };
+  return { name: g.name, kind: g.kind, params: fenceSlots(g.params, g.fill, fence) };
+}
+
+/** the single rule: `params` with each fill slot set to the fence (the one place a fill slot is written)
+ * @param {Record<string, any>} params @param {string[]|undefined} fill @param {string[]} fence */
+function fenceSlots(params, fill, fence) {
+  return { ...params, ...Object.fromEntries((fill ?? []).map((f) => [f, [...fence]])) };
 }
 
 /** a declaration whose guard stages carry the fence in their fill slots: the model's own value there is overwritten, every other stage is untouched
@@ -144,7 +150,7 @@ export function withGuardFence(declaration, guards, fence) {
   const stages = declaration.stages.map((/** @type {any} */ st) => {
     const g = st && typeof st === 'object' ? guards.find((x) => x.name === st.name) : undefined;
     if (!g || !Array.isArray(g.fill) || g.fill.length === 0 || !st.params || typeof st.params !== 'object') return st;
-    return { ...st, params: { ...st.params, ...Object.fromEntries(g.fill.map((f) => [f, [...fence]])) } };
+    return { ...st, params: fenceSlots(st.params, g.fill, fence) };
   });
   return { ...declaration, stages };
 }
