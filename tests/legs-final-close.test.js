@@ -77,7 +77,7 @@ const TYPES = ['close-verdict', 'outer-close', 'close-precheck'];
 /** @type {Record<string, {n: number, why: string}>} the sites that scan for a close on purpose: history, trend or emitters, NOT "the final close of the current leg" (reuse.js is a separate, later ruling) */
 const ALLOWED = {
   'src/runread.js': { n: 1, why: 'checksOf shape-items fallback for a run recorded before the `shape-items` record: a RED run has no staged final close (its close-verdicts carry the plain gap lines and no stages), so it reads the current leg\'s last gap-bearing close-verdict; leg-scoped, never an earlier leg\'s' },
-  'src/reuse.js': { n: 3, why: 'readTry / last-red-stage readers answer a different question over the whole spine (out of scope of go B)' },
+  'src/reuse.js': { n: 1, why: 'the close-trend governor `readGrade` reads every red close of the whole spine in order (engine and arbiter territory: moving it would change close semantics). readTry now asks src/runread.js (F399)' },
   'src/replay.js': { n: 2, why: 'the fix-loop timeline: per-iteration boundaries and the precheck, seq-bounded across the whole run (history)' },
   'src/userrun.js': { n: 1, why: 'the CLI run-end reads the outer-close of its own `events` (the latest leg, already scoped)' },
 };
