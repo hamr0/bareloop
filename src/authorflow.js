@@ -128,6 +128,27 @@ export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
 
+/**
+ * THE ONE OWNER of a guard's fill slot (F389): the slot (`allowPrefixes`) is the signed write fence, so CODE sets it, rubric and repo alike; the model never fills it.
+ * @param {{name: string, kind: string, params: Record<string, any>, fill?: string[]}} g @param {string[]} fence
+ * @returns {{name: string, kind: string, params: Record<string, any>}}
+ */
+export function fencedGuardStage(g, fence) {
+  return { name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((f) => [f, [...fence]])) } };
+}
+
+/** a declaration whose guard stages carry the fence in their fill slots: the model's own value there is overwritten, every other stage is untouched
+ * @param {any} declaration @param {{name: string, fill?: string[]}[]} guards @param {string[]} fence */
+export function withGuardFence(declaration, guards, fence) {
+  if (!declaration || !Array.isArray(declaration.stages)) return declaration;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    const g = st && typeof st === 'object' ? guards.find((x) => x.name === st.name) : undefined;
+    if (!g || !Array.isArray(g.fill) || g.fill.length === 0 || !st.params || typeof st.params !== 'object') return st;
+    return { ...st, params: { ...st.params, ...Object.fromEntries(g.fill.map((f) => [f, [...fence]])) } };
+  });
+  return { ...declaration, stages };
+}
+
 /** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. PRD v1.107 Part 5b: three (hamr's ruling), shared with the code-forced early asks. */
 export const MAX_QUESTIONS = 3;
 
@@ -1301,10 +1322,12 @@ Two people fed you this brief and neither of them is you:
   // The guards arrive FULLY PARAMETERISED — the battery and its scope are genre
   // property (addendum 6). Only a declared `fill` slot is the model's, and it is
   // marked. Round 3's arm A narrowed a guard's scan and called it stricter.
+  // F389: with a signed write fence, code fills the slot and the model is shown it already filled (it fills nothing)
+  const fenced = Array.isArray(writeScope) && writeScope.length > 0;
   const guardJson = guards.map((g) => ({
     name: g.name,
     kind: g.kind,
-    params: { ...g.params, ...Object.fromEntries(g.fill.map((f) => [f, FILL_MARKER])) },
+    params: fenced ? fencedGuardStage(g, writeScope ?? []).params : { ...g.params, ...Object.fromEntries(g.fill.map((f) => [f, FILL_MARKER])) },
   }));
 
   const envLine = ownedEnvNames.length
@@ -1363,8 +1386,7 @@ measure anything.`;
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries stages the person did not ask for. They are fixed by the job\'s genre and they are\n'
       + 'already in your declaration, with their pattern battery and extensions already filled in — those are genre\n'
-      + `property and you may not change, drop, rename, or re-kind them. The ONLY thing you fill in is each\n`
-      + `"${FILL_MARKER}" slot, from the facts object and the interview:\n\n${JSON.stringify(guardJson, null, 2)}\n\n`
+      + `property and you may not change, drop, rename, or re-kind them. ${fenced ? 'Every slot is already filled from the job\'s write fence, so you fill in nothing' : `The ONLY thing you fill in is each\n"${FILL_MARKER}" slot, from the facts object and the interview`}:\n\n${JSON.stringify(guardJson, null, 2)}\n\n`
       + 'Place them where the ordering law says they belong, and author the remaining stages around them.'
       + envLine,
     output,
@@ -2416,7 +2438,7 @@ export async function authorClose({
     const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
     const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : [...RUBRIC_FENCE];
-    return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
+    return { stages: [...guards.map((/** @type {any} */ g) => fencedGuardStage(g, fence)), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
   // S2: with a CSV input the row-edit turn also offers the optional `sheetChecks` (typed suggestions; code builds or refuses each: src/sheetbuild.js). The tables are the drafting copy's table of each CSV input, by its label;
   // a sheet line is a job line with a `~` rule. No CSV (or no `~` rule on any line, or a sheet with no header) = no sheet turn: prompt, schema and result are byte-identical to every other job.
@@ -2647,7 +2669,8 @@ export async function authorClose({
       previous = { d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) };
 
       // a rubric job: ONE reply of row edits, each judged alone by the block; the declaration is assembled from the rows (a refused edit costs the others nothing)
-      let pre = ask.declaration;
+      // F389: a repo job's guard fill slot is the signed write fence, set by code over whatever the model wrote
+      let pre = !rowEdits && Array.isArray(writeScope) && writeScope.length > 0 ? withGuardFence(ask.declaration, guards, writeScope) : ask.declaration;
       /** @type {any[]} */
       let refusedEdits = [];
       if (rowEdits) {
