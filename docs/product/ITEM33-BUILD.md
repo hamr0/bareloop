@@ -5908,8 +5908,8 @@ Sheet results
 
 Tickets
 
-- [ ] Tickets · the ticket box on the Result tab (number, title, link) · today: ticketOfStart server.js:1759 (from `job-start`) · new: unchanged, an input fact · POC: not compared · proof: existing ticket-grid tests
-- [ ] Tickets · the grid row's "checks passed/total" · today: ticketGridOfJob server.js:1921 over checksOf · new: checksOf.stages counts · POC: UNDERPOWERED (3 runs; ticket-job reds not compared) · proof: ticket-grid-checks-parity
+- [x] Tickets · the ticket box on the Result tab (number, title, link) · today: ticketOfStart server.js:1759 (from `job-start`) · new: unchanged, an input fact · POC: not compared · proof: existing ticket-grid tests · TICKED: tests/f399-parity-tickets.test.js tickets-box-parity (no reader involved: the view reads job-start via ticketOfStart; mutation on that function, red)
+- [x] Tickets · the grid row's "checks passed/total" · today: ticketGridOfJob server.js:1921 over checksOf · new: checksOf.stages counts · POC: UNDERPOWERED (3 runs; ticket-job reds not compared) · proof: ticket-grid-checks-parity · TICKED: tests/f399-parity-tickets.test.js ticket-grid-checks-parity (real mw3gso0m, mw6lmvdg; mutations: checksOf.stages cut, checksOf.stepParts disabled, each red)
 
 Destination delivery
 
