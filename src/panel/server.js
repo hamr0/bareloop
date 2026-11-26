@@ -473,8 +473,10 @@ function checkOnlyLineFor(leg, hasNext) {
   const outcome = leg.outcome ?? (hasNext ? 'died' : null);
   // a leg whose worker ran (a provider failure before any part still left worker rounds) did more than the final check
   if (outcome === null || leg.records.some((r) => r?.type === 'worker-round' || r?.type === 'run-start' || r?.type === 'step-start')) return {};
-  const esc = leg.records.findLast((r) => r?.type === 'escalation') ?? null;
-  const moneyHalt = leg.records.some((r) => r?.type === 'money-halt');
+  // the leg's own last escalation and money halt, from the ONE owner (a leg's records open with its marker, so they read as one leg)
+  const view = currentLegView(leg.records);
+  const esc = view?.lastEscalation ?? null;
+  const moneyHalt = view?.moneyHalt ?? false;
   const st = statusFor({ outcome: outcome === 'died' ? null : outcome, died: outcome === 'died', category: typeof esc?.category === 'string' ? esc.category : null, moneyHalt });
   const words = st.key === 'passed'
     ? 'every check already passed, nothing left to do'
