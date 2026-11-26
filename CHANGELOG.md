@@ -20,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The Destination check now reads a glob scout path as its folder (F404, run mwt89eey).** The check that asks "Destination docs/ holds none of the code or tests" dropped every scout path holding `*` or `?`. When the scout answered `src/**/*.js` and `tests/**/*.test.js` instead of `src/` and `tests/`, nothing was asked and the job kept a Destination that could not touch `src/`. `scoutCodePaths` now cuts such a path to its literal leading folder (`src`, `tests`) and runs the same tree test; a path with no leading folder (`*.js`) is still dropped. Old drafts are not repaired.
 - **A repo job's files-changed guard now equals its Destination (F389, run mwt89eey).** The drafting AI used to fill the guard's `allowPrefixes` and could write `["src/"]` while the signed Destination was `src/` and `tests/`, silently narrowing the fence. Code now sets that slot from the Destination, the way rubric jobs already did, through one function; the model fills nothing. New drafts sign the guard from the Destination (a new draft's hash can differ from before); old signed specs are not repaired and still verify as signed.
 - **`replay.js` no longer imports `runread.js` (F399).** The replay CLOSE line reads the final close from `legs.js` `finalCloseOf`, so the replay<->runread import cycle is gone; the older import cycles are planned separately.
 - **The Result tab said "none" for the lines of a green run.** It read a step check, not the run's final close (runs mv5e1ktb and four more).
