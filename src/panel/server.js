@@ -640,7 +640,7 @@ function endedBase(summary, death, o) {
     if (e.end === 'provider') {
       const d = detailOf(summary.stopReason);
       return {
-        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: CHANGE, line: 'provider failed', actions: [],
+        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: CHANGE, line: 'the model provider failed', actions: [],
       };
     }
   }
@@ -703,7 +703,7 @@ function endedBase(summary, death, o) {
     return {
       reason: `The model provider failed${d ? ` (${d})` : ''}.`,
       ...resumeOr('Resume.'),
-      line: resumeOk ? 'provider failed — resume' : 'provider failed',
+      line: resumeOk ? 'the model provider failed — resume' : 'the model provider failed',
       actions: resumeOk ? RESUME : [],
     };
   }
