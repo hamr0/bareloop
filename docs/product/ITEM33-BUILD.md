@@ -5884,9 +5884,9 @@ Reuse
 
 - [x] Reuse · readTry failingStage (the stage that rendered the LAST verdict) · today: readTry reuse.js:480-516 (callers 1041, 1613) · new: checksOf.failingStage over the try's own events window · POC: compared ✓ (bug 4) · proof: readtry-failingstage-final-close · TICKED: tests/runread-readtry.test.js bug 4 (fail-first)
 - [x] Reuse · readTry closeReached · today: reuse.js:516 · new: checksOf.closeReached · POC: compared ✓ (bug 5) · proof: readtry-closereached-already-green · TICKED: tests/runread-readtry.test.js bug 5 (fail-first)
-- [ ] Reuse · try history lines "at stage X … close reached / NEVER REACHED" · today: reuse.js:2056-2059 · new: the same two fields · POC: not compared · proof: reuse-try-history-line-parity
+- [x] Reuse · try history lines "at stage X … close reached / NEVER REACHED" · today: reuse.js:2056-2059 · new: the same two fields · POC: not compared · proof: reuse-try-history-line-parity · TICKED: tests/f399-parity-reuse.test.js reuse-try-history-line-parity (scripted real runReuse; mutations: checksOf.closeReached forced true, checksOf.failingStage nulled, each red)
 - [x] Reuse · bridge history `failingStage` on a red try · today: reuse.js:1723, bridges.js:98 · new: checksOf.failingStage · POC: not compared (bridge grading is arbiter-adjacent: see Gaps note) · proof: bridge-history-failingstage-parity · TICKED: tests/runread-readtry.test.js parity over every real spine under tests/fixtures (the bridge row takes read.failingStage)
-- [ ] Reuse · the estimate line "Same job — G green · N not green · about $X and M min a run" · today: trackRecordFor server.js:4105 + reuseLine 4150 (reads each run's last-leg outcome) · new: unchanged, reads outcome and spend, no check or output fact · POC: not compared · proof: existing reuse-line tests
+- [x] Reuse · the estimate line "Same job — G green · N not green · about $X and M min a run" · today: trackRecordFor server.js:4105 + reuseLine 4150 (reads each run's last-leg outcome) · new: unchanged, reads outcome and spend, no check or output fact · POC: not compared · proof: existing reuse-line tests · TICKED: tests/f399-parity-reuse.test.js reuse-estimate-line-parity (real mv5e1ktb green; real mvtatlxw already-green leg counts green)
 
 Shape grid
 
