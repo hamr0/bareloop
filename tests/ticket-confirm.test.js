@@ -29,7 +29,7 @@ test('confirmPrompt: carried for a ticket job, absent otherwise (byte-identical)
 test('runConfirmTurn sends it in round 1 when ticket is set', async () => {
   const sent = [];
   const generate = async (m, tools) => { sent.push(JSON.stringify(m)); await tools[0].execute({ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }); return { text: '', error: null, cost: 0 }; };
-  const { makeCostBook } = await import('../src/authorflow.js');
+  const { makeCostBook } = await import('../src/ask.js');
   const ask = async () => 'confirm';
   await runConfirmTurn({ verdictType: 'green', ...A, facts: {}, writeScope: ['src/**'], generate, book: makeCostBook({ ceilingUsd: null }), ask, ticket: true });
   assert.ok(sent[0].includes('NEVER ask the person which ticket'));
@@ -38,7 +38,7 @@ test('runConfirmTurn sends it in round 1 when ticket is set', async () => {
 test('round 2 (a fix) keeps the words too', async () => {
   const sent = [];
   const generate = async (m, tools) => { sent.push(JSON.stringify(m.at(-1))); await tools[0].execute({ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }); return { text: '', error: null, cost: 0 }; };
-  const { makeCostBook } = await import('../src/authorflow.js');
+  const { makeCostBook } = await import('../src/ask.js');
   const answers = ['fix', 'make it stricter', 'confirm'];
   const ask = async () => answers.shift();
   await runConfirmTurn({ verdictType: 'green', ...A, facts: {}, writeScope: ['src/**'], generate, book: makeCostBook({ ceilingUsd: null }), ask, ticket: true });

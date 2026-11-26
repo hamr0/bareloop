@@ -5,7 +5,7 @@
 //   `$` rows  default checks code adds itself (by: default): every claim quotes the input (a text line with one input), the numbers tie (a text line after a fact line);
 //             the mechanical floor (file exists, text not empty) is shown as a `$` row but is never counted as a check.
 // Nothing here decides a verdict; the list says what the drafter may build, and code builds the rest.
-import { askStructured, makeCostBook } from './authorflow.js';
+import { askStructured, makeCostBook } from './ask.js';
 import { lineRules } from './jobline.js';
 
 /** at most this many `!` checks come from the call */

@@ -39,18 +39,8 @@ import {
   DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration, catalogueForLang,
   LEGACY_PARAMS, offeredOptional,
 } from '../src/authoring.js';
-import {
-  DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
-  MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
-  REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
-  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS,
-  questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
-  LANGUAGE_PICK_FIELD, CONFIRM_MENU,
-  PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
-  renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose, askStructured,
-} from '../src/authorflow.js';
+import { DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS, MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL, QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS, questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS, LANGUAGE_PICK_FIELD, CONFIRM_MENU, PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool, catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock, renderSeedReadBlock, buildReviseTurn, assertReviseTurn, applyGenreEnv, resolveSourcePrefixes, makeLoopGenerate, authorClose } from '../src/authorflow.js';
+import { REVISE_RED_CAP, renderRejectBlock, makeCostBook, askStructured } from '../src/ask.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
 import { scanSecrets } from '../src/validate.js';

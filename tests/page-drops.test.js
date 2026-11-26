@@ -24,7 +24,8 @@ import { buildSeedListing } from '../src/authorscout.js';
 import { checkDeclarationWords } from '../src/factwords.js';
 import { renderLookReport, lookFactOf } from '../src/inputlook.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, makeCostBook, authorClose } from '../src/authorflow.js';
+import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, authorClose } from '../src/authorflow.js';
+import { makeCostBook } from '../src/ask.js';
 import { reply } from './helpers.js';
 import { loadFixture } from './idea-a-fixtures.js';
 

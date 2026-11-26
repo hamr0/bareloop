@@ -109,10 +109,8 @@ import {
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
-import {
-  QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS,
-} from './authorflow.js';
+import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS } from './authorflow.js';
+import { makeCostBook } from './ask.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
