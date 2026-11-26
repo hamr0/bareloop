@@ -6026,3 +6026,26 @@ A batch is accepted only if ALL hold, checked on a throwaway worktree before it 
 5. For Bundle: `exportBundle` gives the same accept/refuse on `tests/bundle.test.js` and on the close scripts of the 3 real bundles in `/home/hamr/PycharmProjects/bareloop-patients/bundles/` (read only). The drift test is shown red once (an extra root export in a scratch copy).
 
 Any miss is FAIL for that batch. It goes back to hamr, never re-tuned.
+
+### Amendment 2026-11-26b: the last two cycles (hamr "1")
+
+**Why.** Batch D failed bar 1 and was not landed (POC `.claude/scratch/poc-cycles/D/RESULTS.md`, `VERDICT: FAIL`). Moving `ledgerRecord` cleared the direct `authorflow -> checklist` edge, but the walk then printed `authorflow.js -> checkblock.js -> checklist.js`. The real back edge is `src/checklist.js:8`, which imports `askStructured` and `makeCostBook` from `authorflow.js`. hamr's ruling (2026-11-26, "1"): clear the last two cycles with the same method, then land the zero-cycle test. Batch D is withdrawn and replaced by G; the older D text above is superseded and not edited. Facts checked against source on 2026-11-26 at HEAD 98af5e6e: the walk shows exactly 2 cycles (`kinds.js -> sheetrun.js -> source.js`, `authorflow.js -> checklist.js`).
+
+**Batch G (replaces D).** `askStructured` and `makeCostBook` move out of `src/authorflow.js` into a new small leaf `src/ask.js`. I read what they use first. What moves, with its HEAD line:
+
+- `makeCostBook`, with its section heading and both doc blocks: `src/authorflow.js:1607-1674` (function at :1634).
+- `askStructured`, with its doc block: `src/authorflow.js:1725-1870` (function at :1743).
+- `renderRejectBlock` (`:1432-1458`, function at :1447): `askStructured` calls it (:1863), and authorflow calls it again (:2869, :2928, :2946, :3035). Shared, so it moves, and authorflow imports it back.
+- `STRUCTURE_INSTRUCTION_TEXT` (`:272-273`): `askStructured` uses it (:1866), and authorflow uses it again (:2871). Shared, so it moves, and authorflow imports it back. It is a prompt-register const: `src/promptregisters.js:45` names it under `src/authorflow.js`, so that one entry's `file` becomes `src/ask.js`. That is the only non-import line change outside the moved blocks.
+- `REVISE_RED_CAP` (`:125-126`): used only by `renderRejectBlock` (and re-exported to `tests/authorflow.test.js:44`). It moves with it.
+- The `Red` typedef (`:111`): moves to `src/ask.js`; authorflow keeps a one-line `@typedef {import('./ask.js').Red} Red` (type only, no runtime edge).
+
+`src/ask.js` imports `priceOf, scrubRaw, tallyCalls, capStop, extractArtifact, callCasualty` from `./text.js`, `redactSecrets` from `./validate.js`, and `isOutputCutOff` from `./transport.js`; none of those import authorflow. authorflow drops imports it no longer uses. Re-point every importer, src and tests, with NO re-export shim: `askStructured`/`makeCostBook` in `src/checklist.js`, `src/checksuggest.js`, `src/fencepointcall.js`, `src/authorjob.js` and 9 test files (including two dynamic imports in `tests/ticket-confirm.test.js`); `renderRejectBlock` in `tests/authorflow.test.js`, `tests/r10-factmerge.test.js`, `tests/rubric-sorting.test.js`; `REVISE_RED_CAP` in `tests/authorflow.test.js`. The root exports (`src/index.js`) name none of these. `ledgerRecord` stays in `src/checklist.js`: it moves only if the cycle is still there without it, and then not for nothing.
+
+**Batch H.** `git` (`src/kinds.js:583`, doc `:575-582`) and `MAX_BUFFER` (`src/kinds.js:146`, doc `:144-145`) move to a new leaf `src/git.js`, with anything only they use. `src/kinds.js` and `src/source.js` (and every other importer; `tests/source.test.js` has dynamic imports of `MAX_BUFFER`) re-point to it, no shim. Clears `kinds -> sheetrun -> source -> kinds`.
+
+**Finding written before the POC, so it is not a surprise after.** `git()` is a 6-line wrapper over `sh()` (`src/kinds.js:479-573`), the shared spawn primitive that `kinds.js` calls from many other places. A `src/git.js` that holds only `git` and `MAX_BUFFER` has to import `sh` from `kinds.js`, which turns the cycle into `kinds -> git -> kinds`. So the literal reading of H cannot pass bar 1. The POC runs the literal reading anyway and reports the result. If it fails, H stops and goes back to hamr; the closure that would make it pass (`sh`, `stageEnv`, the process-box helpers `trackBox`, `untrackBox`, `boxMembers`, `boxSurvivors`, `killLiveBoxes`, `STOP_FAULTS`, the check-limit constants, about 230 lines moved, many importers re-pointed) is a bigger ruling than "git and MAX_BUFFER", and is not taken without his word.
+
+**Bars.** The same 5 frozen bars as the addendum above, unchanged (bar 5 is Bundle-only and does not apply here).
+
+**The zero-cycle test lands last.** `tests/import-cycles.test.js`, from `.claude/scratch/poc-cycles/import-cycles.test.js`. It must be red on 98af5e6e with exactly the 2 cycles and green once both batches land. If either batch fails, the test is not committed.
