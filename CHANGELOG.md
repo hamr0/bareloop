@@ -20,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A repo job's files-changed guard now equals its Destination (F389, run mwt89eey).** The drafting AI used to fill the guard's `allowPrefixes` and could write `["src/"]` while the signed Destination was `src/` and `tests/`, silently narrowing the fence. Code now sets that slot from the Destination, the way rubric jobs already did, through one function; the model fills nothing. New drafts sign the guard from the Destination (a new draft's hash can differ from before); old signed specs are not repaired and still verify as signed.
 - **`replay.js` no longer imports `runread.js` (F399).** The replay CLOSE line reads the final close from `legs.js` `finalCloseOf`, so the replay<->runread import cycle is gone; the older import cycles are planned separately.
 - **The Result tab said "none" for the lines of a green run.** It read a step check, not the run's final close (runs mv5e1ktb and four more).
 - **The Result tab said "none" for a failed line where the Audit said "failed".** Both say "failed" now (run mv73swnx and eight more).
