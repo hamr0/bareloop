@@ -6241,3 +6241,19 @@ If P1 or P1b fails: stop, commit only the addendum and results, report.
 - Dividers: only `beforePart` moves, never a `checkOnly` line: muux1x96 leg 2 (4->5), mwezqp5w leg 2 (1->2), mwue75ih leg 2 (0->1; gains the leg-1 scout row) and leg 3 (4->5; index shift only, gains nothing), mwuxqx4f leg 5 (8->9) and leg 6 (8->10).
 
 **Why P1 fails (frozen bar: zero changes to any step part).** `resumedNext` (the leg-boundary flag, set after the dating, `src/replay.js`: a part is marked when the NEXT part belongs to a later leg; the step map draws the "resumed" mark from it, `src/panel/index.html` 1541-1605) flips true -> false on two step parts, because the part after them is now a fix piece dated to the SAME leg: mwuxqx4f `implement-and-green-suite:4` (next part was `fix` leg 6, now `fix:L4` leg 4) and muux1x96 `strict-typecheck-clean:1` (next was `fix` leg 2, now `fix:L1` leg 1). The flag moves onto the fix pieces (fix:L4, fix:L5 and muux1x96 fix:L1 read true). Nothing else changed on a step. Two further things to rule on, neither a bar: (1) mwuxqx4f's leg-4 fix piece reads failed with 'time cap' and $0 (two precheck attempts, no worker); (2) a part that starts in one leg and finishes in the next now draws one box per leg in the step map.
+
+##### Round 2 (2026-11-26)
+
+Round 1 stays reported as FAIL (text above unchanged). hamr saw both demo panels (OLD 4711, NEW 4712) and ruled "A" (2026-11-26):
+1. The `resumedNext` mark ("resumed after" dotted edge) moving from a step to the cut-off piece that now ends that leg is accepted: the flag sits on the LAST part of each leg (the existing rule, `src/replay.js`: a part is marked when the next part belongs to a later leg).
+2. A fix piece with no worker round (mwuxqx4f leg 4: two prechecks, 'time cap', $0) stays as a row.
+3. Attempt numbers inside a split piece read in time order, 1..n per piece (today the cross-leg fix row numbers the prechecks 1-3 and the iterations 4-6, so the leg pieces read "attempt 1, attempt 4"; after: "attempt 1, attempt 2" in seq order). Changed only for split pieces. The stopped scout's wall time stays as is.
+
+Owner: `src/replay.js` only (the split pass; the attempt number is minted by `buildOccurrenceMetrics`/`fixLoop.attempts` with `n: attempts.length + 1` there and is renumbered only inside a split piece).
+
+**Frozen bars (round 2).**
+- R2-P1: same as P1 (same corpus, scripts, required rows mwue75ih scout and mwuxqx4f fix, exact sums, zero changes to unsplit parts, run-level fields and `checkOnly` lines), with these extra allowed changes ONLY: (a) `resumedNext` moves to the last part of a leg; every flipped part is listed per run (a step losing it, a piece gaining it); (b) the attempts inside a split piece are ordered by their record's seq (an outer-close at its own seq, an iteration at its start) and numbered 1..n; each piece's old -> new numbers are listed, and every other field of every attempt is unchanged; the attempts of unsplit parts are untouched. Any other diff = FAIL.
+- P1b, P3, P4: unchanged from round 1.
+- P2: round 1's tests, plus: a split fix piece's attempts read 1..n in time order.
+
+If R2-P1 fails: stop, commit only the results, report.
