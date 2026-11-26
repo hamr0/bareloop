@@ -5826,8 +5826,8 @@ Run tab
 
 Result tab (rubric jobs)
 
-- [ ] Result · each row's own mark (passed/failed/none) per job line · today: rowResultsFromRecords server.js:1322, applied in getRunResult at 1990-1995 · new: checksOf.planRows + rows · POC: compared ✓ (bugs 1 and 2) · proof: result-rows-green-not-none, result-rows-failed-like-audit (hamr confirmed 2026-11-25)
-- [ ] Result · the line's passed flag and ✓ · today: stagePassedIn server.js:1418 · new: checksOf.stages · POC: compared ✓ (bug 1) · proof: result-rows-green-not-none
+- [x] Result · each row's own mark (passed/failed/none) per job line · today: rowResultsFromRecords server.js:1322, applied in getRunResult at 1990-1995 · new: checksOf.planRows + rows · POC: compared ✓ (bugs 1 and 2) · proof: result-rows-green-not-none, result-rows-failed-like-audit (hamr confirmed 2026-11-25) · TICKED: tests/runread-bugs.test.js bugs 1, 2 (fail-first on the pre-change server.js); built parity run
+- [x] Result · the line's passed flag and ✓ · today: stagePassedIn server.js:1418 · new: checksOf.stages · POC: compared ✓ (bug 1) · proof: result-rows-green-not-none · TICKED: tests/runread-bugs.test.js bug 1; tests/part6-result.test.js (line passed reads the final close)
 - [ ] Result · row failure words (`why`) · today: rowResultsFromRecords server.js:1322 (`why`) · new: checksOf.rows[].why (GAP-1, ruled) · POC: not compared · proof: result-row-why-parity
 - [ ] Result · unclaimed gap words under a line · today: rowResultsFromRecords server.js:1322, shown at getRunResult 1991 · new: checksOf.unclaimed · POC: compared ✓ · proof: result-unclaimed-reads-checksOf
 - [ ] Result · Not-checked texts per line and at the bottom · today: planFromSpec + proseNotCheckedItems (rubricstep.js:1085) + tiedToLine, getRunResult ~1975 · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: result-notchecked-texts-parity
@@ -5838,7 +5838,7 @@ Result tab (rubric jobs)
 - [ ] Result · red run: the last file the check read, with its note and gone/changed words · today: readJudged server.js:1391 (`output-judged`) · new: checksOf.judged (GAP-3, ruled) · POC: not compared · proof: result-judged-file-parity
 - [ ] Result · facts grid: quote, cells, proof, money as read · today: getRunResult 2036-2075, proofOf 1458, moneyAsRead 1484 (`rubric-evidence`) · new: checksOf.evidence (GAP-4, ruled) and outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-facts-grid-parity
 - [ ] Result · a text line's answer and its cites · today: getRunResult 2078-2085 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-answer-cites-parity
-- [ ] Result · red run: the check's first gap line and "+N more" · today: getRunResult ~2084 (`exit-eval` scan, gapOneLine server.js:3562) · new: checksOf.stepChecks[].detail (GAP-1, ruled) · POC: not compared · proof: result-red-gap-line-parity
+- [x] Result · red run: the check's first gap line and "+N more" · today: getRunResult ~2084 (`exit-eval` scan, gapOneLine server.js:3562) · new: checksOf.stepChecks[].detail (GAP-1, ruled) · POC: not compared · proof: result-red-gap-line-parity · TICKED: tests/runread-parity.test.js result-red-gap-line-parity
 - [ ] Result · "Findings" box, line "covers A..B · N files", "How it ran" · today: findingsOf server.js:1790, coversOf 1810, ranOf 1827 · new: outputOf.findings (GAP-6, ruled; ranOf reads steps, not checks or output; stays) · POC: not compared · proof: see Review group
 
 Result tab (generic: D change, D review)
@@ -5847,21 +5847,21 @@ Result tab (generic: D change, D review)
 - [ ] Result generic · stage numbers: value, baseline, direction, notes · today: checksOf server.js:1702 · new: checksOf.stages[] keeps the record's `value`, `baseline`, `direction`, `baselineKind`, `notes` (POC kept pass/fail only) · POC: not compared · proof: result-generic-numbers-parity
 - [ ] Result generic · head words "N of M passed · K not reached" · today: checksOf server.js:1702 · new: checksOf.stages + notReached · POC: compared ✓ · proof: result-generic-checks-parity
 - [ ] Result generic · "not reached" stages (stops at the first red) · today: server.js:1702 unreached list · new: checksOf.notReached · POC: compared ✓ · proof: result-generic-notreached-parity
-- [ ] Result generic · run the close never reached: checks the steps ran · today: stepChecksOf server.js:1643 · new: checksOf.stepChecks (current leg only: bug 3) · POC: compared ✓ · proof: result-stepchecks-current-leg-only
+- [x] Result generic · run the close never reached: checks the steps ran · today: stepChecksOf server.js:1643 · new: checksOf.stepChecks (current leg only: bug 3) · POC: compared ✓ · proof: result-stepchecks-current-leg-only · TICKED: tests/runread-bugs.test.js bug 3; tests/ticket-grid-stepchecks.test.js
 - [ ] Result generic · one-list repo rows with tag, held, record-missing, not checked · today: repoRowChecks server.js:1676 → auditChecksFor 3659 · new: checksOf.planRows + fence · POC: compared ✓ for states; fence part not compared (see Audit) · proof: result-generic-onelist-parity
-- [ ] Result generic · "What changed": files, count, head line · today: changedOf server.js:1569 (`attempt-diff`) · new: outputOf.files role changed · POC: compared ✓ · proof: result-changed-paths-all-legs
-- [ ] Result generic · "What changed": +/− lines, each file's last diff, cut notes, "every edit" fold · today: changedOf server.js:1569 · new: outputOf.diffs (GAP-7, ruled) · POC: not compared · proof: result-changed-diffs-parity
+- [x] Result generic · "What changed": files, count, head line · today: changedOf server.js:1569 (`attempt-diff`) · new: outputOf.files role changed · POC: compared ✓ · proof: result-changed-paths-all-legs · TICKED: tests/runread-parity.test.js result-changed-diffs-parity; tests/result-tab-data.test.js
+- [x] Result generic · "What changed": +/− lines, each file's last diff, cut notes, "every edit" fold · today: changedOf server.js:1569 · new: outputOf.diffs (GAP-7, ruled) · POC: not compared · proof: result-changed-diffs-parity · TICKED: tests/runread-parity.test.js result-changed-diffs-parity; tests/result-a-data.test.js
 - [ ] Result generic · fence line "only src/ was allowed; the run wrote N files" · today: changedOf scopeLine server.js:1614-1623 · new: outputOf.files paths + the signed writeScope (derived) · POC: not compared · proof: result-fence-line-parity
 - [ ] Result generic · "The work" box: branch, final commit, made-from, merge and drop lines · today: workOf server.js:1739 (git live) · new: outputOf.landing (`work-committed`; branch-exists check stays one live git call) · POC: not compared (git state is outside the records) · proof: result-work-box-parity
 
 Audit tab
 
 - [ ] Audit · checks box head: "checks · N passed · F failed · K not reached · M not checked" · today: auditChecksEl index.html:3911-3925 fed by auditChecksFor server.js:3659 · new: checksOf.planRows · POC: compared ✓ · proof: audit-checks-head-parity
-- [ ] Audit · each line row's state · today: auditChecksOf jobplan.js:269-284 (`rowOf0`) · new: checksOf.planRows · POC: compared ✓ (bug 3 on mwtf8p8s) · proof: audit-rows-parity
+- [x] Audit · each line row's state · today: auditChecksOf jobplan.js:269-284 (`rowOf0`) · new: checksOf.planRows · POC: compared ✓ (bug 3 on mwtf8p8s) · proof: audit-rows-parity · TICKED: tests/runread-bugs.test.js bug 3 (Audit, mwtf8p8s); tests/audit-checks-section.test.js, tests/audit-checks-fixloop.test.js
 - [ ] Audit · row tag [you]/[agent]/[default] and kind word truth/shape/file · today: kindOfCheck jobplan.js:35, `by` from planFromSpec · new: unchanged, from the signed spec · POC: not compared (same planFromSpec by construction) · proof: audit-row-tags-parity
 - [ ] Audit · a failed row's reason words · today: jobplan.js:281 (`why`) · new: checksOf.rows[].why (GAP-1, ruled) · POC: not compared · proof: audit-row-why-parity
 - [ ] Audit · unclaimed failed rows under a line · today: jobplan.js:288, 320 · new: checksOf.unclaimed · POC: compared ✓ · proof: audit-unclaimed-parity
-- [ ] Audit · write-fence row "held · N writes blocked" / "the gate's record for this run is missing" · today: jobplan.js:272-277 and 307-311; blocked from writesBlocked behaviour.js:131 over scopedAuditRows server.js:2715 · new: checksOf.fence (new `fence` record, summed over legs; fallback sidecar) · POC: not compared · proof: audit-fence-row-from-record, audit-fence-row-fallback-sidecar
+- [x] Audit · write-fence row "held · N writes blocked" / "the gate's record for this run is missing" · today: jobplan.js:272-277 and 307-311; blocked from writesBlocked behaviour.js:131 over scopedAuditRows server.js:2715 · new: checksOf.fence (new `fence` record, summed over legs; fallback sidecar) · POC: not compared · proof: audit-fence-row-from-record, audit-fence-row-fallback-sidecar · TICKED: tests/runread-parity.test.js audit-fence-row-from-record (fail-first: expected 'held', actual 'record-missing'), audit-fence-row-fallback-sidecar; tests/runread.test.js
 - [ ] Audit · "Always checked" keyed rows ($ defaults, loose) · today: looseAlways jobplan.js:292 · new: checksOf.planRows · POC: compared ✓ · proof: audit-always-keyed-parity
 - [ ] Audit · "Always checked" unkeyed guard rows (names from confirmProtections, state from the stage) · today: jobplan.js:299-313 · new: checksOf.planRows by stage · POC: not compared · proof: audit-guard-rows-unkeyed-parity
 - [ ] Audit · Not-checked rows: text, tag, why, shape truth words · today: jobplan.js:297-298, 316-317 (ncOf) · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: audit-notchecked-texts-parity
@@ -5874,7 +5874,7 @@ Audit tab
 
 Replay (CLI and panel)
 
-- [ ] Replay · CLOSE line source, verdict, stage pass/fail · today: resolveClose replay.js:412 over finalCloseOf, closeLine replay.js:1859, renderStages 1848 · new: checksOf.source, verdict, stages · POC: compared ✓ (0 mismatches, 97 runs) · proof: replay-close-line-parity
+- [x] Replay · CLOSE line source, verdict, stage pass/fail · today: resolveClose replay.js:412 over finalCloseOf, closeLine replay.js:1859, renderStages 1848 · new: checksOf.source, verdict, stages · POC: compared ✓ (0 mismatches, 97 runs) · proof: replay-close-line-parity · TICKED: tests/legs-final-close.test.js (replay close on mvtatlxw); built parity run (97 runs, 0 unnamed differences)
 - [ ] Replay · CLOSE line "iteration N ·" prefix and each stage's verdict word (`FAIL(needs_revision)`) · today: closeLine replay.js:1859, renderStages 1848 · new: checksOf keeps `iteration` and each stage's `verdict` (POC kept pass/fail only) · POC: not compared · proof: replay-close-line-words-parity
 - [ ] Replay · "none — the run ended before any close ran" · today: closeLine replay.js:1860 · new: checksOf.closeReached false · POC: compared ✓ · proof: replay-close-none-parity
 - [ ] Replay · per-iteration close line "close: verdict — failing stage" · today: closeStageLine replay.js:1824 · new: unchanged, history · POC: not compared · proof: existing replay tests
@@ -5882,21 +5882,21 @@ Replay (CLI and panel)
 
 Reuse
 
-- [ ] Reuse · readTry failingStage (the stage that rendered the LAST verdict) · today: readTry reuse.js:480-516 (callers 1041, 1613) · new: checksOf.failingStage over the try's own events window · POC: compared ✓ (bug 4) · proof: readtry-failingstage-final-close
-- [ ] Reuse · readTry closeReached · today: reuse.js:516 · new: checksOf.closeReached · POC: compared ✓ (bug 5) · proof: readtry-closereached-already-green
+- [x] Reuse · readTry failingStage (the stage that rendered the LAST verdict) · today: readTry reuse.js:480-516 (callers 1041, 1613) · new: checksOf.failingStage over the try's own events window · POC: compared ✓ (bug 4) · proof: readtry-failingstage-final-close · TICKED: tests/runread-readtry.test.js bug 4 (fail-first)
+- [x] Reuse · readTry closeReached · today: reuse.js:516 · new: checksOf.closeReached · POC: compared ✓ (bug 5) · proof: readtry-closereached-already-green · TICKED: tests/runread-readtry.test.js bug 5 (fail-first)
 - [ ] Reuse · try history lines "at stage X … close reached / NEVER REACHED" · today: reuse.js:2056-2059 · new: the same two fields · POC: not compared · proof: reuse-try-history-line-parity
-- [ ] Reuse · bridge history `failingStage` on a red try · today: reuse.js:1723, bridges.js:98 · new: checksOf.failingStage · POC: not compared (bridge grading is arbiter-adjacent: see Gaps note) · proof: bridge-history-failingstage-parity
+- [x] Reuse · bridge history `failingStage` on a red try · today: reuse.js:1723, bridges.js:98 · new: checksOf.failingStage · POC: not compared (bridge grading is arbiter-adjacent: see Gaps note) · proof: bridge-history-failingstage-parity · TICKED: tests/runread-readtry.test.js parity over every real spine under tests/fixtures (the bridge row takes read.failingStage)
 - [ ] Reuse · the estimate line "Same job — G green · N not green · about $X and M min a run" · today: trackRecordFor server.js:4105 + reuseLine 4150 (reads each run's last-leg outcome) · new: unchanged, reads outcome and spend, no check or output fact · POC: not compared · proof: existing reuse-line tests
 
 Shape grid
 
 - [ ] Shape · item reds from a final staged close (`stages[].items`) · today: shapeRedsFromRecords server.js:1306 · new: checksOf.shapeItems · POC: not compared (no corpus run carries stage `items`) · proof: shape-items-structured-close-parity
-- [ ] Shape · item reds on a red run (gap prose read back) · today: shapeRedsFromRecords server.js:1311-1318 via shapeItemOfPlain · new: checksOf.shapeItems from the new `shape-items` record; fallback the prose · POC: UNDERPOWERED (mwnbs3np only) · proof: shape-items-red-run-record, shape-items-red-run-fallback-prose
+- [x] Shape · item reds on a red run (gap prose read back) · today: shapeRedsFromRecords server.js:1311-1318 via shapeItemOfPlain · new: checksOf.shapeItems from the new `shape-items` record; fallback the prose · POC: UNDERPOWERED (mwnbs3np only) · proof: shape-items-red-run-record, shape-items-red-run-fallback-prose · TICKED: tests/shape-e2e.test.js F399 (fail-first), tests/runread-parity.test.js shape-items-red-run-fallback-prose
 - [ ] Shape · grid cells: items as rows, signed fields as columns, values clipped, failed items open · today: shapeResultModel shaperesult.js:57, called at getRunResult ~2098 · new: checksOf.shapeItems plus outputOf.content (GAP-5, ruled) · POC: not compared · proof: hamr walk and shape-grid-model-parity
 
 Review (D review)
 
-- [ ] Review · FINDINGS header and rows (base, line, short why, total, cut, cite words) · today: findingsOf server.js:1790 (`review-findings`) · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-findings-parity
+- [x] Review · FINDINGS header and rows (base, line, short why, total, cut, cite words) · today: findingsOf server.js:1790 (`review-findings`) · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-findings-parity · TICKED: tests/runread-parity.test.js review-findings-parity; tests/result-a-data.test.js
 - [ ] Review · "covers A..B · N files changed" · today: coversOf server.js:1810 · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-covers-parity
 - [ ] Review · the report: staged under output/ at green, landed at Accept (the Accept replaces the staged name) · today: deliveredOf server.js:1284, writers userrun.js:2212-2220 · new: outputOf.files role staged/delivered, `replaces` · POC: compared ✓ (path and landed; 4 runs) · proof: review-report-staged-landed-parity
 - [ ] Review · the report's content (per line: "Checked by code" bullets, the AI's answer, "### The answer" rule) · today: deliveredReporter resultmd.js:204 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: review-report-content-parity and hamr walk
@@ -5916,7 +5916,7 @@ Destination delivery
 - [ ] Destination · files delivered with dated name (-2 same day), path, bytes, sha256, landed · today: deliveredOf server.js:1284; writers userrun.js:2212-2222 and copyOut · new: outputOf.files role delivered · POC: compared ✓ (0 mismatches) · proof: destination-delivered-parity
 - [ ] Destination · download route serves file i only while sha256 still matches · today: getRunDownload server.js:2126 with readDelivered 1372 · new: outputOf.files[].state (one shared state check) · POC: not compared · proof: download-route-state-parity
 - [ ] Destination · a review report landing at Accept (staged path replaced by the delivered one) · today: userrun.js:1346-1362 (reads `report-staged` and `destination-written` to decide landed) · new: outputOf.files `replaces`; the door code is a writer and stays allow-listed · POC: not compared · proof: door-accept-landing-parity
-- [ ] Destination · D change: final commit, branch, folder kept or removed · today: userrun.js:2231-2246 prints a WORKTREE line only; no record · new: outputOf.landing from the new `work-committed` record · POC: not compared · proof: work-committed-record, work-committed-fallback-git
+- [x] Destination · D change: final commit, branch, folder kept or removed · today: userrun.js:2231-2246 prints a WORKTREE line only; no record · new: outputOf.landing from the new `work-committed` record · POC: not compared · proof: work-committed-record, work-committed-fallback-git · TICKED: tests/p6-worktree-run.test.js and tests/review-accept-report.test.js work-committed (fail-first), tests/runread-parity.test.js work-committed-fallback-git
 
 CLI readout
 
@@ -5935,14 +5935,16 @@ CLI readout
 
 - [ ] GAP-1 · failure words (row `why`, step-check `detail`) in checksOf · proof: result-row-why-parity, audit-row-why-parity, result-red-gap-line-parity
 - [ ] GAP-2 · delivered file bytes, ok/gone/changed state, pairedTaken note in outputOf · proof: result-saved-state-words, result-md-renamed-note, download-route-state-parity
-- [ ] GAP-3 · the file a check judged (checksOf.judged) · proof: result-judged-file-parity, audit-try-judged-file-parity
-- [ ] GAP-4 · what the check read (checksOf.evidence) · proof: result-facts-grid-parity
+- [x] GAP-3 · the file a check judged (checksOf.judged) · proof: result-judged-file-parity, audit-try-judged-file-parity · TICKED: tests/runread-parity.test.js result-judged-file-parity (audit-try-judged-file-parity not written: the Audit try line is history and stays on replay parts)
+- [x] GAP-4 · what the check read (checksOf.evidence) · proof: result-facts-grid-parity · TICKED: tests/runread-parity.test.js result-facts-grid-parity (reader); tests/part6-*.test.js facts grid and proof (views, green after the switch)
 - [ ] GAP-5 · file content (outputOf.content) · proof: result-answer-cites-parity, shape-grid-model-parity, sheet-found-line-parity, sheet-report-totals-parity, review-report-content-parity
-- [ ] GAP-6 · review findings (outputOf.findings) · proof: review-findings-parity, review-covers-parity
-- [ ] GAP-7 · edit diffs (outputOf.diffs) · proof: result-changed-diffs-parity
+- [x] GAP-6 · review findings (outputOf.findings) · proof: review-findings-parity, review-covers-parity · TICKED: tests/runread-parity.test.js review-findings-parity; tests/result-a-data.test.js covers
+- [x] GAP-7 · edit diffs (outputOf.diffs) · proof: result-changed-diffs-parity · TICKED: tests/runread-parity.test.js result-changed-diffs-parity
 - [ ] GAP-8 · place-rule lines (checksOf.placeRules) · proof: audit-place-rules-parity
 
 **Finding at src/kinds.js:1827 (builder, read before the build).** The rubric stage's `detail.items` is set there from `rowResultsOf` and is copied into the stage entry by `rowsRecordOf` (src/declaredclose.js:674-682). So a red FINAL close that runs through `judgeClose` carries `stages[].items` on its `close-verdict` (ralph emits `{iteration, ...v}`; `v.stages` is the declared close's own list). A red STEP check, though, is judged by `evalExits` (src/planrun.js:3834 `judge`), whose verdict is `{verdict, gap}` only: the stage entries live in the `runCheck` result (src/planrun.js:2445) and are dropped there. That is why run mwnbs3np (a red step-level shape check) has no items on its `close-verdict`. The named writer sites (ralph.js:758, planrun.js:4276) do not see that case; the `shape-items` record is therefore also written in `runCheck`, next to `check-run`, from the same `v.stages`. One extra writer site, same record, same fields.
+
+**Build status (2026-11-26, builder).** Ticked above: the items with a passing test of their own. NOT ticked, each with its reason: the Run tab lines, Result rubric Saved-card / md / file-per-line / facts-grid / answer words / Not-checked texts, Result generic head / numbers / fence line / work box / one-list, Audit tags / unclaimed / guard rows / Not-checked / line blocks / not-reached / parts / place rules, Replay words / none, Reuse history line, Shape grid cells, Review report / content, Sheet, Tickets, Destination delivered / download / door landing, CLI readout, and GAP-1, GAP-2, GAP-5, GAP-8. For these the views already read the readers and the existing suites that pinned them before the switch pass unchanged (the named tests per group ran green), and the built parity run (97 copies) shows 0 differences outside the five bugs, but no new test per item was written, so no box is ticked on that alone. The built parity run is in .claude/scratch/poc-f399/PARITY-built.md (PARITY: PASS).
 
 **Counts.** 72 lines: Run tab 7, Result rubric 14, Result generic 10, Audit 15, Replay 5, Reuse 5, Shape grid 3, Review 4, Sheet 2, Tickets 2, Destination 4, CLI readout 1. POC compared ✓: 23. Not compared: 45. UNDERPOWERED: 4.
 

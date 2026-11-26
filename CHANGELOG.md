@@ -15,6 +15,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **A hint under the Job box (copied from fwdloop v0.38.0, M19 am14b).** For both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip is unchanged.
 
+- **One reader of what a run checked and one of what it made (F399).** `src/runread.js` has `checksOf` (the run's current leg) and `outputOf` (the whole run). The Result tab, the Audit checks, the Run tab checks line, replay's close line, reuse and the ticket grid all read them, and the old copy of each scan is gone. `tests/runread-guard.test.js` fails if a view scans these records on its own.
+- **Three new spine records, report only.** `fence` (the gate held the write fence, and how many writes it blocked), `shape-items` (the item reds of a red shape check, written where they happen) and `work-committed` (the final commit of a change run). An old run reads as it did before: the gate's own file, our gap sentences, git.
+
+### Fixed
+
+- **The Result tab said "none" for the lines of a green run.** It read a step check, not the run's final close (runs mv5e1ktb and four more).
+- **The Result tab said "none" for a failed line where the Audit said "failed".** Both say "failed" now (run mv73swnx and eight more).
+- **A resumed run showed an earlier leg's checks in a later leg.** Checks are the current leg's (runs muuvmmul, mwtf8p8s, mwsfq0pi).
+- **Reuse named a stale failing stage.** The stage is the one that rendered the final close; a passing final close names none (runs muutlcko, mvtatlxw and four more).
+- **Reuse said "close never reached" for a resumed run that was already green** (runs mwue75ih, mwvwcxvy).
+
 ### Development only
 
 - A test pins the list-line count words on the card, the Audit and the worker text: `exactly N items`, `at least N items`, `at most N items`, and `item` for 1 (fwdloop am15a). No wording changed.
