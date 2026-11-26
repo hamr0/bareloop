@@ -6302,3 +6302,14 @@ If P1 or P1b fails: stop, commit only the addendum and results, report.
 - (d)/(c) mwuxqx4f fix:L4 (the required row): part ✗ failed -> ■ capped; attempt 2 (ended by the wall) ? -> ■ capped; result signs "✗?" -> "✗■".
 - (d)/(c) mvki7iqf fix (not a split piece; the run's money cap ended its 4th try): part ✗ failed -> ■ capped; attempt 4 ? -> ■ capped; result signs "✗✗✗?" -> "✗✗✗■". It rides the owner rule (c) written above; flagged for hamr as the one change outside the two named rows.
 - (a) has no corpus instance (no part reads capped in the archive); the unit tests cover it.
+
+#### Addendum 2026-11-26k: the check-only worker scan
+
+**Defect (PRD next-release list, logged).** `checkOnlyLineFor` (src/panel/server.js) decides "this leg ran no worker" by scanning `leg.records` itself for `worker-round` / `run-start` / `step-start`. F406 (Addendum 2026-11-26g) added the scan because mwuxqx4f leg 5 had worker activity but no part. Since F407 (Addendum 2026-11-26i: a part spanning legs is one row per leg) a leg with worker activity should always own a part, so `hasParts` already answers "did this leg do work" and the scan is a second, unowned reading of the same fact.
+
+**Hypothesis.** Deleting the scan (keeping `outcome === null` -> `{}`) changes nothing in any real run.
+
+**Frozen bars.**
+- P1: $0 replay, same corpus and scripts as `.claude/scratch/poc-checkonly/` and `poc-cutoff/` (real `getRunDetail` over every runs.jsonl row with a spine, dedup by run id), FULL output OLD (HEAD) vs NEW (scratch copy of `src/` in `.claude/scratch/poc-workerscan/` with the scan removed). Bar: ZERO differences in any field. Also list every leg in the corpus that has worker-round/run-start/step-start records and zero parts in NEW. Bar: none.
+- P2: a unit test showing a leg with worker activity always gets a part (the mwuxqx4f-leg-5 shape through the cutoff-part-rows fixtures if reusable), so the check-only line never appears there; it must pass with the scan removed.
+- If P1 shows any difference or any worker leg with zero parts: STOP, do not delete, report the case.
