@@ -224,10 +224,9 @@ export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
 // Export M1 (`docs/product/EXPORT-BUILD.md`) — the bundle a `bareloop run`
 // (M2) drives from a clean consumer directory: a signed spec (close paths
 // rewritten to `$BARELOOP_BUNDLE/close/<script>`), the close scripts it
-// needs, and the job's whole registry history. `bundle.js` reads this
-// module's own export list at call time (never a hand-kept copy) to judge
-// whether a close script's imports are legal — a cycle by design, safe
-// because the binding is read only inside function bodies.
+// needs, and the job's whole registry history. `bundle.js` judges whether a
+// close script's imports are legal against `src/exportnames.js` (this
+// module's export names, held equal to them by tests/exportnames.test.js).
 export {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';

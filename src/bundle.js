@@ -28,12 +28,9 @@ import { loadRegistry } from './bridges.js';
 import { closeStagesOf } from './plan.js';
 import { shapeForkName } from './reuse.js';
 import { absolutePathLiteralsOf, hashCloseScriptBytes } from './close-integrity.js';
-// The live export list IS `src/index.js`'s own `Object.keys` — never a second,
-// hand-kept copy that can drift from the real surface a close script can
-// legally import. This module is itself exported from `index.js` (a cycle by
-// design): the binding is only READ inside function bodies, at call time,
-// long after both modules have finished evaluating, so the cycle is safe.
-import * as bareloopExports from './index.js';
+// The root export list a close script may legally import (src/exportnames.js, held equal to `src/index.js`'s
+// own export names by tests/exportnames.test.js).
+import { EXPORT_NAMES } from './exportnames.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -392,7 +389,7 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
   }
 
   // close[].cmd shape + import legality, over EVERY stage before writing any of them.
-  const exportNames = new Set(Object.keys(bareloopExports));
+  const exportNames = new Set(EXPORT_NAMES);
   /** @type {Map<string, string>} scriptPath -> basename, dedup'd */
   const byPath = new Map();
   /** @type {Map<string, string>} basename -> scriptPath (collision detection) */
