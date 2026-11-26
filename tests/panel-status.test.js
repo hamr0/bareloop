@@ -234,14 +234,14 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the head
   // step card + Audit row
   // eslint-disable-next-line no-new-func
   const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'dotPulses', 'dotClass', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
-  assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
+  assert.match(f({ state: 'stopped', status: { key: 'stopped', ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
   // map box text
   const start = PAGE.indexOf('function escapeXml');
   const body = PAGE.slice(start, PAGE.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
   const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapHTML };`)();
   const parts = [{ kind: 'step', label: 'a', occurrence: 1, outcome: null, stopReason: 'you stopped it', attempts: [], status: partStatusFor({ stopReason: 'you stopped it' }) }];
-  assert.match(g.buildStepMapHTML(g.buildOrderedBoxes(parts, false)), /title="\[■\] stopped"/);
+  assert.match(g.buildStepMapHTML(g.buildOrderedBoxes(parts)), /title="\[■\] stopped"/);
 });
 
 test('2026-10-07: the ✗ result chip still finds a stopped [■] run (it was a [✗] before the sign ruling)', () => {
@@ -311,10 +311,11 @@ test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ 
 test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as the Run tab step cards (one stepStateHTML), no bracket badge', () => {
   // eslint-disable-next-line no-new-func
   const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'boxStatusWord', 'boxStatusText', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
-  const P = (k) => ({ ...STATUS[k] });
+  const P = (k) => ({ key: k, ...STATUS[k] });
   assert.equal(f({ state: 'done', status: P('passed') }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">passed</b></span>');
   assert.match(f({ state: 'stopped', status: P('capped') }, 't'), /dot stopped"><\/span><b class="st-word">capped</);
-  assert.match(f({ state: 'stopped', status: P('died') }, 't'), /dot red"><\/span><b class="st-word">died</);
+  assert.match(f({ state: 'stopped', status: P('failed') }, 't'), /dot red"><\/span><b class="st-word">failed</);
+  assert.match(f({ state: 'died', status: P('died') }, 't'), /dot magenta"><\/span><b class="st-word">died</);
   assert.match(f({ state: 'died', status: P('died') }, 't'), /dot magenta/);
   assert.match(fnSrc('renderAuditGroups'), /stepStateHTML\(box, 'audit-part-state-' \+ idx\)/);
   // the Audit header's whole state spelling is that one call: no sign of its own beside the attempt glyph

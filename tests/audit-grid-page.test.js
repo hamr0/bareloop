@@ -21,7 +21,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml'];
+const NAMES = ['escapeXml', 'signOf', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml'];
 const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(', ')} };`)();
 
 const grid = makeAuditGridWorld();
@@ -166,7 +166,7 @@ test('wiring: the part body calls the one grid builder for steps and the fix loo
 });
 
 test('the part header, the step map chip and the grid column agree: a try with no verdict is "?" everywhere (the fix header reads ✗✗✗?, not ✗✗✗✗)', () => {
-  const H = new Function(`${['glyphSpan', 'attemptGlyph', 'tryGlyph', 'attemptsInlineText', 'partHasNoVerdict', 'partResultGlyph'].map(fnSrc).join('\n')}\nreturn { partResultGlyph, attemptsInlineText };`)();
+  const H = new Function(`${['glyphSpan', 'signOf', 'tryGlyph', 'attemptsInlineText', 'partHasNoVerdict', 'partResultGlyph'].map(fnSrc).join('\n')}\nreturn { partResultGlyph, attemptsInlineText };`)();
   const fix = partOf(run, 'fix');
   const box = { attempts: fix.attempts, state: 'stopped' };
   assert.equal(strip(H.partResultGlyph(fix, box)), '✗✗✗?');

@@ -87,28 +87,63 @@ export function statusFor(o) {
 
 /**
  * The word one PART of a run wears on the step map, the step cards and the Audit rows (hamr 2026-10-07: `[✓] passed` /
- * `[✗] failed`, never "done"). Reads the same table; `running` is the page's call (it knows which part is live), so a
- * part with no verdict and no cut-off is `passed` here.
+ * `[✗] failed`, never "done"). Reads the same table; ONE owner of the part's sign + word (hamr 2026-11-26: no per-case patches).
  *   drafting, green/satisfied/already-green outcome, or a part that simply happened (scout/plan/replan/judge) -> passed
+ *   the live part (`live`: last part of a running run, no outcome, no `stopReason`) -> running
+ *   a part its leg's halt (or the run's cap) cut off (`stopReason`) and that did not pass: 'money cap' / 'time cap' -> capped (on ANY outcome, a fix
+ *     piece ends `red`, a step `escalated`), 'you stopped it' -> stopped (on an `escalated` step), 'died' -> died
  *   a red outcome -> its run-outcome word (failed; a cap/stop outcome keeps capped/stopped)
- *   a part its leg's halt cut off (`stopReason`): 'money cap' / 'time cap' -> capped, 'you stopped it' -> stopped (also on a step that ended `escalated`),
- *     'died' -> died, anything else (provider failed, step stalled, a raw outcome) -> failed
+ *   no outcome, a `stopReason`: provider failed, step stalled, a raw outcome -> failed
  * @param {{kind?: string, outcome?: string|null, stopReason?: string|null}} part
+ * @param {{live?: boolean}} [ctx]
  * @returns {{key: StatusKey, sign: string, word: string}}
  */
-export function partStatusFor(part) {
+export function partStatusFor(part, ctx = {}) {
   if (part.kind === 'drafting') return statusFor({ outcome: 'green' });
   const why = part.stopReason;
-  // a step the run's cap escalated ends `escalated` yet wears the cap word (src/panel/server.js cappedLastStep)
-  if (part.outcome === 'escalated' && (why === 'money cap' || why === 'time cap')) return { key: 'capped', ...STATUS.capped };
+  const isCap = why === 'money cap' || why === 'time cap';
+  const passedOutcome = isReusableGreen(part.outcome) || part.outcome === 'satisfied';
+  // a step or piece a cap ended wears the cap word whatever outcome it carries (src/panel/server.js cappedLastStep)
+  if (isCap && typeof part.outcome === 'string' && !passedOutcome) return { key: 'capped', ...STATUS.capped };
   // a step the person stopped ends `escalated` too (src/replay.js: its own escalation was `stopped`)
   if (part.outcome === 'escalated' && why === 'you stopped it') return { key: 'stopped', ...STATUS.stopped };
   if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
   if (why) {
-    const key = why === 'money cap' || why === 'time cap' ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
+    const key = isCap ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
     return { key, ...STATUS[key] };
   }
+  if (ctx.live) return { key: 'running', ...STATUS.running };
   return statusFor({ outcome: 'green' });
+}
+
+/**
+ * The sign + word one ATTEMPT (a step's try, a fix try, a graded try) wears: the same table, the same one owner as {@link partStatusFor}.
+ * `a.outcome` green -> passed. A try no close ended (`a.stop` names what ended it, `a.noVerdict`, or the leg cut it off: `a.cutOff` / the replay's
+ * outcome 'stopped') takes its end from its OWN stop first, else from the part's `stopReason`: a cap -> capped, the person's Stop -> stopped.
+ * A no-verdict try with no such end keeps the existing `died` entry (sign ?, as before). An open try of the live part -> running.
+ * @param {{outcome?: string|null, stop?: {by?: string, what?: string|null}|null, noVerdict?: string|null, cutOff?: boolean}} a
+ * @param {{stopReason?: string|null}} part the part carrying it, its `stopReason` already resolved
+ * @param {{live?: boolean, runCapped?: boolean}} [ctx] `live` the part is running, `runCapped` the run itself ended on its money cap
+ * @returns {{key: StatusKey, sign: string, word: string}}
+ */
+export function attemptStatusFor(a, part, ctx = {}) {
+  /** @param {StatusKey} key */
+  const pick = (key) => ({ key, ...STATUS[key] });
+  if (a.outcome === 'green') return pick('passed');
+  const partWhy = part.stopReason ?? null;
+  const partCap = partWhy === 'money cap' || partWhy === 'time cap';
+  const what = a.stop?.what ?? null;
+  const noVerdict = a.cutOff === true || (typeof a.noVerdict === 'string' && a.noVerdict !== '') || a.stop != null;
+  const cutByPart = a.cutOff === true || a.outcome === 'stopped';
+  if (what === 'wall-halt' || (what === 'cap-halt' && (ctx.runCapped === true || partWhy === 'money cap'))) return pick('capped');
+  if (what === 'stopped') return pick('stopped');
+  if (a.stop == null && cutByPart) {
+    if (partCap) return pick('capped');
+    if (partWhy === 'you stopped it') return pick('stopped');
+  }
+  if (noVerdict) return pick('died');
+  if (a.outcome === null || a.outcome === undefined) return pick(ctx.live === true ? 'running' : 'died');
+  return pick('failed');
 }
 
 /**

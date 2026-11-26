@@ -24,7 +24,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml'];
+const NAMES = ['escapeXml', 'signOf', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml'];
 const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(', ')} };`)();
 
 const RUNID = 'mvy0cx24';

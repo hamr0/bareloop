@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mintParts } from './helpers/mint-status.js';
 import { fileURLToPath } from 'node:url';
 
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
@@ -132,7 +133,7 @@ test('page map: a part its leg\'s halt cut off reads STOPPED (the existing state
     stepPart(3, { occurrence: 1 }),
     stepPart(3, { occurrence: 2, tryNumber: 2, continued: false }),
   ];
-  const boxes = buildOrderedBoxes(parts, false);
+  const boxes = buildOrderedBoxes(mintParts(parts));
   assert.deepEqual(boxes.map((b) => b.state), ['done', 'stopped', 'done', 'done', 'done']);
   assert.equal(boxes[1].attempts[0].outcome, 'stopped');
   const num = stepNumberIndices(boxes);
@@ -151,7 +152,7 @@ test('page card: the stopped part says why, in words, beside its figures', () =>
   assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
 });
 
-test('page glyph (2026-11-26h): a stopped part wears the status table\'s stopped sign, not the failed ✗; capped, failed, passed and multi-try parts read as before', () => {
+test('page glyph (2026-11-26j): every part and attempt wears the sign the SERVER minted (stopped, capped, failed, passed, multi-try); the page derives none', () => {
   const { buildOrderedBoxes } = loadMap();
   const loadGlyph = () => {
     const start = PAGE.indexOf('function escapeXml');
@@ -161,14 +162,11 @@ test('page glyph (2026-11-26h): a stopped part wears the status table\'s stopped
   };
   const { partResultGlyph } = loadGlyph();
   const strip = (s) => String(s).replace(/<[^>]+>/g, '');
-  const glyphOf = (part) => { const box = buildOrderedBoxes([part], false)[0]; return strip(partResultGlyph(part, box)); };
-  const stopped = stepPart(2, { outcome: 'escalated', stopReason: 'you stopped it', status: { key: 'stopped', sign: '■', word: 'stopped' }, attempts: [{ n: 1, outcome: 'stopped' }] });
-  assert.equal(glyphOf(stopped), '■');
-  assert.doesNotMatch(glyphOf(stopped), /✗/);
-  // as before: capped (its own word, sign and glyph disagree today: reported, not changed), failed, passed, multi-try
-  const capped = stepPart(2, { outcome: null, stopReason: 'money cap', status: { key: 'capped', sign: '■', word: 'capped' }, attempts: [{ n: 1, outcome: 'stopped' }] });
-  assert.equal(glyphOf(capped), '✗');
-  assert.equal(glyphOf(stepPart(3, { outcome: 'escalated', status: { key: 'failed', sign: '✗', word: 'failed' }, attempts: [{ n: 1, outcome: 'escalated' }] })), '✗');
-  assert.equal(glyphOf(stepPart(1, { status: { key: 'passed', sign: '✓', word: 'passed' } })), '✓');
-  assert.equal(glyphOf(stepPart(4, { outcome: 'green', status: { key: 'passed', sign: '✓', word: 'passed' }, attempts: [{ n: 1, outcome: 'escalated' }, { n: 2, outcome: 'green' }] })), '✗✓');
+  const glyphOf = (part) => { const [m] = mintParts([part]); const box = buildOrderedBoxes([m])[0]; return strip(partResultGlyph(m, box)); };
+  assert.equal(glyphOf(stepPart(2, { outcome: 'escalated', stopReason: 'you stopped it', attempts: [{ n: 1, outcome: 'stopped' }] })), '■');
+  // capped: its word and its sign agree now (was ✗ against the ■ word)
+  assert.equal(glyphOf(stepPart(2, { outcome: null, stopReason: 'money cap', attempts: [{ n: 1, outcome: 'stopped' }] })), '■');
+  assert.equal(glyphOf(stepPart(3, { outcome: 'escalated', attempts: [{ n: 1, outcome: 'escalated' }] })), '✗');
+  assert.equal(glyphOf(stepPart(1)), '✓');
+  assert.equal(glyphOf(stepPart(4, { outcome: 'green', attempts: [{ n: 1, outcome: 'escalated' }, { n: 2, outcome: 'green' }] })), '✗✓');
 });

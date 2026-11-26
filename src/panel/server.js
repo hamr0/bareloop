@@ -78,7 +78,7 @@ import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { checkTimeoutWords } from '../kinds.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
+  statusFor, partStatusFor, attemptStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS, NOT_REACHED,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
@@ -2410,7 +2410,7 @@ function getRunDetailBody(runid, opts) {
     // tabs still never disagree about order/counts/blocked-call figures.
     // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
     // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
-    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : cappedLastStep(p, i === all.length - 1, status.key)) })),
+    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => withStatuses(p, i === all.length - 1, status.key, death.died)),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -3326,11 +3326,40 @@ function noVerdictWords(stop) {
  * @param {any} part @param {boolean} isLast @param {string} runStatusKey
  */
 function cappedLastStep(part, isLast, runStatusKey) {
+  if (isLast && runStatusKey === 'capped' && part.kind === 'fix' && !part.stopReason && part.outcome !== 'green' && Array.isArray(part.attempts)) {
+    // the fix loop's last try a cap ended (its window closed on the cap's escalation): the part wears the cap word too
+    const stop = part.attempts[part.attempts.length - 1]?.stop;
+    if (stop?.what === 'wall-halt') return { ...part, stopReason: 'time cap' };
+    if (stop?.what === 'cap-halt') return { ...part, stopReason: 'money cap' };
+    return part;
+  }
   if (!isLast || runStatusKey !== 'capped' || part.kind !== 'step' || part.outcome !== 'escalated' || part.stopReason) return part;
   const t = part.tripped;
   if (t?.category === 'wall-halt') return { ...part, stopReason: 'time cap' };
   if (t?.category === 'cap-halt' && !t.ladder) return { ...part, stopReason: 'money cap' };
   return part;
+}
+
+
+/**
+ * THE ONE PLACE a part's and its attempts' sign + word are minted (hamr 2026-11-26: one owner; the page renders them, it derives none): the verdict is known
+ * only here (died, capped), so the part, each attempt and each graded try get their table entry (src/panel/status.js) from the same resolved facts.
+ * @param {any} p a replay part (or the drafting part) @param {boolean} isLast @param {string} runStatusKey @param {boolean} died the run died
+ */
+export function withStatuses(p, isLast, runStatusKey, died) {
+  const isDied = died && isLast && p.kind !== 'drafting';
+  const base = isDied ? diedFixTry(p) : p;
+  const resolved = isDied && p.outcome == null && !p.stopReason ? { ...base, stopReason: 'died' } : cappedLastStep(base, isLast, runStatusKey);
+  const live = isLast && runStatusKey === 'running' && p.kind !== 'drafting';
+  const status = partStatusFor(resolved, { live });
+  const ctx = { live: status.key === 'running', runCapped: isLast && runStatusKey === 'capped' };
+  const withAttempt = (/** @type {any} */ a) => ({ ...a, status: attemptStatusFor(a, resolved, ctx) });
+  return {
+    ...base,
+    ...(Array.isArray(base.attempts) ? { attempts: base.attempts.map(withAttempt) } : {}),
+    ...(Array.isArray(base.tries) ? { tries: base.tries.map((/** @type {any} */ t) => ({ ...t, status: attemptStatusFor({ outcome: t.outcome, cutOff: t.cutOff }, resolved, ctx) })) } : {}),
+    status,
+  };
 }
 
 /** a died run's fix part: its last try never got a verdict (the Audit grid's "?" row says it died) @param {any} part */
