@@ -3,7 +3,7 @@
 // Pure - no I/O, no clock, no model. The rule bodies are PORTED from the frozen POC (.claude/scratch/idea-a-v2/rules.mjs and
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS, FACT_OPS, boundOk } from './facts.js';
 import { countExact, countPhrase, squash } from './factwords.js';
 import { normLabel } from './labelscan.js';

@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dryReadMoney, dryReadPhrases, moneyResultLines } from '../src/pagedry.js';
 import { dropSentence, dropRows, dropLine, isReadNote } from '../src/pagedropwords.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 
 const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/phrase/mad-bcn.page.txt'), 'utf8');
 /** @type {any} */

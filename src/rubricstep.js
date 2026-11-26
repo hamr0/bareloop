@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { lineRules } from './jobline.js';
 import { repoListingText } from './repocite.js';
 import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -843,12 +844,6 @@ export function checkRubricParts(stages, { inputLabels = null, red, picks = null
       }
     }
   });
-}
-
-/** the ~ rules of one job line, one string each (`rules` when the line has the array, else the joined `rule` split on "; ") @param {any} l @returns {string[]} */
-export function lineRules(l) {
-  if (isRec(l) && Array.isArray(l.rules)) return l.rules.filter((/** @type {unknown} */ r) => typeof r === 'string' && r);
-  return isRec(l) && typeof l.rule === 'string' && l.rule ? l.rule.split('; ').filter(Boolean) : [];
 }
 
 /** @param {string} t @returns {string} a time token as compared: no spaces, lower case, no leading zero on the hour */

@@ -98,7 +98,8 @@ import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords
 import { buildSheetChecks } from './sheetbuild.js';
 import { recordSheetShas } from './sheetrun.js';
 import { sheetRolesOf } from './sheetclaims.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineCarriesText, guardNameOfKey } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';

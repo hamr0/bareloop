@@ -9,7 +9,7 @@
 import { rubricVocabulary } from 'bareguard';
 import { plainWords, OFFERED } from './checkwords.js';
 import { KEPT_WORDS } from './pickrecord.js';
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 
 export { plainWords, OFFERED };
 

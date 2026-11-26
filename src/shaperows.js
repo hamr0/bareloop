@@ -6,7 +6,7 @@
 // Rows of one shape line: a `[you]` row per `~` rule that has a field (the rule's own row, kind `rule`), an `[agent]` row per extra field (kind `shape`, key `L<n>.shape.<name>`), and the line's `[default]` row (key
 // `L<n>.$shape`): the answer is a list of items, with the item count when the person's words gave one.
 import { createRubric, rubricVocabulary } from 'bareguard';
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { nameWhy, shapeNameRules, SHAPE_KINDS } from './shapemenu.js';
 import { SOURCE_DEFAULTS } from './sourcedefaults.js';
 

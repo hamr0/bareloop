@@ -12,7 +12,7 @@ import { askableFromLook, parseMapAnswer, isDropIt, DROP_IT } from '../src/pagem
 import { applyPageRules } from '../src/pagerules.js';
 import { normalizeQuestions, MAX_QUESTIONS } from '../src/authorflow.js';
 import { dropRows, dropLine } from '../src/pagedropwords.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 import { ANTH_CFG } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

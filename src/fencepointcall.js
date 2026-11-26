@@ -3,7 +3,7 @@
 // `CheckBlock.applyDelta` like every rubric edit; code proves each (the path is on the listing, the rule's own words name it, it lies outside the write scope). The AI points; code decides.
 // A rule nobody pointed at, or whose point fails the proof, is asked about like any rule code cannot settle. A failed call never stops the draft: its rules go to the questions.
 import { askStructured, makeCostBook } from './authorflow.js';
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 
 /** the label of the call, as the drafting book and the draft log see it */
 export const FENCE_POINT_LABEL = 'fence-point';

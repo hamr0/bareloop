@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isReadNote, splitReadNotes, dropLine, dropRows } from '../src/pagedropwords.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 
 const PRICE = 'line 1: "price label" — "US dollars" was listed twice, as a unit and as a currency; it is used once, as the first way to write the price. "$" does not show the same amounts as "US dollars", so it was not used as a second way to write the price. "from" does not show the same values as "From", so it was not used as a second way to read it.';
 const DEPART = 'line 1: "departure time label" — "Leaves" does not show the same values as "Departure time:", so it was not used as a second way to read it.';

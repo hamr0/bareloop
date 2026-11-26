@@ -100,7 +100,8 @@
 
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
-import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
+import { inputLabelsOf, readFrozenInputs, cardOfClose } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.

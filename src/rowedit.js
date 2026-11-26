@@ -3,7 +3,7 @@
 // word, builds every check and decides what can be checked; every edit is judged on its own. The confirm turn owns the goal (ruling 5), so the reply has none. A Tickets job's reply
 // may also carry the optional `ticketFilter` (ruling 2, R5), checked by its own reader; a job with a CSV input may carry the optional `sheetChecks` (S2), built or refused by src/sheetbuild.js. No text here restates the list of checks (the block's invariant 5): the only list-shaped input is
 // the look's report, an input the drafter already had, and the person's own job lines.
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { renderLookReport } from './inputlook.js';
 import { OFFERED } from './checkwords.js';
 import { rubricVocabulary } from 'bareguard';

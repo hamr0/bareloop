@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { sheetPrompt, parseSheetAnswer, applySheetWords, lookAtSheet, columnRuleWords, SHEET_MARK } from '../src/sheetlook.js';
 import { dropRows, dropLine } from '../src/pagedropwords.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 
 /** the Not-checked lines of a look's drops, as the card writes them */
 const notChecked = (/** @type {any[]} */ dropped, /** @type {any[]} */ jobLines) => dropRows(dropped).filter((r) => r.full).map((r) => dropLine(r, jobLines, lineRules));

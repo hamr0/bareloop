@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isReadNote, splitReadNotes, dropLine, dropRows } from '../src/pagedropwords.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 
 const S1 = 'line 1: "nonstop" — "nonstop" would read the same value as "nonstop". The page gives no second label for it.';
 const S1_PRICE = 'line 1: "under $450" — "price cap" would read the same value as "price". The page gives no second label for it.';

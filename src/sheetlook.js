@@ -15,7 +15,8 @@ import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from '
 import { parseCsv } from './csv.js';
 import { MAP_UNREADABLE, runPageMap, defaultLoop } from './pagemap.js';
 import { tieOf } from './pagerules.js';
-import { lineRules, wordsSaidOn } from './rubricstep.js';
+import { wordsSaidOn } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { countPhrase, wordForms } from './factwords.js';
 import { findColumn, columnQuestion, columnTieQuestion } from './sheetfind.js';
 
