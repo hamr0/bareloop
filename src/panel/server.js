@@ -1969,8 +1969,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   // a run that did not end green delivered nothing: say the check's own first gap (the Audit's try line words), never rows
   let gap = null;
   if (!end || !isReusableGreen(end.outcome)) {
-    const ev = records.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false));
-    const bad = ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null;
+    const bad = c?.redCheck ?? null;
     const g = bad ? gapOneLine(bad.detail) : null;
     gap = g ? { line: g.line, more: g.more, moreText: g.more > 0 ? `(+${g.more} more)` : null } : null;
   }

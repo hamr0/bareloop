@@ -174,6 +174,8 @@ export function checksOf(spine, runDir, opts = {}) {
     fence,
     placeRules: placeRuleLines(spine),
     outcome: leg.outcome,
+    /** the LAST failing `check-passes` a step's exit check recorded, anywhere in the run (a red run's first gap line, GAP-1: its `detail` words), or null */
+    redCheck: (() => { const ev = spine.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false)); return ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null; })(),
     /** a run the close never reached: the steps' own checks, as the replay parts of THIS leg's records (never the whole spine: an earlier leg's tries do not leak in). `null` when there is a close or none could be built */
     stepParts: () => { if (close) return null; try { return replayRun(legRecords).parts ?? null; } catch { return null; } },
     /** the file a check judged for job line `n`, read honestly (GAP-3) @param {number} n @param {string|null} root */
