@@ -5839,7 +5839,7 @@ Result tab (rubric jobs)
 - [x] Result · facts grid: quote, cells, proof, money as read · today: getRunResult 2036-2075, proofOf 1458, moneyAsRead 1484 (`rubric-evidence`) · new: checksOf.evidence (GAP-4, ruled) and outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-facts-grid-parity · TICKED: tests/f399-parity-result-rubric.test.js result-facts-grid-parity (mutation: checksOf.evidence misses the line, red)
 - [x] Result · a text line's answer and its cites · today: getRunResult 2078-2085 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-answer-cites-parity · TICKED: tests/f399-parity-result-rubric.test.js result-answer-cites-parity
 - [x] Result · red run: the check's first gap line and "+N more" · today: getRunResult ~2084 (`exit-eval` scan, gapOneLine server.js:3562) · new: checksOf.stepChecks[].detail (GAP-1, ruled) · POC: not compared · proof: result-red-gap-line-parity · TICKED: tests/runread-parity.test.js result-red-gap-line-parity
-- [ ] Result · "Findings" box, line "covers A..B · N files", "How it ran" · today: findingsOf server.js:1790, coversOf 1810, ranOf 1827 · new: outputOf.findings (GAP-6, ruled; ranOf reads steps, not checks or output; stays) · POC: not compared · proof: see Review group
+- [x] Result · "Findings" box, line "covers A..B · N files", "How it ran" · today: findingsOf server.js:1790, coversOf 1810, ranOf 1827 · new: outputOf.findings (GAP-6, ruled; ranOf reads steps, not checks or output; stays) · POC: not compared · proof: see Review group · TICKED: tests/f399-parity-review.test.js review-covers-parity (covers + How it ran); tests/runread-parity.test.js review-findings-parity (findings)
 
 Result tab (generic: D change, D review)
 
@@ -5897,9 +5897,9 @@ Shape grid
 Review (D review)
 
 - [x] Review · FINDINGS header and rows (base, line, short why, total, cut, cite words) · today: findingsOf server.js:1790 (`review-findings`) · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-findings-parity · TICKED: tests/runread-parity.test.js review-findings-parity; tests/result-a-data.test.js
-- [ ] Review · "covers A..B · N files changed" · today: coversOf server.js:1810 · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-covers-parity
-- [ ] Review · the report: staged under output/ at green, landed at Accept (the Accept replaces the staged name) · today: deliveredOf server.js:1284, writers userrun.js:2212-2220 · new: outputOf.files role staged/delivered, `replaces` · POC: compared ✓ (path and landed; 4 runs) · proof: review-report-staged-landed-parity
-- [ ] Review · the report's content (per line: "Checked by code" bullets, the AI's answer, "### The answer" rule) · today: deliveredReporter resultmd.js:204 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: review-report-content-parity and hamr walk
+- [x] Review · "covers A..B · N files changed" · today: coversOf server.js:1810 · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-covers-parity · TICKED: tests/f399-parity-review.test.js review-covers-parity (mutation: outputOf findings files dropped, red)
+- [x] Review · the report: staged under output/ at green, landed at Accept (the Accept replaces the staged name) · today: deliveredOf server.js:1284, writers userrun.js:2212-2220 · new: outputOf.files role staged/delivered, `replaces` · POC: compared ✓ (path and landed; 4 runs) · proof: review-report-staged-landed-parity · TICKED: tests/f399-parity-review.test.js review-report-staged-landed-parity (real landed record; planted staged record; mutation: staged name not replaced, red)
+- [x] Review · the report's content (per line: "Checked by code" bullets, the AI's answer, "### The answer" rule) · today: deliveredReporter resultmd.js:204 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: review-report-content-parity and hamr walk · TICKED: tests/f399-parity-review.test.js review-report-content-parity (planted report file; mutation: stale bytes, red) + review-report-writer-words
 
 Sheet results
 
