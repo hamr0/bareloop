@@ -113,7 +113,7 @@ test('the text is masked like every spine write: a secret shape in a quote never
   assert.ok(rec.evidence[1].spans.length > 0, 'an untouched claim keeps its spans');
 });
 
-test('report-only: no verdict, governor or money reader names the record; only the writer and the Result tab\'s reader do', () => {
+test('report-only: no verdict, governor or money reader names the record; only the writer and the report reader (src/runread.js, which the Result tab asks, F399) do', () => {
   /** @type {string[]} */
   const hits = [];
   const walk = (/** @type {string} */ dir) => {
@@ -125,5 +125,5 @@ test('report-only: no verdict, governor or money reader names the record; only t
   };
   walk(join(HERE, '..', 'src'));
   assert.ok(hits.includes('planrun.js'));
-  assert.ok(hits.every((h) => h === 'planrun.js' || h === 'panel/server.js'), `unexpected reader: ${hits.join(', ')}`);
+  assert.ok(hits.every((h) => h === 'planrun.js' || h === 'runread.js'), `unexpected reader: ${hits.join(', ')}`);
 });
