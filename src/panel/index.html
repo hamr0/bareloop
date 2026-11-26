@@ -1508,6 +1508,8 @@
   function partResultGlyph(part, box){
     if(part.kind === "drafting") return glyphSpan(attemptGlyph("green", false)); // [✓]: drafting is done once the run exists
     if(partHasNoVerdict(part)) return null;
+    // 2026-11-26h: a part the person stopped wears the server's own table sign (partStatusFor), the same one its word and map chip carry; no second derivation here
+    if(part.status && part.status.key === "stopped" && box.attempts.length <= 1) return part.status.sign;
     var boxIsLive = box.state === "running";
     if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(tryGlyph(a, boxIsLive)); }).join("");
     if(box.attempts.length === 1 && box.attempts[0].noVerdict) return glyphSpan(tryGlyph(box.attempts[0], boxIsLive));

@@ -150,3 +150,25 @@ test('page card: the stopped part says why, in words, beside its figures', () =>
   assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /stopped &mdash; money cap/);
   assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
 });
+
+test('page glyph (2026-11-26h): a stopped part wears the status table\'s stopped sign, not the failed ✗; capped, failed, passed and multi-try parts read as before', () => {
+  const { buildOrderedBoxes } = loadMap();
+  const loadGlyph = () => {
+    const start = PAGE.indexOf('function escapeXml');
+    const end = PAGE.indexOf('function renderStepMap(');
+    // eslint-disable-next-line no-new-func
+    return new Function(`${PAGE.slice(start, end)}\nreturn { partResultGlyph: partResultGlyph, buildOrderedBoxes: buildOrderedBoxes };`)();
+  };
+  const { partResultGlyph } = loadGlyph();
+  const strip = (s) => String(s).replace(/<[^>]+>/g, '');
+  const glyphOf = (part) => { const box = buildOrderedBoxes([part], false)[0]; return strip(partResultGlyph(part, box)); };
+  const stopped = stepPart(2, { outcome: 'escalated', stopReason: 'you stopped it', status: { key: 'stopped', sign: '■', word: 'stopped' }, attempts: [{ n: 1, outcome: 'stopped' }] });
+  assert.equal(glyphOf(stopped), '■');
+  assert.doesNotMatch(glyphOf(stopped), /✗/);
+  // as before: capped (its own word, sign and glyph disagree today: reported, not changed), failed, passed, multi-try
+  const capped = stepPart(2, { outcome: null, stopReason: 'money cap', status: { key: 'capped', sign: '■', word: 'capped' }, attempts: [{ n: 1, outcome: 'stopped' }] });
+  assert.equal(glyphOf(capped), '✗');
+  assert.equal(glyphOf(stepPart(3, { outcome: 'escalated', status: { key: 'failed', sign: '✗', word: 'failed' }, attempts: [{ n: 1, outcome: 'escalated' }] })), '✗');
+  assert.equal(glyphOf(stepPart(1, { status: { key: 'passed', sign: '✓', word: 'passed' } })), '✓');
+  assert.equal(glyphOf(stepPart(4, { outcome: 'green', status: { key: 'passed', sign: '✓', word: 'passed' }, attempts: [{ n: 1, outcome: 'escalated' }, { n: 2, outcome: 'green' }] })), '✗✓');
+});
