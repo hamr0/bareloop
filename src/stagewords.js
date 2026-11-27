@@ -57,7 +57,7 @@ export function cmdKey(params) {
  *         (`suiteCmdKeys`, below): the TYPES template's `suite-green` is "the
  *         suite exits clean AND reports zero failing tests — TWO assertions"
  *         over ONE population (the same `npm test`/`pytest` invocation), so a
- *         `count-not-worse` stage sharing that exact command is the failing-
+ *         `count-not-worse` stage sharing that exact command (a `command-exit` stage's or the `tests-kept` floor's) is the failing-
  *         test-count half of that pair, never a typecheck stage: "no failing
  *         tests?" — derived from the same cmd+args correlation (the stage
  *         counts the suite's own failing tests), never from the stage's own
@@ -124,6 +124,20 @@ export function stageQuestionText({
 }
 
 /**
+ * Does this declared stage run the job's own test suite? A `command-exit` stage (the suite's exit) or the genre's
+ * `tests-kept` floor (`count-not-worse`, `higher-is-better`, baseline `seed`: it counts the tests the suite executed),
+ * read off the signed kind and direction/baseline only, never the stage name or the parser. The one owner of
+ * `suiteCmdKeys`' members (run mwue75ih: no `command-exit` sibling, so the count of failing tests read "type errors").
+ * @param {any} s @returns {boolean}
+ */
+function isSuiteRunner(s) {
+  if (!s || typeof s !== 'object') return false;
+  if (s.kind === 'command-exit') return true;
+  const p = s.params;
+  return s.kind === 'count-not-worse' && !!p && typeof p === 'object' && p.direction === 'higher-is-better' && p.baseline === 'seed';
+}
+
+/**
  * Stage name to its plain question, off a signed spec's `closeDecl.stages` — the one pass that gathers every
  * `command-exit` stage's cmd+args FIRST (so the failing-test-count half of `suite-green`'s pair can be told from a
  * genuine typecheck stage) and then asks {@link stageQuestionText} per stage. `null` for a stage with no honest
@@ -139,7 +153,7 @@ export function stageQuestionsByName(spec) {
   /** @type {Set<string>} */
   const suiteCmdKeys = new Set();
   for (const s of spec.closeDecl.stages) {
-    if (s && s.kind === 'command-exit') {
+    if (isSuiteRunner(s)) {
       const key = cmdKey(s.params);
       if (key !== null) suiteCmdKeys.add(key);
     }
