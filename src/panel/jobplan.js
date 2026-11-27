@@ -109,9 +109,10 @@ export function checkClassOfKind(kind) {
  * `ledger` = the draft log's final check-list rows (`readDraftLedger`), the words a Not checked row is named by; absent (no draft log) a row is named from its key.
  * @param {any} spec
  * @param {{key: string, words: string[]}[]|null} [ledger]
+ * @param {{signed?: boolean}} [o] `signed`: a view of a run's SIGNED spec (a waiting reason reads as not answered while drafting, see `refusedOf`)
  * @returns {JobPlan}
  */
-export function planFromSpec(spec, ledger = null) {
+export function planFromSpec(spec, ledger = null, o = {}) {
   /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string, shape?: true}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
@@ -175,7 +176,7 @@ export function planFromSpec(spec, ledger = null) {
     if (!g || typeof g.guard !== 'string' || !Array.isArray(g.lines)) continue;
     for (const line of lines.filter((l) => g.lines.includes(l.n))) (line.always ??= []).push(g.guard);
   }
-  for (const r of refusedOf(spec?.closeDecl)) {
+  for (const r of refusedOf(spec?.closeDecl, o)) {
     const line = lines.find((l) => l.n === r?.line);
     // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked; a list row of another kind names its fact when it has one
     const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[Number(r.rule) - 1] : (r.label ?? null);
@@ -197,7 +198,7 @@ export function planFromSpec(spec, ledger = null) {
   for (const r of Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : []) {
     if (r && r.kind === 'shape' && r.by === 'agent' && r.state === 'dropped' && typeof r.key === 'string' && Number.isInteger(r.line)) suggested.push({ key: r.key, line: r.line, text: r.key.replace(/^L\d+\.shape\./, '') });
   }
-  for (const i of ruleNotCheckedItems(spec?.closeDecl, spec?.jobLines, ledger)) if (i.by) notCheckedBy[i.text] = i.by;
+  for (const i of ruleNotCheckedItems(spec?.closeDecl, spec?.jobLines, ledger, o)) if (i.by) notCheckedBy[i.text] = i.by;
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;

@@ -5,6 +5,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote, tableSha } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
+import { signedReasonWords } from './checklist.js';
 import { OFFERED, plainWords } from './checkwords.js';
 import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { stageQuestionsByName, guardQuestionText, fenceQuestionText, fencePlace } from './stagewords.js';
@@ -1031,9 +1032,9 @@ export function ruleNotChecked(closeDecl, jobLines, ledger = null) {
   return ruleNotCheckedItems(closeDecl, jobLines, ledger).map((i) => i.text);
 }
 
-/** the same lines as {@link ruleNotChecked}, each with who it belongs to (`by`: the row's kind, F-c) @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] @returns {{text: string, by?: 'you'|'agent'|'default'}[]} */
-export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
-  return refusedOf(closeDecl).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
+/** the same lines as {@link ruleNotChecked}, each with who it belongs to (`by`: the row's kind, F-c) @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] @param {{signed?: boolean}} [o] a signed view, see {@link refusedOf} @returns {{text: string, by?: 'you'|'agent'|'default'}[]} */
+export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null, o = {}) {
+  return refusedOf(closeDecl, o).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
     const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
@@ -1047,11 +1048,16 @@ export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
 /**
  * The refusals of a signed close, as ONE reader: when the close carries the one check list (`closeDecl.list`) its not-checked rows are the refusals (a `~` rule's row names the rule, a fact row its
  * fact name); the old `closeDecl.refused` entries a list has no row for (a line-level refusal, a rule the list never saw) are kept, so nothing the older close said is lost. A close with no list
- * reads `refused` alone. Pure.
- * @param {any} closeDecl
+ * reads `refused` alone. `signed`: a view of a SIGNED close (a run's Result, Audit, Job tab), where a reason stored while drafting as a waiting reason reads {@link signedReasonWords}; drafting views keep the stored words. Pure.
+ * @param {any} closeDecl @param {{signed?: boolean}} [o]
  * @returns {{line: number, rule?: number, kind?: string, key?: string, by?: 'you'|'agent'|'default', label?: string, reason: string, fromList: boolean}[]}
  */
-export function refusedOf(closeDecl) {
+export function refusedOf(closeDecl, { signed = false } = {}) {
+  return signed ? refusedRaw(closeDecl).map((r) => ({ ...r, reason: signedReasonWords(r.reason) })) : refusedRaw(closeDecl);
+}
+
+/** @param {any} closeDecl @returns {{line: number, rule?: number, kind?: string, key?: string, by?: 'you'|'agent'|'default', label?: string, reason: string, fromList: boolean}[]} */
+function refusedRaw(closeDecl) {
   const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
   if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));

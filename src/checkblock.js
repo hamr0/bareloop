@@ -13,7 +13,7 @@ import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult, asSeenOf } from './pagedry.js';
 import { boundInWords, rubricStepShapeReds, floorWords, stageKeyOf, guardKeyOf, FENCE_KEY, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading, canReadLimit } from './pagerules.js';
-import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
+import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG, WAITING_PICK_WORDS, WAITING_READING_WORDS } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
 import { ruleWords, isAmountShape, isPhraseShape, isLegalCount } from './facts.js';
 import { SIGNED_ROW_FIELDS } from './declaredclose.js';
@@ -66,8 +66,8 @@ export const REASON = Object.freeze({
   left: 'You chose to leave it Not checked, so you judge it at Accept.',
   nothingOnPage: 'Your own words are on the line; the machine has no check for them, so you judge it at Accept.',
   noRule: 'No rule can check this, so you judge it at Accept.',
-  waitingPick: 'waiting for your answer on the proposed check',
-  waitingReading: 'waiting for your answer on the reading',
+  waitingPick: WAITING_PICK_WORDS,
+  waitingReading: WAITING_READING_WORDS,
   onePerLine: 'this line finds facts, so it has no text to quote',
   manyInputs: 'the job has more than one input and code cannot pick which one the claims quote',
   oneSidedTime: 'a time limit the AI proposes must be a range, so you judge it at Accept.',

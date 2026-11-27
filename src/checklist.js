@@ -11,6 +11,19 @@ import { lineRules } from './jobline.js';
 /** at most this many `!` checks come from the call */
 export const MAX_BANG = 3;
 /** the reason a check on a version or a date goes under Not checked: it is true only for the input as it is today */
+/** The words of a check still waiting on the person's answer while drafting (the card's reason). ONE owner of the literal; `src/panel/index.html` cannot import it (see {@link signedReasonWords}). */
+export const WAITING_PICK_WORDS = 'waiting for your answer on the proposed check';
+export const WAITING_READING_WORDS = 'waiting for your answer on the reading';
+/** What a SIGNED list says of a row that was still waiting when it was signed: the drafting words are over, the person judges it at Accept. */
+export const NOT_ANSWERED_WORDS = 'not answered while drafting — you judge it at Accept';
+/**
+ * A stored row reason as a SIGNED view reads it: a waiting reason (stored while drafting) reads {@link NOT_ANSWERED_WORDS}; every other reason is unchanged. Display only: the stored record is never rewritten, so old runs read the new words too.
+ * @param {string} reason @returns {string}
+ */
+export function signedReasonWords(reason) {
+  return reason === WAITING_PICK_WORDS || reason === WAITING_READING_WORDS ? NOT_ANSWERED_WORDS : reason;
+}
+
 export const WEEK_ONLY_WORDS = 'It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.';
 /** the label of the list call, as the drafting book and the draft log see it */
 export const LEDGER_LABEL = 'ledger-suggest';
