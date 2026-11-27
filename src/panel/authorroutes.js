@@ -29,6 +29,7 @@ import { readRunList } from '../runlist.js';
 import { BOX } from './refusal.js';
 import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
+import { isRowChoice } from '../pickrecord.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob, flowTypeOf, oldJobWords } from '../job.js';
@@ -484,7 +485,7 @@ export function createAuthorRoutes(opts) {
       // hamr 2026-11-13 (N-2): the confirm card's Drop / Add. $0 and instant: a row edit through the live check block, never a model call
       // the FINAL repo card's Drop (hamr 2026-11-15): the signing gates run again, so the answer comes when they have
       // a sheet job's FINAL card takes a Drop and an Add (S4): the live check block edits the row, the gates run again
-      if (session.state.phase === 'prepared' && (body?.op === 'drop' || body?.op === 'add')) {
+      if (session.state.phase === 'prepared' && isRowChoice(body?.op)) {
         session.finalEdit(body?.op, body?.key).then((r) => send(r.ok ? 200 : 400, { ...r, state: viewOf(session) }), () => send(500, { ok: false, error: 'could not change that check' }));
         return true;
       }

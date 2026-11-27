@@ -65,7 +65,7 @@ import { LEDGER_SYSTEM } from '../checklist.js';
 import { FENCE_POINT_SYSTEM } from '../fencepointcall.js';
 import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { choiceEntries } from '../checkblock.js';
-import { readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
+import { isRowChoice, readRecordFile, readRowChoices, readSheetDropped, readShapeDropped, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf, scoutCodePaths, destinationHoldsCode, destinationIsRoot, destFenceQuestion } from '../destpoint.js';
 import { chooseRoad, makePick, needsRuleRefusal, REVIEW_CALL_LABEL } from '../reviewpick.js';
@@ -1607,7 +1607,7 @@ export function createSession(card, deps = {}) {
   const sheetFinalEdit = async (op, key) => {
     const block = finalCtx?.block;
     if (state.phase !== 'prepared' || finalCtx === null || !state.finalPlan || finalCtx.repo || !block || (block.shapeDrops.rules.size === 0 && !block.rows.some((/** @type {any} */ r) => r.kind === 'sheet' || r.kind === 'shape' || r.can?.how === 'shape')) || dropping) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
-    if (op !== 'drop' && op !== 'add') return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
+    if (!isRowChoice(op)) return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
     dropping = true;
     try {
       const k = String(key ?? '');
@@ -1703,7 +1703,7 @@ export function createSession(card, deps = {}) {
      */
     rowEdit: (op, key) => {
       if (!state.pendingAsk || state.pendingAsk.kind !== 'menu' || planEdit === null) return { ok: false, refused: 'no-plan', error: 'no plan is waiting where checks can be dropped or added right now' };
-      if (op !== 'drop' && op !== 'add') return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
+      if (!isRowChoice(op)) return { ok: false, refused: 'bad-choice', error: 'not one of the choices' };
       const r = planEdit(op, String(key ?? ''));
       if (!r.ok) return { ok: false, refused: 'bad-row', error: String(r.why) };
       const at = state.messages.findLastIndex((/** @type {any} */ m) => m.kind === 'plan');

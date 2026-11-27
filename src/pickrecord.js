@@ -8,6 +8,11 @@ import path from 'node:path';
 
 /** the record's file, inside a drafting session folder only (never a run folder) */
 export const RECORD_FILE = 'picks-record.json';
+
+/** the two choices a person makes on a check row; ONE owner of "is this a Drop or Add choice" (fwdloop v0.39.0 am8 item 1e) */
+export const ROW_CHOICES = Object.freeze(['drop', 'add']);
+/** @param {unknown} choice @returns {choice is 'drop'|'add'} */
+export const isRowChoice = (choice) => ROW_CHOICES.includes(/** @type {string} */ (choice));
 /** the exact words a kept pick is marked with in the draft log, the Audit and the plan card (M10 am17 (6)) */
 export const KEPT_WORDS = 'kept from last draft';
 
@@ -112,7 +117,7 @@ export const recordPath = (planDir) => path.join(planDir, RECORD_FILE);
 export function readRowChoices(file) {
   try {
     const j = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(j?.rowChoices) ? j.rowChoices.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.tail === 'string' && (e.choice === 'drop' || e.choice === 'add')) : null;
+    return Array.isArray(j?.rowChoices) ? j.rowChoices.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.tail === 'string' && isRowChoice(e.choice)) : null;
   } catch { return null; }
 }
 

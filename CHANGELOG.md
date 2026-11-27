@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Development
+
+- **One owner for "is this a Drop or Add choice" (copied from fwdloop v0.39.0, M20 am8 item 1e).** `ROW_CHOICES` and `isRowChoice` in `src/pickrecord.js`; the record reader, the check block (two sites) and the panel's three doors (`authorsession.js` twice, `authorroutes.js`) ask it instead of spelling `'drop'` and `'add'` out. No behaviour change. `tests/fwd-v039-rowchoice.test.js` fails if another src file compares one value to both words.
+
 ## [0.64.0] - 2026-11-27
 
 ### Added
