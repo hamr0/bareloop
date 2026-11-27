@@ -7,7 +7,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A result count of `{min: undefined, max: 2}` reads the same at both doors (copied from fwdloop v0.39.0, M20 am8 item 1n).** The signed-fact shape check (`src/facts.js`) refused it (it counted a key as given when it was present); the check block's Add door (`addCount`) accepted it (`!== undefined`). One `isLegalCount` now asks the same question for both, with fwd's `!== undefined`. A count arrives as parsed JSON, where `undefined` cannot occur, so no signed spec changes; test-proven only, not seen live.
+
 ### Development
+
+- **One owner for four shape questions (copied from fwdloop v0.39.0, M20 am8 item 1n).** `isAmountShape` (money or number), `isPhraseShape` (phrase or place) and `isLegalCount` in `src/facts.js`, `canReadLimit` (money or time) in `src/pagerules.js`; the sites in `facts.js`, `pagerules.js`, `checkblock.js`, `pagedry.js` and `shaperows.js` ask them instead of spelling the pairs out. Named and left, a different question: `shapebuild.js` (a shape-menu kind), the four-shape sets. `tests/fwd-v039-shape-owners.test.js` fails if a src file spells a pair out again.
 
 - **One owner for "is this a Drop or Add choice" (copied from fwdloop v0.39.0, M20 am8 item 1e).** `ROW_CHOICES` and `isRowChoice` in `src/pickrecord.js`; the record reader, the check block (two sites) and the panel's three doors (`authorsession.js` twice, `authorroutes.js`) ask it instead of spelling `'drop'` and `'add'` out. No behaviour change. `tests/fwd-v039-rowchoice.test.js` fails if another src file compares one value to both words.
 

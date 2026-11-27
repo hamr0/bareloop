@@ -4,7 +4,7 @@
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
 import { lineRules } from './jobline.js';
-import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS, FACT_OPS, boundOk } from './facts.js';
+import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS, FACT_OPS, boundOk, isAmountShape, isPhraseShape } from './facts.js';
 import { countExact, countPhrase, squash } from './factwords.js';
 import { normLabel } from './labelscan.js';
 
@@ -39,13 +39,16 @@ export function tieOf(from, jobLines) {
   return out;
 }
 
+/** the one question "can CODE read a limit from the person's words for this fact shape" (money or time: `readLimit` reads those two) (fwdloop v0.39.0 am8 item 1n) @param {unknown} shape @returns {shape is 'money'|'time'} */
+export const canReadLimit = (shape) => shape === 'money' || shape === 'time';
+
 /**
  * Is this a legal `reading` for a fact of this shape? Only a time or money fact carries one, with the op set and the bound types of a signed
  * fact rule (src/facts.js): no other key, no missing bound. A malformed one makes the whole map answer malformed (no repair).
  * @param {unknown} shape @param {unknown} r @returns {boolean}
  */
 export function validReading(shape, r) {
-  if (shape !== 'time' && shape !== 'money') return false;
+  if (!canReadLimit(shape)) return false;
   if (!isRec(r) || !FACT_OPS.includes(r.op)) return false;
   const keys = Object.keys(r).sort().join();
   return r.op === 'between' ? keys === 'hi,lo,op' && boundOk(shape, r.lo) && boundOk(shape, r.hi) : keys === 'op,value' && boundOk(shape, r.value);
@@ -347,7 +350,7 @@ export function applyPageRules(text, mapping, jobLines) {
       const months = Object.hasOwn(MONTHS_FULL, String(f.lang)) ? MONTHS_FULL[String(f.lang)] : [];
       if (!months.some((m) => countPhrase(text, m) >= 1)) { drop(f, undefined, 'lang-not-on-page', String(f.lang)); return false; }
     }
-    if ((f.shape === 'number' || f.shape === 'money') && f.decimal === ',' && !hasCommaDecimal(squash(text))) { drop(f, undefined, 'decimal-not-on-page', ','); return false; }
+    if (isAmountShape(f.shape) && f.decimal === ',' && !hasCommaDecimal(squash(text))) { drop(f, undefined, 'decimal-not-on-page', ','); return false; }
     return true;
   });
 
@@ -357,7 +360,7 @@ export function applyPageRules(text, mapping, jobLines) {
   const pending = [];
   for (const f of list) {
     const words = (Array.isArray(f.words) ? f.words : []).map((w) => String(w)).filter((w) => w.trim() !== '');
-    if (f.shape === 'place' || f.shape === 'phrase') {
+    if (isPhraseShape(f.shape)) {
       const kept = [];
       for (const w of words) {
         const n = f.shape === 'phrase' ? countPhrase(text, w) : countExact(text, w);
@@ -365,7 +368,7 @@ export function applyPageRules(text, mapping, jobLines) {
       }
       pending.push({ f, kept, cur: [], uni: [] });
     } else if (VALUE_SHAPES.includes(String(f.shape))) {
-      const amount = f.shape === 'money' || f.shape === 'number';
+      const amount = isAmountShape(f.shape);
       /** labels the page holds (and, for an amount, that have a number right after them) */
       const labels = [];
       /** the AI's labels as U1 leaves them, a word the page does not hold included: the first of these is R1's reference */
@@ -506,7 +509,7 @@ export function applyPageRules(text, mapping, jobLines) {
       if (p.cur.length) out.currency = [...p.cur];
     }
     if (p.f.shape === 'date' && p.f.lang !== undefined) out.lang = String(p.f.lang);
-    if ((p.f.shape === 'number' || p.f.shape === 'money') && p.f.decimal !== undefined) out.decimal = String(p.f.decimal);
+    if (isAmountShape(p.f.shape) && p.f.decimal !== undefined) out.decimal = String(p.f.decimal);
     // CODE picks the decimal mark of a money fact from how the page writes the amounts its signs touch, over the AI's word when the page is clear
     // (a "1.058,47 €" page read with "." would read wrong); both kinds or neither, the AI's word stands. A clear dot page keeps what was signed
     // ("." is the reader's default, so no field is added).
