@@ -149,7 +149,7 @@ test('validateJobCard: the Model must be a Name in Settings — a model no row n
   assert.equal(rawValidateJobCard(baseCard({ model: 'gpt-x' }), { rows: two }).ok, true, 'a Name typed in Settings is a valid Model');
 });
 
-test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — RED-PROOF against a fabricated jobs/ dir', () => {
+test('validateJobCard: a taken job name refuses (one owner, jobNameTaken) — RED-PROOF against a fabricated jobs/ dir', () => {
   const jobsDir = tmp('panel-author-jobs-');
   writeFileSync(join(jobsDir, 'already-exists.json'), '{}');
   assert.equal(jobNameTaken('already-exists', { jobsDir }), true);

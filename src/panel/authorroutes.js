@@ -27,7 +27,7 @@ import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
 import { BOX } from './refusal.js';
-import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, jobNameTaken, JOB_NAME_TAKEN_WORDS, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isRowChoice } from '../pickrecord.js';
 import { isReusableGreen } from './status.js';
@@ -410,8 +410,8 @@ export function createAuthorRoutes(opts) {
         const changed = jobBoxesChanged(card, pre.card);
         if (changed) {
           // a NEW workflow: its name may not be any existing job's, the origin's included (a different job cannot pass for the old one)
-          if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || (opts.runJobNames && opts.runJobNames().includes(card.jobName)))) {
-            send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.`, box: BOX.name });
+          if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || jobNameTaken(card.jobName, { jobsDir: opts.jobsDir, runJobNames: opts.runJobNames ? opts.runJobNames() : [] }))) {
+            send(400, { ok: false, error: JOB_NAME_TAKEN_WORDS(card.jobName), box: BOX.name });
             return true;
           }
         } else {
@@ -433,7 +433,7 @@ export function createAuthorRoutes(opts) {
         }
       }
       if (reuse === null) {
-        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows, ...(allowName !== undefined ? { allowName } : {}) });
+        const v = validateJobCard(card, { jobsDir: opts.jobsDir, runJobNames: opts.runJobNames ? opts.runJobNames() : [], rows, ...(allowName !== undefined ? { allowName } : {}) });
         if (!v.ok) { send(400, { ok: false, error: v.error, box: v.box }); return true; }
       }
       // P7: the Inputs are proven at $0 before a session (so before any token): line 1 the repo, lines 2+ tracked files inside it.

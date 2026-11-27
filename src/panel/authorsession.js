@@ -207,17 +207,21 @@ function isSlug(name) {
   return typeof name === 'string' && /^[a-z][a-z0-9-]*$/.test(name);
 }
 
+/** the one sentence both doors (New job card, Reuse) refuse a taken job name with (hamr 2026-11-27, ruling "A") */
+export const JOB_NAME_TAKEN_WORDS = (/** @type {string} */ name) => `A job named "${name}" already exists and is a different job. Pick another name.`;
+
 /**
- * `true` when `jobs/<name>.json` already exists in the repo's own jobs/ dir
+ * THE owner of "is this job name taken": `true` when `jobs/<name>.json` already exists in the repo's own jobs/ dir
  * (resolved from THIS module's own on-disk location, never `process.cwd()`,
- * the same rule `src/panel/server.js`'s `jobsDir()` follows) — P3 is new-jobs-
- * only (Q4=A), so a name collision refuses at $0 rather than silently
+ * the same rule `src/panel/server.js`'s `jobsDir()` follows) OR `name` is a job in the panel's run list (`opts.runJobNames`;
+ * absent = jobs/ only) — a name collision refuses at $0 rather than silently
  * overwriting or authoring a second spec under one name.
  * @param {string} name
- * @param {{jobsDir?: string}} [opts] test seam
+ * @param {{jobsDir?: string, runJobNames?: Iterable<string>}} [opts] test seam; the run-list job names
  * @returns {boolean}
  */
 export function jobNameTaken(name, opts = {}) {
+  if (opts.runJobNames && new Set(opts.runJobNames).has(name)) return true;
   const dir = opts.jobsDir ?? join(new URL('../../jobs', import.meta.url).pathname);
   if (!existsSync(dir)) return false;
   try {
@@ -489,15 +493,15 @@ export function repoDestinationProblem(destination, isRepoLike) {
  * creates a session or spends anything — never inside the async pipeline,
  * so a bad card refuses synchronously, in the same HTTP response.
  * @param {any} card
- * @param {{jobsDir?: string, allowName?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card; `allowName` = the origin job's own name on an unchanged red Reuse (it is the same job, not a collision)
+ * @param {{jobsDir?: string, runJobNames?: Iterable<string>, allowName?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card; `allowName` = the origin job's own name on an unchanged red Reuse (it is the same job, not a collision)
  * @returns {{ok: true}|{ok: false, error: string, box: import('./refusal.js').RefusalBox|null}} `box` = the card box the refusal is about (F400), a literal at each check
  */
 export function validateJobCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card', box: null };
   const { jobName, checkType, model, destination, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)', box: BOX.name };
-  if (jobName !== opts.allowName && jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
-    return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)`, box: BOX.name };
+  if (jobName !== opts.allowName && jobNameTaken(jobName, { jobsDir: opts.jobsDir, runJobNames: opts.runJobNames })) {
+    return { ok: false, error: JOB_NAME_TAKEN_WORDS(jobName), box: BOX.name };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric', box: null };
   const pick = judgePick(opts.rows ?? [], { provider: card.provider, model });

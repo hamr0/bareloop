@@ -6402,3 +6402,11 @@ Done when: a guard test fails before (five `JSON.parse(readFileSync` in the file
 **b. List-rule bounds (fwd 13fa8185, c4b73a72): nothing to build.** bareloop is the origin: one `keepOrDrop` / `countCheck` / guardrail readers body in `src/checkpick.js`, list bounds at `MORE_THAN` / `FEWER_THAN`, the lookbehind landed in v0.64.0.
 
 **Reported, not built here:** fwd 0ea6c272 (am4 `addedCountsOf`) and 84a35553 (`readKept`): first checked whether bareloop has the mechanism; if it has, the concrete wrong input and output goes to hamr before any build.
+
+#### Addendum 2026-11-27b: one owner for a taken job name
+
+Why: hamr's walk (draft session smwz2xj6bdnq3) typed Job name `walk-reuse`, already in his runs list; the New job card did not refuse and drafting spent money. `validateJobCard` asked only `jobs/`; the Reuse door also asked the run list. Two doors, two rules.
+Ruling: hamr, "A": one rule for both.
+Owner: `jobNameTaken(name, {jobsDir, runJobNames})` in `src/panel/authorsession.js` (jobs/ file OR a run-list job name); one sentence, `JOB_NAME_TAKEN_WORDS`, used by `validateJobCard` and the Reuse door in `src/panel/authorroutes.js`. `allowName` (a red origin's own name) stays exempt. The old `P3 is new jobs only (Q4=A)` words are removed.
+Sites: `validateJobCard`, the New job path and the changed-job Reuse check in `authorroutes.js`; `nextFreeJobName` keeps its own `used` set (same answer, left).
+Done when: `tests/jobname-taken-owner.test.js` is red before the change (a run-list name was not refused) and green after, with a guard that no other src file compares a card job name against the run-list names; the scoped panel tests stay green.
