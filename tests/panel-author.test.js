@@ -1481,7 +1481,7 @@ test('the card\'s Thinking on tick: ticked writes thinking:true into the signed 
   assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', {})), false, 'unticked: no field, so the hash is what it would have been');
   assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', { thinking: false })), false);
   assert.equal('thinking' in (await specOf('claude-opus-5-5', 'anthropic-api', { thinking: true })), false, 'measured not switchable: the tick cannot be on');
-  assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off' });
+  assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off', box: null });
 });
 
 test('Part 1a: POST /api/author/start accepts a rubric card whose Inputs are TWO local files (the route no longer asks the repo proof of them); a deterministic card with the same Inputs is still refused at $0', async (t) => {

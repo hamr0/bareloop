@@ -144,6 +144,8 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   const prov = live('provider-red', { stopReason: 'HTTP 503', o: { resume: ok } });
   assert.equal(prov.reason, 'The model provider failed (HTTP 503).');
   assert.equal(prov.next, 'Resume.');
+  assert.equal(prov.line, 'the model provider failed — resume', 'one provider-failure wording (hamr 2026-11-26)');
+  assert.equal(live('provider-red', { stopReason: 'HTTP 503' }).line, 'the model provider failed');
 
   assert.equal(live('step-stalled', { o: { resume: ok } }).reason, 'A step stopped making progress.');
 

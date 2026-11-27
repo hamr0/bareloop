@@ -21,7 +21,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml'];
+const NAMES = ['escapeXml', 'signOf', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml'];
 const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(', ')} };`)();
 
 const grid = makeAuditGridWorld();
@@ -104,7 +104,7 @@ test('errors list: the verdict-less try is a faint "?" row with the code-owned w
   const html = g.gridErrorsHtml('p5', fixModel, { open: {}, more: {} });
   const q = html.split('<div class="fx-row').find((x) => x.startsWith(' fx-row-q'));
   assert.ok(q, 'the ? row exists');
-  assert.match(q, /<span class="fx-try">try 4<\/span><span class="fx-chk"><span class="glyph-q">\?<\/span><\/span><span class="fx-first fx-faint">provider dropped \(socket hang up\), no check ran<\/span>/);
+  assert.match(q, /<span class="fx-try">try 4<\/span><span class="fx-chk"><span class="glyph-q">\?<\/span><\/span><span class="fx-first fx-faint">the model provider failed \(socket hang up\), no check ran<\/span>/);
   assert.doesNotMatch(q, /<button|data-fxrow|aria-expanded/);
 });
 
@@ -166,7 +166,7 @@ test('wiring: the part body calls the one grid builder for steps and the fix loo
 });
 
 test('the part header, the step map chip and the grid column agree: a try with no verdict is "?" everywhere (the fix header reads ✗✗✗?, not ✗✗✗✗)', () => {
-  const H = new Function(`${['glyphSpan', 'attemptGlyph', 'tryGlyph', 'attemptsInlineText', 'partHasNoVerdict', 'partResultGlyph'].map(fnSrc).join('\n')}\nreturn { partResultGlyph, attemptsInlineText };`)();
+  const H = new Function(`${['glyphSpan', 'signOf', 'tryGlyph', 'attemptsInlineText', 'partHasNoVerdict', 'partResultGlyph'].map(fnSrc).join('\n')}\nreturn { partResultGlyph, attemptsInlineText };`)();
   const fix = partOf(run, 'fix');
   const box = { attempts: fix.attempts, state: 'stopped' };
   assert.equal(strip(H.partResultGlyph(fix, box)), '✗✗✗?');

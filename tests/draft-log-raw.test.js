@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSession } from '../src/panel/authorsession.js';
-import { makeCostBook } from '../src/authorflow.js';
+import { makeCostBook } from '../src/ask.js';
 import { RAW_PERSIST_MAX } from '../src/text.js';
 import { ANTH_CFG } from './helpers.js';
 

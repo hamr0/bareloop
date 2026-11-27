@@ -28,11 +28,11 @@ import { tmpdir } from 'node:os';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, writeFile, rename, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename, isAbsolute } from 'node:path';
-import { git } from './kinds.js';
+import { git } from './shell.js';
 import { addWorktree, hideBareloopDir } from './worktree.js';
-import { MAX_BUFFER } from './kinds.js';
+import { MAX_BUFFER } from './shell.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
-import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
+import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES, globFolder } from './validate.js';
 import { fetchPageText, isWebUrl } from './pagefetch.js';
 import { parseTicketList } from './ticketshape.js';
 import { readTicket } from './ticket.js';
@@ -206,9 +206,8 @@ export function destinationMissingInRepo(root, destination) {
     if (piece === '') continue;
     const t = piece.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     if (t === '' || t === '.') continue;
-    const wild = t.search(/[*?[{]/);
-    if (wild !== -1) {
-      const dir = t.slice(0, wild).includes('/') ? t.slice(0, t.slice(0, wild).lastIndexOf('/')) : '';
+    const dir = globFolder(t);
+    if (dir !== null) {
       if (dir === '' || hasDir(dir)) continue;
       return piece;
     }
@@ -399,7 +398,7 @@ async function listRepoFiles(root) {
  * `PROVIDER_TIMEOUT_MS`, reused from `src/clock.js` rather than a second
  * number; a test injects a short one so a silent-server case does not cost
  * real minutes). The body is read as it streams so an oversize response is
- * caught at `MAX_BUFFER` (`src/kinds.js`, reused) WITHOUT ever buffering more
+ * caught at `MAX_BUFFER` (`src/shell.js`, reused) WITHOUT ever buffering more
  * than the ceiling — a `response.text()` on a large body would have already
  * paid the memory cost this exists to cap.
  * @param {string} url

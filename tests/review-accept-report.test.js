@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 
 import path from 'node:path';
 import { main } from '../src/userrun.js';
 import { jobSpecHash } from '../src/job.js';
-import { deliveredOf } from '../src/panel/server.js';
+import { outputOf } from '../src/runread.js';
 import { engineRefusalWords } from '../src/panel/runroutes.js';
 import { scriptedProvider } from './helpers.js';
 import { runReview, tmp, git, cleanup } from './review-world.mjs';
@@ -32,7 +32,7 @@ test('(a) a green review stages its report under output/: Destination is untouch
   assert.ok(existsSync(path.join(tree, 'output', 'review-job.md')), 'the report sits inside the judged output/ fence');
   const recs = spineRecords(w.spine);
   assert.equal(recs.some((r) => r.type === 'destination-written'), false, 'nothing is recorded as written at Destination yet');
-  const delivered = deliveredOf(recs);
+  const delivered = outputOf(recs, null).delivered;
   assert.equal(delivered.length, 1);
   assert.equal(delivered[0].path, path.join(tree, 'output', 'review-job.md'));
   assert.equal(git(w.src, ['rev-list', '--count', `main..${w.branch}`]).trim(), '0', 'no commit carries the report before Accept');
@@ -52,8 +52,16 @@ test('(b) an honoured Accept passes the re-run, lands the report at Destination 
   const rec = spineRecords(w.spine).findLast((r) => r.type === 'destination-written');
   assert.equal(rec.path, path.join(tree, 'docs', landed[0]));
   assert.equal(rec.staged, path.join(tree, 'output', 'review-job.md'));
-  const delivered = deliveredOf(spineRecords(w.spine));
+  const delivered = outputOf(spineRecords(w.spine), null).delivered;
   assert.deepEqual(delivered.map((d) => d.path), [rec.path], 'the Result tab now reads the Destination copy, once');
+  // F399: the Accept's own commit is on the spine as `work-committed` (the door keeps the folder)
+  const wc = spineRecords(w.spine).filter((r) => r.type === 'work-committed');
+  assert.equal(wc.length, 2, 'the green run\'s own (nothing to commit: the report was only staged) and the Accept\'s');
+  assert.equal(wc[0].commit, null);
+  assert.equal(wc[0].folderKept, true);
+  assert.equal(wc[1].branch, w.branch);
+  assert.equal(wc[1].commit, git(w.src, ['rev-parse', '--short', w.branch]).trim());
+  assert.equal(wc[1].folderKept, true);
 });
 
 test('(b2) landStagedReport: a same-day name already taken lands as -2, never over a person\'s file', async () => {

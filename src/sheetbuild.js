@@ -14,7 +14,8 @@
 import { rubricVocabulary, claimSchema, groundedLiterals, createRubric, runTableChecks, tableSha } from 'bareguard';
 import { SHEET_RULES, sheetCheckColumns, sheetCheckReds, bareguardChecks } from './sheetchecks.js';
 import { isColumnChoiceRule } from './sheetoffer.js';
-import { lineRules, wordsSaidOn } from './rubricstep.js';
+import { wordsSaidOn } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 
 const V = /** @type {any} */ (rubricVocabulary);
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);

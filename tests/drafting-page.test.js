@@ -2,6 +2,7 @@
 // posture as the other page tests (functions extracted verbatim from src/panel/index.html, no jsdom). The part under
 // test is built by the REAL server-side builder (`draftingPartFor`) over a real session folder, so the page reads the
 // exact shape the server serves.
+import { mintParts } from './helpers/mint-status.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -79,8 +80,8 @@ test('page map: a drafting box comes FIRST with an arrow to scout; it is done, u
 
 test('page card + Audit header: `<time> · <money> · <N> calls` and [✓]; line 2 names the drafting steps; money is the spine figure', (t) => {
   const { partLine1Text, partResultGlyph, partLine2Text, buildOrderedBoxes } = load();
-  const part = realPart(t);
-  const box = buildOrderedBoxes([part], false)[0];
+  const part = mintParts([realPart(t)])[0]; // the server mints the part's status (src/panel/server.js withStatuses)
+  const box = buildOrderedBoxes([part])[0];
   assert.equal(partLine1Text(part, {}), '4m38s &middot; $0.08 &middot; 3 calls', 'the header time, money and call count');
   assert.match(partResultGlyph(part, box), />✓</);
   assert.equal(partLine2Text(part), 'checking setup · confirming plan · drafting');

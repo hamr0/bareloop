@@ -15,7 +15,7 @@
 // knob a drafted spec or a runner script can reach for.
 
 import { runClose } from './ralph.js';
-import { CHECK_LIMIT_MS } from './kinds.js';
+import { CHECK_LIMIT_MS } from './shell.js';
 import { isDeclaredClose } from './declaredclose.js';
 
 /** hamr, 2026-09-07: the floor, verbatim. Also the value `runClose`'s own
@@ -138,7 +138,7 @@ export function computeCloseTimeoutCeiling({ slowestMs, overrideMs = null }) {
  *   number here.
  */
 export async function resolveCloseTimeoutMs({ job, stages, cwd, redact = (s) => s, ceilingMs }) {
-  // AN AI-DRAFTED (declared) CHECK runs under the ONE check limit (src/kinds.js CHECK_LIMIT_MS, hamr 2026-11-21). The timing pass
+  // AN AI-DRAFTED (declared) CHECK runs under the ONE check limit (src/shell.js CHECK_LIMIT_MS, hamr 2026-11-21). The timing pass
   // cannot time a kind stage (it has no `.cmd`, so it read 0 and the 120 s floor cut a long test suite short). The limit is code's
   // own: it is never compared to the Time cap, and a signed override still wins. A hand-written command close falls through,
   // byte for byte as before.

@@ -37,7 +37,7 @@ function mk(tag = 'div') {
   return el;
 }
 
-const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml', 'handedFold', 'memoFoldEl', 'buildGridBody'];
+const NAMES = ['escapeXml', 'signOf', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridHasMemo', 'gridMemoLines', 'gridMemoWord', 'gridLinesHtml', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml', 'handedFold', 'memoFoldEl', 'buildGridBody'];
 const document = { getElementById: () => null, createElement: (t) => mk(t) };
 // eslint-disable-next-line no-new-func
 const { buildGridBody } = new Function('document', `function renderGridErrors(){}\nfunction loadRounds(){}\n${NAMES.map(fnSrc).join('\n')}\nreturn { buildGridBody };`)(document);

@@ -2,13 +2,14 @@
 // precheck and final close all run a declared check under the SAME code-owned limit. The AI writes no limit of its own (F393,
 // hamr 2026-11-24): a `timeoutMs` on an OLD signed spec is ignored. A hand-written command close keeps its old ceiling (120 s floor x K autoset) byte for byte.
 //
-// The constant is read off the module namespace (`kinds.CHECK_LIMIT_MS`) so a test never respells the number.
+// The constant is read off the module namespace (`shell.CHECK_LIMIT_MS`) so a test never respells the number.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as kinds from '../src/kinds.js';
+import * as shell from '../src/shell.js';
 import { resolveCloseTimeoutMs, CLOSE_TIMEOUT_FLOOR_MS } from '../src/closetimeout.js';
 import { runJob } from '../src/run.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
@@ -22,11 +23,11 @@ import { world, keysHome, draftSeams, until, baseCard } from './flowtype-world.m
 import { gitInPatient } from './helpers.js';
 import path from 'node:path';
 
-const LIMIT = kinds.CHECK_LIMIT_MS;
+const LIMIT = shell.CHECK_LIMIT_MS;
 
 test('the check limit is ONE named constant and the kinds executor defaults to it', () => {
   assert.equal(typeof LIMIT, 'number');
-  assert.equal(kinds.DEFAULT_TIMEOUT_MS, LIMIT, 'one number, never a second spelling');
+  assert.equal(shell.DEFAULT_TIMEOUT_MS, LIMIT, 'one number, never a second spelling');
   assert.equal(kinds.effectiveTimeoutMs({}), LIMIT, 'a ctx that names no bound runs under the limit');
 });
 

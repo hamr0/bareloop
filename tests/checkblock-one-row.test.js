@@ -6,8 +6,9 @@ import assert from 'node:assert/strict';
 import { CheckBlock } from '../src/checkblock.js';
 import { cardOfClose } from '../src/rubricstep.js';
 import { dropRows, dropLine } from '../src/pagedropwords.js';
-import { lineRules } from '../src/rubricstep.js';
-import { runConfirmTurn, makeCostBook, GREEN_QUESTIONS, CONFIRM_TOOL_NAME } from '../src/authorflow.js';
+import { lineRules } from '../src/jobline.js';
+import { runConfirmTurn, GREEN_QUESTIONS, CONFIRM_TOOL_NAME } from '../src/authorflow.js';
+import { makeCostBook } from '../src/ask.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 
 const PAGE = 'Flights\nBoston Logan International Airport\nFrom $389 US dollars\nDeparture time: 10:24 AM.\n';

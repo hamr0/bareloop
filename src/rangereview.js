@@ -6,13 +6,11 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { spawnClose } from './ralph.js';
 import { readSourceManifest } from './source.js';
+import { DIFF_DIR } from './repocite.js';
 import { prGitArgs, prGitEnv, firstReason, checkoutAt } from './prcheckout.js';
 
 const SHA = /^[0-9a-f]{40}$/;
 const TAIL = 'Nothing spent.';
-
-/** where a run's per-file diffs live, inside the run's worktree (code-written inputs: untracked, never committed, never a worker edit) */
-export const DIFF_DIR = 'output/review-diff';
 
 /**
  * The worker may not WRITE or EDIT anything under `DIFF_DIR` (code's per-file diffs are the cite's ground truth; a fenced `output/` alone

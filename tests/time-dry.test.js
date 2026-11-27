@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { dryReadTimes, dryReadMoney } from '../src/pagedry.js';
 import { runPageMap } from '../src/pagemap.js';
 import { dropSentence, dropRows, dropLine } from '../src/pagedropwords.js';
-import { lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 import { CheckBlock } from '../src/checkblock.js';
 import { reply } from './helpers.js';
 import { loadFixture } from './idea-a-fixtures.js';

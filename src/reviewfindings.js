@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import { sourceOf } from './sourcedefaults.js';
 import { stepFileRel, STEP_MAX_BYTES } from './rubricstep.js';
 import { shapePartOf } from './shaperows.js';
-import { DIFF_DIR } from './rangereview.js';
-import { itemQuoteLine } from './repocite.js';
+import { itemQuoteLine, DIFF_DIR } from './repocite.js';
 import { ATTEMPT_DIFF_FILE_MAX, ATTEMPT_DIFF_EVENT_MAX } from './attemptdiff.js';
 
 /** the spine record's type */

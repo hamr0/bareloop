@@ -6,12 +6,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  runConfirmTurn, CONFIRM_TOOL_NAME, CONFIRM_ACK, CONFIRM_SYSTEM, confirmPrompt,
-  makeCostBook, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
-  GREEN_QUESTIONS, FIELD_LABELS, confirmProtections, GUARD_DESCRIPTIONS,
-  makeLoopGenerate, MAX_STRUCTURE_RETRIES,
-} from '../src/authorflow.js';
+import { runConfirmTurn, CONFIRM_TOOL_NAME, CONFIRM_ACK, CONFIRM_SYSTEM, confirmPrompt, LANGUAGE_PICK_FIELD, CONFIRM_MENU, GREEN_QUESTIONS, FIELD_LABELS, confirmProtections, GUARD_DESCRIPTIONS, makeLoopGenerate, MAX_STRUCTURE_RETRIES } from '../src/authorflow.js';
+import { makeCostBook } from '../src/ask.js';
 import { redactSecrets } from '../src/validate.js';
 
 /**

@@ -104,7 +104,7 @@ test('2026-11-03: the step a money cap escalated reads capped, not failed (spine
   const step = d.parts.filter((p) => p.kind === 'step').at(-1);
   assert.equal(step.outcome, 'escalated');
   assert.equal(step.status.word, 'capped', 'the step the cap escalated wears the run\'s cap word');
-  assert.equal(step.stopReason ?? null, null, 'the part itself is untouched; only its status word changes');
+  assert.equal(step.stopReason, 'money cap', 'the owner (src/legs.js endOf) ends the step itself; no server-side special case any more');
   assert.equal(partStatusFor({ kind: 'step', outcome: 'escalated', stopReason: null }).word, 'failed', 'an escalated step alone stays failed');
   assert.equal(partStatusFor({ kind: 'step', outcome: 'green', stopReason: 'money cap' }).word, 'passed');
   // a strike-limit step ended before a later step; the run capped inside the later one: only the LAST part is the capped one
@@ -124,7 +124,7 @@ test('2026-11-03: the step a money cap escalated reads capped, not failed (spine
 // And real spine u-mshcpdg4 seq 185 (bareagent-u-bareloop): the step ladder's own stop is category `cap-halt` too, but its `spend` carries
 // `strikes`/`strikeLimit` and no `cap-halt` record precedes it; when the run then ends on the cap (money-halt, job-end cap-halt) the step
 // the LADDER escalated still reads failed.
-test('2026-11-03: the last step reads capped only when its own escalation was the cap or wall; a strike-limit step in a run that ended capped reads failed', () => {
+test('2026-11-03: the last step reads capped only when its own escalation was the cap or wall; a strike-limit step with no money-halt reads failed', () => {
   const home = tmp();
   makeRun(home, 'w1', 'wall-halt', { extra: [
     { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
@@ -142,7 +142,16 @@ test('2026-11-03: the last step reads capped only when its own escalation was th
   ] });
   const l = getRunDetail('l1', { home });
   assert.equal(l.status.word, 'capped', 'the run itself ended on the cap');
-  assert.equal(l.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'failed', 'the ladder escalated this step, not the cap');
+  // hamr 2026-11-26 (ruling, Addendum 2026-11-26m): the leg's `money-halt` tells a money cap from the ladder, as the run-level Ended block always did
+  // (tests/panel-ended.test.js mup3h70u: a ladder escalation with `spend.strikes` AND a money-halt reads "Money cap reached"); the part now agrees with it
+  assert.equal(l.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'capped', 'the leg ended on the money cap and this escalation is its last');
+  // the ladder alone (no money-halt in the leg) is still failed
+  makeRun(home, 'l2', 'step-red', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'escalation', category: 'cap-halt', spend: { runs: 2, strikes: 2, strikeLimit: 2 }, ts: '2026-10-01T10:03:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:03:00.000Z', seq: 22 },
+  ] });
+  assert.equal(getRunDetail('l2', { home }).parts.filter((p) => p.kind === 'step').at(-1).status.word, 'failed', 'a ladder stop with no money-halt stays failed');
 });
 
 // ── page ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -234,14 +243,14 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the head
   // step card + Audit row
   // eslint-disable-next-line no-new-func
   const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'dotPulses', 'dotClass', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
-  assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
+  assert.match(f({ state: 'stopped', status: { key: 'stopped', ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
   // map box text
   const start = PAGE.indexOf('function escapeXml');
   const body = PAGE.slice(start, PAGE.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
   const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapHTML };`)();
   const parts = [{ kind: 'step', label: 'a', occurrence: 1, outcome: null, stopReason: 'you stopped it', attempts: [], status: partStatusFor({ stopReason: 'you stopped it' }) }];
-  assert.match(g.buildStepMapHTML(g.buildOrderedBoxes(parts, false)), /title="\[■\] stopped"/);
+  assert.match(g.buildStepMapHTML(g.buildOrderedBoxes(parts)), /title="\[■\] stopped"/);
 });
 
 test('2026-10-07: the ✗ result chip still finds a stopped [■] run (it was a [✗] before the sign ruling)', () => {
@@ -311,10 +320,11 @@ test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ 
 test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as the Run tab step cards (one stepStateHTML), no bracket badge', () => {
   // eslint-disable-next-line no-new-func
   const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'boxStatusWord', 'boxStatusText', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
-  const P = (k) => ({ ...STATUS[k] });
+  const P = (k) => ({ key: k, ...STATUS[k] });
   assert.equal(f({ state: 'done', status: P('passed') }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">passed</b></span>');
   assert.match(f({ state: 'stopped', status: P('capped') }, 't'), /dot stopped"><\/span><b class="st-word">capped</);
-  assert.match(f({ state: 'stopped', status: P('died') }, 't'), /dot red"><\/span><b class="st-word">died</);
+  assert.match(f({ state: 'stopped', status: P('failed') }, 't'), /dot red"><\/span><b class="st-word">failed</);
+  assert.match(f({ state: 'died', status: P('died') }, 't'), /dot magenta"><\/span><b class="st-word">died</);
   assert.match(f({ state: 'died', status: P('died') }, 't'), /dot magenta/);
   assert.match(fnSrc('renderAuditGroups'), /stepStateHTML\(box, 'audit-part-state-' \+ idx\)/);
   // the Audit header's whole state spelling is that one call: no sign of its own beside the attempt glyph
@@ -342,7 +352,7 @@ test('2026-10-07: a part wears `[sign] word` from the ONE table — never the ra
     [{ kind: 'step', outcome: null, stopReason: 'time cap' }, 'capped'],
     [{ kind: 'step', outcome: null, stopReason: 'you stopped it' }, 'stopped'],
     [{ kind: 'step', outcome: null, stopReason: 'died' }, 'died'],
-    [{ kind: 'step', outcome: null, stopReason: 'provider failed' }, 'failed'],
+    [{ kind: 'step', outcome: null, stopReason: 'the model provider failed' }, 'failed'],
     [{ kind: 'step', outcome: null, stopReason: 'step stalled' }, 'failed'],
   ];
   for (const [part, key] of table) assert.equal(partStatusFor(part).key, key, JSON.stringify(part));

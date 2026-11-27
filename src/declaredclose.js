@@ -68,7 +68,8 @@
 // once instead of once-per-invocation, but `runPlan` has a dozen return paths and
 // a leaked worktree outlives the process that made it.
 
-import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
+import { runStage, makeSeedTrees, EXIT_RED } from './kinds.js';
+import { STOP_FAULTS } from './shell.js';
 import { guardKeyOf } from './rubricstep.js';
 import { SOURCES, defaultsOf } from './sourcedefaults.js';
 import {

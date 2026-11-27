@@ -6,10 +6,12 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { quoteIn } from 'bareguard';
-import { DIFF_DIR } from './rangereview.js';
 
 /** bareguard's own source cap (its rubric reads one input of at most this many bytes), so the cite text is built within it or the item reds in plain words */
 export const CITE_CAP_BYTES = 5 * 1024 * 1024;
+
+/** where a run's per-file diffs live, inside the run's worktree (code-written inputs: untracked, never committed, never a worker edit) */
+export const DIFF_DIR = 'output/review-diff';
 
 /** every path git tracks in `dir`, as git spells them @param {string} dir @returns {string[]} */
 export function trackedFiles(dir) {

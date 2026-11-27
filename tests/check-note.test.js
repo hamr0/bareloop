@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as kinds from '../src/kinds.js';
+import * as shell from '../src/shell.js';
 import { createSession } from '../src/panel/authorsession.js';
 import { makeRangeWorld } from './range-world.mjs';
 import { world, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
@@ -18,13 +19,13 @@ import path from 'node:path';
 const MIN = 60_000;
 /** one minute of production time, scaled: the whole run is 1/200 of real time */
 const SCALE = 1 / 200;
-const LIMIT_T = kinds.CHECK_LIMIT_MS * SCALE;
-const AFTER_T = kinds.CHECK_NOTE_AFTER_MS * SCALE;
-const EVERY_T = kinds.CHECK_NOTE_EVERY_MS * SCALE;
+const LIMIT_T = shell.CHECK_LIMIT_MS * SCALE;
+const AFTER_T = shell.CHECK_NOTE_AFTER_MS * SCALE;
+const EVERY_T = shell.CHECK_NOTE_EVERY_MS * SCALE;
 
 test('the note starts at 5 of the 30 minutes and repeats every minute', () => {
-  assert.equal(kinds.CHECK_NOTE_AFTER_MS / kinds.CHECK_LIMIT_MS, 5 / 30);
-  assert.equal(kinds.CHECK_NOTE_EVERY_MS, MIN);
+  assert.equal(shell.CHECK_NOTE_AFTER_MS / shell.CHECK_LIMIT_MS, 5 / 30);
+  assert.equal(shell.CHECK_NOTE_EVERY_MS, MIN);
 });
 
 test('the words: minutes so far, and nothing about how long it usually takes (A4)', () => {

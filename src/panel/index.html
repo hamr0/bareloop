@@ -155,7 +155,7 @@
   /* R5 (piece 2): a ticket the job's signed filter did not let through ends skipped at run start: [–], grey, rests (fwd's sign) */
   .dot.skipped::before{content:"[–]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
-     step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
+     step map (`partResultGlyph`/`tryGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
      through `.dot`, which owns its own bracketed content), so `[✓]`/`[✗]`
      there were colourless until now. `.glyph-green`/`.glyph-red` are the same
@@ -972,10 +972,12 @@
               <!-- P8: the job's "Thinking on" tick (drafting + the rubric judge; never the worker). The SERVER's per-line `thinking.canChange` decides. -->
               <label class="jf-thinking" id="jf-thinking-label"><input type="checkbox" id="jf-thinking" data-testid="jf-thinking"> Thinking on</label>
               <div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"></div>
+              <div class="jf-err" id="jf-err-model" data-testid="jf-err-model"></div>
             </div>
             <div class="field">
               <label for="jf-name">Job name <span class="req">required</span></label>
               <input id="jf-name" type="text" placeholder="kebab-case, unique">
+              <div class="jf-err" id="jf-err-name" data-testid="jf-err-name"></div>
             </div>
             <div class="field">
               <label for="jf-job">The job <span class="req">required</span></label>
@@ -983,6 +985,8 @@
                 <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
               </div>
+              <div class="jf-err" id="jf-err-job" data-testid="jf-err-job"></div>
+              <div class="hint" id="jf-job-hint" data-testid="jf-job-hint">One step per line. A ~ line under a step is its rule; add at least one.</div>
               <div class="hint" id="jf-range-tip" data-testid="jf-range-tip">Review only some changes? Add a line:<br>range: v1.2..v1.3 or commit..commit&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;branch: my-feature</div>
             </div>
             <div class="field">
@@ -991,6 +995,7 @@
                 <div class="gut" id="jf-inputs-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
+              <div class="jf-err" id="jf-err-inputs" data-testid="jf-err-inputs"></div>
             </div>
             <!-- ITEM33-BUILD piece 8 (fwd M13 p4): Flow type and the MCP pick. Signed WITH the job by code; the MCP list is Settings > MCP's (the page only reads it). -->
             <div class="field" id="jf-flowtype-field" data-testid="jf-flowtype-field">
@@ -1024,6 +1029,7 @@
             <div class="field">
               <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
+              <div class="jf-err" id="jf-err-dest" data-testid="jf-err-dest"></div>
             </div>
 
             <!-- T Part 7: the When field, only on the card opened by Schedule run / Cancel-modify schedule. Every word is filled from the server's table. -->
@@ -1052,6 +1058,7 @@
                 <label for="jf-cap-money">Cap $ <span class="req">required</span></label>
                 <input id="jf-cap-money" type="text">
                 <div class="hint" id="jf-cap-note" data-testid="cap-note"></div>
+                <div class="jf-err" id="jf-err-capUsd" data-testid="jf-err-capUsd"></div>
               </div>
               <div class="cap-field">
                 <label for="jf-cap-time">Time cap (min)</label>
@@ -1407,24 +1414,15 @@
   // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
   // (the chip wraps long text inside itself the same way
   // it already does for a long step id; no third renderer, no new box shape).
-  // item 1 (2026-09-27, panel P2 defect): an attempt's own outcome is null
-  // in exactly two situations — its window is still open on a LIVE run (the
-  // box carrying it is the run's own live/`running` part), or the run DIED
-  // before that window ever closed. hamr's glyph ruling reserves "?" for
-  // DIED only; a live open attempt reads the same "▶" the run glyph itself
-  // uses for "in progress / unresolved". `boxIsLive` is the ONE place that
-  // context is decided (every caller passes its own box's `state ===
-  // "running"` — never re-derives the rule itself), so a finished or died
-  // run's attempts (boxIsLive always false there) render exactly as before.
-  function attemptGlyph(outcome, boxIsLive){
-    if(outcome === "green") return "✓";
-    if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
-    return "✗";
+  // ONE owner of every attempt's and part's sign (hamr 2026-11-26): the SERVER mints `status` {key, sign, word} on each part, attempt and graded try
+  // from its one table (src/panel/status.js partStatusFor / attemptStatusFor); the page only reads it. Nothing here maps an outcome, a stop reason or
+  // a live flag to a sign — a thing carrying no status reads the unknown sign "?".
+  function signOf(x){
+    return x && x.status && typeof x.status.sign === "string" ? x.status.sign : "?";
   }
-  // a try that no close ended (the provider dropped it, the person stopped it, it died) has no verdict: "?", the same sign the Audit grid's column wears.
-  // `a.noVerdict` is the server's word for it (src/panel/server.js); every surface that draws a try's glyph reads this one rule.
-  function tryGlyph(a, boxIsLive){
-    return a && typeof a.noVerdict === "string" && a.noVerdict !== "" ? "?" : attemptGlyph(a ? a.outcome : null, boxIsLive);
+  // an attempt's (try's) sign, read from the server's status
+  function tryGlyph(a){
+    return signOf(a);
   }
   // P3 addition: colour ONLY [✓]/[✗] (the standing wording ruling's own
   // words/glyph vocabulary is unchanged — this wraps the same glyph
@@ -1440,13 +1438,13 @@
   // "<span>" characters inside the map.
   // {@link glyphSpan} (the P3 colour addition) is used only by the DOM
   // part-card renderer below, never by this function.
-  function attemptsInlineText(attempts, boxIsLive){
+  function attemptsInlineText(attempts){
     if(!attempts || !attempts.length) return "";
-    return attempts.map(function(a){ return "attempt " + a.n + " " + tryGlyph(a, boxIsLive); }).join(" · ");
+    return attempts.map(function(a){ return "attempt " + a.n + " " + tryGlyph(a); }).join(" · ");
   }
   function stepTitleText(idx, s){
     var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
-    var at = attemptsInlineText(s.attempts, s.state === "running");
+    var at = attemptsInlineText(s.attempts);
     return at ? base + ' — ' + at : base;
   }
   // item 5 (F197): a box's step NUMBER must count only over boxes without
@@ -1473,16 +1471,13 @@
   // passes that could drift apart). `partIndex` on every box lets a click
   // jump straight to that SAME part's Audit-tab row (build item B's
   // click-through), with no re-lookup needed.
-  function partBoxState(part, isLastLivePart){
-    // the drafting part happened before the run existed: it is always done
-    if(part.kind === "drafting") return "done";
-    if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
-    if(typeof part.outcome === "string") return "stopped";
-    // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
-    if(part.status && part.status.key === "died") return "died";
-    if(part.stopReason) return "stopped";
-    if(isLastLivePart) return "running";
-    return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
+  function partBoxState(part){
+    // the box's state is the server's status key (src/panel/status.js partStatusFor), mapped to the box vocabulary; nothing is derived from outcome here
+    var key = part.status ? part.status.key : null;
+    if(key === "died") return "died";
+    if(key === "running") return "running";
+    if(key === "failed" || key === "capped" || key === "stopped") return "stopped";
+    return "done"; // passed (and skipped/waiting): the part happened
   }
   // scout/plan/replan/judge parts carry no per-part verdict at all — their
   // ONE attempt is always the wholePartAttempt synthetic placeholder
@@ -1499,28 +1494,25 @@
   // (a single-attempt step, or the whole "run" box on an old-shape spine)
   // reads the part's own outcome.
   function partResultGlyph(part, box){
-    if(part.kind === "drafting") return glyphSpan(attemptGlyph("green", false)); // [✓]: drafting is done once the run exists
+    if(part.kind === "drafting") return glyphSpan(signOf(part)); // [✓]: drafting is done once the run exists
     if(partHasNoVerdict(part)) return null;
-    var boxIsLive = box.state === "running";
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(tryGlyph(a, boxIsLive)); }).join("");
-    if(box.attempts.length === 1 && box.attempts[0].noVerdict) return glyphSpan(tryGlyph(box.attempts[0], boxIsLive));
-    var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return glyphSpan(attemptGlyph(outcome, boxIsLive));
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(tryGlyph(a)); }).join("");
+    if(box.attempts.length === 1 && box.attempts[0].noVerdict) return glyphSpan(tryGlyph(box.attempts[0]));
+    return glyphSpan(signOf(part));
   }
-  function buildOrderedBoxes(parts, isLive){
+  function buildOrderedBoxes(parts){
     var list = Array.isArray(parts) ? parts : [];
     return list.map(function(part, idx){
-      var isLastLivePart = !!isLive && idx === list.length - 1;
-      // "(try N)" is for real in-leg retries only; a step re-entered across a leg boundary is the same step continuing
+            // "(try N)" is for real in-leg retries only; a step re-entered across a leg boundary is the same step continuing
       var tryN = typeof part.tryNumber === "number" ? part.tryNumber : part.occurrence;
       var occSuffix = part.kind === "step" && part.continued ? " (continued)" : (part.kind === "step" && tryN > 1 ? " (try " + tryN + ")" : "");
       return {
         kind: part.kind,
         partIndex: idx,
         title: part.label + occSuffix,
-        state: partBoxState(part, isLastLivePart),
+        state: partBoxState(part),
         // the word this box wears: the server's table entry for the part (src/panel/status.js partStatusFor), except the live part, which is running
-        status: isLastLivePart && partBoxState(part, true) === "running" ? {sign:"\u25B6", word:"running"} : (part.status || null),
+        status: part.status || null,
         noNumber: part.kind !== "step",
         // display-only attempts (map inline text + card/audit result glyph
         // fallback) — [] for a no-verdict part kind even though `part.attempts`
@@ -3088,8 +3080,7 @@
     // attempt/rounds detail now lives exclusively on the Audit tab; a card
     // (or its map box) click switches to Audit with that same part expanded
     // and scrolled into view (build item B's click-through).
-    var isLiveRun = detail.glyph === "▶" && !detail.died;
-    var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
+    var orderedBoxes = buildOrderedBoxes(detail.parts);
     renderStepMap(orderedBoxes);
 
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
@@ -3261,7 +3252,8 @@
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
-    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+    var key = box.status ? box.status.key : "";
+    var cls = key === "passed" ? "green" : (key === "failed" ? "red" : (key === "capped" || key === "stopped" ? "stopped" : (key === "running" ? "amber" : (key === "died" ? "magenta" : "grey"))));
     return stateDotHTML(cls, boxStatusWord(box), testid);
   }
   // ONE spelling of the dot + bold word every state header wears (part headers and the schedule header).
@@ -3296,7 +3288,7 @@
   function gridStepTryOf(part, t, boxIsLive){
     var a = (part.attempts || []).filter(function(x){ return x.n === t.n; })[0] || null;
     var out = {
-      n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", nudged: !!(a && a.nudged), noVerdict: t.cutOff ? (t.words || "") : null,
+      n: t.n, glyph: signOf(t), hint: t.thinking || "", nudged: !!(a && a.nudged), noVerdict: t.cutOff ? (t.words || "") : null,
       known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, memo: a ? a.memo : (t.cutOff && part.cutOffTry ? part.cutOffTry.memo : null), calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
     };
     if(!t.cutOff && a && Array.isArray(a.checks)){
@@ -3312,7 +3304,7 @@
   function gridFixTryOf(a, boxIsLive){
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
-      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), nudged: !!a.nudged, noVerdict: noVerdict,
+      n: a.n, glyph: tryGlyph(a), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), nudged: !!a.nudged, noVerdict: noVerdict,
       known: Array.isArray(a.stages), memo: a.memo, judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
@@ -3775,8 +3767,8 @@
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
-    // P5-R: a part its leg's halt cut off says why, in words
-    if(part && part.stopReason) bits.push("stopped &mdash; " + escapeXml(part.stopReason));
+   
+    if(part && part.stopReason) bits.push(escapeXml(part.stopReason));
     return bits.join(" &middot; ");
   }
   /**
@@ -3955,8 +3947,7 @@
       container.appendChild(typeEl);
     }
     var parts = Array.isArray(detail.parts) ? detail.parts : [];
-    var isLiveRun = detail.glyph === "▶" && !detail.died;
-    var boxes = buildOrderedBoxes(parts, isLiveRun);
+    var boxes = buildOrderedBoxes(parts);
     var numberMap = stepNumberIndices(boxes);
     // RULED 2026-10-15 (v1.104): ONE `schedule` section at the top of the Audit of every run of a job that has a schedule now, always folded when the page
     // opens, worded on the server (`detail.scheduleSection`: title, sign, head, rows [{label,text}]). A run a CANCELLED schedule started keeps its one old line.
@@ -4094,11 +4085,25 @@
     dividers.forEach(function(dv){ if(dv.beforePart >= boxes.length) container.appendChild(legDividerEl(dv)); });
     applyAuditFilter(currentAuditFilter);
   }
+  // 2026-11-26g: a leg that only re-ran the final check has no part, so the server's `checkOnly` ({sign, word, text}) is its one line
+  // under the divider: the existing state dot + word, then the server's own words
+  function checkOnlyHtml(dv){
+    var c = dv.checkOnly;
+    if(!c) return "";
+    var cls = c.sign === "\u2713" ? "green" : (c.sign === "\u25A0" ? "stopped" : (c.sign === "?" ? "magenta" : "red"));
+    return stateDotHTML(cls, c.word, "audit-leg-checkonly-state-" + dv.leg) + " " + escapeXml(c.text);
+  }
   function legDividerEl(dv){
     var d = document.createElement("div");
     d.className = "audit-leg-divider";
     d.setAttribute("data-testid", "audit-leg-divider-" + dv.leg);
     d.textContent = "\u2500\u2500 " + dv.text + " \u2500\u2500";
+    if(dv.checkOnly){
+      var line = document.createElement("div");
+      line.setAttribute("data-testid", "audit-leg-checkonly-" + dv.leg);
+      line.innerHTML = checkOnlyHtml(dv);
+      d.appendChild(line);
+    }
     return d;
   }
   // build item B: a Run-tab card (or map box) click switches to the Audit
@@ -4149,7 +4154,7 @@
       var dividerRow = document.createElement("tr");
       dividerRow.className = "audit-leg-divider-row";
       dividerRow.setAttribute("data-testid", "audit-leg-divider-row-" + dv.leg);
-      dividerRow.innerHTML = '<td colspan="6">\u2500\u2500 ' + escapeXml(dv.text) + ' \u2500\u2500</td>';
+      dividerRow.innerHTML = '<td colspan="6">\u2500\u2500 ' + escapeXml(dv.text) + ' \u2500\u2500' + (dv.checkOnly ? '<div>' + checkOnlyHtml(dv) + '</div>' : '') + '</td>';
       return dividerRow;
     }
     result.rows.forEach(function(r){
@@ -4523,7 +4528,7 @@
   }
   // HOW IT RAN: the step chips the Run tab's map draws (the run's own step parts, one drawing: buildStepMapHTML), then `N steps \u00B7 N tries`; `more` = the generic tab's longer steps words
   function resultRanCard(data, detail, more){
-    var boxes = buildOrderedBoxes(detail.parts, detail.glyph === "\u25B6" && !detail.died).filter(function(b){ return b.kind === "step"; });
+    var boxes = buildOrderedBoxes(detail.parts).filter(function(b){ return b.kind === "step"; });
     if(!boxes.length && !data.ran && !more) return "";
     return '<div class="job-card" data-testid="result-ran"><h4>How it ran</h4>' + (boxes.length ? buildStepMapHTML(boxes) : "") +
       (data.ran ? '<div class="hint" data-testid="result-ran-line">' + escapeXml(data.ran.line) + '</div>' : "") + (more || "") + '</div>';
@@ -5668,6 +5673,27 @@
     var lastState = null;
     var startOk = false;
     var errEl = document.getElementById("chat-card-error");
+    // fwd v0.38.0 (M19 am14b, F400): the ONE writer of a draft refusal's lines. A refusal with a box paints its words in a red line under that box plus one pointer
+    // under the Draft button; a refusal with no box paints its words under the button. Painted once per refusal (a poll never brings back a line the person cleared by pressing Draft).
+    var REFUSAL_POINTER = "Not drafted: fix the red line above.";
+    var REFUSAL_ERR_IDS = {job: "jf-err-job", inputs: "jf-err-inputs", capUsd: "jf-err-capUsd", model: "jf-err-model", dest: "jf-err-dest", name: "jf-err-name"};
+    var refusalKey = "";      // which refusal is painted ("" = none)
+    var dismissedRefusalId = null; // the session whose refusal the person answered by pressing Draft
+    var refusalBoxEl = null;  // the box line it was painted into (null: none)
+    function clearRefusal(){
+      if(refusalBoxEl) refusalBoxEl.textContent = "";
+      refusalBoxEl = null; refusalKey = ""; errEl.textContent = "";
+    }
+    function paintRefusal(id, r){
+      var key = r ? String(id) + "|" + r.box + "|" + r.words : "";
+      if(key === refusalKey) return;
+      clearRefusal();
+      refusalKey = key;
+      if(!r) return;
+      var boxEl = r.box && REFUSAL_ERR_IDS[r.box] ? document.getElementById(REFUSAL_ERR_IDS[r.box]) : null;
+      if(boxEl){ boxEl.textContent = r.words; refusalBoxEl = boxEl; errEl.textContent = REFUSAL_POINTER; }
+      else errEl.textContent = r.words;
+    }
     var actionErrEl = document.getElementById("chat-action-error");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
@@ -5945,6 +5971,7 @@
       renderQuestionBox(null);
       thread.innerHTML = ""; lastMsgSig = null;
       errEl.textContent = "";
+      clearRefusal();
       actionErrEl.textContent = "";
       sessionId = null;
       sessionLive = false;
@@ -6538,9 +6565,12 @@
     }
     function renderActions(state){
       lastState = state;
-      // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
-      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
-      errEl.textContent = "";
+      // a session's stop or error is shown ONCE, in the progress line (renderProgress); echoing state.error here made the same stop appear twice.
+      // The one exception (hamr 2026-11-25, "2", copying fwd): a REFUSAL (phase refused, state.refusal) also shows its words under the Draft button, through paintRefusal.
+      // F400: a standing refusal (its box line and pointer) is the one writer's (paintRefusal / clearRefusal); no tick wipes it.
+      if(refusalKey === "") errEl.textContent = "";
+      // a draft refused at $0 before any AI call: its words go under its box (box null: under the Draft button); the drafting list keeps its failed step
+      if(state.refusal && typeof state.refusal === "object" && state.id !== dismissedRefusalId) paintRefusal(state.id, state.refusal);
       var progressChanged = renderProgress(state);
       renderQuestionBox(state);
       // build item 4 — re-enable Start only once the session has settled
@@ -6585,8 +6615,11 @@
       }).catch(function(){ /* transient — next poll tries again */ });
     }
 
+    var startAttempt = 0;
     function doStart(){
-      errEl.textContent = "";
+      // pressing Draft answers the refusal on screen: that session's refusal is never painted again (its poll may still tick)
+      if(sessionId) dismissedRefusalId = sessionId;
+      clearRefusal();
       actionErrEl.textContent = "";
       // build item 4 — disable the moment it's clicked, not just once the
       // response comes back; re-enabled below only if the start is refused.
@@ -6596,7 +6629,8 @@
       if(startFrom) body.startFrom = startFrom.importId ? {importId: startFrom.importId} : startFrom.runid;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
-          errEl.textContent = (r.body && r.body.error) || "refused";
+          startAttempt += 1;
+          paintRefusal("start" + startAttempt, {box: (r.body && r.body.box) || null, words: (r.body && r.body.error) || "refused"});
           // the refusal is the answer to the click: bring it into view (it sits under the cap fields, above the progress list)
           try { errEl.scrollIntoView({block: "nearest"}); } catch(e){}
           sessionLive = false;

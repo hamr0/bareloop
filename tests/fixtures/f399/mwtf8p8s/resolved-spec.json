@@ -1,0 +1,247 @@
+{
+  "schema": "job-v1",
+  "job": "walk-stop",
+  "description": "walk-stop — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Fix any failing test on chore/barebrowse-031 branch: chore/barebrowse-031",
+      "rule": "keep every existing test",
+      "rules": [
+        "keep every existing test"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/walk-patient"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "maxWallMs": 4800000,
+  "writeScope": [
+    "tests/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Fix any failing test on the chore/barebrowse-031 branch while keeping every existing test.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "tests/"
+          ]
+        }
+      },
+      {
+        "name": "tests-executed-not-dropped",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "tests/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed",
+          "timeoutMs": 900000
+        }
+      },
+      {
+        "name": "suite-zero-failing-tests",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "tests/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 900000
+        }
+      },
+      {
+        "name": "suite-exits-clean",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "expectExit": 0,
+          "timeoutMs": 900000
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The repository suite is RED at seed (# fail 1, one `not ok` line) — that is precisely the failing test line 1 asks to be fixed, so both suite stages are intentionally red until the work is done.",
+      "`tests-executed-not-dropped` is green at seed by design: it is a floor enforcing the person's ~rule 'keep every existing test' — it can only go red if a run deletes, skips or deselects tests. Counted from the TAP `# tests N` summary (executed count, not passes), baseline measured at seed.",
+      "The TAP summary lines carry no file path, so the seed-read emits an advisory that the scope filter could not judge them. This is not an instrument stop; the population is named by the stage (scoped to tests/), and the figure is read from the runner's own summary.",
+      "`npm test` is two gates joined by &&: the hermetic suite and scripts/prompt-commit-check.mjs --range origin/main..HEAD. The facts object warns that in a detached worktree with no origin/main that second range resolves to zero commits and passes vacuously — so the exit-code stage cannot prove the commit-message gate ran. I did not add a separate stage for it, because the person's job line says nothing about commit messages.",
+      "Fixture and world files under tests/ are also in scope for the write fence per the person's Destination answer, so a fix that edits a fixture rather than the code under test is permitted by this close; only `tests/` was selectable.",
+      "The genre template calls for a strict-typecheck stage only when strictness was asked for; the person asked to fix a failing test, so no typecheck stage is composed. Note that tsconfig includes only src/**/*.js anyway, so tests/ is not type-checked by the repo's own checker.",
+      "Ignored per the interview's ~rule handling: 'keep every existing test' is a rule, expressed here as the executed-count floor, and is not listed in refused."
+    ],
+    "list": [
+      {
+        "line": 1,
+        "key": "L1.~1",
+        "from": "rule",
+        "by": "you",
+        "kind": "rule",
+        "state": "not-checked",
+        "rule": 1,
+        "reason": "No rule can check this, so you judge it at Accept."
+      },
+      {
+        "line": 1,
+        "key": "S.tests-executed-not-dropped",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 1,
+        "key": "S.suite-zero-failing-tests",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 1,
+        "key": "S.suite-exits-clean",
+        "from": "agent",
+        "by": "agent",
+        "kind": "stage",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$guard.changed-from-seed",
+        "from": "default",
+        "by": "default",
+        "kind": "guard",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$guard.no-suppressions",
+        "from": "default",
+        "by": "default",
+        "kind": "guard",
+        "state": "built"
+      },
+      {
+        "line": 0,
+        "key": "J.$fence",
+        "from": "default",
+        "by": "default",
+        "kind": "fence",
+        "state": "built"
+      }
+    ],
+    "refused": [
+      {
+        "line": 1,
+        "rule": 1,
+        "reason": "No rule can check this, so you judge it at Accept."
+      }
+    ]
+  }
+}

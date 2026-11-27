@@ -182,6 +182,27 @@ test('P5-R legDividersFor: the "after" words are fixed sentences; a leg that has
   assert.equal(legDividersFor(rec('cap-halt'), [{ leg: 1 }])[0].beforePart, 1, 'no part in the new leg yet: the divider closes the list');
 });
 
+test('2026-11-26g legDividersFor: a leg with no part of its own (only the final check ran) carries ONE code-owned line; a normal leg carries none (a leg whose worker ran always owns a part: tests/cutoff-part-rows.test.js)', () => {
+  const head = [{ type: 'job-start', ts: at(10, 0), seq: 1 }, { type: 'step-start', step: 's', ts: at(10, 1), seq: 2 },
+    { type: 'job-end', outcome: 'stopped', spentUsd: 1, spendComplete: true, ts: at(10, 5), seq: 3 }];
+  const leg2 = (recs) => [...head, { type: 'leg-resume', leg: 2, after: 'stopped', at: at(12, 0), ts: at(12, 0), seq: 4 },
+    { type: 'job-start', ts: at(12, 0), seq: 5 }, ...recs];
+  const only = (outcome, extra = []) => leg2([{ type: 'close-precheck', ts: at(12, 1), seq: 6 }, ...extra, { type: 'job-end', outcome, spentUsd: 1, spendComplete: true, ts: at(12, 2), seq: 8 }]);
+  const parts = [{ kind: 'step', leg: 1 }];
+  const green = legDividersFor(only('already-green'), parts)[0];
+  assert.deepEqual(green.checkOnly, { sign: '\u2713', word: 'passed', text: 'final check only: every check already passed, nothing left to do' });
+  const red = legDividersFor(only('check-red', [{ type: 'escalation', category: 'check-red', ts: at(12, 1), seq: 7 }]), parts)[0].checkOnly;
+  assert.equal(red.sign, '\u2717');
+  assert.equal(red.word, 'failed');
+  assert.match(red.text, /^final check only: Goal not met/);
+  // a leg with a part of its own: no line
+  assert.equal('checkOnly' in legDividersFor(only('already-green'), [{ kind: 'step', leg: 1 }, { kind: 'step', leg: 2 }])[0], false);
+  // the plain two-leg run in this file: no line
+  const home = tmp();
+  makeTwoLeg(home, { leg2: 'green' });
+  assert.equal('checkOnly' in getRunDetail('run1', { home }).legDividers[0], false);
+});
+
 test('P5-R panel: a part cannot be longer than its own leg — the idle gap is never part time; a part its leg\'s halt cut off is STOPPED with its reason, and the step that continues it is the same step', () => {
   const home = tmp();
   makeTwoLeg(home, { leg2: 'green' });

@@ -26,6 +26,7 @@ import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
+import { BOX } from './refusal.js';
 import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
@@ -161,12 +162,12 @@ export function createAuthorRoutes(opts) {
    * @param {{spec: any, workflowKey: string}|null} reuse
    * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
    * @param {{headless?: boolean}} [o]
-   * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
+   * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string, box: import('./refusal.js').RefusalBox|null}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
     // fwd M4e am14 item 3: a third revise of one draft is refused at $0, before any input proof, session or model call
     const tooMany = o.headless ? null : reviseRefusal(sessionsRootOf(opts.sessionsRoot), card?.carryFrom, card?.carryKind);
-    if (tooMany !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 409, error: tooMany });
+    if (tooMany !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 409, error: tooMany, box: null });
     // ONE owner of "is this a rubric job on files": a reuse (and so a scheduled fire) reads it from the signed spec's verdict type,
     // never from the card; a fresh job reads the card. A rubric job whose line 1 is a file or URL has no repo to prove inputs against;
     // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
@@ -174,30 +175,31 @@ export function createAuthorRoutes(opts) {
     if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
     // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused, nor fired by a schedule; old runs are not repaired
     const oldJob = reuse ? oldJobWords(reuse.spec) : null;
-    if (oldJob !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: `${oldJob} Nothing spent.` });
+    if (oldJob !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: `${oldJob} Nothing spent.`, box: null });
     // piece 8: the card's Flow type and MCP pick, decided at $0 before any session (a reuse keeps the signed spec's own MCP). Nothing is started: the pick reads the check log.
     /** @type {ReturnType<typeof resolveFlowCard>} */
     const flow = reuse
       ? { ok: true, flowType: flowTypeOf(reuse.spec), pick: reuse.spec?.mcp ? { server: reuse.spec.mcp.server, tools: reuse.spec.mcp.tools } : null }
       : resolveFlowCard(card, { ...(opts.home !== undefined ? { home: opts.home } : {}), ...(opts.mcpHome !== undefined ? { mcpHome: opts.mcpHome } : {}) });
-    if (!flow.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: flow.error });
+    if (!flow.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: flow.error, box: null });
     // hamr 2026-11-14 (piece 5): a Tickets + rubric job's one input is its ticket line, numbered 1, by the same owner the card, the session and Reuse read
     inputs = ticketRubricInputs(inputs, { rubric, flowType: flow.flowType });
     if (flow.flowType === 'tickets') card = { ...card, flowType: 'tickets' };
     const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
     const ticketProblem = ticketBoxProblem(card, flow.flowType);
-    if (ticketProblem !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: ticketProblem });
+    if (ticketProblem !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: ticketProblem, box: BOX.inputs });
     // piece 9 (R7): the card's Schedule row, decided at $0 before any session exists. A scheduled fire is a headless start with no Schedule row, so it never reaches this.
     const sch = o.headless ? { ok: /** @type {const} */ (true), trigger: null } : cardScheduleOf(card, {
       flowType: flow.flowType, pick: flow.pick, inputs, hasSchedule: (job) => { try { return !!opts.schedules?.readSchedule(job); } catch { return false; } },
     });
-    if (!sch.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: sch.error });
-    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs, flow.pick ? { mcp: flow.pick } : {})).then((proof) => {
-      if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
-      if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
+    if (!sch.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: sch.error, box: null });
+    /** @typedef {{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string, box: import('./refusal.js').RefusalBox|null}} StartResult */
+    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs, flow.pick ? { mcp: flow.pick } : {})).then(/** @returns {Promise<StartResult>|StartResult} */ (proof) => {
+      if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error, box: BOX.inputs };
+      if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time', box: null };
       // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
       const destProblem = startDestinationProblem(card);
-      if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
+      if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem, box: BOX.dest };
       // R7b rulings (live runs mw6skdyk, mw6u5794): a by-hand Tickets session looks for a new ticket NOW, at $0, before any session, copy, draft or model call, through the ONE reader
       // (`run-u` calls the same one at run start). Nothing new, or a look that cannot read, refuses in the card's own error line. A scheduled fire (headless) carries its ticket and never looks.
       const lookJob = reuse ? String(reuse.spec?.job ?? card.jobName) : card.jobName;
@@ -206,15 +208,15 @@ export function createAuthorRoutes(opts) {
           job: lookJob, rows: (() => { try { return readRunList({ ...(opts.home !== undefined ? { home: opts.home } : {}) }).rows; } catch { return []; } })(), inputs, mcp: flow.pick,
         })
         : Promise.resolve({ ok: /** @type {true} */ (true) })
-      ).then((picked) => {
-        if (!picked.ok) return { ok: /** @type {false} */ (false), status: 400, error: `${/** @type {any} */ (picked).say} Nothing spent.` };
+      ).then(/** @returns {StartResult} */ (picked) => {
+        if (!picked.ok) return { ok: /** @type {false} */ (false), status: 400, error: `${/** @type {any} */ (picked).say} Nothing spent.`, box: BOX.inputs };
         const session = createSession(cardFields(card), {
           env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(typeof card.carryFrom === 'string' ? { carryFrom: card.carryFrom, carryKind: card.carryKind } : {}), ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
         });
         (o.headless ? headless : sessions).set(session.id, session);
         return { ok: /** @type {true} */ (true), session };
       });
-    }).catch((e) => ({ ok: /** @type {false} */ (false), status: 500, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}` }));
+    }).catch((e) => ({ ok: /** @type {false} */ (false), status: 500, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}`, box: null }));
   }
 
   /**
@@ -385,7 +387,7 @@ export function createAuthorRoutes(opts) {
 
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
-      if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
+      if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time', box: null }); return true; }
       const card = body ?? {};
       const rows = rowsForHome(keysHome(opts.home), envNow());
       // Reuse workflow, ONE DOOR (v1.101): every box is open; the CARD's job boxes (job text, check type, thinking) are compared with
@@ -402,43 +404,43 @@ export function createAuthorRoutes(opts) {
       const fromImport = typeof from?.importId === 'string' ? from.importId : null;
       if (fromRunid !== null || fromImport !== null) {
         const pre = opts.startFrom ? (fromImport !== null ? opts.startFrom.getImport(fromImport) : opts.startFrom.get(fromRunid)) : null;
-        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
+        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse', box: null }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
         const changed = jobBoxesChanged(card, pre.card);
         if (changed) {
           // a NEW workflow: its name may not be any existing job's, the origin's included (a different job cannot pass for the old one)
           if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || (opts.runJobNames && opts.runJobNames().includes(card.jobName)))) {
-            send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.` });
+            send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.`, box: BOX.name });
             return true;
           }
         } else {
           // a scheduled run's green waits for the person's Accept (quarantine): its plan is neither reused nor re-drafted until then
-          if (pre.outcome === 'green-held') { send(409, { ok: false, error: 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' }); return true; }
+          if (pre.outcome === 'green-held') { send(409, { ok: false, error: 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.', box: null }); return true; }
           card.jobName = pre.origin.job; // an unchanged job keeps its name; a typed one is ignored
           if (fromImport !== null || isReusableGreen(pre.outcome) || pre.neverRan === true) {
             const rv = validateReuseCard(card, { rows });
-            if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
+            if (!rv.ok) { send(400, { ok: false, error: rv.error, box: null }); return true; }
             const spec = buildReuseSpec(pre.spec, card, rows);
             // validateJob can THROW (not only red) on a saved job the guard-battery lookup no longer admits: same plain words, never a raw 500
             /** @type {ReturnType<typeof validateJob>|null} */
             let jv = null;
             try { jv = validateJob(spec, { shellCapUsd: spec.budgetUsd }); } catch { jv = null; }
             // RULED 2026-10-15: an old run's saved job that fails today's checks gets plain words; the raw red codes ride in `reds`, which the page never shows
-            if (jv === null || !jv.ok) { send(400, { ok: false, error: OLD_JOB_REUSE_WORDS, reds: jv === null ? [] : jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
+            if (jv === null || !jv.ok) { send(400, { ok: false, error: OLD_JOB_REUSE_WORDS, box: null, reds: jv === null ? [] : jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
             reuse = { spec, workflowKey: pre.workflowKey };
           } else allowName = pre.origin.job;
         }
       }
       if (reuse === null) {
         const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows, ...(allowName !== undefined ? { allowName } : {}) });
-        if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
+        if (!v.ok) { send(400, { ok: false, error: v.error, box: v.box }); return true; }
       }
       // P7: the Inputs are proven at $0 before a session (so before any token): line 1 the repo, lines 2+ tracked files inside it.
       // A miss is a plain 400 naming the line, shown under the card exactly like every other refused start.
       const ip = parseInputs(card.inputs);
-      if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
+      if (!ip.ok) { send(400, { ok: false, error: ip.error, box: BOX.inputs }); return true; }
       startSession(card, reuse, ip.inputs).then((r) => {
-        if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
+        if (!r.ok) { send(r.status, { ok: false, error: r.error, box: r.box }); return; }
         send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: viewOf(r.session) });
       });
       return true;

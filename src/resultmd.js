@@ -3,7 +3,8 @@
 // What this throws away: `cites` (hamr's answer 4), a result's keys other than `quote` and `values`, any key of the file other than `text`, `results` and `claims`. Pure: no I/O.
 import { sheetChecksOf, ROW_MATH_OPS } from './sheetclaims.js';
 import { sheetCheckSentence } from './sheetchecks.js';
-import { lineRules, proseNotCheckedItems, refusedOf } from './rubricstep.js';
+import { proseNotCheckedItems, refusedOf } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { shapePartOfLine } from './shaperows.js';
 import { shapeResultModel, shapeMarkdown, citedItemsMarkdown } from './shaperesult.js';
 

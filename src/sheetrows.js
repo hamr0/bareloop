@@ -6,7 +6,7 @@
 import { rubricVocabulary } from 'bareguard';
 import { sheetCheckSentence } from './sheetchecks.js';
 import { isSheetInput } from './inputlook.js';
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 

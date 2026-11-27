@@ -199,14 +199,18 @@ test('the existing Host guard applies to /result and /download (a foreign Host i
   }
 });
 
-test('a line is passed only when the run ended green AND its own check-run said satisfied (read from the spine, never re-decided here)', async () => {
+test('a line is passed only when the run ended green AND its stage is satisfied in the run\'s FINAL close (read from the spine, never re-decided here)', async () => {
   const w = await world();
   const spine = w.spine('mve5y8fa');
   const orig = readFileSync(spine, 'utf8');
   const passedOf = async () => (await w.get('/api/runs/mve5y8fa/result')).body.lines[0].passed;
   assert.equal(await passedOf(), true);
-  writeFileSync(spine, orig.replace('"verdict":"satisfied","seq":38', '"verdict":"needs_revision","seq":38'));
-  assert.equal(await passedOf(), false, 'the check-run for this line is not satisfied');
+  // F399: the line reads the final close (src/runread.js), not a step-level check-run: make the final close's stage red
+  const recs = orig.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const fc = recs.findLast((r) => (r.type === 'close-verdict' && Array.isArray(r.stages)) || r.type === 'outer-close');
+  for (const st of fc.stages) st.verdict = 'needs_revision';
+  writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  assert.equal(await passedOf(), false, 'the final close\'s stage for this line is not satisfied');
   writeFileSync(spine, orig.replace('"type":"job-end","outcome":"green"', '"type":"job-end","outcome":"step-red"'));
   assert.equal(await passedOf(), false, 'the run did not end green');
 });

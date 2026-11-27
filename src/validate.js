@@ -43,6 +43,18 @@ export function globToPrefix(scope) {
 }
 
 /**
+ * The literal leading folder of a path holding a glob: the text before the last `/` that comes before the first wildcard (`*`, `?`, `[`, `{`).
+ * One owner for the Destination check's two readers (`destinationMissingInRepo`, `scoutCodePaths`). Returns null when the path holds no wildcard, and '' when it has one but no folder before it (`*.js`, `**` + `/x`).
+ * @param {string} p a path with its leading `./` and trailing `/` already removed @returns {string|null}
+ */
+export function globFolder(p) {
+  const wild = p.search(/[*?[{]/);
+  if (wild === -1) return null;
+  const head = p.slice(0, wild);
+  return head.includes('/') ? head.slice(0, head.lastIndexOf('/')) : '';
+}
+
+/**
  * Path segments a fence/scope may never contain, checked WHOLE-SEGMENT
  * (`prefix.split('/')`), never substring — a look-alike (`.github`,
  * `.gitignore`, `my.git`, `node_modules_util`) is a DIFFERENT name and stays

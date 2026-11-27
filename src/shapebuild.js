@@ -13,7 +13,8 @@
 // Not built (named): the `object` kind (src/shapemenu.js); an item count read from the person's words alone (a number, not a label): the spec says "else the count comes only from the person's words" and gives no
 // mechanism, so none is invented here. The part code signs from this (`buildShapePartOf`) and the run's brief are clauses 5 and 6, waiting for the bareguard release that carries `itemShape`.
 import { createRubric } from 'bareguard';
-import { lineRules, wordsSaidOn } from './rubricstep.js';
+import { wordsSaidOn } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { underNumbers, atMostNumbers } from './checkpick.js';
 import { SHAPE_KINDS, ENTRY_KINDS, GROUNDED_BOUNDS, UPPER_BOUNDS, COUNT_BOUNDS, nameWhy, shapeNameRules } from './shapemenu.js';
 

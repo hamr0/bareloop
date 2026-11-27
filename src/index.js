@@ -124,7 +124,7 @@ export { readShimArm, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY
 // D8's seed is READ at run start rather than typed into a spec.
 export {
   runDeclaredClose, runStage, seedRead, seedAtHead,
-  LIVE_KINDS, STOP_FAULTS, JUDGED_MARKER,
+  LIVE_KINDS, JUDGED_MARKER,
   // N4 slice 1 — the hitl surface an adopting runner needs: the three doors, the
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
@@ -134,6 +134,7 @@ export {
   // one unasked, and the mechanical-only rule an `accept` re-proves against.
   DOOR_OPEN_OUTCOMES, REVIEW_DOOR_CLASSES, doorOpens, mechanicalStages,
 } from './kinds.js';
+export { STOP_FAULTS } from './shell.js';
 // SOFTGREEN module 8 — the door's ANSWERING half. A run OPENS the door on its own
 // spine and ends; a person answers minutes or days later, from another process, so
 // the answer cannot ride the run's return path. `answerReviewDoor` is that seam:
@@ -224,10 +225,9 @@ export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
 // Export M1 (`docs/product/EXPORT-BUILD.md`) — the bundle a `bareloop run`
 // (M2) drives from a clean consumer directory: a signed spec (close paths
 // rewritten to `$BARELOOP_BUNDLE/close/<script>`), the close scripts it
-// needs, and the job's whole registry history. `bundle.js` reads this
-// module's own export list at call time (never a hand-kept copy) to judge
-// whether a close script's imports are legal — a cycle by design, safe
-// because the binding is read only inside function bodies.
+// needs, and the job's whole registry history. `bundle.js` judges whether a
+// close script's imports are legal against `src/exportnames.js` (this
+// module's export names, held equal to them by tests/exportnames.test.js).
 export {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';

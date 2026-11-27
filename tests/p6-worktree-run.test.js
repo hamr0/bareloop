@@ -379,3 +379,31 @@ test('run-u --spec on a worktree: a RESUMED already-green leg commits the worktr
   assert.doesNotMatch(git(f.repo, ['worktree', 'list']), /sess1/);
   assert.match(out.text(), new RegExp(`WORKTREE\\s+final commit [0-9a-f]+ on ${branch}; the worktree folder is removed`), 'the Ended text for this path, pinned');
 });
+
+// F399 (Addendum 2026-11-25d): the two facts the Result and Audit tabs used to ask the gate sidecar and git for are now written to the spine at the moment they happen.
+test('F399: a green worktree run writes `fence` {held, blocked} and `work-committed` {branch, commit, folderKept} to its own spine', async (t) => {
+  const f = await session(t);
+  const marker = join(f.worktree, 'src', 'mod.mjs');
+  const provider = scriptedProvider([
+    { text: 'scout: src/mod.mjs has no MARKER_OK yet' },
+    { text: planFor() },
+    { toolCalls: [tcall('t1', 'shell_write', { path: marker, content: 'export const x = 1;\nMARKER_OK\n' })] },
+    { text: 'wrote the marker' },
+  ]);
+  const out = sink(); const err = sink();
+  const rc = await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec)], { provider, env: {}, out: out.push, err: err.push, runlistHome: tmp(t, 'p6-home-') });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  const spineDir = join(f.into, 'p6-worktree-job-bareloop');
+  const spineFile = readdirSync(spineDir).find((n) => /^u-.*\.jsonl$/.test(n) && !n.includes("gate-audit"));
+  const recs = readFileSync(join(spineDir, String(spineFile)), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const fence = recs.filter((r) => r.type === 'fence');
+  assert.equal(fence.length, 1, 'one fence record per leg');
+  assert.equal(fence[0].held, true);
+  assert.equal(fence[0].blocked, 0, 'nothing was denied');
+  const wc = recs.filter((r) => r.type === 'work-committed');
+  assert.equal(wc.length, 1);
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.equal(wc[0].branch, branch);
+  assert.equal(wc[0].commit, git(f.repo, ['rev-parse', '--short', branch]), 'the commit the run printed');
+  assert.equal(wc[0].folderKept, false, 'a green with no door removes the folder');
+});

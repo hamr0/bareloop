@@ -1,7 +1,7 @@
 // R10 (fwdloop M10 am16 (1)): the ONE paid call that suggests, per `~` rule, a check from bareguard's list. It runs over bareloop's own structured ladder (`askStructured`: the ceiling
 // is read before the call, one retry on an unusable reply, cut-off and malformed arguments are named reds, the answer is logged scrubbed), thinking as the drafter's (off).
 // An unusable answer is NOT a guessed check: every rule then reads "I can't check this" (fwd: "one retry on an unusable answer, then every guardrail reads I can't check this").
-import { askStructured, makeCostBook } from './authorflow.js';
+import { askStructured, makeCostBook } from './ask.js';
 import { suggestChannel, suggestUserText, rowsFromAnswer } from './checkpick.js';
 
 /** the label of the call, as the drafting book and the draft log see it */

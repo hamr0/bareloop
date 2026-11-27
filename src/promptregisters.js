@@ -42,7 +42,7 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/authorflow.js', name: 'AUTHOR_SYSTEM' }),
   Object.freeze({ file: 'src/authorflow.js', name: 'REVISE_INSTRUCTION' }),
   Object.freeze({ file: 'src/authorflow.js', name: 'STRUCTURE_INSTRUCTION_TOOL' }),
-  Object.freeze({ file: 'src/authorflow.js', name: 'STRUCTURE_INSTRUCTION_TEXT' }),
+  Object.freeze({ file: 'src/ask.js', name: 'STRUCTURE_INSTRUCTION_TEXT' }),
 
   // src/authorflow.js — the confirm turn (PRD item 33 M3 piece 4)
   Object.freeze({ file: 'src/authorflow.js', name: 'CONFIRM_SYSTEM' }),

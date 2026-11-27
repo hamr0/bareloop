@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mintParts } from './helpers/mint-status.js';
 import { fileURLToPath } from 'node:url';
 
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
@@ -97,6 +98,25 @@ test('page Audit: legDividerEl paints the server\'s code-owned text between rule
   assert.match(groups, /dv\.beforePart >= boxes\.length\) container\.appendChild\(legDividerEl\(dv\)\)/, 'a leg with no part yet closes the list');
 });
 
+test('page Audit: a leg that only re-ran the final check shows ONE plain line under its divider (state dot + word + the server\'s words); a divider without it shows none (P2, 2026-11-26g)', () => {
+  const doc = fakeDoc();
+  const escapeXml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // eslint-disable-next-line no-new-func
+  const { legDividerEl } = new Function('document', 'escapeXml', `${fnSrc('stateDotHTML')}\n${fnSrc('checkOnlyHtml')}\n${fnSrc('legDividerEl')}\nreturn { legDividerEl: legDividerEl };`)(doc, escapeXml);
+  const text = 'final check only: every check already passed, nothing left to do';
+  const withLine = legDividerEl({ leg: 3, text: 'stopped: you stopped it · resumed 2026-11-25 10:00', checkOnly: { sign: '\u2713', word: 'passed', text } });
+  assert.equal(withLine.children.length, 1, 'one line under the divider');
+  const line = withLine.children[0];
+  assert.equal(line.attrs['data-testid'], 'audit-leg-checkonly-3');
+  assert.match(line.innerHTML, /class="dot green"/);
+  assert.match(line.innerHTML, /<b class="st-word">passed<\/b>/);
+  assert.ok(line.innerHTML.includes(text));
+  const red = legDividerEl({ leg: 2, text: 'x', checkOnly: { sign: '\u2717', word: 'failed', text: 'final check only: Goal not met.' } });
+  assert.match(red.children[0].innerHTML, /class="dot red"/);
+  // a normal leg (and any run nobody resumed) has no checkOnly: nothing under the divider
+  assert.equal(legDividerEl({ leg: 2, text: 'stopped: you stopped it · resumed 2026-11-25 10:00' }).children.length, 0);
+});
+
 test('page Audit (flat): a divider row is placed by time — before the first call made at or after the leg picked up — and never counted as a filterable row', () => {
   const src = fnSrc('renderAudit');
   assert.match(src, /dividerAtMs\(pendingDividers\[0\]\) <= Date\.parse\(r\.time\)/);
@@ -113,7 +133,7 @@ test('page map: a part its leg\'s halt cut off reads STOPPED (the existing state
     stepPart(3, { occurrence: 1 }),
     stepPart(3, { occurrence: 2, tryNumber: 2, continued: false }),
   ];
-  const boxes = buildOrderedBoxes(parts, false);
+  const boxes = buildOrderedBoxes(mintParts(parts));
   assert.deepEqual(boxes.map((b) => b.state), ['done', 'stopped', 'done', 'done', 'done']);
   assert.equal(boxes[1].attempts[0].outcome, 'stopped');
   const num = stepNumberIndices(boxes);
@@ -124,10 +144,30 @@ test('page map: a part its leg\'s halt cut off reads STOPPED (the existing state
   assert.doesNotMatch(stepTitleText(num[1], boxes[1]), /✓/);
 });
 
-test('page card: the stopped part says why, in words, beside its figures', () => {
+test('page card (2026-11-26k): a part its halt cut off says only the reason beside its figures; the state word is the server\'s, never a fixed "stopped" prefix', () => {
   // eslint-disable-next-line no-new-func
   const f = new Function('liveWallPhrase', 'duration', 'liveSpendText', 'panelMoney', 'attemptChecksLine', 'escapeXml', `${fnSrc('partLine1Text')}\nreturn partLine1Text;`)(
     () => '', (ms) => `${ms}ms`, () => '', (n) => `$${n}`, () => '', (x) => x);
-  assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /stopped &mdash; money cap/);
+  assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /5ms &middot; \$3 &middot; money cap$|&middot; money cap$/);
+  assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'time cap' }, {}), /stopped/);
   assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
+});
+
+test('page glyph (2026-11-26j): every part and attempt wears the sign the SERVER minted (stopped, capped, failed, passed, multi-try); the page derives none', () => {
+  const { buildOrderedBoxes } = loadMap();
+  const loadGlyph = () => {
+    const start = PAGE.indexOf('function escapeXml');
+    const end = PAGE.indexOf('function renderStepMap(');
+    // eslint-disable-next-line no-new-func
+    return new Function(`${PAGE.slice(start, end)}\nreturn { partResultGlyph: partResultGlyph, buildOrderedBoxes: buildOrderedBoxes };`)();
+  };
+  const { partResultGlyph } = loadGlyph();
+  const strip = (s) => String(s).replace(/<[^>]+>/g, '');
+  const glyphOf = (part) => { const [m] = mintParts([part]); const box = buildOrderedBoxes([m])[0]; return strip(partResultGlyph(m, box)); };
+  assert.equal(glyphOf(stepPart(2, { outcome: 'escalated', stopReason: 'you stopped it', attempts: [{ n: 1, outcome: 'stopped' }] })), '■');
+  // capped: its word and its sign agree now (was ✗ against the ■ word)
+  assert.equal(glyphOf(stepPart(2, { outcome: null, stopReason: 'money cap', attempts: [{ n: 1, outcome: 'stopped' }] })), '■');
+  assert.equal(glyphOf(stepPart(3, { outcome: 'escalated', attempts: [{ n: 1, outcome: 'escalated' }] })), '✗');
+  assert.equal(glyphOf(stepPart(1)), '✓');
+  assert.equal(glyphOf(stepPart(4, { outcome: 'green', attempts: [{ n: 1, outcome: 'escalated' }, { n: 2, outcome: 'green' }] })), '✗✓');
 });

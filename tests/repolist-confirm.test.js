@@ -1,7 +1,8 @@
 // Addendum 2026-11-15 (d) piece 4: a repo job's confirm turn plans the goal only. What the model sends as checks, gaps and questions is discarded by code; the confirm card shows the job's rows (the `$ [default]` guards and the fence), never an AI prose check.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runConfirmTurn, makeCostBook, GREEN_QUESTIONS, CONFIRM_TOOL_NAME, confirmPrompt, authorPrompt } from '../src/authorflow.js';
+import { runConfirmTurn, GREEN_QUESTIONS, CONFIRM_TOOL_NAME, confirmPrompt, authorPrompt } from '../src/authorflow.js';
+import { makeCostBook } from '../src/ask.js';
 import { authorCloseForJob } from '../src/authorjob.js';
 import { planFromConfirm } from '../src/panel/jobplan.js';
 

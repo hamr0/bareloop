@@ -87,6 +87,8 @@ const GREEN_ONLY = [
   [path.join('panel', 'importroutes.js'), "r.outcome === 'green'", 'a bridge history row of an imported bundle'],
   // a different thing named outcome: a STEP's, a fix attempt's, the fix loop's own result (never the run's ending)
   ['replay.js', "a.outcome === 'green'", 'a fix attempt\'s own result'],
+  [path.join('panel', 'status.js'), "if (a.outcome === 'green') return pick('passed');", 'a try\'s own result: replay normalizes every fix/step try to green|red (already-green and satisfied both read green there), so a try is never already-green'],
+  [path.join('panel', 'server.js'), "part.outcome === 'green' || !Array.isArray(part.attempts)", 'a fix part\'s outcome is its last try\'s green|red (replay), never the run\'s already-green'],
   ['planrun.js', 'res.outcome === \'green\'', 'a step\'s own result'],
   ['planrun.js', "fixOutcome", 'the fix loop\'s own result; the run ending is decided from it just below'],
   ['reuse.js', "e.type === 'step-end' && e.outcome === 'green'", 'a step-end record\'s own result'],

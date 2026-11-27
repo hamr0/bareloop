@@ -39,18 +39,8 @@ import {
   DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration, catalogueForLang,
   LEGACY_PARAMS, offeredOptional,
 } from '../src/authoring.js';
-import {
-  DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
-  MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
-  REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
-  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS,
-  questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
-  LANGUAGE_PICK_FIELD, CONFIRM_MENU,
-  PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
-  renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose, askStructured,
-} from '../src/authorflow.js';
+import { DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS, MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL, QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS, questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS, LANGUAGE_PICK_FIELD, CONFIRM_MENU, PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool, catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock, renderSeedReadBlock, buildReviseTurn, assertReviseTurn, applyGenreEnv, resolveSourcePrefixes, makeLoopGenerate, authorClose } from '../src/authorflow.js';
+import { REVISE_RED_CAP, renderRejectBlock, makeCostBook, askStructured } from '../src/ask.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
 import { scanSecrets } from '../src/validate.js';
@@ -396,6 +386,16 @@ test('authorClose: writeScope reaches the composer prompt end to end (never just
   assert.ok(calls.length >= 1, 'the author call was made');
   const sent = JSON.stringify(calls[0]);
   assert.ok(sent.includes('src/mailer.js'), 'the real fence reaches the model, not a placeholder');
+});
+
+// F389 (run mwt89eey): the files-changed guard's one fill slot is the signed write fence, filled by CODE from writeScope — the model never fills it.
+test('authorClose F389: a repo guard signs allowPrefixes = writeScope even when the model wrote a narrower list, and the prompt has no fill slot', async () => {
+  const listing = { ...baseArgs().listing, files: [...LISTING, 'tests/x.test.js'] };
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration('js', ['src/']) }]);
+  const r = await authorClose({ ...baseArgs(), listing, verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn, writeScope: ['src/', 'tests/'] });
+  const g = r.declaration.stages.find((/** @type {any} */ st) => st.name === 'changed-from-seed');
+  assert.deepEqual(g.params.allowPrefixes, ['src/', 'tests/'], 'the guard equals the Destination, not the model\'s narrower list');
+  assert.ok(!JSON.stringify(calls[0]).includes('<FILL IN>'), 'the repo drafter is given no fill slot');
 });
 
 test('authorClose: a LOCKED or unknown class refuses at $0, before any token', async () => {

@@ -1,0 +1,166 @@
+{
+  "schema": "job-v1",
+  "job": "flights1",
+  "description": "flights1 — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List 3 flights from San Francisco to Los Angeles",
+      "rule": "under $450; not a red-eye; nonstop",
+      "rules": [
+        "under $450",
+        "not a red-eye",
+        "nonstop"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "flights",
+      "value": "https://www.google.com/travel/flights?q=Flights%20to%20LAX%20from%20SFO%20on%202026-11-12%20oneway&curr=USD&hl=en&gl=us"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 0.5,
+  "maxWallMs": 1200000,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - flights: input/flights.txt\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds ONLY {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"text\" and no \"cites\". A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List 3 flights from San Francisco to Los Angeles\n   rule: under $450; not a red-eye; nonstop\n\nJob line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"flights\": exactly 3 results.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - from price — an amount in US dollars, right after \"From\", must be under 450 US dollars\n    - cheapest price — an amount in US dollars, right after \"Cheapest from\", must be under 450 US dollars\n    - departure time — a time, right after \"Departure time:\", must be between 5:00 AM and 9:00 PM\n    - origin — no value to write; the quote you copy must say \"Leaves San Francisco International Airport\"\n    - destination — no value to write; the quote you copy must say \"arrives at Los Angeles International Airport\"\n    - departing date — a date, right after \"departing\", must be between 2026-11-12 and 2026-11-12\n\nThe plan the person confirmed: Confirm line 1 (output/steps/1.json) lists exactly 3 flights, that each listed flight's price is under $450, that each listed flight's departure time is between 5:00 AM and 9:00 PM (the AI's proposal), that each leaves San Francisco International Airport and arrives at Los Angeles International Airport on 2026-11-12 as quoted from the input, and that the input's \\\"Cheapest from\\\" price is under $450.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1-flight-list-facts",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "List exactly 3 flights from San Francisco to Los Angeles",
+              "class": "fact",
+              "source": "flights",
+              "count": {
+                "min": 3,
+                "max": 3
+              },
+              "covers": [
+                1
+              ],
+              "rules": [
+                1
+              ],
+              "facts": [
+                {
+                  "name": "from price",
+                  "shape": "money",
+                  "unit": "US dollars",
+                  "anchor": "From",
+                  "rule": {
+                    "op": "lt",
+                    "value": 450
+                  },
+                  "aiProposal": false
+                },
+                {
+                  "name": "cheapest price",
+                  "shape": "money",
+                  "unit": "US dollars",
+                  "anchor": "Cheapest from",
+                  "rule": {
+                    "op": "lt",
+                    "value": 450
+                  },
+                  "aiProposal": false
+                },
+                {
+                  "name": "departure time",
+                  "shape": "time",
+                  "anchor": "Departure time:",
+                  "rule": {
+                    "op": "between",
+                    "lo": "5:00 AM",
+                    "hi": "9:00 PM"
+                  },
+                  "aiProposal": true
+                },
+                {
+                  "name": "origin",
+                  "shape": "phrase",
+                  "phrase": "Leaves San Francisco International Airport"
+                },
+                {
+                  "name": "destination",
+                  "shape": "phrase",
+                  "phrase": "arrives at Los Angeles International Airport"
+                },
+                {
+                  "name": "departing date",
+                  "shape": "date",
+                  "anchor": "departing",
+                  "rule": {
+                    "op": "between",
+                    "lo": "2026-11-12",
+                    "hi": "2026-11-12"
+                  },
+                  "aiProposal": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The person's ~ rule \"not a red-eye\" cannot be verified from the input: the input holds no \"red-eye\" word. The only thing I could check is the departure time the input does hold (after the input's label \"Departure time:\"), as a between 5:00 AM and 9:00 PM range. That number is MY proposal, not the person's, and it is marked aiProposal on the fact.",
+      "The person's ~ rule \"nonstop\" cannot be verified: the input holds no \"nonstop\" phrase for this search.",
+      "The person's ~ rule \"under $450\" is carried on both money facts (from-price and cheapest-price), quoted from the input using the input's own label words \"From\" and \"Cheapest from\" and the input's own unit \"US dollars\", not the person's words.",
+      "The rule \"not a red-eye\" was written by the person as one thing; the confirmed plan splits the price side of that rule across check #2 (each flight's price) and check #7 (the \"Cheapest from\" price), so both money facts carry ~ rule 1.",
+      "The input's own words were used instead of the person's: the person wrote \"San Francisco\" and \"Los Angeles\", the input writes \"Leaves San Francisco International Airport\" and \"arrives at Los Angeles International Airport\" — those exact phrases are the origin and destination facts.",
+      "The departing date fact uses the input's label \"departing\" (the input writes \"2026-11-12\"), not the person's wording. I gave it a between 2026-11-12 and 2026-11-12 range marked as the AI's proposal, because the input states one date per flight and the fact shape \"date\" takes a rule only as a limit.",
+      "The look could not find any label for a \"nonstop\" phrase in the input, so nothing is checked for it."
+    ],
+    "refused": [
+      {
+        "line": 1,
+        "rule": 2,
+        "reason": "not a red-eye — no check can verify this, because the input holds no \"red-eye\" word; a departure-time range is only the AI's proposal"
+      },
+      {
+        "line": 1,
+        "rule": 3,
+        "reason": "nonstop — the input holds no \"nonstop\" phrase for this search, so no check can verify that the listed flights are nonstop"
+      },
+      {
+        "line": 1,
+        "rule": 4,
+        "reason": "which 3 flights to list (any choice among the many that fit) — choosing WHICH ones is not something a check can verify"
+      }
+    ]
+  }
+}

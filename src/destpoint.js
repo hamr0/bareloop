@@ -6,10 +6,9 @@
 
 import { createRequire } from 'node:module';
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
-import { redactSecrets } from './validate.js';
-import { isTransportFailure } from './transport.js';
+import { redactSecrets, globFolder } from './validate.js';
+import { isTransportFailure, isOutputCutOff } from './transport.js';
 import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
-import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS } from './authorscout.js';
 
 const require = createRequire(import.meta.url);
@@ -111,7 +110,7 @@ export function namedLines(text, { jobLines, files }) {
 
 /**
  * The code and test places the scout reported (`sourcePaths`, `testPaths`) that REALLY exist in the committed tree: a folder (given a trailing /) or a file, in the scout's order, each once, and none that another listed folder already covers (`tests/fixtures/` goes when `tests/` is there).
- * A path that is not a string, is empty, `.`, absolute, climbs out (`..`), holds a glob, or is not in the tree is left out. Anything odd (no facts, a list that is not a list) is `[]`.
+ * A path holding a glob (`*` or `?`) is read as its literal leading folder, the segments before the first one holding a glob (src with a deep glob after it is `src`, tests likewise is `tests`); with no such folder (a bare `*.js`, or a glob first) it is left out. A path that is not a string, is empty, `.`, absolute, climbs out (`..`), or whose file or folder is not in the tree is left out. Anything odd (no facts, a list that is not a list) is `[]`.
  * @param {any} facts the scout's facts @param {readonly string[]} files the committed tree @returns {string[]}
  */
 export function scoutCodePaths(facts, files) {
@@ -121,8 +120,10 @@ export function scoutCodePaths(facts, files) {
     const list = facts !== null && typeof facts === 'object' && Array.isArray(facts[key]) ? facts[key] : [];
     for (const raw of list) {
       if (typeof raw !== 'string') continue;
-      const e = raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '');
-      if (e === '' || e === '.' || e.startsWith('/') || e.includes('\\') || /[*?]/.test(e) || e.split('/').includes('..')) continue;
+      const t = raw.trim().replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+      if (t.startsWith('/') || t.includes('\\') || t.split('/').includes('..')) continue;
+      const e = globFolder(t) ?? t;
+      if (e === '' || e === '.') continue;
       const entry = files.includes(e) ? e : (files.some((f) => f.startsWith(`${e}/`)) ? `${e}/` : null);
       if (entry !== null && !out.includes(entry)) out.push(entry);
     }

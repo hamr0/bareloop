@@ -59,6 +59,14 @@ test('scoutCodePaths: only the scout\'s paths that really exist in the committed
   for (const facts of [null, undefined, {}, { sourcePaths: 'src/' }, { sourcePaths: [], testPaths: [] }, { sourcePaths: ['ghost/', '..', '/etc', '', '.', 5, null] }]) assert.deepEqual(dp.scoutCodePaths(facts, FILES), [], JSON.stringify(facts));
 });
 
+test('scoutCodePaths: a glob path is read as its literal leading folder; one with no leading folder is dropped (F404)', () => {
+  const tree = ['src/a.js', 'tests/a.test.js', 'package.json'];
+  assert.deepEqual(dp.scoutCodePaths({ sourcePaths: ['src/**/*.js'], testPaths: ['tests/**/*.test.js'] }, tree), ['src/', 'tests/']);
+  assert.deepEqual(dp.scoutCodePaths({ sourcePaths: ['./src/*.js', 'src/a?.js'], testPaths: [] }, tree), ['src/']);
+  assert.deepEqual(dp.scoutCodePaths({ sourcePaths: ['*.js', '**/x.js', '?.js'], testPaths: ['ghost/**/*.js'] }, tree), []);
+  assert.deepEqual(dp.scoutCodePaths({ sourcePaths: ['../src/**/*.js', '/src/**'] , testPaths: [] }, tree), []);
+});
+
 test('destinationHoldsCode: Destination covers at least one committed file under a scout path (no AI)', () => {
   const holds = (d, e = SCOUT) => dp.destinationHoldsCode(d, e, FILES);
   assert.equal(holds('docs/'), false);

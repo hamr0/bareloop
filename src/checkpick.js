@@ -9,7 +9,7 @@
 import { rubricVocabulary } from 'bareguard';
 import { plainWords, OFFERED } from './checkwords.js';
 import { KEPT_WORDS } from './pickrecord.js';
-import { lineRules } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 
 export { plainWords, OFFERED };
 
@@ -47,7 +47,7 @@ export function guardrailSectionCount(g) {
 }
 /** the first "<N> bullets / list items / items / lines / points" in a guardrail (digits, or one..ten), or null @param {unknown} g @returns {number|null} */
 export function guardrailItemCount(g) {
-  const m = typeof g === 'string' ? /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:\w+\s+)?(?:bullets?|bullet\s+points?|list\s+items?|items?|lines?|points?)\b/i.exec(g) : null;
+  const m = typeof g === 'string' ? /\b(?<![$€£\d.,])(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:\w+\s+)?(?:bullets?|bullet\s+points?|list\s+items?|items?|lines?|points?)\b/i.exec(g) : null;
   if (!m) return null;
   return /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1].toLowerCase()];
 }

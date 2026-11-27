@@ -13,7 +13,7 @@ import { jobSpecHash, validateJob } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
-import { CHECK_LIMIT_MS } from '../src/kinds.js';
+import { CHECK_LIMIT_MS } from '../src/shell.js';
 import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 import { endedFor } from '../src/panel/server.js';
 import { statusFor } from '../src/panel/status.js';

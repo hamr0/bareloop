@@ -1,0 +1,139 @@
+{
+  "schema": "job-v1",
+  "job": "rubric-2",
+  "description": "rubric-2 — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List the last 3 release",
+      "rule": "every version quoted from the changelog; under 120 words",
+      "rules": [
+        "every version quoted from the changelog",
+        "under 120 words"
+      ]
+    },
+    {
+      "n": 2,
+      "text": "Write a one-paragraph summary",
+      "rule": "under 30 words",
+      "rules": [
+        "under 30 words"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "Changelog",
+      "value": "/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/3d7a2a7d-7249-4427-8fc5-3992d770f3a3/scratchpad/live1b/input/CHANGELOG.md"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 0.5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - Changelog: input/CHANGELOG.md\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List the last 3 release\n   rule: every version quoted from the changelog; under 120 words\n2. Write a one-paragraph summary\n   rule: under 30 words\n\nThe plan the person confirmed: The run writes output/steps/1.json and output/steps/2.json where 1.json's text lists 3 releases, is under 120 words, and every version it quotes is backed by a quote copied from the Changelog input, and 2.json's text is one paragraph under 30 words.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1-releases",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "under 120 words",
+              "class": "countable",
+              "check": "maxWords",
+              "value": 120,
+              "covers": [
+                1
+              ]
+            },
+            {
+              "text": "every version quoted from the changelog",
+              "class": "countable",
+              "check": "cited",
+              "source": "Changelog",
+              "covers": [
+                2
+              ]
+            },
+            {
+              "text": "list the last 3 releases",
+              "class": "countable",
+              "check": "minClaims",
+              "value": 3,
+              "source": "Changelog",
+              "covers": [
+                3
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "line-2-summary",
+        "kind": "rubric-step",
+        "fromLine": [
+          2
+        ],
+        "params": {
+          "step": 2,
+          "parts": [
+            {
+              "text": "under 30 words",
+              "class": "countable",
+              "check": "maxWords",
+              "value": 30,
+              "covers": [
+                4
+              ]
+            },
+            {
+              "text": "one-paragraph summary",
+              "class": "countable",
+              "check": "maxLines",
+              "value": 1,
+              "covers": [
+                5
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The person asked that the 3 releases listed be the LAST 3; the checks only count 3 items and cannot tell whether they are the most recent ones — nothing checks this.",
+      "The person asked that the summary paragraph be a good summary of the releases; the checks count words and paragraphs but cannot judge the writing — nothing checks this.",
+      "The rules 'every version quoted from the changelog' and 'a one-paragraph summary' were phrased in prose; I expressed them as countable checks the person did ask for (a quote backed by the named Changelog input for line 1, and a single-paragraph count for line 2). If a stricter reading was meant than counting, no kind in this catalogue can express it."
+    ]
+  }
+}

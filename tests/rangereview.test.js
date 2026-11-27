@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { draftRefusal, rangeTokens, manyTokensRefusal, changeRefusal, resolveRange, writeRangeDiffs, rangeNoteOfSpec, DIFF_DIR } from '../src/rangereview.js';
+import { draftRefusal, rangeTokens, manyTokensRefusal, changeRefusal, resolveRange, writeRangeDiffs, rangeNoteOfSpec } from '../src/rangereview.js';
+import { DIFF_DIR } from '../src/repocite.js';
 import { makeRangeWorld, out } from './range-world.mjs';
 import { gitInPatient } from './helpers.js';
 

@@ -5670,3 +5670,707 @@ Approved by hamr 2026-11-24 after a passing $0 POC (`.claude/scratch/poc-current
 - **Whole-run on purpose, untouched:** `chainSpend`, `legsWallMs`, `floorsFromRecords`, money folds, replay's part filters and trip windows, parts and leg dividers.
 - **Guard.** `tests/legs-current-guard.test.js` fails if a src file other than `legs.js` scans a spine for the last job-end, escalation or money-halt outside a named allow-list (each entry carries its reason).
 - **Left for a ruling:** the Runs list's `liveStepWhy` still reads the whole spine's last plan (a leg that has not accepted its plan yet shows the earlier leg's "step N of M"); `src/learn.js` reads the whole spine's last escalation (a resumed run that ends green after a provider-red leg may be set aside as noise).
+
+## Addendum 2026-11-25: refusal under its box (copied from fwd v0.38.0, M19 am14b) — RULED by hamr
+
+Build spec. A fresh session can build from this alone. Finding: F400 (docs/wiki/FINDINGS.md). PRD entry: "fwd v0.38.0 swap". Cites read at main 7bc2719b.
+
+**Rulings (hamr 2026-11-25).**
+
+- Copy fwd am14b's look. Six boxes get a red line (hamr "go 1"): Job, Inputs, Cap $, Model, Destination, Job name.
+- Every other refusal stays under the Draft button (hamr "1", like fwd). That includes flow type, MCP pick and the ticket list address.
+- Copy from fwd's tag v0.38.0 only: `git -C ../fwdloop show v0.38.0:src/panel/index.html` (`paintRefusal` / `clearRefusal`, about lines 7060-7080) and `bin/fwdloop` (`refuseDraft`, about line 154).
+- Not copied: fwd's F259 fix and its 23777c8b fix (neither bug exists here, F400); fwd's step-with-no-`~` checks and the "no guardrail of yours" removal (bareloop has no hitl step class); typecheck, `isRec`, `buildLine` (fwd internals); the Ask part of the hint.
+
+**S1. Typed refusal, one shape.**
+
+- Shape: `{box, words}`. `box` is one of `job | inputs | capUsd | model | dest | name | null`.
+- The box is set at the refusing call site as a literal. It is never read from the words and never guessed.
+- One small constant table owns the legal box names (one owner). Every site uses it.
+- Start route: POST /api/author/start answers `{ok:false, error, box}`. `error` stays for old callers and the tests.
+- Mapping, start route (src/panel/authorroutes.js and src/panel/authorsession.js):
+  - name: job name not a slug (authorsession.js:496); job name taken (497-499); reuse with a changed job and a taken name (authorroutes.js:411).
+  - model: `judgePick` fails (authorsession.js:501-502).
+  - job: `parseJobBlock` error (authorsession.js:504-505; the words come from src/jobblock.js:37, 49, 52, 61); `REPO_RUBRIC_WORDS` (authorsession.js:509).
+  - inputs: `cardInputs` error (authorsession.js:506-507); `parseInputs` error (authorroutes.js:438-439); `proveInputFiles` error (authorroutes.js:196); `ticketBoxProblem` (authorroutes.js:188-189); tickets "nothing new" (authorroutes.js:210).
+  - dest: "Destination is required" (authorsession.js:510); `startDestinationProblem` (authorroutes.js:199-200).
+  - capUsd: "$ cap is required and must be a positive number" (authorsession.js:511-513).
+  - null (stays under the Draft button): a session already live (authorroutes.js:388 and 197); no such run to reuse (405); waiting for Accept (416); `OLD_JOB_REUSE_WORDS` (427, and 177 in `startSession`); `validateReuseCard` error (419-420); check type (authorsession.js:500); thinking value (503); time cap; flow error incl. "Pick an MCP." and the ticket list address (authorroutes.js:183, `resolveFlowCard` authorsession.js:~338-352); schedule error (authorroutes.js:194); revise refusal (authorroutes.js:168-169, src/revises.js:39).
+- Session, before any AI call only: `refuse()` (authorsession.js:873-879) records `state.refusal = {box, words}` beside `state.error`.
+  - Boxed: no model, provider cannot be built, key not set, key looks wrong -> model (896, 899, 904, 916); destination -> dest (929); range or branch `draftRefusal` -> job (934-936); no `~` rule -> job (939-942); prepare-source stop, language refusal, non-repo source -> inputs (994, 1022, 1076).
+  - Everything else in `refuse()` (old job 920, look 1093, spec, signing, draft stop, internal error, and so on) -> null.
+  - The builder must confirm each boxed one really runs before any AI call. If one does not, it stays null.
+- The drafting list keeps its ✗ step and detail exactly as today.
+
+**S2. Page: one writer.**
+
+- One function paints a refusal (fwd's `paintRefusal` shape). Start refusals and session refusals both go through it.
+- A box refusal: its words in a red `.jf-err` line under the box (reuse the existing style, index.html:603-604; box ids jf-job, jf-inputs, jf-cap-money, jf-model, jf-dest, jf-name), and `Not drafted: fix the red line above.` in `#chat-card-error`.
+- A null refusal: its words in `#chat-card-error`, as today.
+- Painted once per refusal key (session id or start attempt, plus box, plus words).
+- Cleared on the next Draft click (`doStart`, index.html:6588).
+- No poll tick and no `renderActions` call may wipe a standing refusal's box line or pointer. Today `renderActions` blanks `#chat-card-error` every tick (index.html:6543).
+- **Amendment 2026-11-25 (hamr "2"):** a SESSION refusal with box null ALSO shows its words under the Draft button (`#chat-card-error`), like a start refusal with box null; the drafting list keeps its ✗ step. This supersedes the 2026-10-04 "a session stop is shown once, in the progress line" note for refusals only (phase refused); other session stops and errors are unchanged.
+
+**S3. Job box hint.** Under the Job box, for both job types: `One step per line. A ~ line under a step is its rule; add at least one.` The range tip (`jf-range-tip`, index.html:986) is unchanged.
+
+**S4. Count-row words pinned (test only, fwd am15a).** One test pins the list-line count words on every surface that shows them (card, Audit, worker text): `exactly N items`, `at least N items`, `at most N items`, and `item` for 1. No wording change.
+
+**Tests (fail-first: each shown red on today's source, then green).**
+
+- A table test of the start route: the right box for every mapped refusal, and null for the null list.
+- A session test: each boxed session refusal sets `state.refusal` with its box, and the drafting step still shows ✗.
+- A browser page test: a refusal paints under its box plus the pointer; a null one paints in `#chat-card-error`; a poll tick does not wipe it; the next Draft click clears it.
+- The hint text (S3).
+- S4.
+
+**Done means.**
+
+- typecheck, build:types and full `npm test` exit 0 on the final commit (quote the exit codes and the last line).
+- CHANGELOG [Unreleased] lines for S1-S3 (S4 under Development only).
+- `bareloop.context.md` updated if the start route's answer shape is documented there.
+- `prompt-commit-check` passes.
+- Not checked by us: phone width of the new red lines (hamr's DevTools).
+
+## Addendum 2026-11-25b: F399 POC pre-registration (frozen before any data; hamr picked option 1)
+
+**Ruling (hamr 2026-11-25): option 1.** A run's checks and its output each get ONE reader over the run's spine (the log), current leg only, used by every view. No new state file: run-state.json keeps only test results and the memo (Addendum 2026-11-24 Part A item 2). A new spine record is added only where today's records lose a fact. Simple > clever and cleaner.
+
+**Question.** Can two readers, `checksOf` and `outputOf`, built only from today's spine records and the run folder's files, give every fact today's views show, for every job kind, for the run's current leg?
+
+**Corpus.** Every real run listed in hamr's `~/.config/bareloop/runs.jsonl` whose spine still exists, read-only. Spines and run folders are COPIED to the POC scratch folder first, never read in place or written. Report the count per job kind: D change, D review, R file/URL/sheet, shape, tickets, already-green resumes. A kind with fewer than 3 runs is named UNDERPOWERED in the result, never counted as a pass for that kind.
+
+**Method.** A throwaway git worktree of the branch in `.claude/scratch/poc-f399/` (never the original tree). The POC readers live there only and never ship. For each run, the readers' answer is compared with what today's code shows, by calling today's real view functions on the same copied spine: Result tab, Audit checks box, replay CLOSE line, and the reuse reader (`src/reuse.js` readTry). $0: no provider call. The POC runs with no API key in its env and asserts that.
+
+**Compared fields.**
+
+- Checks: per row, the job line, the rule or stage, and the state (passed / failed / not checked / not reached), plus shape items and their failures; file checks (exit-eval); $ defaults.
+- Output: kind, the files or paths made, staged, or delivered to Destination, and whether they landed.
+
+**PASS (all must hold).**
+
+1. 0 mismatches on every run, except where today's view is a KNOWN bug. On runs mwvwcxvy, mwue75ih and mvtatlxw the reader must match the current leg's final close (`finalCloseOf`, `src/legs.js`); today's wrong value counts as today's bug, not a reader miss.
+2. Every mismatch is classed as one of: reader bug, today's-view bug (named, with run id and screen), or fact missing from the records. The "fact missing" list is the list of new spine records the build needs, each named with the run it was found on.
+3. Simple bar: each reader is at most 150 lines, and job kinds fork in ONE table per reader, not in scattered ifs. Line counts and the table are reported.
+
+A reader bug left at the end is a FAIL. A FAIL goes back to hamr, no build. A FAIL is reported as FAIL; a second round, if any, is pre-registered anew, never re-tuned.
+
+**Results** go to `.claude/scratch/poc-f399/RESULTS.md` with a verdict line `VERDICT: PASS` or `VERDICT: FAIL`, the per-kind counts, every mismatch with its class, and the missing-facts list.
+
+## Addendum 2026-11-25c: F399 POC round 2 pre-registration (frozen before round 2 runs; hamr "1")
+
+Round 1 ended `VERDICT: FAIL` (F401). Addendum 2026-11-25b stays frozen and unedited. Round 2 is the same as 2026-11-25b in every rule (question, corpus, method, compared fields, PASS 1-3, FAIL rule, results format), with ONE change:
+
+- `outputOf` reads the WHOLE run (every leg), because a run's output accumulates across legs on its work branch. `checksOf` stays current leg only.
+
+Nothing else changes:
+
+- Same corpus: the copies already in `.claude/scratch/poc-f399/corpus`. No run is added, none removed.
+- Same bars: each reader at most 150 lines, job kinds fork in ONE table per reader.
+- Same mismatch classes: reader bug, today's-view bug, fact missing from the records. The today's-view bugs found in round 1 (F401) stay classed as today's-view bugs.
+
+Results go to `.claude/scratch/poc-f399/RESULTS-round2.md` with `VERDICT: PASS` or `VERDICT: FAIL` first. A round-2 FAIL goes back to hamr, no build. No round 3 without a new pre-registration.
+
+## Addendum 2026-11-25d: F399 build — one checks reader, one output reader, every view reads them (hamr: pass, 2026-11-25)
+
+**Ruling (hamr 2026-11-25).** Round 2 of the POC is PASS (F402). Rule 1 and rule 2 of Addendum 2026-11-25b clashed. Read strictly, rule 1 failed. Read as meant, it passed: all 70 differences are today's-view bugs, and rule 2 classes them. hamr called it a pass. This is a ruling, not a re-tune. Build approved: "pass, and make sure you parity match what's there with the new one, make a checklist". Addenda 2026-11-25b and 2026-11-25c stay frozen.
+
+**Design (simple).**
+
+- `checksOf(spine, runDir)` reads the CURRENT leg. `outputOf(spine, runDir)` reads the WHOLE run (every leg), because the edits and files of a run pile up on its work branch.
+- One new file: `src/runread.js`. Why not `src/legs.js`: legs.js says it is pure (no imports, no file IO), and `outputOf` checks files on disk (lstat, sha256). runread.js imports legs.js (`currentLegView`, `finalCloseOf`) and keeps them where they are. Why a file and not a folder: two readers, about 150 lines each, one tidy place.
+- Job kinds fork in ONE table per reader: `STAGE_ROWS` (checksOf, by close-stage kind) and `OUTPUT` (outputOf, by record type). The POC's one `files-changed` check outside the table moves into the table.
+- If runread.js importing `src/panel/jobplan.js` makes an import cycle (replay.js and reuse.js are lower than the panel), the plan-row join (`planRows`) stays in jobplan.js `auditChecksOf`, fed by checksOf. runread.js then imports nothing from the panel. The builder checks this first.
+- Every view calls the two readers. The old per-view scans are DELETED in the same commit as the switch, never left beside the new readers. Views to switch: Result tab (`getRunResult`, `genericResultOf`), Audit checks box (`auditChecksFor`), Run tab checks line (`checksLineOf`), replay (`resolveClose`), reuse (`readTry`), ticket grid, and anything else the checklist below names.
+- Not moved (reason in each line): history views stay on replay parts (per-try checks, per-iteration closes, rounds drill-down) because they show every try on purpose. The close-trend governor and the resume checkpoint reader in reuse.js stay (engine and arbiter territory).
+- Guard test `tests/runread-guard.test.js`, same style as `tests/legs-final-close.test.js:84` and `tests/legs-current-guard.test.js:34` (a walk of src, exact scan counts per file, an `ALLOWED` map with a `why` per entry, a stale entry fails too). It fails if a src file outside runread.js scans spine records of these types by hand: `check-run`, `exit-eval`, `close-verdict`, `outer-close`, `close-precheck`, `rubric-evidence`, `output-judged`, `review-findings`, `destination-written`, `report-staged`, `attempt-diff`, `work-branch`, `destination-refused`, and the three new ones below. Starting allow-list, each with its reason:
+  - src/legs.js: owner of `finalCloseOf`.
+  - src/replay.js: history parts (attempts, per-iteration close, fix loop). History is not "the reading".
+  - src/panel/server.js: rounds drill-down (`stepRoundsPage` 3088, `closeStageDetail` 3169, exit-eval stamps 3115). Per-round history.
+  - src/reuse.js: resume checkpoint (603, 630) and the close-trend governor `readGrade` (726-740). Engine and arbiter territory; moving it would change close semantics.
+  - src/learn.js (324-390): builds learning cards from per-try failure events at run end. Not a view.
+  - src/userrun.js (1346, 2192, 2228, 2271-2275): writer-side lines in the run itself, and the leg's own stdout readout.
+  - src/planrun.js, src/ralph.js, src/run.js, src/kinds.js: writers. They emit these records; they do not read them back.
+
+**Three new spine records (report-only; no verdict path reads them; written at the moment the fact happens).**
+
+1. `fence {held, blocked}`. Today: only in the gate-audit sidecar, scoped by run windows (`scopedAuditRows` server.js:2715, `writesBlocked` behaviour.js:131). Writer call site: src/userrun.js right after the gate-audit move (2169-2181), from the leg's own `audit` rows already in memory there: `emit('fence', { held: true, blocked: writesBlocked(audit) })`. `held` is true because the row today says "held" whenever the gate's record exists. Written once per leg. The reader sums `blocked` over every leg, because today's Audit fence row counts every leg's window. This is the one place `checksOf` reads past the current leg; the code says so. No sidecar, no record, as today ("the gate's record for this run is missing").
+2. `shape-items {step, line, items}`. Today: a red run keeps shape item failures only as gap prose (run mwnbs3np), parsed back with `shapeItemOfPlain` (server.js:1311-1318, a copy in the POC reader). `items` are the same raw strings a final close keeps in `stages[].items` (`#<i>:<path>:<reason>`; built at src/kinds.js:1827). Writer call sites: next to the `close-verdict` emit at src/ralph.js:758 and the `outer-close` emit at src/planrun.js:4276, from the close's stages. The builder first reads kinds.js:1827 to see why a red close carries no `items` today, and says so in the commit.
+3. `work-committed {branch, commit, folderKept}`. Today: a D change run has no record of its final commit; `work-branch` (planrun.js:2181) has branch and base only, and the Result "The work" box asks git live (`workOf` server.js:1739). Writer call sites: src/userrun.js:2231 (the green final commit; `commit` = `fin.sha`, null when nothing was committed or the commit failed; `folderKept` true when a door keeps the folder or removal failed) and src/userrun.js:1357 (the door accept's commit). The branch stays on every green by today's code, so no separate "kept" field. Whether the branch STILL exists later is git's live answer: that one `git rev-parse` stays, inside runread.js, and is the only git call there.
+
+**Old runs are not repaired. Each missing record has a named fallback to today's source, so an old run reads as it does now.**
+
+- no `fence`: the gate-audit sidecar scoped by the run's windows (today's `scopedAuditRows`); no sidecar: "record missing", as today.
+- no `shape-items`: the close-verdict gap prose through `shapeItemOfPlain`, as today (server.js:1311).
+- no `work-committed`: branch from `work-branch`, final commit from git live (`workOf` server.js:1747), as today.
+
+**The 5 today's-view bugs. Each is fixed by the switch. Each gets a fail-first test on a fixture built from that run's REAL copied spine (corpus: `.claude/scratch/poc-f399/corpus`). The builder commits a trimmed copy under `tests/fixtures/` and the test never reads `.claude/scratch`. The test is shown red on today's code before the switch.**
+
+1. Result tab shows `none` for a green run's rows. Run mv5e1ktb (also mv76m82c, mv97ju82, mwgjlezb, mwgoxy6n). Cause: `stagePassedIn` server.js:1418 reads `check-run`, not the final close.
+2. Result tab shows `none` for a failed row. Run mv73swnx (also mv76jhj1, mv7qabx4, mv9vzze6, mvcur592, mvdg1xo3, mvh7g2hc, mv9euoam, mv9gm796). Audit says `failed` for the same record. Decision: Result shows `failed` like Audit, because one record must read one way on both screens. hamr confirmed 2026-11-25 (ruling 3): the Result tab shows `failed`, and the test pins `failed`.
+3. An earlier leg merged into a later one. Run muuvmmul (Result), mwtf8p8s (Audit and Result). Cause: `stepChecksOf` server.js:1643 reads `replayRun(records).parts` over the whole spine.
+4. `readTry` `failingStage` reads an earlier red. Run muutlcko (also muvbmk2f, mvkiau8t, mwuxqx4f, mulbz0ny, mvtatlxw). Existing real fixtures `tests/fixtures/audit-grid` (mvtatlxw) can serve for this one.
+5. `readTry` `closeReached` false on an already-green leg. Run mwue75ih (also mwvwcxvy). Real fixtures `tests/fixtures/final-close` and `tests/fixtures/already-green-result` exist.
+
+**PARITY CHECKLIST (hamr's explicit ask).** One line per fact a view shows today about a run's checks or output. Read from the code; each `today:` names the function and line. `new:` names the reader field. `POC:` says whether round 2 compared it (`compared ✓`), did not (`not compared`), or had too few runs (`UNDERPOWERED`). `proof:` is a test name to be written, or "hamr walk" for a look. A fact the POC dropped but whose record has it (stage numbers, verdict words, `iteration`, tags from `planFromSpec`) keeps the whole record field in the built readers. A fact with no home in either POC reader is `GAP-n` (list below), with no home invented.
+
+Run tab
+
+- [x] Run tab · summary row "N run · P passed · F failed · K not reached" · today: checksLineOf server.js:3464 (drawn index.html:3085) · new: checksOf.stages + notReached · POC: compared ✓ · proof: run-checks-line-reads-checksOf · TICKED: tests/f399-parity-runtab.test.js run-checks-line-reads-checksOf (2 tests; mutation: checksOf.stages cut, both red)
+- [x] Run tab · "Checks not run again: same files as the last check at …" · today: checkReusedOf server.js:775 over currentLegView().reused legs.js:113 · new: unchanged, stays currentLegView().reused (a start-pass note, not a result) · POC: not compared · proof: tests/legs-current-guard.test.js (exists) · TICKED: tests/f399-parity-runtab.test.js run-checks-not-run-again-line
+- [x] Run tab · Ended block "Goal met — not delivered" · today: endedForRow server.js:808 reads `destination-refused`; words at endedBase server.js:620-629 · new: outputOf.refused (current leg) · POC: not compared · proof: ended-not-delivered-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js ended-not-delivered-reads-outputOf (mutation: outputOf.refused nulled, red)
+- [x] Run tab · delivered files list (path, bytes, sha256) · today: deliveredOf server.js:1284, used at 2518 · new: outputOf.files role delivered/staged · POC: compared ✓ · proof: run-delivered-list-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js run-delivered-list-reads-outputOf
+- [x] Run tab · Ended block names the kept worktree folder and branch (Resume text) · today: worktreeOfRun server.js:3200 · new: outputOf.landing (`branch`, `folderKept`) · POC: not compared · proof: ended-worktree-reads-outputOf · TICKED: tests/f399-parity-runtab.test.js ended-worktree-reads-outputOf
+- [ ] Run tab · whether a Result tab shows at all · today: resultKindOf server.js:1539 (spec + currentLegView().jobEnd) · new: unchanged, view rule · POC: not compared · proof: hamr walk · → hamr walk
+- [x] Run tab · "Accept" waiting tag and flag · today: doorWaiting reviewdoor.js:83 (server.js:931, 2520) · new: unchanged, door state not a result · POC: not compared · proof: existing needs-tag tests · TICKED: tests/f399-parity-runtab.test.js run-accept-waiting-tag
+
+Result tab (rubric jobs)
+
+- [x] Result · each row's own mark (passed/failed/none) per job line · today: rowResultsFromRecords server.js:1322, applied in getRunResult at 1990-1995 · new: checksOf.planRows + rows · POC: compared ✓ (bugs 1 and 2) · proof: result-rows-green-not-none, result-rows-failed-like-audit (hamr confirmed 2026-11-25) · TICKED: tests/runread-bugs.test.js bugs 1, 2 (fail-first on the pre-change server.js); built parity run
+- [x] Result · the line's passed flag and ✓ · today: stagePassedIn server.js:1418 · new: checksOf.stages · POC: compared ✓ (bug 1) · proof: result-rows-green-not-none · TICKED: tests/runread-bugs.test.js bug 1; tests/part6-result.test.js (line passed reads the final close)
+- [x] Result · row failure words (`why`) · today: rowResultsFromRecords server.js:1322 (`why`) · new: checksOf.rows[].why (GAP-1, ruled) · POC: not compared · proof: result-row-why-parity · TICKED: tests/f399-parity-result-rubric.test.js result-row-why-parity (mutation: checksOf row why dropped, red)
+- [x] Result · unclaimed gap words under a line · today: rowResultsFromRecords server.js:1322, shown at getRunResult 1991 · new: checksOf.unclaimed · POC: compared ✓ · proof: result-unclaimed-reads-checksOf · TICKED: tests/f399-parity-result-rubric.test.js result-unclaimed-reads-checksOf (mutation: unclaimed keyed to the wrong line, red)
+- [x] Result · Not-checked texts per line and at the bottom · today: planFromSpec + proseNotCheckedItems (rubricstep.js:1085) + tiedToLine, getRunResult ~1975 · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: result-notchecked-texts-parity · TICKED: tests/f399-parity-result-rubric.test.js result-notchecked-texts-parity (real mwenvde5, mwndngl5)
+- [x] Result · Saved card: file name, bytes, still there / gone / changed · today: deliveredOf server.js:1284, readDelivered 1372, getRunResult delivered list ~2105 · new: outputOf.files[].state (POC returned a yes/no `landed`; the built reader returns `ok`/`gone`/`changed`) · POC: compared ✓ for landed yes/no only · proof: result-saved-landed-parity · TICKED: tests/f399-parity-result-rubric.test.js result-saved-landed-parity + result-saved-state-words (mutation: outputOf bytes nulled, red)
+- [x] Result · the words "the saved file is gone" vs "the saved file changed after the run" · today: RESULT_FILE_GONE/CHANGED server.js:1356, readDelivered 1372 · new: outputOf.files[].state (GAP-2, ruled) · POC: not compared · proof: result-saved-state-words · TICKED: tests/f399-parity-result-rubric.test.js result-saved-landed-parity + result-saved-state-words
+- [x] Result · which saved file belongs to which job line · today: stepOfDelivered server.js:1407 (name `steps/<n>-date.json`) · new: outputOf.files[].path (line by name) · POC: not compared · proof: result-line-file-parity · TICKED: tests/f399-parity-result-rubric.test.js result-line-file-parity
+- [x] Result · .md files card and the "saved under a new name because X was taken" note · today: mdFiles in getRunResult, RESULT_MD_RENAMED server.js:1359 · new: outputOf.files[].pairedTaken (GAP-2, ruled) · POC: not compared · proof: result-md-renamed-note · TICKED: tests/f399-parity-result-rubric.test.js result-md-renamed-note (planted .md record on real mv5e1ktb)
+- [x] Result · red run: the last file the check read, with its note and gone/changed words · today: readJudged server.js:1391 (`output-judged`) · new: checksOf.judged (GAP-3, ruled) · POC: not compared · proof: result-judged-file-parity · TICKED: tests/f399-parity-result-rubric.test.js result-judged-file-parity (planted red run on real mwndngl5)
+- [x] Result · facts grid: quote, cells, proof, money as read · today: getRunResult 2036-2075, proofOf 1458, moneyAsRead 1484 (`rubric-evidence`) · new: checksOf.evidence (GAP-4, ruled) and outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-facts-grid-parity · TICKED: tests/f399-parity-result-rubric.test.js result-facts-grid-parity (mutation: checksOf.evidence misses the line, red)
+- [x] Result · a text line's answer and its cites · today: getRunResult 2078-2085 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: result-answer-cites-parity · TICKED: tests/f399-parity-result-rubric.test.js result-answer-cites-parity
+- [x] Result · red run: the check's first gap line and "+N more" · today: getRunResult ~2084 (`exit-eval` scan, gapOneLine server.js:3562) · new: checksOf.stepChecks[].detail (GAP-1, ruled) · POC: not compared · proof: result-red-gap-line-parity · TICKED: tests/runread-parity.test.js result-red-gap-line-parity
+- [x] Result · "Findings" box, line "covers A..B · N files", "How it ran" · today: findingsOf server.js:1790, coversOf 1810, ranOf 1827 · new: outputOf.findings (GAP-6, ruled; ranOf reads steps, not checks or output; stays) · POC: not compared · proof: see Review group · TICKED: tests/f399-parity-review.test.js review-covers-parity (covers + How it ran); tests/runread-parity.test.js review-findings-parity (findings)
+
+Result tab (generic: D change, D review)
+
+- [x] Result generic · "The checks" box, each stage's pass/fail word · today: checksOf server.js:1702 (STATUS words from status.js) · new: checksOf.stages · POC: compared ✓ · proof: result-generic-checks-parity · TICKED: tests/f399-parity-result-generic.test.js result-generic-checks-parity (real mvkj03w7, mvy0cx24)
+- [x] Result generic · stage numbers: value, baseline, direction, notes · today: checksOf server.js:1702 · new: checksOf.stages[] keeps the record's `value`, `baseline`, `direction`, `baselineKind`, `notes` (POC kept pass/fail only) · POC: not compared · proof: result-generic-numbers-parity · TICKED: tests/f399-parity-result-generic.test.js result-generic-numbers-parity (mutation: checksOf.stages stripped to name+verdict, red)
+- [x] Result generic · head words "N of M passed · K not reached" · today: checksOf server.js:1702 · new: checksOf.stages + notReached · POC: compared ✓ · proof: result-generic-checks-parity · TICKED: tests/f399-parity-result-generic.test.js result-generic-checks-parity
+- [x] Result generic · "not reached" stages (stops at the first red) · today: server.js:1702 unreached list · new: checksOf.notReached · POC: compared ✓ · proof: result-generic-notreached-parity · TICKED: tests/f399-parity-result-generic.test.js result-generic-notreached-parity (real mvy0cx24)
+- [x] Result generic · run the close never reached: checks the steps ran · today: stepChecksOf server.js:1643 · new: checksOf.stepChecks (current leg only: bug 3) · POC: compared ✓ · proof: result-stepchecks-current-leg-only · TICKED: tests/runread-bugs.test.js bug 3; tests/ticket-grid-stepchecks.test.js
+- [x] Result generic · one-list repo rows with tag, held, record-missing, not checked · today: repoRowChecks server.js:1676 → auditChecksFor 3659 · new: checksOf.planRows + fence · POC: compared ✓ for states; fence part not compared (see Audit) · proof: result-generic-onelist-parity · TICKED: tests/f399-parity-result-generic.test.js result-generic-onelist-parity (real mwtf8p8s + one planted final close and a planted fence record)
+- [x] Result generic · "What changed": files, count, head line · today: changedOf server.js:1569 (`attempt-diff`) · new: outputOf.files role changed · POC: compared ✓ · proof: result-changed-paths-all-legs · TICKED: tests/runread-parity.test.js result-changed-diffs-parity; tests/result-tab-data.test.js
+- [x] Result generic · "What changed": +/− lines, each file's last diff, cut notes, "every edit" fold · today: changedOf server.js:1569 · new: outputOf.diffs (GAP-7, ruled) · POC: not compared · proof: result-changed-diffs-parity · TICKED: tests/runread-parity.test.js result-changed-diffs-parity; tests/result-a-data.test.js
+- [x] Result generic · fence line "only src/ was allowed; the run wrote N files" · today: changedOf scopeLine server.js:1614-1623 · new: outputOf.files paths + the signed writeScope (derived) · POC: not compared · proof: result-fence-line-parity · TICKED: tests/f399-parity-result-generic.test.js result-fence-line-parity (mutation: outputOf.changed emptied, red)
+- [x] Result generic · "The work" box: branch, final commit, made-from, merge and drop lines · today: workOf server.js:1739 (git live) · new: outputOf.landing (`work-committed`; branch-exists check stays one live git call) · POC: not compared (git state is outside the records) · proof: result-work-box-parity · TICKED: tests/f399-parity-result-generic.test.js result-work-box-parity (mutation: landing.base nulled, red)
+
+Audit tab
+
+- [x] Audit · checks box head: "checks · N passed · F failed · K not reached · M not checked" · today: auditChecksEl index.html:3911-3925 fed by auditChecksFor server.js:3659 · new: checksOf.planRows · POC: compared ✓ · proof: audit-checks-head-parity · TICKED: tests/f399-parity-audit.test.js audit-checks-head-parity (counts; the head's wording and drawing is index.html, unchanged by F399)
+- [x] Audit · each line row's state · today: auditChecksOf jobplan.js:269-284 (`rowOf0`) · new: checksOf.planRows · POC: compared ✓ (bug 3 on mwtf8p8s) · proof: audit-rows-parity · TICKED: tests/runread-bugs.test.js bug 3 (Audit, mwtf8p8s); tests/audit-checks-section.test.js, tests/audit-checks-fixloop.test.js
+- [x] Audit · row tag [you]/[agent]/[default] and kind word truth/shape/file · today: kindOfCheck jobplan.js:35, `by` from planFromSpec · new: unchanged, from the signed spec · POC: not compared (same planFromSpec by construction) · proof: audit-row-tags-parity · TICKED: tests/f399-parity-audit.test.js audit-row-tags-parity (real mwndngl5, mwenvde5)
+- [x] Audit · a failed row's reason words · today: jobplan.js:281 (`why`) · new: checksOf.rows[].why (GAP-1, ruled) · POC: not compared · proof: audit-row-why-parity · TICKED: tests/f399-parity-audit.test.js audit-row-why-parity (planted why on real mwndngl5)
+- [x] Audit · unclaimed failed rows under a line · today: jobplan.js:288, 320 · new: checksOf.unclaimed · POC: compared ✓ · proof: audit-unclaimed-parity · TICKED: tests/f399-parity-audit.test.js audit-unclaimed-parity (planted)
+- [x] Audit · write-fence row "held · N writes blocked" / "the gate's record for this run is missing" · today: jobplan.js:272-277 and 307-311; blocked from writesBlocked behaviour.js:131 over scopedAuditRows server.js:2715 · new: checksOf.fence (new `fence` record, summed over legs; fallback sidecar) · POC: not compared · proof: audit-fence-row-from-record, audit-fence-row-fallback-sidecar · TICKED: tests/runread-parity.test.js audit-fence-row-from-record (fail-first: expected 'held', actual 'record-missing'), audit-fence-row-fallback-sidecar; tests/runread.test.js
+- [x] Audit · "Always checked" keyed rows ($ defaults, loose) · today: looseAlways jobplan.js:292 · new: checksOf.planRows · POC: compared ✓ · proof: audit-always-keyed-parity · TICKED: tests/f399-parity-audit.test.js audit-always-keyed-parity (mutation: checksOf.fence record read off, red)
+- [x] Audit · "Always checked" unkeyed guard rows (names from confirmProtections, state from the stage) · today: jobplan.js:299-313 · new: checksOf.planRows by stage · POC: not compared · proof: audit-guard-rows-unkeyed-parity · TICKED: tests/f399-parity-audit.test.js audit-guard-rows-unkeyed-parity (real mvtatlxw, a job with no list)
+- [x] Audit · Not-checked rows: text, tag, why, shape truth words · today: jobplan.js:297-298, 316-317 (ncOf) · new: checksOf.notChecked (POC kept text; compared count only) · POC: not compared · proof: audit-notchecked-texts-parity · TICKED: tests/f399-parity-audit.test.js audit-notchecked-texts-parity (real mwtf8p8s, mwndngl5)
+- [x] Audit · line blocks, "Every line" block, jobNotChecked, shapeHead · today: jobplan.js:318-325 · new: unchanged, from the signed spec plus planRows · POC: not compared · proof: audit-line-blocks-parity · TICKED: tests/f399-parity-audit.test.js audit-line-blocks-parity (real mwndngl5, mwenvde5)
+- [x] Audit · the "not reached" word · today: jobplan.js:324 · new: checksOf.notReached · POC: compared ✓ · proof: audit-not-reached-parity · TICKED: tests/f399-parity-audit.test.js audit-not-reached-parity (mutation: checksOf.notReached inverted, red)
+- [x] Audit · parts list: each try's checks (type, pass, name, detail) · today: replay.js:860-875 via enrichPartsWithStageKind server.js:3354 and tryChecksOf 3588 · new: unchanged, history stays on replay parts · POC: not compared · proof: existing replay and audit tests · TICKED: tests/f399-parity-audit.test.js audit-try-checks-parity (real mvtatlxw)
+- [x] Audit · parts list: the file each try's check read · today: replay.js:874-880 (`judgedHere`, `output-judged`) · new: checksOf.judged (GAP-3, ruled) · POC: not compared · proof: audit-try-judged-file-parity · TICKED: tests/f399-parity-audit.test.js audit-try-judged-file-parity (real flight-c1, two tries)
+- [x] Audit · rounds drill-down: per-round check detail · today: stepRoundsPage server.js:3088, closeStageDetail 3169 · new: unchanged, history · POC: not compared · proof: existing rounds tests · TICKED: tests/f399-parity-audit.test.js audit-rounds-check-parity (real mvtatlxw fix part)
+- [x] Audit · place rules block "what the run start read for each place rule" · today: placeRuleLines placerule.js:347 (server.js:2528) · new: checksOf.placeRules (GAP-8, ruled) · POC: not compared · proof: audit-place-rules-parity · TICKED: tests/f399-parity-audit.test.js audit-place-rules-parity (hand-built place-rules record on real mwenvde5; FINDING: the view calls placeRuleLines directly, checksOf.placeRules is the same call and no view reads it; mutation on src/placerule.js, red)
+
+Replay (CLI and panel)
+
+- [x] Replay · CLOSE line source, verdict, stage pass/fail · today: resolveClose replay.js:412 over finalCloseOf, closeLine replay.js:1859, renderStages 1848 · new: checksOf.source, verdict, stages · POC: compared ✓ (0 mismatches, 97 runs) · proof: replay-close-line-parity · TICKED: tests/legs-final-close.test.js (replay close on mvtatlxw); built parity run (97 runs, 0 unnamed differences)
+- [x] Replay · CLOSE line "iteration N ·" prefix and each stage's verdict word (`FAIL(needs_revision)`) · today: closeLine replay.js:1859, renderStages 1848 · new: checksOf keeps `iteration` and each stage's `verdict` (POC kept pass/fail only) · POC: not compared · proof: replay-close-line-words-parity · TICKED: tests/f399-parity-replay.test.js replay-close-line-words-parity (mutation: resolveClose iteration nulled, red)
+- [x] Replay · "none — the run ended before any close ran" · today: closeLine replay.js:1860 · new: checksOf.closeReached false · POC: compared ✓ · proof: replay-close-none-parity · TICKED: tests/f399-parity-replay.test.js replay-close-none-parity (real mwtf8p8s)
+- [x] Replay · per-iteration close line "close: verdict — failing stage" · today: closeStageLine replay.js:1824 · new: unchanged, history · POC: not compared · proof: existing replay tests · TICKED: tests/f399-parity-replay.test.js replay-iteration-close-line-parity (hand-built old-style loop spine, no real fixture has one)
+- [x] Replay · FIX LOOP precheck and iteration sequence · today: replay.js:2087-2090 · new: unchanged, history · POC: not compared · proof: existing replay tests · TICKED: tests/f399-parity-replay.test.js replay-fixloop-sequence-parity (real mvtatlxw, mv5e1ktb)
+
+Reuse
+
+- [x] Reuse · readTry failingStage (the stage that rendered the LAST verdict) · today: readTry reuse.js:480-516 (callers 1041, 1613) · new: checksOf.failingStage over the try's own events window · POC: compared ✓ (bug 4) · proof: readtry-failingstage-final-close · TICKED: tests/runread-readtry.test.js bug 4 (fail-first)
+- [x] Reuse · readTry closeReached · today: reuse.js:516 · new: checksOf.closeReached · POC: compared ✓ (bug 5) · proof: readtry-closereached-already-green · TICKED: tests/runread-readtry.test.js bug 5 (fail-first)
+- [x] Reuse · try history lines "at stage X … close reached / NEVER REACHED" · today: reuse.js:2056-2059 · new: the same two fields · POC: not compared · proof: reuse-try-history-line-parity · TICKED: tests/f399-parity-reuse.test.js reuse-try-history-line-parity (scripted real runReuse; mutations: checksOf.closeReached forced true, checksOf.failingStage nulled, each red)
+- [x] Reuse · bridge history `failingStage` on a red try · today: reuse.js:1723, bridges.js:98 · new: checksOf.failingStage · POC: not compared (bridge grading is arbiter-adjacent: see Gaps note) · proof: bridge-history-failingstage-parity · TICKED: tests/runread-readtry.test.js parity over every real spine under tests/fixtures (the bridge row takes read.failingStage)
+- [x] Reuse · the estimate line "Same job — G green · N not green · about $X and M min a run" · today: trackRecordFor server.js:4105 + reuseLine 4150 (reads each run's last-leg outcome) · new: unchanged, reads outcome and spend, no check or output fact · POC: not compared · proof: existing reuse-line tests · TICKED: tests/f399-parity-reuse.test.js reuse-estimate-line-parity (real mv5e1ktb green; real mvtatlxw already-green leg counts green)
+
+Shape grid
+
+- [x] Shape · item reds from a final staged close (`stages[].items`) · today: shapeRedsFromRecords server.js:1306 · new: checksOf.shapeItems · POC: not compared (no corpus run carries stage `items`) · proof: shape-items-structured-close-parity · TICKED: tests/f399-parity-shape.test.js shape-items-structured-close-parity (real mwndngl5 + planted stage items; mutation: stage items ignored, red)
+- [x] Shape · item reds on a red run (gap prose read back) · today: shapeRedsFromRecords server.js:1311-1318 via shapeItemOfPlain · new: checksOf.shapeItems from the new `shape-items` record; fallback the prose · POC: UNDERPOWERED (mwnbs3np only) · proof: shape-items-red-run-record, shape-items-red-run-fallback-prose · TICKED: tests/shape-e2e.test.js F399 (fail-first), tests/runread-parity.test.js shape-items-red-run-fallback-prose
+- [x] Shape · grid cells: items as rows, signed fields as columns, values clipped, failed items open · today: shapeResultModel shaperesult.js:57, called at getRunResult ~2098 · new: checksOf.shapeItems plus outputOf.content (GAP-5, ruled) · POC: not compared · proof: hamr walk and shape-grid-model-parity · TICKED: tests/f399-parity-shape.test.js shape-grid-model-parity (data: rows, columns in signed order, clip at 40, red cells with reasons; mutation: shapeItems key shifted, red; the grid drawing is NOT pinned → hamr walk)
+
+Review (D review)
+
+- [x] Review · FINDINGS header and rows (base, line, short why, total, cut, cite words) · today: findingsOf server.js:1790 (`review-findings`) · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-findings-parity · TICKED: tests/runread-parity.test.js review-findings-parity; tests/result-a-data.test.js
+- [x] Review · "covers A..B · N files changed" · today: coversOf server.js:1810 · new: outputOf.findings (GAP-6, ruled) · POC: not compared · proof: review-covers-parity · TICKED: tests/f399-parity-review.test.js review-covers-parity (mutation: outputOf findings files dropped, red)
+- [x] Review · the report: staged under output/ at green, landed at Accept (the Accept replaces the staged name) · today: deliveredOf server.js:1284, writers userrun.js:2212-2220 · new: outputOf.files role staged/delivered, `replaces` · POC: compared ✓ (path and landed; 4 runs) · proof: review-report-staged-landed-parity · TICKED: tests/f399-parity-review.test.js review-report-staged-landed-parity (real landed record; planted staged record; mutation: staged name not replaced, red)
+- [x] Review · the report's content (per line: "Checked by code" bullets, the AI's answer, "### The answer" rule) · today: deliveredReporter resultmd.js:204 · new: outputOf.content (GAP-5, ruled) · POC: not compared · proof: review-report-content-parity and hamr walk · TICKED: tests/f399-parity-review.test.js review-report-content-parity (planted report file; mutation: stale bytes, red) + review-report-writer-words
+
+Sheet results
+
+- [x] Sheet · a passed sheet row's "found" line (claim count or value) · today: sheetFoundLine sheetrows.js:58, used at getRunResult ~2046 · new: outputOf.content (GAP-5, ruled; reads the delivered file's claims) · POC: UNDERPOWERED (0 sheet runs in the corpus) · proof: sheet-found-line-parity on a fixture authored to the real shape, then hamr walk · UNDERPOWERED (no real sheet run) · TICKED: tests/f399-parity-sheet.test.js sheet-found-line-parity (engine run over an authored sheet; mutation: destination-written handler disabled, red)
+- [x] Sheet · the code-written Count and Total lines at the end of the report · today: resultmd.js:204 report writer · new: outputOf.content (GAP-5, ruled) · POC: UNDERPOWERED (0 sheet runs) · proof: sheet-report-totals-parity · UNDERPOWERED (no real sheet run) · TICKED: tests/f399-parity-sheet.test.js sheet-report-totals-parity pins the rows and Count lines; the Total (sumIf) line is pinned only by the existing tests/sheet-run-e2e.test.js:86, NOT re-pinned here
+
+Tickets
+
+- [x] Tickets · the ticket box on the Result tab (number, title, link) · today: ticketOfStart server.js:1759 (from `job-start`) · new: unchanged, an input fact · POC: not compared · proof: existing ticket-grid tests · TICKED: tests/f399-parity-tickets.test.js tickets-box-parity (no reader involved: the view reads job-start via ticketOfStart; mutation on that function, red)
+- [x] Tickets · the grid row's "checks passed/total" · today: ticketGridOfJob server.js:1921 over checksOf · new: checksOf.stages counts · POC: UNDERPOWERED (3 runs; ticket-job reds not compared) · proof: ticket-grid-checks-parity · TICKED: tests/f399-parity-tickets.test.js ticket-grid-checks-parity (real mw3gso0m, mw6lmvdg; mutations: checksOf.stages cut, checksOf.stepParts disabled, each red)
+
+Destination delivery
+
+- [x] Destination · files delivered with dated name (-2 same day), path, bytes, sha256, landed · today: deliveredOf server.js:1284; writers userrun.js:2212-2222 and copyOut · new: outputOf.files role delivered · POC: compared ✓ (0 mismatches) · proof: destination-delivered-parity · TICKED: tests/f399-parity-destination.test.js destination-delivered-parity (real copyOut twice; mutation: outputOf bytes off by one, red)
+- [x] Destination · download route serves file i only while sha256 still matches · today: getRunDownload server.js:2126 with readDelivered 1372 · new: outputOf.files[].state (one shared state check) · POC: not compared · proof: download-route-state-parity · TICKED: tests/f399-parity-destination.test.js download-route-state-parity (mutation: sha256 check removed in fileState, red)
+- [x] Destination · a review report landing at Accept (staged path replaced by the delivered one) · today: userrun.js:1346-1362 (reads `report-staged` and `destination-written` to decide landed) · new: outputOf.files `replaces`; the door code is a writer and stays allow-listed · POC: not compared · proof: door-accept-landing-parity · TICKED: tests/f399-parity-destination.test.js door-accept-landing-parity (real landStagedReport; destination-written assembled as userrun.js emits it; mutation: staged name no longer replaced, red)
+- [x] Destination · D change: final commit, branch, folder kept or removed · today: userrun.js:2231-2246 prints a WORKTREE line only; no record · new: outputOf.landing from the new `work-committed` record · POC: not compared · proof: work-committed-record, work-committed-fallback-git · TICKED: tests/p6-worktree-run.test.js and tests/review-accept-report.test.js work-committed (fail-first), tests/runread-parity.test.js work-committed-fallback-git
+
+CLI readout
+
+- [x] CLI readout · "checks N runs · menu [...]" and "close first judgment … → fix loop ran" · today: userrun.js:2271-2277 (the leg's own events) · new: unchanged, leg-local stdout of the run itself; allow-listed · POC: not compared · proof: existing readout tests · TICKED: tests/f399-parity-cli.test.js cli-readout-parity (real engine over an authored sheet; no reader involved: mutation on the readout line in src/userrun.js, red)
+
+**Rulings 2026-11-25 (hamr: "1 1 1").**
+
+1. All 8 Gaps get a home, each with a parity test.
+   - In `checksOf`: GAP-1 failure words (row `why`, step-check `detail`), GAP-3 the file a check judged (`judged`), GAP-4 what the check read (`evidence`), GAP-8 place-rule lines (`placeRules`).
+   - In `outputOf`: GAP-2 delivered files (`bytes`, `state` ok/gone/changed, `pairedTaken` note), GAP-5 file content (`content`: answers, cites, fact values, shape results, sheet claims, report text), GAP-6 review findings (`findings`), GAP-7 edit diffs (`diffs`).
+   - Checklist lines that said `GAP-n` now name that home. Where a line said "to be written once ruled", its proof is named now.
+2. reuse `readTry` switches to the readers too (arbiter-adjacent; hamr's own word given). Its behaviour stays byte-identical except the two named bugs (stale `failingStage`, `closeReached` false on an already-green leg). Proof: a parity test over the bridge-history path (reuse.js ~1723) and over both live call sites. "Reuse · bridge history failingStage" is a go, not parked.
+3. The Result tab shows `failed` where the Audit box shows `failed` (bug 2, the 9 runs). The test pins `failed`.
+
+**Gap checklist (each ticked by its own parity test).**
+
+- [x] GAP-1 · failure words (row `why`, step-check `detail`) in checksOf · proof: result-row-why-parity, audit-row-why-parity, result-red-gap-line-parity · TICKED: tests/f399-parity-result-rubric.test.js result-row-why-parity, tests/f399-parity-audit.test.js audit-row-why-parity, tests/runread-parity.test.js result-red-gap-line-parity
+- [x] GAP-2 · delivered file bytes, ok/gone/changed state, pairedTaken note in outputOf · proof: result-saved-state-words, result-md-renamed-note, download-route-state-parity · TICKED: tests/f399-parity-result-rubric.test.js result-saved-landed-parity + result-saved-state-words, result-md-renamed-note; tests/f399-parity-destination.test.js download-route-state-parity
+- [x] GAP-3 · the file a check judged (checksOf.judged) · proof: result-judged-file-parity, audit-try-judged-file-parity · TICKED: tests/runread-parity.test.js result-judged-file-parity (audit-try-judged-file-parity not written: the Audit try line is history and stays on replay parts)
+- [x] GAP-4 · what the check read (checksOf.evidence) · proof: result-facts-grid-parity · TICKED: tests/runread-parity.test.js result-facts-grid-parity (reader); tests/part6-*.test.js facts grid and proof (views, green after the switch)
+- [x] GAP-5 · file content (outputOf.content) · proof: result-answer-cites-parity, shape-grid-model-parity, sheet-found-line-parity, sheet-report-totals-parity, review-report-content-parity · TICKED: tests/f399-parity-result-rubric.test.js result-answer-cites-parity; tests/f399-parity-shape.test.js shape-grid-model-parity; tests/f399-parity-sheet.test.js (UNDERPOWERED: authored sheet; the Total line is not re-pinned); tests/f399-parity-review.test.js review-report-content-parity
+- [x] GAP-6 · review findings (outputOf.findings) · proof: review-findings-parity, review-covers-parity · TICKED: tests/runread-parity.test.js review-findings-parity; tests/result-a-data.test.js covers
+- [x] GAP-7 · edit diffs (outputOf.diffs) · proof: result-changed-diffs-parity · TICKED: tests/runread-parity.test.js result-changed-diffs-parity
+- [x] GAP-8 · place-rule lines (checksOf.placeRules) · proof: audit-place-rules-parity · TICKED: tests/f399-parity-audit.test.js audit-place-rules-parity (FINDING: the Audit view calls placeRuleLines directly, checksOf.placeRules is the same call and no view reads it)
+
+**Finding at src/kinds.js:1827 (builder, read before the build).** The rubric stage's `detail.items` is set there from `rowResultsOf` and is copied into the stage entry by `rowsRecordOf` (src/declaredclose.js:674-682). So a red FINAL close that runs through `judgeClose` carries `stages[].items` on its `close-verdict` (ralph emits `{iteration, ...v}`; `v.stages` is the declared close's own list). A red STEP check, though, is judged by `evalExits` (src/planrun.js:3834 `judge`), whose verdict is `{verdict, gap}` only: the stage entries live in the `runCheck` result (src/planrun.js:2445) and are dropped there. That is why run mwnbs3np (a red step-level shape check) has no items on its `close-verdict`. The named writer sites (ralph.js:758, planrun.js:4276) do not see that case; the `shape-items` record is therefore also written in `runCheck`, next to `check-run`, from the same `v.stages`. One extra writer site, same record, same fields.
+
+**Build status (2026-11-26, builder).** Ticked above: the items with a passing test of their own. NOT ticked, each with its reason: the Run tab lines, Result rubric Saved-card / md / file-per-line / facts-grid / answer words / Not-checked texts, Result generic head / numbers / fence line / work box / one-list, Audit tags / unclaimed / guard rows / Not-checked / line blocks / not-reached / parts / place rules, Replay words / none, Reuse history line, Shape grid cells, Review report / content, Sheet, Tickets, Destination delivered / download / door landing, CLI readout, and GAP-1, GAP-2, GAP-5, GAP-8. For these the views already read the readers and the existing suites that pinned them before the switch pass unchanged (the named tests per group ran green), and the built parity run (97 copies) shows 0 differences outside the five bugs, but no new test per item was written, so no box is ticked on that alone. The built parity run is in .claude/scratch/poc-f399/PARITY-built.md (PARITY: PASS).
+
+**Build status update (2026-11-26, builder, parity pins).** Every open item above now has its own parity test (tests/f399-parity-*.test.js, shared scaffolding tests/f399-raw.mjs) or is marked `→ hamr walk`. Where no real run carries the case, the test says so: a real spine plus planted records or files (Result rubric, Result generic, Audit, Replay, Review, Shape, Destination), or a hand-built spine (the old-style replay iteration line, the place-rules record), or the real engine over an authored sheet (Sheet, CLI readout; `UNDERPOWERED (no real sheet run)`). Each view group had at least one test shown red by a temporary mutation of the field it reads, restored byte-identical. Two facts the checklist named as reader fields are not read by any view: `checksOf.notReached` (the Run tab, Result and Audit derive it from the signed spec) and `checksOf.placeRules` (the Audit calls `placeRuleLines` itself); the values agree, the test pins both.
+
+**Counts.** 72 lines: Run tab 7, Result rubric 14, Result generic 10, Audit 15, Replay 5, Reuse 5, Shape grid 3, Review 4, Sheet 2, Tickets 2, Destination 4, CLI readout 1. POC compared ✓: 23. Not compared: 45. UNDERPOWERED: 4.
+
+**Gaps (a fact with no home in either POC reader; no home invented here; hamr rules each: a home in a reader, or "the view keeps reading it").**
+
+- GAP-1: failure words. A row's `why` (rowResultsFromRecords server.js:1322, jobplan.js:281) and a step check's `detail` (exit-eval gap line). The POC `rows` map keeps the result only.
+- GAP-2: a delivered file's `bytes`, its `gone`/`changed` state and its `pairedTaken` note. The POC `outputOf` has a yes/no `landed` and a sha, no bytes, no note.
+- GAP-3: the file a check judged (`output-judged`: step, path, sha256). The POC `OUTPUT` table has no row for it.
+- GAP-4: what the check read (`rubric-evidence`: quotes, proof, money as read).
+- GAP-5: file content: answer text, cites, fact values, shape results, sheet claims, report text. Both readers return paths and hashes, never content.
+- GAP-6: the review findings (`review-findings`: items, total, cite, files count).
+- GAP-7: edit diffs (`attempt-diff` text, edit order, cut notes, +/− counts). The POC `outputOf` keeps paths only.
+- GAP-8: place-rule lines (`placeRuleLines`).
+- Note, not a gap: reuse `failingStage` also feeds the bridge history (reuse.js:1723). That is bridge grading, arbiter-adjacent. The built value changes on the 6 bug-4 runs only. hamr's word before the switch lands there.
+- Note: `readTry` runs on a try's own events window inside the live loop (reuse.js:903, 1041, 1613), not on a finished spine. checksOf must give the same answer on such a window. A test covers both call sites.
+
+**Rule.** The build is done only when every box is ticked with a passing test, or with a hamr walk for looks, and a final parity run passes. The final parity run reruns the POC harness (`.claude/scratch/poc-f399`) against the BUILT readers (`src/runread.js`) on the same 97 copies. Every row must match either today's value (read from the code before the switch, kept as a frozen copy for this run) or the named bug fix of the five above. A box for a `GAP-n` is ticked on its own parity test (hamr ruled all 8, 2026-11-25). A fact the POC did not compare is ticked only by its own parity test, never by the POC pass.
+
+**Proof and done.**
+
+- Every bug and every new record gets a fail-first test, shown red on today's code first.
+- `npm run typecheck`, `npm run build:types` and the full `npm test` exit 0 on the final commit. Quote the exit code and the last line of each.
+- A CHANGELOG `[Unreleased]` entry (one line per new record, the two readers, the five fixes).
+- `bareloop.context.md` updated if an export changes. runread.js exports are internal unless the builder adds one to the package root.
+- A hamr walk of the Result, Audit and Run tabs on a resumed run and on a plain run. Phone width is hamr's own DevTools check; barebrowse cannot emulate it.
+- Run `/self-review` after the code change (code lines and test asserts change).
+- Build goes to a sonnet builder, one piece at a time: the two readers and the guard first, then one view per commit. The builder commits after each piece.
+
+**F399 build done 2026-11-26.** 79 of 80 boxes ticked. 2 are UNDERPOWERED (sheet). 1 is `→ hamr walk` (Run tab: whether a Result tab shows at all). PARITY: PASS on 97 runs. Items only partly pinned need hamr's walk: the shape grid drawing and the Audit head wording.
+
+### Untangle POC (hamr "1 and poc first", 2026-11-26), bar frozen before the POC
+
+The cycle: `src/runread.js` (`checksOf.stepParts`) calls `replayRun` from `src/replay.js`, and `src/replay.js` imports `src/runread.js` (its `resolveClose`, replay.js:413). hamr ruled "1": untangle it so nothing points in a circle. POC first, on a throwaway worktree; the branch's src and tests are not touched until this passes.
+
+**Where the shared piece goes.** Read before the freeze: replay's only use of `checksOf` is `resolveClose`, which takes `source`, `iteration`, `verdict` and `close.stages` of the final close. Those come from `finalCloseOf` in `src/legs.js`, which is pure with no IO, already imports nothing from replay or runread, and is already the one owner of "which close is final" (Addendum 2026-11-25d). So the home is `legs.js`, no new file: `resolveClose` reads `finalCloseOf` directly and replay stops importing runread. `replayRun`'s own try-windowing (the parts build, replay.js 1249-1590) is interleaved with replayRun's closure and is not moved; runread keeps calling `replayRun`, which is a one-way edge (runread -> replay) once replay no longer points back.
+
+**PASS needs all of:**
+
+1. No import cycle among `src/` files: a small script walks the static `import` lines from `src/` and prints every cycle; it must print none. It must print the runread/replay cycle on today's tree (proof it can see one).
+2. On the same 97 copies in `.claude/scratch/poc-f399/corpus`, with an empty env and no keys, replay's output (the `replayRun` result plus the CLOSE line) and `checksOf`/`outputOf` output are BYTE-IDENTICAL (JSON.stringify) before and after, for every run.
+3. The change is a move or a re-point, not a rewrite: any moved function body diffs as identical apart from imports and exports; if a call is re-pointed to an existing owner instead, the diff is limited to that call's lines and is listed in full.
+4. The single test files touching replay, runread and legs stay green (run one at a time via `node scripts/hermetic.mjs <file>`).
+
+Any miss is FAIL and goes back to hamr. No re-tune.
+
+hamr 2026-11-26: counted PASS for the replay<->runread cycle; bar 1's "none in src" wording was the operator's error; the 12 older cycles are planned separately (see the cycles plan).
+
+
+## Addendum 2026-11-26: import-cycle cleanup and two unwired reader fields (hamr: "redesign and clean up; if something should/could be cleaned up properly, clean it")
+
+**Facts.** After the replay<->runread fix, a static import walk of `src/` (`.claude/scratch/poc-untangle/cycles.mjs`, output `cycles-after.txt`) shows 12 older cycles. No file reads an import at module top level, so none is harmful today. Cites checked against source on 2026-11-26.
+
+**Goal.** No import cycle left in `src/` at all. Extend `tests/import-cycle-replay.test.js` (or add `tests/import-cycles.test.js`) to assert zero cycles in `src/` once all batches land. Show it red on today's source first.
+
+**Order.** B, D, C, A, E, Bundle, F. Batches that touch `src/authorflow.js` run strictly one after another.
+
+**Batches (cause, then fix).**
+
+- **B.** `isOutputCutOff` lives in `src/authorflow.js:234`, its first user. Move it to `src/transport.js`. Re-point authorflow (uses it at :1801), sheetlook, pagemap, shapelook, noteask, destpoint, reviewpick (each imports it from authorflow today). Clears authorflow -> sheetoffer -> sheetlook -> authorflow and sheetlook -> pagemap -> authorflow.
+- **D.** `ledgerRecord` lives in `src/checklist.js:54-57`. Move it to `src/checkblock.js`. Re-point `src/authorflow.js:89` and `src/authorjob.js:132`. Clears authorflow <-> checklist.
+- **C.** `lineRules` lives in `src/rubricstep.js:849-852`. Move it to a new leaf `src/jobline.js`. Re-point every importer, src and tests (src: pagerules, resultmd, shaperows, rowedit, sheetlook, authorreadout, authorflow, panel/server; 29 test hits), with NO re-export shim (one path per name). Clears rubricstep <-> sheetrows and rubricstep <-> shaperows.
+- **A.** `DIFF_DIR` lives in `src/rangereview.js:15`. Move it to `src/repocite.js`; rangereview imports it. Clears kinds -> repocite -> rangereview -> source.
+- **E (hamr "2a").** `src/cli.js:28-30` imports `loadRegistry`, `listingRow` and `exportBundle` from `./index.js`. Import `loadRegistry` and `listingRow` from `./bridges.js` and `exportBundle` from `./bundle.js` instead. Clears cli <-> index.
+- **Bundle (hamr "1b" then "1").** `src/bundle.js:36` imports `* as bareloopExports from './index.js'` (read at :395, rule at :426). Stop that. A new leaf `src/exportnames.js` holds the root export names, one per line, frozen. bundle.js reads it for the `close-import-unexported` rule. A test asserts that set equals `Object.keys(await import('../src/index.js'))` in both directions, with a diff message, and that it matches the list `bareloop.context.md` documents (via the existing guard). Root API unchanged; `cliMain` stays (`src/index.js:253`). The rule needs the FULL root set because `rewriteSrcImports` (`src/bundle.js:270-272`) turns src imports into `from 'bareloop'`. Sources: `bareloop.context.md:3223`, `tests/bundle.test.js:437-449`. Arbiter-adjacent (close-import legality in bundle export); hamr gave his word.
+- **F (hamr "clean it properly").** `checksOf.notReached` (`src/runread.js:152,170`) and `checksOf.placeRules` (`:175`) are read by no view. The Audit derives not-reached from the signed spec (`src/panel/server.js:1601-1608`, `checksBoxOf`) and calls `placeRuleLines` itself (`src/panel/server.js:2417`). Wire the Audit to read both from `checksOf`, delete the duplicate derivation, extend the runread guard.
+
+**Cite fixes.** The brief said bundle.js ~392 for the rule; the import is :36, the read :395, the red :426. The brief placed the Audit's own not-reached derivation nowhere; it is `src/panel/server.js:1601-1608`.
+
+### POC bar, frozen per batch (hamr: POC first)
+
+A batch is accepted only if ALL hold, checked on a throwaway worktree before it lands on the branch:
+
+1. The cycle walk shows none of that batch's cycles left, and no new cycle.
+2. On the 97 run copies in `.claude/scratch/poc-f399/corpus`, with an empty env, the dump (`.claude/scratch/poc-untangle/dump.mjs`: replayRun, formatReplay, checksOf, stepParts, outputOf, getRunResult, getRunDetail) is BYTE-IDENTICAL before and after. F is the exception: the Audit's output must be byte-identical; only its source changes.
+3. In a clean consumer installed from `npm pack`, `import * as r from 'bareloop'` gives the same key set as before (count and names, incl. `cliMain`).
+4. Move, not rewrite: the lines removed from the source file equal the lines added to the destination file; elsewhere only import-line edits. For Bundle and F, list every non-import changed line in full.
+5. For Bundle: `exportBundle` gives the same accept/refuse on `tests/bundle.test.js` and on the close scripts of the 3 real bundles in `/home/hamr/PycharmProjects/bareloop-patients/bundles/` (read only). The drift test is shown red once (an extra root export in a scratch copy).
+
+Any miss is FAIL for that batch. It goes back to hamr, never re-tuned.
+
+### Amendment 2026-11-26b: the last two cycles (hamr "1")
+
+**Why.** Batch D failed bar 1 and was not landed (POC `.claude/scratch/poc-cycles/D/RESULTS.md`, `VERDICT: FAIL`). Moving `ledgerRecord` cleared the direct `authorflow -> checklist` edge, but the walk then printed `authorflow.js -> checkblock.js -> checklist.js`. The real back edge is `src/checklist.js:8`, which imports `askStructured` and `makeCostBook` from `authorflow.js`. hamr's ruling (2026-11-26, "1"): clear the last two cycles with the same method, then land the zero-cycle test. Batch D is withdrawn and replaced by G; the older D text above is superseded and not edited. Facts checked against source on 2026-11-26 at HEAD 98af5e6e: the walk shows exactly 2 cycles (`kinds.js -> sheetrun.js -> source.js`, `authorflow.js -> checklist.js`).
+
+**Batch G (replaces D).** `askStructured` and `makeCostBook` move out of `src/authorflow.js` into a new small leaf `src/ask.js`. I read what they use first. What moves, with its HEAD line:
+
+- `makeCostBook`, with its section heading and both doc blocks: `src/authorflow.js:1607-1674` (function at :1634).
+- `askStructured`, with its doc block: `src/authorflow.js:1725-1870` (function at :1743).
+- `renderRejectBlock` (`:1432-1458`, function at :1447): `askStructured` calls it (:1863), and authorflow calls it again (:2869, :2928, :2946, :3035). Shared, so it moves, and authorflow imports it back.
+- `STRUCTURE_INSTRUCTION_TEXT` (`:272-273`): `askStructured` uses it (:1866), and authorflow uses it again (:2871). Shared, so it moves, and authorflow imports it back. It is a prompt-register const: `src/promptregisters.js:45` names it under `src/authorflow.js`, so that one entry's `file` becomes `src/ask.js`. That is the only non-import line change outside the moved blocks.
+- `REVISE_RED_CAP` (`:125-126`): used only by `renderRejectBlock` (and re-exported to `tests/authorflow.test.js:44`). It moves with it.
+- The `Red` typedef (`:111`): moves to `src/ask.js`; authorflow keeps a one-line `@typedef {import('./ask.js').Red} Red` (type only, no runtime edge).
+
+`src/ask.js` imports `priceOf, scrubRaw, tallyCalls, capStop, extractArtifact, callCasualty` from `./text.js`, `redactSecrets` from `./validate.js`, and `isOutputCutOff` from `./transport.js`; none of those import authorflow. authorflow drops imports it no longer uses. Re-point every importer, src and tests, with NO re-export shim: `askStructured`/`makeCostBook` in `src/checklist.js`, `src/checksuggest.js`, `src/fencepointcall.js`, `src/authorjob.js` and 9 test files (including two dynamic imports in `tests/ticket-confirm.test.js`); `renderRejectBlock` in `tests/authorflow.test.js`, `tests/r10-factmerge.test.js`, `tests/rubric-sorting.test.js`; `REVISE_RED_CAP` in `tests/authorflow.test.js`. The root exports (`src/index.js`) name none of these. `ledgerRecord` stays in `src/checklist.js`: it moves only if the cycle is still there without it, and then not for nothing.
+
+**Batch H.** `git` (`src/kinds.js:583`, doc `:575-582`) and `MAX_BUFFER` (`src/kinds.js:146`, doc `:144-145`) move to a new leaf `src/git.js`, with anything only they use. `src/kinds.js` and `src/source.js` (and every other importer; `tests/source.test.js` has dynamic imports of `MAX_BUFFER`) re-point to it, no shim. Clears `kinds -> sheetrun -> source -> kinds`.
+
+**Finding written before the POC, so it is not a surprise after.** `git()` is a 6-line wrapper over `sh()` (`src/kinds.js:479-573`), the shared spawn primitive that `kinds.js` calls from many other places. A `src/git.js` that holds only `git` and `MAX_BUFFER` has to import `sh` from `kinds.js`, which turns the cycle into `kinds -> git -> kinds`. So the literal reading of H cannot pass bar 1. The POC runs the literal reading anyway and reports the result. If it fails, H stops and goes back to hamr; the closure that would make it pass (`sh`, `stageEnv`, the process-box helpers `trackBox`, `untrackBox`, `boxMembers`, `boxSurvivors`, `killLiveBoxes`, `STOP_FAULTS`, the check-limit constants, about 230 lines moved, many importers re-pointed) is a bigger ruling than "git and MAX_BUFFER", and is not taken without his word.
+
+**Bars.** The same 5 frozen bars as the addendum above, unchanged (bar 5 is Bundle-only and does not apply here).
+
+**The zero-cycle test lands last.** `tests/import-cycles.test.js`, from `.claude/scratch/poc-cycles/import-cycles.test.js`. It must be red on 98af5e6e with exactly the 2 cycles and green once both batches land. If either batch fails, the test is not committed.
+
+**Result 2026-11-26.** G PASS (POC `.claude/scratch/poc-cycles/G/RESULTS.md`, landed as 5a1507db): cycles 2 -> 1, 97-run dump byte-identical, 167 root exports identical, moved lines equal. H FAIL on bar 1 (POC `.claude/scratch/poc-cycles/H/RESULTS.md`), as the finding above predicted: `git.js` has to import `sh` and `STOP_FAULTS` back from `kinds.js`, and the walk prints `git.js -> kinds.js -> sheetrun.js -> source.js`. H is stopped and goes back to hamr; the zero-cycle test (red on 98af5e6e with exactly the 2 cycles, red now with the 1) is not committed. Cite fixes to the block above: `renderRejectBlock` is `src/authorflow.js:1432-1459` (not :1458); `git` with its doc is `src/kinds.js:570-590` (function at :583, doc :570-582).
+
+#### Ruling 2026-11-26c: batch H moves the whole run-a-command family (hamr "1"; "continue cleaning, no leftovers")
+
+**Why.** H failed bar 1 (POC `.claude/scratch/poc-cycles/RESULTS-H.md`, `VERDICT: FAIL`). `git` (`src/kinds.js:583`) wraps `sh` (`src/kinds.js:479`). A `git.js` holding only `git` and `MAX_BUFFER` must import `sh` and `STOP_FAULTS` back from kinds.js, and the walk printed `git.js -> kinds.js -> sheetrun.js -> source.js`. hamr's ruling (2026-11-26, "1"; "continue cleaning, no leftovers"): move the whole family. Batch H is replaced by H2; the H text above is superseded and not edited. hamr gave his word for a verbatim move of `sh` (it runs the declared checks and closes, so it is arbiter-adjacent).
+
+**Batch H2.** Move the run-a-command family out of `src/kinds.js` into ONE new leaf, `src/shell.js`. I pick `shell.js` and not `git.js` because the file is mostly the spawn primitive and its process boxes (`sh` and its box helpers are about 200 of the 230 lines); `git` is a 6-line wrapper over `sh`, so the file is named for the owner, not the wrapper. Facts read from source at HEAD 61a81501. What moves, with its line:
+
+- Check-limit constants: `CHECK_LIMIT_MS` (`:106`, doc `:101-105`), `CHECK_NOTE_AFTER_MS` (`:108`, doc `:107`), `CHECK_NOTE_EVERY_MS` (`:109`), `DEFAULT_TIMEOUT_MS` (`:143`, doc `:141-142`), `MAX_BUFFER` (`:146`, doc `:144-145`).
+- `STOP_FAULTS`: `:167` (doc `:153-166`). `git` and `sh` use it (`:560-566`, `:589`); kinds.js uses it in about 30 places (`:696` to `:2052`), so kinds.js imports it back.
+- `stageEnv` (`:364`, doc `:350-363`): not exported, used by `sh` (`:480`) and `runCmd` (`:1418`). Moves; it must be exported, and kinds.js imports it back.
+- Process-box helpers, with their section lines: `liveBoxes` (`:390`), `killLiveBoxes` (`:392`), `boxHooks` (`:397`), `dropBoxHooks` (`:398`), `trackBox` (`:404`), `untrackBox` (`:420`), `boxMembers` (`:430`), `survivorsText` (`:452`), `boxSurvivors` (`:457`). `boxHooks` and `dropBoxHooks` are used only inside this block, so they stay private. `boxMembers` is also used at `:293` (a default in the `Gap`/stage code; read it before moving) and `survivorsText` is imported by `src/authorreadout.js:27`.
+- `sh` (`:479-573`, doc above it): not exported today. It becomes exported. kinds.js uses it at `:1387`, `:1400`, `:1421` and `git` at `:584`.
+- `git` (`:583`, doc `:570-582`).
+
+**What stays in kinds.js.** The four plain-words helpers `checkRunningNote` (`:115`), `checkTimedOutText` (`:123`), `checkLimitSpan` (`:127`), `checkTimeoutWords` (`:137`). They call no spawn code, only `CHECK_LIMIT_MS`, so kinds.js imports that constant from shell.js. They are not in the cycle. Moving them is not needed to clear it.
+
+**Imports for shell.js.** `spawn`, `execFile` from `node:child_process`, `CLOSE_ENV_DENY` from `./ralph.js` (ralph imports only `node:child_process`, so no new edge), plus whatever node built-ins the moved lines use (`join`, a `stat`-named `ps` column is a string, not an import). shell.js must import NOTHING from kinds.js. If a moved line needs a kinds.js name, the builder stops and reports; it does not import it back.
+
+**Importers to re-point, no re-export shim** (kinds.js name list checked by grep on 2026-11-26): `src/source.js:31,33` (`git`, `MAX_BUFFER`), `src/closetimeout.js:18` (`CHECK_LIMIT_MS`), `src/authorreadout.js:27` (`survivorsText`; `checkTimedOutText` stays on kinds.js), `src/declaredclose.js:71` (`STOP_FAULTS`), `src/authorflow.js:80` (`STOP_FAULTS`; the rest stay), `src/panel/authorsession.js:78` (`CHECK_LIMIT_MS`; `checkRunningNote` stays), `src/authorrun.js` (`DEFAULT_TIMEOUT_MS`), `src/exportnames.js` and `src/index.js` (`STOP_FAULTS`; read how they reach it before editing, the 167 root exports must not change), and the tests that import any moved name: `tests/source.test.js:772,786,957` (dynamic `MAX_BUFFER`), `tests/check-once-signing.test.js:16`, `tests/check-timeout-resume.test.js:16`, `tests/pr-checkout-git.test.js:13` (`seedAtHead`, `seedListing`, `GATE_AUDIT_FILE` stay on kinds.js; check there is no moved name), plus any other test the builder finds with `grep -rn "kinds.js"` for a moved name. The builder lists the final set. A comment that names `src/kinds.js` for a moved name (`src/source.js:402`, `src/panel/authorsession.js:648,767`, `src/closetimeout.js:141`) gets its path fixed in the same change.
+
+**Bars.** The same 4 frozen bars as the addendum, unchanged:
+
+1. the cycle is gone, and no new one appears (walk prints zero cycles, counted as strongly connected groups, not printed lines);
+2. the 97-run dump is byte-identical;
+3. the 167 root exports are identical in a clean consumer via `npm pack`;
+4. move-not-rewrite: every non-import line that changed is listed (expected: `export` added to `sh` and `stageEnv`, and the comment paths above).
+
+**Process and close-env tests.** `sh` runs the declared checks and closes, so each of these existing files must stay green as a SINGLE file via `node scripts/hermetic.mjs <file>`, before and after: `tests/check-kill.test.js` (process-group kill), `tests/check-survivors.test.js`, `tests/check-limit.test.js`, `tests/check-note.test.js`, `tests/check-timeout-words.test.js`, `tests/check-timeout-resume.test.js`, `tests/check-once-signing.test.js`, `tests/kinds.test.js`, `tests/ralph.test.js` (close-env stripping, `CLOSE_ENV_DENY`), `tests/declaredclose.test.js`, `tests/seed-baseline-once.test.js`, `tests/source.test.js`. A file that was already red before H2 is reported as such, not blamed on the move. No full suite while another test run is live.
+
+**The zero-cycle test lands last.** `tests/import-cycles.test.js`, copied from `.claude/scratch/poc-cycles/import-cycles.test.js`. It must be RED on 61a81501 with the one cycle (`kinds.js -> sheetrun.js -> source.js`, found by running it there) and GREEN after H2. If H2 fails a bar, the test is not committed.
+
+### Cleanup status 2026-11-26
+
+- Landed, each PASS on all bars: B `a2f2334a`, C `5adcfda2`, A `c3bb4348`, E `9264a01d`, Bundle `9ec8926f`, F `c4f297bc`, G `5a1507db`.
+- D failed and is superseded by G: `ledgerRecord` stayed in `src/checklist.js`.
+- Cycles went 13 -> 1. The one left is `kinds -> sheetrun -> source`, which is H2.
+- Gate on 61a81501: typecheck 0, build:types 0, npm test 0. 6626 tests, 6624 pass, 0 fail, 2 skipped. Last line `prompt-commit-check: OK — 46 commit(s) checked`.
+- F399 parity on 97 runs: PASS.
+- Verified honest (2026-11-26, read-only check of the raw spines): the 4 runs the build had added to the bug lists. mwhkhfyw, mwibd3am, mwvx28a5 are bug 1. mwsfq0pi is bug 3. Evidence: `.claude/scratch/verify-4runs/`.
+- Housekeeping still to do (hamr: "no leftovers"):
+  - remove the older POC git worktrees under `.claude/scratch/poc-cycles` (A, B, C, D, E, F, Bundle, Base) and `.claude/scratch/poc-f399/wt`, `.claude/scratch/poc-untangle/wt`. Keep each RESULTS file.
+  - `git worktree prune`.
+  - the branch commits are unpushed: push after the H2 gate.
+
+#### Addendum 2026-11-26d: F389 code fills the repo guard's allowPrefixes from the Destination
+
+**Ruling (hamr, 2026-11-26, "A", "build it and poc").** In a repo job the drafting AI fills the `changed-from-seed` guard's `allowPrefixes` slot (`src/authorflow.js` `authorPrompt`: the slot is shown as `<FILL IN>` and the model is told to fill it "from the facts object and the interview"). In run mwt89eey the AI wrote `["src/"]` while the signed writeScope (Destination) was `["src/","tests/"]`, so the guard silently narrowed the fence. Fix A: code fills the guard's fill slot from writeScope for repo jobs, as the rubric path already does in `assemble` ("a guard's one fill slot (`allowPrefixes`) is the signed write fence"). The model no longer gets a fill slot. Intended behaviour change: a repo run's files-changed guard equals its Destination. Old signed specs are not repaired. No new question, no new stage-to-rule tie (`fenceKept` stays dead; a `~` rule is kept only via `CheckBlock.provesFence`).
+
+**The build in plain words.** One owner function in `src/authorflow.js` turns "guards + a fence" into the guard stages with each fill slot set to the fence. The rubric `assemble` calls it (its inline copy is replaced) and the repo path calls it on the model's declaration before the draft gate, overwriting the guard stage's fill slots. The drafter prompt shows the guards already filled with the fence and no longer says "you fill each slot" when a writeScope is given (a caller with no writeScope keeps the old marker; nothing in the product does that for a repo).
+
+**POC (a $0 replay, no model call).** Over every saved signed REPO spec on disk (`~/.config/bareloop/panel-sessions/*/resolved-spec*.json`, read-only; plus any other spec archive found, stated in RESULTS). Filter: the file parses as JSON, has a non-empty `writeScope` array, and `closeDecl.stages` has a stage named `changed-from-seed` with `params.allowPrefixes`. (a) Compare the AI-written allowPrefixes to writeScope: equal / AI narrower (a strict subset) / AI wider (a strict superset) / other. (b) For each spec, substitute allowPrefixes := writeScope and run the existing signing validator `validateDeclaration` (src/authoring.js) with the genre's `classGuards`, the same way as with the AI value; count passes.
+
+**Frozen bars.**
+- B1: every spec that validated with the AI value also validates with the code value (0 new refusals). If B1 fails: STOP, commit nothing beyond this addendum and the POC results.
+- B2: the (a) counts are reported in full, with every "AI wider" case listed by session id (a wider AI value means the fix TIGHTENS that job: report, do not judge).
+- B3: the fail-first test (a repo draft with writeScope `["src/","tests/"]` signs `allowPrefixes ["src/","tests/"]` even when the stubbed model writes `["src/"]`, and the repo drafter prompt carries no FILL_MARKER for the guards) is red before the code change and green after.
+
+**POC result 2026-11-26 (script `.claude/scratch/poc-f389/replay.mjs`, RESULTS in the same folder): FAIL on B1; build stopped.** 156 spec files found (panel-sessions and tests/fixtures), 155 repo-shaped. (a) equal 133, AI narrower 2 (session smwt5qrddyawl, both files), AI wider 1 (smv0tasvb0u89: `["src/","src/**"]` vs writeScope `["src/**"]`), other 19 (18 of them `["src/"]` vs `["src/**"]`; one is smw6lkrsd3wqo). (b) 81 validate with the AI value, 80 with the code value; the one new refusal is smw6lkrsd3wqo: writeScope `["7"]` (a Destination typed as a ticket number) reds `path-not-in-listing` once the guard follows it. The fix is not a defect there; the signed Destination was already wrong and the AI value hid it. Per the frozen bar this is a FAIL and nothing further was built; hamr decides whether to amend B1 (the cause is a bad Destination, not the fill) before any build.
+
+##### Round 2 (2026-11-26)
+
+Round 1 stays reported as FAIL (text above unchanged). hamr's ruling (2026-11-26): "A", round 2. The one failure was a spec whose signed Destination (`7`) matches nothing in the repo; the AI's fill had hidden it. Round 2 asks whether today's code already refuses such a Destination before any AI call, and if so excludes only those specs. The Destination owner is `startDestinationProblem` (`src/panel/authorsession.js`), which calls `destinationMissingInRepo` (`src/source.js`, R7b / F287), called at Start from `src/panel/authorroutes.js`.
+
+Frozen bars, in order:
+- **R2-B0 (must pass first).** Calling the real `startDestinationProblem` at $0 with a repo source and Destination `7` returns a plain refusal (no AI call is involved in the function). The refusal words are quoted in the result. If it returns null: STOP and report, build nothing.
+- **R2-B1.** Every spec that validates with the AI value also validates with the code value (allowPrefixes := writeScope), EXCEPT specs whose signed Destination R2-B0 proves today's code refuses (the same `destinationMissingInRepo` applied to the spec's writeScope against that spec's own seed listing). Each exclusion is listed by session id with its reason. Expected exclusion: smw6lkrsd3wqo only. Any other new refusal is a FAIL.
+- **R2-B2.** Counts as round 1 (equal / narrower / wider / other, wider by session id), plus a check, with the real function (`globToPrefix` in `src/validate.js`, used by `normPrefix` in `src/kinds.js`), that `src/` and `src/**` normalise to the same prefix, and the (a) counts re-stated with that normalisation applied (the 18 "other" `["src/"]` vs `["src/**"]` cases).
+- **R2-B3.** The fail-first test (a repo draft with writeScope `["src/","tests/"]` signs `allowPrefixes ["src/","tests/"]` when the stubbed model writes `["src/"]`, and the repo drafter prompt carries no FILL_MARKER for the guards) is red before the code change and green after.
+
+**Round 2 result 2026-11-26 (`.claude/scratch/poc-f389/RESULTS-round2.md`): PASS on R2-B0, R2-B1, R2-B2.** B0: `startDestinationProblem` with Destination `7` returns "Destination `7` is not a folder or file in this repo. Type the folder that holds the files the job should change, like src/." B1: 81 validate with the AI value, 80 with the code value; the one exclusion is smw6lkrsd3wqo (writeScope `["7"]`, refused today by the real `destinationMissingInRepo`); 0 other new refusals. B2: `globToPrefix` gives `src` for `src/`, `src/**` and `src`; with it, equal 152, AI narrower 2 (smwt5qrddyawl, both files), AI wider 0 (smv0tasvb0u89 is equal), other 1 (smw6lkrsd3wqo). R2-B3 is judged at the build.
+
+**R2-B3 2026-11-26: PASS.** `tests/authorflow.test.js` "authorClose F389" was red on the unchanged code (158 tests, 1 fail) and green after the change (158 pass, exit 0). Built in 350e24ca.
+
+#### Addendum 2026-11-26e: the Destination check reads a glob scout path as its folder
+
+**Defect (live 2026-11-26).** The Destination check (`destCheck`, `src/panel/authorsession.js`; the question is `destFenceQuestion`, `src/destpoint.js`) asks "Destination docs/ holds none of the code or tests" only when `scoutCodePaths(facts, tree)` returns entries. That function drops any scout path holding `*` or `?`. Session smwt5qrddyawl (2026-11-23): the scout said sourcePaths `["src/"]`, testPaths `["tests/"]`, the question was asked. Session smwxlttvfz78h (2026-11-26, same job, same patient): the scout said `["src/**/*.js"]` and `["tests/**/*.test.js"]`, both dropped, entries `[]`, no question, Destination `docs/` stayed, so the job could never change `src/`. Latent since 09ae8d46 (v0.62.0, v0.63.0); not caused by the refusal-boxes branch.
+
+**Ruling (hamr, 2026-11-26, "A and poc").** In `scoutCodePaths` (the one owner) a path holding a glob is cut to its literal leading folder: the segments before the first segment holding `*` or `?` (`src/**/*.js` -> `src`, `tests/**/*.test.js` -> `tests`; `*.js` and `**/x` -> nothing, dropped as today). The existing tree test (a file or a folder in the tree) then runs unchanged. No prompt change, no model call. Reuse check first: `globToPrefix` (`src/validate.js`) only strips a trailing `/**` or `/*`, so it leaves `src/**/*.js` whole; the glob-folder cut inside `destinationMissingInRepo` (`src/source.js`) is inline, not a helper.
+
+**POC (a $0 replay, no model call; script `.claude/scratch/poc-destglob/replay.mjs`).** Over every saved `~/.config/bareloop/panel-sessions/*/draft-log.jsonl` (read-only) holding scout facts (`sourcePaths`/`testPaths` in a scout call's `raw`), the tree is that session's `source-seed/source.json` file list; the Destination is that file's `destination`. Replay `scoutCodePaths` OLD (copy of today's) vs NEW (the built one).
+
+**Frozen bars.**
+- P1: (a) OLD and NEW entries identical; (b) NEW gives MORE (list each with raw paths and new entries); (c) NEW gives FEWER or different. Bar: (c) = 0, and every (b) entry is a folder that really exists in that session's tree. If P1 fails: STOP, commit only this addendum and the results.
+- P2: for the (b) sessions replay `destinationHoldsCode(destination, entries, tree)` OLD vs NEW; list every session where the question flips from not-asked to asked, with its Destination. Bar: smwxlttvfz78h flips. Every other flip is reported without judging.
+- P3: fail-first unit test: `scoutCodePaths({sourcePaths:['src/**/*.js'],testPaths:['tests/**/*.test.js']}, tree)` returns `['src/','tests/']` for a tree holding `src/a.js` and `tests/a.test.js`; `*.js` and `**/x.js` give `[]`. Red before the change, green after.
+
+**POC result 2026-11-26 (`.claude/scratch/poc-destglob/RESULTS.md`): PASS on P1 and P2.** 27 saved sessions hold scout facts (258 hold none), each replayed against its own `source-seed/source.json` file list. P1: (a) identical 26, (b) NEW more 1 (smwxlttvfz78h: `src/**/*.js` and `tests/**/*.test.js` become `src/` and `tests/`, both real folders in its tree), (c) fewer or different 0. P2: smwxlttvfz78h with Destination `docs/` flips from not-asked to asked; no other session flips. Not replayed: destCheck's job-type and names-a-file gates. P3 is the fail-first test at build time.
+
+**Re-run on the src function 2026-11-26 (`.claude/scratch/poc-destglob/replay-src.mjs`, importing the real `scoutCodePaths` from `src/destpoint.js`, after the one-owner change).** Same numbers as the inlined run: 27 sessions with scout facts, (a) identical 26, (b) NEW more 1 (smwxlttvfz78h, `["src/","tests/"]`), (c) fewer or different 0; P2 smwxlttvfz78h Destination `docs/` flips to asked, no other flip. The cut is now `globFolder` in `src/validate.js`, used by `scoutCodePaths` and `destinationMissingInRepo`; it uses source.js's wider wildcard set `*?[{`, so `scoutCodePaths` now also cuts at `[` and `{`. No saved session holds such a path.
+
+
+#### Addendum 2026-11-26f: a step the person stopped reads stopped
+
+**Defect (live 2026-11-26, run mwue75ih).** The Audit tab, the step map and the cards show a step the person STOPPED as "failed". Spine `u-mwue75ih.jsonl`: seq 105 `stop-requested`, seq 107 escalation category `stopped`, seq 108 `run-end` escalated, seq 109 `step-end` step `fix-codeversion-head-resolution` outcome `escalated`, seq 112 `job-end` `stopped`. The word comes from `partStatusFor` (`src/panel/status.js`): an outcome `escalated` reads failed, and only a money/time cap is excepted (fed by `cappedLastStep`, `src/panel/server.js`). `src/replay.js` already derives a step's `stopReason` in code-owned words ('you stopped it' for a leg outcome `stopped`), but only for a step with NO step-end; it already records the step's own escalation as `tripped` (`tripOf(findTrip(...))`).
+
+**Ruling (hamr, 2026-11-26, "ok").** One owner: `src/replay.js`, where a step's `stopReason` is already derived. A step that ENDED `escalated` and whose OWN escalation (`tripped.category`) is `stopped` gets `stopReason: 'you stopped it'` (the same words). `partStatusFor` then maps `outcome === 'escalated'` with that `stopReason` to `stopped`, beside the existing cap exception. Every view reads `partStatusFor`, so all follow. `cappedLastStep`'s cap logic is not moved or changed. The attempts mapping at `src/replay.js` (`step.stopReason ? stepAttempts.map(null outcome -> 'stopped')`) is checked: it must change no attempt word.
+
+**POC (a $0 replay, no model call; scripts in `.claude/scratch/poc-stopped/`).** The real `getRunDetail` (`src/panel/server.js`, the path the panel uses: replay parts, then died marking and `cappedLastStep`, then `partStatusFor`) is run read-only over EVERY run row in `~/.config/bareloop/runs.jsonl` whose spine exists (the corpus the F399 parity dump used: `runs.jsonl` rows with a `spine`, deduplicated by run id), once on the unchanged code (OLD) and once on a scratch copy of `src/` carrying the change (NEW; the repo tree is untouched until the POC passes). Each part's status word, `stopReason`, `tripped.category` and each attempt's outcome are compared.
+
+**Frozen bars.**
+- P1: every changed part is a step whose `tripped.category === 'stopped'`, and it changed failed -> stopped. Zero other changes, in parts or attempts. Every changed part is listed (run id, step, old -> new). Run mwue75ih's step `fix-codeversion-head-resolution` is among them.
+- P2: the run-level status word is unchanged for every run (this fix is part-level only).
+- P3: a fail-first test, red before and green after, built from a minimal spine of the mwue75ih shape (stop-requested, escalation stopped, run-end escalated, step-end escalated, job-end stopped): the part reads stopped. A control spine whose step's own escalation is a strike/ladder escalation still reads failed.
+
+If P1 or P2 fails: stop, commit only this addendum and the results, report.
+
+**POC result 2026-11-26 (`.claude/scratch/poc-stopped/RESULTS.md`): P2 PASS, P1 FAIL. Stopped, nothing built.** 97 runs (8 spines missing), 562 parts, real `getRunDetail`, OLD vs a scratch copy carrying the change. P2: 0 run-level changes. P1: six parts changed failed -> stopped, each a step with `tripped.category` `stopped` (muutlcko step strict-clean-src-and-gates:1; mwtf8p8s green-suite-fixloop:1; mwue75ih fix-codeversion-head-resolution:1; mwuxqx4f implement-and-green-suite:1 and :2; mwvwcxvy fix-answer-file:1), their open attempts `[null]` -> `['stopped']`. But four parts changed `continued`/`tryNumber` (muutlcko :2, mwuxqx4f :2 (a changed part), :3, :4): `prevOccurrence` in `src/replay.js` records `stopReason`, so a stopped-and-ended step re-run in the next leg reads "continued" instead of a retry. No status word moved on those. The frozen bar says zero other changes, so the fix is not built; hamr rules whether the continuation reading is right or the word is kept apart from `prevOccurrence`.
+
+##### Round 2 (2026-11-26)
+
+Round 1 stays reported as FAIL (text above unchanged). hamr's ruling (2026-11-26, "a"): take both the word and the continuation reading; a stop is not a failed try. The change is the one designed in round 1 (a step ending `escalated` with its own escalation `stopped` gets `stopReason: 'you stopped it'` in `src/replay.js`; `partStatusFor` maps it to stopped), with no extra variable.
+
+Frozen bars (same corpus, same scripts `.claude/scratch/poc-stopped/`):
+- R2-P1: the changed parts are exactly the same 6 (failed -> stopped, each with `tripped.category` `stopped`, attempts `[null]` -> `['stopped']`). The ONLY other allowed changes are `continued`/`tryNumber` on a later occurrence of the SAME step in a later leg, directly after one of those 6 stopped occurrences: `continued` false -> true on the first re-run (tryNumber reset as the existing continuation rule computes), or a tryNumber shift on that step's following tries. Every one is listed. Expected: the 4 seen in round 1 (muutlcko #4, mwuxqx4f #5, #6, #7). Any other change of any field = FAIL.
+- R2-P2: run-level words unchanged (as round 1).
+- R2-P3: a fail-first test, red before and green after. The mwue75ih-shape spine's step reads stopped. A second leg re-running the same step reads continued with try 1. A control step escalated by the strike ladder still reads failed and its next run still counts as a retry.
+
+**Round 2 result 2026-11-26 (`.claude/scratch/poc-stopped/RESULTS-round2.md`): PASS on R2-P1 and R2-P2.** Same corpus (97 runs, 562 parts), NEW byte-identical to round 1's. 0 run-level changes. The 6 changed parts are the round-1 six; the only other changes are the four expected `continued`/`tryNumber` ones (muutlcko #4, mwuxqx4f #5 (also one of the six), #6, #7), each on the same step directly after a stopped occurrence. R2-P3 is the build's fail-first test.
+
+
+#### Addendum 2026-11-26g: a final-check-only leg shows one line
+
+**Defect (live walk 2026-11-25, run mwue75ih).** The run has 3 legs. Leg 3 only re-ran the final check (spine `u-mwue75ih.jsonl`: seq 143 `close-precheck` satisfied, seq 145 `job-end` already-green) and has no step, so the Audit parts list ends on the leg divider ("stopped: ... · resumed ...", `legDividersFor`, `src/panel/server.js`) with nothing under it. It reads as if nothing happened. `src/replay.js` has no part kind for a final close on its own.
+
+**Ruling (hamr, 2026-11-26, option B).** ONE plain line, only for a leg that has no parts of its own (only the final check ran). No new part kind, no new fold or row on normal runs; a plain green run's final close stays in the checks box only. Words are code-owned fixed sentences. Sign and word come from the existing status table (`statusFor`, `isReusableGreen`, `STATUS` in `src/panel/status.js`). Leg outcome green / satisfied / already-green: `final check only: every check already passed, nothing left to do` with the passed sign. Any other leg outcome: `final check only: ` plus the run's existing plain stop words for that outcome (the owner is `endedFor`'s `reason`, `src/panel/server.js`), with that outcome's sign and word.
+
+**Owner.** `legDividersFor` (`src/panel/server.js`) adds a `checkOnly` field (`{sign, word, text}` or null) to the divider of a leg that has no part of its own. `src/panel/index.html` `legDividerEl` renders it under the divider with the existing `.dot` / `.st-word` markup (`stateDotHTML`). Audit only.
+
+**Frozen bars.**
+- P1: a $0 replay, the same corpus the F405 POC used (`getRunDetail` over every `runs.jsonl` row with a spine, deduplicated by run id; scripts reused from `.claude/scratch/poc-stopped/`), the full `getRunDetail` output OLD vs NEW (a scratch copy of `src/` carrying the change; the repo tree is untouched until the POC passes). Bar: the ONLY difference is the new `checkOnly` field on a divider, and only on legs with zero parts. Every run and leg that gets one is listed with its words. mwue75ih leg 3 gets the passed line. Zero other field changes.
+- P2: `index.html` renders it: a fail-first DOM test in the existing panel test style shows the line under the divider for a check-only leg, and NO line for a normal multi-leg run and for a plain single-leg green run.
+
+If P1 fails: stop, commit only this addendum and the results, report.
+
+**POC result 2026-11-26 (`.claude/scratch/poc-checkonly/RESULTS.md`): P1 PASS.** 97 runs, full `getRunDetail` OLD vs NEW: 5 differences, all a new `checkOnly` field on a divider of a leg with no part of its own and no worker activity; 0 other differences. mvtatlxw leg 2, mwue75ih leg 3 and mwvwcxvy leg 2 (already-green): passed line; mwrqzy1u leg 2 (check-red at precheck): "Goal not met — the checks said no."; mwtf8p8s leg 2 (close-red): "The check itself broke (instrument fault), not your goal." Divergence from the frozen wording: zero parts alone also caught mwuxqx4f leg 5, which ran a worker (3 rounds, then the provider failed before any part), so the line would be false; the rule adds "and no worker-round / run-start / step-start record in the leg" (a subset, so the bar holds). That leg keeps showing no row; parked. P2 is the build's fail-first DOM test.
+
+
+#### Addendum 2026-11-26h: the stopped sign and an empty first leg
+
+**Defects (hamr's walk on run mwue75ih, Audit tab, after F405/F406).** (1) A stopped step reads the word "stopped" but its trailing result glyph still shows the red failed sign: the word comes from `partStatusFor` (`src/panel/status.js`, `stopReason` from `src/replay.js`, F405) and the glyph from `partResultGlyph` (`src/panel/index.html`), which reads `part.outcome` ('escalated') through `attemptGlyph`. One fact, two readers. (2) A FIRST leg that has no part and no worker shows nothing above the first divider; F406's `checkOnlyLineFor` gives a line only to a later leg.
+
+**Rulings (hamr, 2026-11-26).** Fix 1: "yes": the glyph for a stopped part follows the ONE owner (the part's server-computed `status`, or its attempts, which F405 already set to `stopped`), shown with the stopped sign; capped and failed parts keep today's glyph unless word and glyph disagree. Fix 2: "2A": extend `checkOnlyLineFor` (no second mechanism) so a first leg with no parts and no worker gets one line above the first divider: `starting checks only: <outcome words>`; later legs keep `final check only: ...`. The leg's own escalation and money halt come from `currentLegView` (`src/legs.js`).
+
+**Frozen bars.**
+- P1: a $0 replay, the same corpus and scripts as `.claude/scratch/poc-checkonly/` and `poc-stopped/` (`getRunDetail` over 97 runs, OLD = HEAD, NEW = a scratch copy of src). The ONLY allowed differences: (a) a new first-leg check-only line on a resumed run whose leg 1 has zero parts and no worker (list each with its words; mwue75ih leg 1 MUST be among them); (b) no `getRunDetail` field change for Fix 1 if the glyph is computed in `index.html` (Fix 1 is then proven by P2). Zero other differences. "No worker" is the F406 rule: no `worker-round`, `run-start` or `step-start` record in the leg.
+- P2: fail-first page tests (`tests/p5r-page.test.js` and/or the panel Audit tests): a stopped part renders the stopped sign, not the failed sign; a capped and a failed part render as before; an empty first leg renders the starting-checks line above the first divider; a normal run renders no extra line. Each red before, green after.
+
+If P1 fails: stop, commit only this addendum and the results, report.
+
+**POC result 2026-11-26 (`.claude/scratch/poc-firstleg/RESULTS.md`): P1 FAIL. Stopped, nothing built.** 97 runs, 13 resumed. No leg 1 has zero parts and no worker, so no first-leg line would appear anywhere. mwue75ih leg 1 has zero parts but is NOT worker-free: it ran the scout (`scout-start`, one `worker-round` phase scout, seq 27) and was stopped during it (seq 28-31); a stopped scout leaves no part. The required row fails by the frozen rule. Fix 1 and the rest wait for hamr's ruling.
+
+##### Round 2 (2026-11-26): Fix 1 alone
+
+Fix 2 (the empty first leg) is WITHDRAWN pending hamr's choice; nothing of it is built (round 1's P1 FAIL text above stands). Fix 1 (the stopped step's result glyph) is built alone, on hamr's "yes".
+
+Owner: `partResultGlyph` (`src/panel/index.html`) reads the part's server-computed `status` (`partStatusFor`, `src/panel/status.js`): a part whose `status.key` is `stopped` shows that table entry's own sign (the stopped sign), with no second derivation of "stopped" from `outcome`/`stopReason`/attempts in the page. Capped, failed, passed and multi-attempt parts keep the existing path.
+
+Frozen bars:
+- P1 (Fix 1): `getRunDetail` has 0 field changes over the 97 runs. The glyph is computed in `index.html`, so no server field changes by construction; stated, not replayed. Fix 1 is proven by P2.
+- P2: fail-first page tests (`tests/p5r-page.test.js`): a stopped part renders the stopped sign and not the failed sign; a capped, a failed, a passed and a multi-try part render exactly as before. Red before, green after.
+- Capped check: a capped part's word against its glyph today is reported, not changed.
+
+**Ruling 2026-11-26 (hamr, later):** hamr ruled A for the cut-off part row (see PRD next-release item); the "starting checks only" line is withdrawn for good.
+
+
+#### Addendum 2026-11-26i: one row per leg for a part that spans legs
+
+**Defect (found 2026-11-26 when the cut-off part row was first specced).** The PRD next-release item "A part that started but never finished shows no row" had a wrong premise (the orchestrator's framing, withdrawn). The cut-off work is NOT missing: it sits inside a later leg's row, and that row is dated by its LAST attempt (`src/replay.js`, `p.leg = legOfSeq(Math.max(...finiteEnds))`), so the earlier leg reads empty. Run mwue75ih: scout `worker-round` seqs 27, 54-59, 61, 62, 67 (leg-resume markers at seq 32 and 113); seq 27 is leg 1's stopped scout round (scout-start 24, stop-requested 28, escalation stopped 29, job-end stopped 31); the one `scout` part (builder `src/replay.js` ~1279: every `phase:'scout'` round before the first step-start, across legs) holds all 10 rounds and is dated leg 2, so leg 1 shows nothing. Run mwuxqx4f: leg 5 (seq 489-542: outer-close, fix-loop, run-start, 3 worker-rounds, 2 transport-retry, escalation provider-red, job-end provider-red) is attempt 5 [530..538] of the one `fix` part, which spans legs 3-6 and is dated leg 6, so leg 5 shows no part.
+
+**Ruling A (hamr, 2026-11-26).** The parts builder shows the cut-off part as its own row, e.g. `[■] stopped  scout · 1 call · $0.0004 · you stopped it`.
+
+**Ruling "1" (hamr, 2026-11-26, after the premise check).** Split a cross-leg part into one row per leg. Owner: `src/replay.js` only (the parts builder and its leg dating); views keep reading `getRunDetail` / `partStatusFor`.
+
+**Frozen bars.**
+- P1: a $0 replay, same corpus and scripts as the F405/F406 POCs (real `getRunDetail` over every `runs.jsonl` row with a spine, deduplicated by run id), FULL output OLD (repo HEAD) vs NEW (a scratch copy of `src/` in `.claude/scratch/poc-cutoff/`). Allowed changes ONLY: a non-step part whose rounds/attempts fall in more than one leg is replaced by one row per leg, in leg order, each row holding exactly that leg's rounds/attempts (attempt objects keep every field unchanged, only regrouped). For each split: the pieces' calls and cost sum EXACTLY to the old row's; list every split (run id, kind, old row -> new rows with leg, sign, word, calls, cost, reason). Later pieces may carry `continued: true` by the existing continuation rule (list each). Divider fields `beforePart`/`hasParts` may change only for a leg that gains a piece (list each). Required: mwue75ih scout -> leg 1 row 1 call $0.00041868 stopped with reason 'you stopped it', leg 2 row 9 calls; mwuxqx4f fix -> one row per leg it spans, leg 5's row being attempt 5 with the provider-failed words. Zero changes to: any part whose activity is in one leg (every field), step parts, run-level status/outcome/stopReason/spend, checkOnly lines. Any other diff = FAIL.
+- P1b: sign/word only from the existing status table (`src/panel/status.js`); reason text only from existing code-owned words (replay.js `stopReason` words, `endedFor` reason in `src/panel/server.js`). No new STATUS entry, no new sentence; if needed, STOP and report.
+- P2: fail-first tests, red before the src change and green after: a mwue75ih-shape spine (scout round, stop, resume, more scout rounds, steps) gives two scout rows split by leg, the first stopped 'you stopped it' with 1 call and its cost; a fix part spanning legs with a provider-red middle leg gives one row per leg; a single-leg run's parts are unchanged.
+- P3: every `tests/*guard*.test.js` plus the replay/panel/status/legs/p5r-page test files green after the build; each exit code quoted.
+- P4: render check: does `src/panel/index.html` show the split rows correctly with existing markup (Audit parts list under the right divider, step map, Result)? Report; any page change needed is reported, not invented.
+
+If P1 or P1b fails: stop, commit only the addendum and results, report.
+
+**POC result 2026-11-26 (`.claude/scratch/poc-cutoff/RESULTS.md`): P1 FAIL. Stopped, nothing built.** 97 runs (8 spines missing), 562 parts, real `getRunDetail`, OLD vs a scratch copy of `src/` (`splitRounds` for scout/plan by the leg that ran each round, fix attempts grouped by the leg of the record each is; one shared `legStopReasonOf` for the cut-off words, the step rule moved onto it unchanged). Four parts split, every sum exact (rounds and tool calls equal, cost within 1e-12), run-level fields, `checkOnly` lines and every single-leg non-step part byte-identical, P1b held (only STATUS words stopped/failed/passed and the existing stopReason words 'you stopped it' / 'provider failed' / 'time cap'):
+- mwue75ih scout (10 rounds, 14 tools, $0.051879, leg 2) -> leg 1 [stopped] 1 round, $0.00041868, 'you stopped it'; leg 2 [passed] 9 rounds, $0.05146032.
+- mwuxqx4f fix (14 rounds, 18 tools, $0.037769, leg 6) -> leg 4 [failed] 0 rounds, $0, 'time cap' (attempts 1, 4: two prechecks, no worker round); leg 5 [failed] 3 rounds, $0.01022664, 'provider failed' (attempts 2, 5: attempt 5 is the provider-failed iteration, attempt 2 is the leg's close precheck); leg 6 [passed] 11 rounds, $0.02754252 (attempts 3, 6).
+- mwezqp5w scout (15 rounds, leg 2) -> leg 1 [failed] 6 rounds, $0.0200016, 'provider failed'; leg 2 [passed] 9 rounds. Not in the brief's list.
+- muux1x96 fix (27 rounds, leg 2) -> leg 1 [failed] 13 rounds, $0.0678667, 'provider failed' (attempts 1, 3); leg 2 [failed] 14 rounds, $0.0682197 (attempts 2, 4). Not in the brief's list.
+- Dividers: only `beforePart` moves, never a `checkOnly` line: muux1x96 leg 2 (4->5), mwezqp5w leg 2 (1->2), mwue75ih leg 2 (0->1; gains the leg-1 scout row) and leg 3 (4->5; index shift only, gains nothing), mwuxqx4f leg 5 (8->9) and leg 6 (8->10).
+
+**Why P1 fails (frozen bar: zero changes to any step part).** `resumedNext` (the leg-boundary flag, set after the dating, `src/replay.js`: a part is marked when the NEXT part belongs to a later leg; the step map draws the "resumed" mark from it, `src/panel/index.html` 1541-1605) flips true -> false on two step parts, because the part after them is now a fix piece dated to the SAME leg: mwuxqx4f `implement-and-green-suite:4` (next part was `fix` leg 6, now `fix:L4` leg 4) and muux1x96 `strict-typecheck-clean:1` (next was `fix` leg 2, now `fix:L1` leg 1). The flag moves onto the fix pieces (fix:L4, fix:L5 and muux1x96 fix:L1 read true). Nothing else changed on a step. Two further things to rule on, neither a bar: (1) mwuxqx4f's leg-4 fix piece reads failed with 'time cap' and $0 (two precheck attempts, no worker); (2) a part that starts in one leg and finishes in the next now draws one box per leg in the step map.
+
+##### Round 2 (2026-11-26)
+
+Round 1 stays reported as FAIL (text above unchanged). hamr saw both demo panels (OLD 4711, NEW 4712) and ruled "A" (2026-11-26):
+1. The `resumedNext` mark ("resumed after" dotted edge) moving from a step to the cut-off piece that now ends that leg is accepted: the flag sits on the LAST part of each leg (the existing rule, `src/replay.js`: a part is marked when the next part belongs to a later leg).
+2. A fix piece with no worker round (mwuxqx4f leg 4: two prechecks, 'time cap', $0) stays as a row.
+3. Attempt numbers inside a split piece read in time order, 1..n per piece (today the cross-leg fix row numbers the prechecks 1-3 and the iterations 4-6, so the leg pieces read "attempt 1, attempt 4"; after: "attempt 1, attempt 2" in seq order). Changed only for split pieces. The stopped scout's wall time stays as is.
+
+Owner: `src/replay.js` only (the split pass; the attempt number is minted by `buildOccurrenceMetrics`/`fixLoop.attempts` with `n: attempts.length + 1` there and is renumbered only inside a split piece).
+
+**Frozen bars (round 2).**
+- R2-P1: same as P1 (same corpus, scripts, required rows mwue75ih scout and mwuxqx4f fix, exact sums, zero changes to unsplit parts, run-level fields and `checkOnly` lines), with these extra allowed changes ONLY: (a) `resumedNext` moves to the last part of a leg; every flipped part is listed per run (a step losing it, a piece gaining it); (b) the attempts inside a split piece are ordered by their record's seq (an outer-close at its own seq, an iteration at its start) and numbered 1..n; each piece's old -> new numbers are listed, and every other field of every attempt is unchanged; the attempts of unsplit parts are untouched. Any other diff = FAIL.
+- P1b, P3, P4: unchanged from round 1.
+- P2: round 1's tests, plus: a split fix piece's attempts read 1..n in time order.
+
+If R2-P1 fails: stop, commit only the results, report.
+
+**Round 2 result 2026-11-26 (`.claude/scratch/poc-cutoff/RESULTS-round2.md`): PASS on R2-P1.** Same corpus (97 runs, 8 spines missing, 562 parts), real `getRunDetail`, OLD vs the scratch copy carrying round 1's split plus the attempt renumbering (the split fix piece sorts its attempts by the record's seq and numbers them 1..n, other attempt fields untouched). The same four splits and exact sums as round 1 (mwue75ih scout, mwuxqx4f fix, mwezqp5w scout, muux1x96 fix); 558 unsplit parts identical apart from `resumedNext`; run-level fields and `checkOnly` lines unchanged; only `beforePart` moves on dividers. (a) `resumedNext` moves, 7: two steps lose it (muux1x96 `strict-typecheck-clean:1`, mwuxqx4f `implement-and-green-suite:4`); five pieces gain it as the last part of their leg (muux1x96 fix:L1, mwezqp5w scout:L1, mwue75ih scout:L1, mwuxqx4f fix:L4 and fix:L5); in NEW every part's flag equals the rule "the next part belongs to a later leg" (the server-added `drafting` part is outside it, as before). (b) renumbering old -> new: muux1x96 fix:L1 1->1, 3->2; fix:L2 2->1, 4->2; mwuxqx4f fix:L4 1->1, 4->2; fix:L5 2->1, 5->2; fix:L6 3->1, 6->2. Scout pieces keep their one attempt n=1. Note: my first comparator flagged the `drafting` part against the rule (not a replay part); the comparator skips it, no code changed. P2-P4 are the build's.
+
+#### Addendum 2026-11-26j: one owner for the part and attempt sign
+
+hamr: "No per-case patches: one owner." Seen live in the panel 2026-11-26 (all four are one split: the server owns the part's word, the page re-derives the sign from `outcome`):
+- A capped part (money/time cap) reads the word "capped" but its result sign is ✗ (`partResultGlyph` reads the outcome).
+- A stopped try inside a multi-try part reads ✗ (`attemptGlyph` reads the attempt outcome).
+- mwue75ih step 2 chip reads "[■ 2 fix-codeversion-head-resolution — attempt 1 ✗]": part sign ■, stopped attempt ✗.
+- mwuxqx4f leg 4 fix piece (F407) reads "failed" with reason 'time cap' and $0: a time-capped piece reads failed, not capped (`partStatusFor` honours a cap `stopReason` only on an `escalated` outcome).
+
+**Ruling (design rule).** The server owns state. Every part's sign+word AND every attempt's sign+word come from the ONE status table (`src/panel/status.js`), computed once in `getRunDetail` (`partStatusFor` and one attempt function beside it, `attemptStatusFor`), from existing STATUS entries only. `src/panel/index.html` renders what it is given: no second derivation of passed/failed/stopped/capped from `outcome`/`stopReason`/`attempts` anywhere in the page. A guard test fails if the page derives a glyph from `outcome` again.
+
+**Every site that derives a sign or state word from outcome/stopReason/attempts (grep of `src/panel/index.html`, `src/panel/*.js`, HEAD 00d991bf).** Moves to the owner:
+1. index.html 1426 `attemptGlyph(outcome, boxIsLive)`: outcome -> ✓/▶/?/✗. Removed.
+2. index.html 1433 `tryGlyph(a, boxIsLive)`: noVerdict -> ?, else `attemptGlyph`. Becomes a plain read of `a.status.sign`.
+3. index.html 1452 `attemptsInlineText` (the step-map chip's "attempt N sign"): through `tryGlyph`.
+4. index.html 1486-1490 `partBoxState`: part.outcome green/string, status died, stopReason, isLastLivePart -> done/stopped/died/running. Becomes a map of `part.status.key`.
+5. index.html 1508-1517 `partResultGlyph`: drafting `attemptGlyph("green")`, the stopped special case (11h), multi-attempt join, single `part.outcome ?? attempts[0].outcome` -> `attemptGlyph`. Becomes: join of the attempts' status signs (several), the one attempt's sign when it has no verdict, else `part.status.sign`.
+6. index.html 1535 (`buildOrderedBoxes`): the live part's status `{▶ running}` override; the server now says running.
+7. index.html 3273 `stepStateHTML`: dot colour from `box.state` plus a sign test. Becomes a map of `status.key`.
+8. index.html 3308 `gridStepTryOf`: `t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive)`. Becomes `t.status.sign` (server attaches a status to each `part.tries` entry).
+9. index.html 3324 `gridFixTryOf`: through `tryGlyph`.
+10. src/panel/server.js 2413 `parts` map and 3328 `cappedLastStep`: the one place the verdict is known; the owner is called here for parts, attempts and tries.
+
+Left alone, named: (i) index.html 3788 `"stopped — " + part.stopReason` (a fixed label word in front of the reason text, not a status sign; changing it moves a text line, not in this ruling's bars); (ii) index.html 3638 the check-line badge (prints a check's own outcome string); (iii) run-level `detail.glyph` readers (2801, 3068, 3082, 4533 etc.: the run's own glyph from `statusFor`, server-given); (iv) server.js 2245 `state: u.stopReason ? 'stopped' : stateFor(...)` on the legacy `steps` list (a done-count input, not a sign or word). Rule that was in the table already and stays: a part the person stopped on an `escalated` outcome is stopped (11h).
+
+**Owner.** `src/panel/status.js` (`partStatusFor`, new `attemptStatusFor`); called once in `src/panel/server.js` `getRunDetail` (the `parts` map). Rules:
+- Part: unchanged table, plus (a) any non-green outcome with a cap `stopReason` ('money cap'/'time cap') -> capped (was only `escalated`); (b) the live part (last part of a running run, no outcome, no stopReason) -> running (the server says it; the page no longer decides); (c) `cappedLastStep` also covers a fix part whose last attempt a cap ended (run capped, last attempt stop `wall-halt`/`cap-halt`).
+- Attempt: green -> passed; stop (or a step try the leg cut off, or a step attempt the replay marked `stopped`) with a cap word ('wall-halt', 'cap-halt' backed by a capped run or a 'money cap' stopReason, or the part's cap stopReason) -> capped; stop `stopped` (escalation or run-end) or the part's 'you stopped it' -> stopped; other no-verdict (provider dropped, died, null outcome of a finished run) -> the existing `died` entry (sign ?, as today); a live null -> running; anything else red/stopped -> failed.
+
+**Frozen bars.**
+- P1: $0 replay, same corpus and scripts as `.claude/scratch/poc-cutoff/` (real `getRunDetail` over every runs.jsonl row with a spine, dedup by run id), OLD (HEAD) vs NEW (a scratch copy of `src/` in `.claude/scratch/poc-glyph/`). Compare every part's and attempt's (sign, word) as the PAGE shows it. OLD: the page's own functions (`attemptGlyph`, `tryGlyph`, `partBoxState`, `partResultGlyph`, `buildOrderedBoxes`, `gridStepTryOf`, `gridFixTryOf`) extracted verbatim from HEAD's index.html and run on OLD data (an attempt has no word on the page: its OLD word is the table word of its OLD sign, ✓ passed, ✗ failed, ▶ running, ? died). NEW: the server-attached fields (and, as a cross-check, the NEW page's functions run on the NEW data). Allowed changes ONLY: (a) a part whose status word is capped changes sign ✗ -> the capped sign; (b) an attempt cut by the person's stop changes ✗ (or whatever it showed) -> the stopped sign; (c) an attempt or piece ended by a money/time cap changes to the capped sign+word; (d) a part piece whose only end reason is a cap (e.g. mwuxqx4f fix:L4 'time cap') changes word failed -> capped. Every change listed (run, part, attempt, old -> new). Required: mwue75ih step 2 attempt 1 reads ■ stopped; mwuxqx4f fix:L4 reads capped. Zero changes to every other part/attempt sign and word, to run-level status, money, parts count, order. Any other diff = FAIL.
+- P1b: only existing STATUS entries (no new sign, no new word).
+- P2: fail-first tests (tests/p5r-page.test.js style): a capped part renders the capped sign; a stopped attempt in a multi-try part renders the stopped sign; the step-map chip of a stopped attempt shows the stopped sign; failed/passed parts and attempts render as before. Red before, green after.
+- P3: the new guard test plus every tests/*guard*.test.js and the replay/panel/status/legs/p5r-*/cutoff-part-rows test files green; each exit code quoted.
+
+If P1 or P1b fails: stop, commit only the addendum and results, report.
+
+**Result 2026-11-26 (`.claude/scratch/poc-glyph/RESULTS.md`): PASS on P1 and P1b.** 97 runs (8 spines missing), 567 parts, 565 attempts, 262 graded tries; real `getRunDetail`, OLD (HEAD) vs a scratch copy; OLD page functions extracted verbatim from HEAD's index.html. 1941 (sign, word) readings unchanged; 20 changed, all inside the bars; every non-status field, run-level field, money, parts count and order byte-identical; every new status is an existing STATUS entry. Changes (run, where, old -> new):
+- (b) stopped by the person, 6 steps x (attempt + its cut-off graded try): muutlcko `step:strict-clean-src-and-gates:1`, mwtf8p8s `step:green-suite-fixloop:1`, mwue75ih `step:fix-codeversion-head-resolution:1` (the required row, step 2 attempt 1), mwuxqx4f `step:implement-and-green-suite:1` and `:2`, mwvwcxvy `step:fix-answer-file:1`: attempt ✗ failed -> ■ stopped; the Audit grid try ? -> ■ stopped. The part word of these was already stopped (11h).
+- (b) muux1x96 fix:L2 attempt 2 (the try the person's Stop ended): ? -> ■ stopped; the part's result signs "✗?" -> "✗■".
+- (d)/(c) mwuxqx4f fix:L4 (the required row): part ✗ failed -> ■ capped; attempt 2 (ended by the wall) ? -> ■ capped; result signs "✗?" -> "✗■".
+- (d)/(c) mvki7iqf fix (not a split piece; the run's money cap ended its 4th try): part ✗ failed -> ■ capped; attempt 4 ? -> ■ capped; result signs "✗✗✗?" -> "✗✗✗■". It rides the owner rule (c) written above; flagged for hamr as the one change outside the two named rows.
+- (a) has no corpus instance (no part reads capped in the archive); the unit tests cover it.
+
+#### Addendum 2026-11-26k: the check-only worker scan
+
+**Defect (PRD next-release list, logged).** `checkOnlyLineFor` (src/panel/server.js) decides "this leg ran no worker" by scanning `leg.records` itself for `worker-round` / `run-start` / `step-start`. F406 (Addendum 2026-11-26g) added the scan because mwuxqx4f leg 5 had worker activity but no part. Since F407 (Addendum 2026-11-26i: a part spanning legs is one row per leg) a leg with worker activity should always own a part, so `hasParts` already answers "did this leg do work" and the scan is a second, unowned reading of the same fact.
+
+**Hypothesis.** Deleting the scan (keeping `outcome === null` -> `{}`) changes nothing in any real run.
+
+**Frozen bars.**
+- P1: $0 replay, same corpus and scripts as `.claude/scratch/poc-checkonly/` and `poc-cutoff/` (real `getRunDetail` over every runs.jsonl row with a spine, dedup by run id), FULL output OLD (HEAD) vs NEW (scratch copy of `src/` in `.claude/scratch/poc-workerscan/` with the scan removed). Bar: ZERO differences in any field. Also list every leg in the corpus that has worker-round/run-start/step-start records and zero parts in NEW. Bar: none.
+- P2: a unit test showing a leg with worker activity always gets a part (the mwuxqx4f-leg-5 shape through the cutoff-part-rows fixtures if reusable), so the check-only line never appears there; it must pass with the scan removed.
+- If P1 shows any difference or any worker leg with zero parts: STOP, do not delete, report the case.
+
+**Result 2026-11-26 (`.claude/scratch/poc-workerscan/RESULTS.md`): PASS on P1.** 97 runs (8 spines missing), full `getRunDetail` OLD vs a scratch copy without the scan: 0 differences in any field. 0 of 107 worker legs have zero parts. Disclosed: parts carry a numeric `leg` only in multi-leg runs, so the zero-part check matches by leg number there and by `parts.length > 0` in single-leg runs (no divider, so the scan was never reached); my first pass, matching by leg number everywhere, listed 23 single-leg runs and was a measurement error. Side finding: tests/p5r-panel.test.js (the 2026-11-26g test) feeds `legDividersFor` a worker-round leg with no matching part, an input the real data never produces; it is re-pointed in the build (P2).
+
+#### Addendum 2026-11-26l: an ended step the money cap cut reads capped
+
+**Defect (hamr saw it on the 4713 demo panel; ruled "A" 2026-11-26).** Run mwuxqx4f, part `step:implement-and-green-suite:3` (leg 3) reads `failed ✗` with its check reason, but its leg was ended by the money cap: spine seq 302 cap-halt, 303 escalation category cap-halt, 304 run-end escalated, 305 step-end escalated, 307 money-halt, 309 job-end cap-halt. The Audit divider right below says "stopped: money cap reached". Cause: `src/replay.js` derives a step's `stopReason` only for a step WITHOUT a `step-end` (the cut-off case) plus F405's stopped case, so an ENDED step the cap cut keeps failed; the F408 owner (`partStatusFor`) can only read what replay hands it.
+
+**Ruling A (one owner).** Where replay already sets `stopReason: 'you stopped it'` for an ended step whose own escalation is `stopped` (F405), set the existing cap words for an ended step whose own escalation is a cap: category `cap-halt` (not the strike ladder's: `tripped.ladder`) while the step's leg ended on a money cap -> 'money cap'; category `wall-halt` while the leg ended on a time cap -> 'time cap'. No new sentence, no new status; `partStatusFor` then reads capped through its existing cap path. The page derives nothing.
+
+**Owner.** `src/replay.js`, the one line beside the F405 line (~811), asking the leg's own cap via `legCapKind(leg)` (the helper that already answers "did this leg end on a cap" for the open-step rule at ~797 and the per-leg rows; it reads the leg's `money-halt` record and last escalation exactly as `currentLegView` does, and `tests/legs-current-guard.test.js` allow-lists it). Divergence from the brief's wording, named: it is `legCapKind`, not a direct `currentLegView` call, because replay holds per-leg slices (`legsOf`), not only the current leg. The attempt rule: the LAST attempt of a part that a cap `stopReason` ended, and that is not green, wears capped (`attemptStatusFor` gets `lastOfPart`); that is what the brief asks ("its last attempt sign -> capped"), though that attempt may have carried a red check verdict before the cap landed (flagged).
+
+**Frozen bars.**
+- P1: $0 replay, same corpus and scripts as `.claude/scratch/poc-glyph/` (real `getRunDetail` over every runs.jsonl row with a spine, dedup by run id), OLD (HEAD badce69a) vs NEW (scratch copy). Full `getRunDetail` deep diff. Allowed changes ONLY: an ended step part whose own escalation is cap-halt with a leg money halt (or wall-halt with a leg time cap) changes failed -> capped, its `stopReason` null -> the existing cap words, its last attempt sign -> capped (and the matching graded try); and `continued`/`tryNumber` of the same step's NEXT occurrence in a later leg IF the existing continuation rule (`prevOcc.stopReason !== null`, F405 round 2 precedent) moves it. Each change listed. Required: mwuxqx4f `step:implement-and-green-suite:3` reads capped. Also listed: every ended step in the corpus with escalation cap-halt and NO leg money halt (the strike-ladder case), shown unchanged. Zero other diffs.
+- P1b: existing STATUS entries and existing words only.
+- P2: fail-first tests: a spine of mwuxqx4f leg 3's shape reads capped; a cap-halt escalation without a money halt keeps failed; the F405 stopped case is unchanged.
+- P3: glyph-owner-guard, cutoff-part-rows, p5r-page, p5r-panel, panel-status, panel-page, replay, legs*, every tests/*guard*.test.js, each exit code quoted.
+
+If P1 fails: stop, commit only the results, report.
+
+**Result 2026-11-26 (`.claude/scratch/poc-glyph/RESULTS-l.md`): P1 FAIL. Stopped, nothing built.** 97 runs, real `getRunDetail`, OLD HEAD vs a scratch copy. The change itself works: mwuxqx4f `step:implement-and-green-suite:3` reads capped (stopReason null -> money cap, attempt and tries ■ capped), its next occurrence `:4` moves continued false -> true and tryNumber 2 -> 1, and P1b holds; all 23 ended strike-ladder cap-halt steps are unchanged. Two things outside the frozen bars: (1) a second run, mwsfq0pi `step:fix-pagefetch-to-green:3` (wall-halt in a time-capped leg), changes the same way (not named in the brief; in rule); (2) the continuation moving also changes the run-level `steps` summary list (mwuxqx4f 3 -> 2 entries, states done,stopped,done -> done,done; mwsfq0pi 6 -> 5 entries, the merged entry taking the later piece's figures), and mwsfq0pi :3 attempt 1 `outcome` null -> 'stopped'. For hamr: accept both as consequences of the existing continuation rule (a continued step is one step in the summary, F405 round 2 precedent) and re-freeze, or keep the cap step from counting as "continued".
+
+#### Addendum 2026-11-26m: one owner for how a part ended
+
+**Why.** "How did this part / piece / try end" is decided in about 35 places that disagree 8 ways (map: `.claude/scratch/part-end-map.md`). It was patched four times on 2026-11-26 (F405, F405 Fix 1, F408, Addendum l, whose POC FAILED on two extra changes). hamr ruled a redesign: ONE owner. **Addendum l is superseded by this addendum** (dated note; l's text is untouched, its POC verdict stands as the evidence that the continuation rule moves with every `stopReason` rule).
+
+**hamr's rulings (2026-11-26, "1 yes, 2 yes, 3 yes, 4 yes"), verbatim in substance:**
+1. A step cut off by a cap, the person's stop, or a provider failure, then re-run in the next leg, is the SAME step "(continued)", not a retry.
+2. The run-level `steps` summary list ("steps: N of M done") is rebuilt from the owner, so a continued step counts once.
+3. A try that got its own red check verdict and was then followed by a cap keeps failed; only the try the cap actually cut off reads capped; the whole step reads capped.
+4. One provider-failure wording everywhere it names the part/leg end: "the model provider failed" (the leg divider's current words). Every string that changes is listed in the result.
+Also: a money cap is told from a strike-ladder `cap-halt` by the leg's `money-halt` record (and `wall-halt` for time); the POC verifies, over the corpus, that every real money cap has a `money-halt` record and lists every cap-halt that does not.
+
+**Owner.** `endOf` in `src/legs.js`, beside `capKindOf`, under the legs-current guard. Input: one window's own end facts (its end record, its own last escalation), its leg (`legsOf` slice), whether its leg cut it, and the external `died` / `live` flags. Output: `{end: 'passed'|'failed'|'stopped'|'capped-money'|'capped-time'|'provider'|'stalled'|'check-timeout'|'died'|'open', cutBy, words, ladder}`. `words` come only from the existing code-owned strings (one table, `END_WORDS`, beside it). The window's own escalation decides first (`stopped`; `wall-halt` backed by a time-capped leg; `cap-halt` that is the leg's last escalation with a leg `money-halt` = money cap, any other `cap-halt` = the ladder, `ladder: true`; `provider-red` / `step-stalled` / `check-timeout` when the leg ended so), then the window's own end record, then the leg's end for a window with no end of its own, then `open` or `died`. replay.js, server.js and status.js READ it; nothing else decides.
+
+**Delete / reduce list (file:line at HEAD b725cddf).**
+- `src/replay.js` 246 `legCapKind`, 257 `legStopReasonOf`: deleted (folded into `endOf`). 792-811 the three `stopReason` rules (open single-leg step, open resumed step, F405 stopped): one `endOf` call. 693-705 `tripOf` `ladder` field: read from `endOf`. 932-936 `continued` / `tryNumber`: read the previous occurrence's `endOf` cut (not `stopReason !== null` of a separately derived string). 1443 attempt `null -> 'stopped'`: reads the same cut. 1522 and 1569 piece `stopReason`: `endOf`.
+- `src/panel/server.js` 3327-3340 `cappedLastStep`: deleted (replay now ends an ended capped step itself; a fix part's last try reads `endOf`). 3348-3352 `withStatuses` died injection: passes `died` into `endOf`. 3311 `noVerdictWords`: the kind comes from `endOf`, the words are a lookup (ruling 4 changes the provider words). 2189 `stateFor` and 2244 `state: u.stopReason ? 'stopped' : ...`: the legacy `steps` list state is read from `endOf` (same vocabulary: done / stopped / died / running / waiting). 2260 the continued merge: reads the owner's continuation (ruling 2). 437-446 `legDividersFor` kind decision and 507-730 `endedFor` (618 and 633 `capKindOf` calls, 625 the second ladder test `cat === 'cap-halt' && typeof strikes === 'number'`): the kind comes from `endOf`; the sentences, money amounts, resume actions and next lines stay.
+- `src/panel/status.js` 75 `statusFor`, 101 `partStatusFor`, 129 `attemptStatusFor`: the string and category comparisons (`isCap`, `what === 'wall-halt'`, `'you stopped it'`, `'died'`) become reads of the owner's kind through one table `END_TO_KEY`; no new sign, no new word.
+- `src/panel/index.html`: no change (F408 left it reading `status`); 1728 `p.word === "passed"` is a run-row reason pick, not a part or attempt end: named, left.
+
+**What stays, and why.** `deriveDeath` (server.js 312): needs the pid / mtime (runlist.js), an input flag not a spine fact. The money / resume sentences and `next` lines of `endedFor` and `legDividersFor`: presentation. `src/reuse.js` `CHECKPOINT_OUTCOMES` and `src/ledger.js` outcome classes: resumability and ledger policy, a different question (they read job-end outcomes, not windows). `src/panel/importrun.js` (no spine in this process). The engine writers (`planrun.js`, `ralph.js`, `stall.js`, `stepmcp.js`, `run.js`, `userrun.js`): they WRITE the records. `STATUS` stays the vocabulary.
+
+**Guard.** New `tests/part-end-owner-guard.test.js`: fails if a src file other than `src/legs.js` reads an escalation `category`, `money-halt`, `wall-halt` or `stop-requested` to decide a part's or attempt's end; the engine writers, policy files and each named exception are allow-listed with a reason.
+
+**Frozen bars.**
+- P1: $0 replay, same corpus and scripts as `.claude/scratch/poc-glyph/` (real `getRunDetail` over every runs.jsonl row with a spine, dedup by run id). The FULL `getRunDetail` output AND the page-visible sign and word per part, attempt and graded try, OLD (HEAD b725cddf) vs NEW (a full throwaway copy of the repo under `.claude/scratch/poc-endof/` carrying the change; repo `src/` untouched until PASS). Allowed changes ONLY, each listed run / part / old -> new:
+  - (a) mwuxqx4f `step:implement-and-green-suite:3` and mwsfq0pi `step:fix-pagefetch-to-green:3` read capped: `stopReason` the existing cap words, the part word failed -> capped, the try the cap cut off capped (a try with its own red verdict keeps failed, ruling 3), and the existing "a part with a stop reason turns a null attempt outcome into 'stopped'" mapping on those two parts. Any OTHER ended step a cap, a stop or a provider failure cut is listed under (e), not (a).
+  - (b) the next occurrence's `continued` / `tryNumber` of each step in (a) and (e), by ruling 1.
+  - (c) the legacy `steps` list merges a continued step (mwuxqx4f 3 -> 2, mwsfq0pi 6 -> 5 entries were seen in Addendum l), by ruling 2; every run whose list changes is listed.
+  - (d) provider-failure strings change to "the model provider failed" (ruling 4): every string, run and place listed.
+  - (e) any part or try whose end the old sites decided inconsistently (map section 3): EACH listed old -> new, the conflict it resolves, and a one-line reason it matches the rulings. A change with no such reason is a FAIL.
+  - ZERO other differences: every F405 / F407 / F408 / F406-k output not covered above is byte-identical; run-level status, outcome, money, parts count and order unchanged. Required: the 23 ended strike-ladder cap-halt steps listed in Addendum l read exactly as before (failed, no stop reason).
+- P1c (report, not a pass/fail on its own): over the corpus, every `cap-halt` escalation split by `spend.strikes` present / absent and by "its leg has a `money-halt`"; every escalation that does not fit (a money cap with no `money-halt`, a ladder with one) is listed. A listed misfit that changes an output is an (e) row and needs its reason.
+- P1b: existing STATUS entries and existing words only (the one exception: ruling 4's wording).
+- P2: fail-first tests, red on HEAD then green: an `endOf` table (one case per end kind, from minimal spines including the mwuxqx4f leg-3 shape, a strike-ladder cap-halt, a person's stop, a provider-red, a died open step); the ruling 3 case; the ruling 1 continued case; the new guard test.
+- P3: every `tests/*guard*.test.js` plus replay, p5r-*, panel-page, panel-status, glyph-owner-guard, cutoff-part-rows, legs*, f399-parity-*, died-open-part, drafting-part and audit-* files, run one file at a time through `node scripts/hermetic.mjs`, each exit code quoted.
+If P1 or P1b fails: STOP, commit only this addendum and the results, report the diffs.
+
+**Result 2026-11-26 (`.claude/scratch/poc-endof/RESULTS.md`): PASS on P1 and P1b.** 97 runs (8 spines missing), real `getRunDetail`, 1394 part / attempt / graded-try readings, OLD (HEAD b725cddf) vs a full scratch copy. Run-level status, outcome, money, parts count and order, and the leg dividers: zero differences. Changes, all inside the bars: (a) mwuxqx4f `step:implement-and-green-suite:3` (money cap) and mwsfq0pi `step:fix-pagefetch-to-green:3` (time cap) read capped, the try the cap cut off capped, mwuxqx4f's attempt 1 and try 1 (own red verdict) stay failed (ruling 3); (b) their next occurrences `:4` read continued (tryNumber 2 -> 1 and 4 -> 3); (c) the legacy `steps` list merges (mwuxqx4f 3 -> 2, mwsfq0pi 6 -> 5, muuvmmul 4 -> 3); (d) six provider-failure strings change (three part stop reasons, three fix-try no-verdict lines); (e) one row beyond the two named: muuvmmul `step:strict-other-src:1`, an ended step its leg's provider failure cut (ruling 1), reads the model provider failed, its attempt 1 `? died` -> `✗ failed` through the existing mapping, its `:2` continued. The 23 ended strike-ladder cap-halt steps are unchanged. P1c: of 28 `cap-halt` escalations, the 2 without `spend.strikes` are real money caps (both with a `money-halt`), 26 are the ladder (none with one); 0 misfits. Disclosed: the compare was run five times while the change was built (the later ones after the ended-block ladder test was wired and after a `spend.strikes` protection was tried and removed, see the Build paragraph); the final run is the verdict. Corpus caveat: 97 archived runs only; the single-leg last-step cap case (the old `cappedLastStep`) has no instance in it, so it is test-proven only.
+
+**Build 2026-11-26 (same day).** The POC copy was ported verbatim into `src/` (the final `src/legs.js` differs from the POC copy by one docblock sentence only). One consequence of ruling "use the `money-halt` record" is named for hamr: a `cap-halt` escalation that is its leg's LAST escalation in a leg that carries a `money-halt` (or ended job-end `cap-halt`) now reads as the money cap at the PART level too, even when it carries `spend.strikes`. At HEAD the two readers disagreed: the run-level Ended block already let the `money-halt` win (tests/panel-ended.test.js, real spine mup3h70u: strikes AND a money-halt read "Money cap reached"), while `cappedLastStep` let `spend.strikes` win (tests/panel-status.test.js, a mirror of u-mshcpdg4, expected `failed`). The corpus has no such case (P1c: 0 misfits; all 26 ladder escalations sit in legs without a `money-halt`), so the replay cannot tell the two apart; the panel-status test is changed to the ruling and a ladder with no `money-halt` is pinned failed beside it. For hamr: confirm, or give the ladder's `spend.strikes` priority (then the run-level Ended block changes instead).

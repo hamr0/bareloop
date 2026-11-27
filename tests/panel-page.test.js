@@ -14,6 +14,7 @@
 // off an archived spine when one is available, and an authored one
 // (labelled as such) otherwise.
 
+import { mintParts } from './helpers/mint-status.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -34,7 +35,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { buildStepMapHTML, stepMapKeyHTML, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, attemptGlyph };
+    return { buildStepMapHTML, stepMapKeyHTML, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, tryGlyph, signOf };
   `);
   return factory();
 }
@@ -1037,24 +1038,26 @@ test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRo
 // item 4 (2026-09-25): map boxes show attempts inline
 // ---------------------------------------------------------------------------
 
-test('item 4: attemptsInlineText / stepTitleText — attempts append to the box title as "attempt N [check/cross]"', () => {
+test('item 4: attemptsInlineText / stepTitleText — attempts append to the box title as "attempt N [check/cross]" (the sign is the server\'s status, read not derived)', () => {
   const { attemptsInlineText, stepTitleText } = (function(){
     const html = readFileSync(PAGE_PATH, 'utf8');
-    const start = html.indexOf('function attemptGlyph(');
+    const start = html.indexOf('function signOf(');
     const end = html.indexOf('function renderStepMap(');
     const body = html.slice(start, end);
     // eslint-disable-next-line no-new-func
     return new Function(`${body}\nreturn { attemptsInlineText, stepTitleText };`)();
   })();
+  const red = { key: 'failed', sign: '✗', word: 'failed' };
+  const green = { key: 'passed', sign: '✓', word: 'passed' };
   assert.equal(attemptsInlineText([]), '');
   assert.equal(attemptsInlineText(null), '');
   assert.equal(
-    attemptsInlineText([{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }]),
+    attemptsInlineText([{ n: 1, outcome: 'red', status: red }, { n: 2, outcome: 'green', status: green }]),
     'attempt 1 ✗ · attempt 2 ✓',
   );
   assert.equal(stepTitleText(0, { title: 'annotate-checks', attempts: [] }), '1 annotate-checks');
   assert.equal(
-    stepTitleText(0, { title: 'annotate-checks', attempts: [{ n: 1, outcome: 'green' }] }),
+    stepTitleText(0, { title: 'annotate-checks', attempts: [{ n: 1, outcome: 'green', status: green }] }),
     '1 annotate-checks — attempt 1 ✓',
   );
 });
@@ -1078,26 +1081,23 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
       kind, label: kind, occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }],
     };
     assert.equal(partHasNoVerdict(part), true, `${kind} must be a no-verdict kind`);
-    const [box] = buildOrderedBoxes([part], false);
+    const [minted] = mintParts([part]);
+    const [box] = buildOrderedBoxes([minted]);
     assert.deepEqual(box.attempts, [], `${kind}'s synthetic attempt must not reach map/card display`);
-    assert.equal(partResultGlyph(part, box), null, `${kind} must render no result glyph at all`);
+    assert.equal(partResultGlyph(minted, box), null, `${kind} must render no result glyph at all`);
   });
   // a real single-attempt step (a genuine green) still shows its glyph —
-  // P3 build (2026-09-27, glyph colour addition): wrapped in a plain inline
-  // colour span (`glyphSpan`), never a bare glyph any more — the part-card
-  // renderer inserts this string via innerHTML, so the span is real markup,
-  // not literal text.
-  const stepPart = {
+  // wrapped in a plain inline colour span (`glyphSpan`), the part-card renderer inserts this string via innerHTML.
+  const [stepPart] = mintParts([{
     kind: 'step', label: 'x', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }],
-  };
-  const [stepBox] = buildOrderedBoxes([stepPart], false);
+  }]);
+  const [stepBox] = buildOrderedBoxes([stepPart]);
   assert.equal(partResultGlyph(stepPart, stepBox), '<span class="glyph-green">✓</span>');
-  // a multi-attempt fix loop still joins every attempt's own glyph, each in
-  // its own colour span.
-  const fixPart = {
+  // a multi-attempt fix loop still joins every attempt's own glyph, each in its own colour span.
+  const [fixPart] = mintParts([{
     kind: 'fix', label: 'fix', occurrence: null, outcome: 'green', attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
-  };
-  const [fixBox] = buildOrderedBoxes([fixPart], false);
+  }]);
+  const [fixBox] = buildOrderedBoxes([fixPart]);
   assert.equal(partResultGlyph(fixPart, fixBox), '<span class="glyph-red">✗</span><span class="glyph-green">✓</span>');
 });
 
@@ -1118,48 +1118,41 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
 // glyph was "?" even while `box.state === 'running'`, which was itself the
 // bug this item fixes.
 test('build item (2026-09-27, panel P2 defect 2 + item 1): a live run\'s LAST part with outcome null reads state "running", never "stopped" — and its result glyph is "▶" (open, live), never the died "?" or a fabricated "✗"', () => {
-  const {
-    buildOrderedBoxes, partBoxState, partResultGlyph, attemptGlyph,
-  } = loadStepMapGeometry();
-  const openFixPart = {
-    kind: 'fix', label: 'fix', occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }],
-  };
-  const [box] = buildOrderedBoxes([openFixPart], /* isLive */ true);
+  const { buildOrderedBoxes, partBoxState, partResultGlyph } = loadStepMapGeometry();
+  const open = { kind: 'fix', label: 'fix', occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }] };
+  // the SERVER says running (src/panel/server.js withStatuses): the last part of a running run
+  const [live] = mintParts([open], { runKey: 'running' });
+  const [box] = buildOrderedBoxes([live]);
   assert.equal(box.state, 'running', 'a live run\'s last part with outcome null must read running');
-  assert.equal(partBoxState(openFixPart, /* isLastLivePart */ true), 'running');
-  assert.equal(attemptGlyph(null, /* boxIsLive */ true), '▶', 'an open attempt on a LIVE box must render "▶", never the died "?"');
-  assert.equal(attemptGlyph(null, /* boxIsLive */ false), '?', 'an unresolved attempt outcome on a non-live box still renders "?"');
-  assert.equal(partResultGlyph(openFixPart, box), '▶', 'the live box\'s own result glyph must be "▶", not the died "?"');
-  // sanity: the pre-fix behaviour this replaces — outcome as a STRING (the
-  // fabricated 'red' the source bug used to mint) reads "stopped" even when
-  // it is genuinely the last live part, proving partBoxState really does
-  // check part.outcome before isLastLivePart (the ordering the fix relies
-  // on never flipping silently underneath it).
-  const fabricatedRedPart = { ...openFixPart, outcome: 'red' };
-  assert.equal(partBoxState(fabricatedRedPart, true), 'stopped');
+  assert.equal(partBoxState(live), 'running');
+  assert.equal(partResultGlyph(live, box), '▶', 'the live box\'s own result glyph must be "▶", not the died "?"');
+  assert.equal(box.status.word, 'running');
+  // the same part on a run that DIED reads died, sign ?
+  const [dead] = mintParts([open], { died: true });
+  const [deadBox] = buildOrderedBoxes([dead]);
+  assert.equal(deadBox.state, 'died');
+  assert.equal(partResultGlyph(dead, deadBox), '?');
+  // a part with a red outcome stays stopped, even as the last part of a running run
+  const [red] = mintParts([{ ...open, outcome: 'red' }], { runKey: 'running' });
+  assert.equal(partBoxState(red), 'stopped');
 });
 
-// A part its leg's halt cut off on a DIED run: replay stamps `status.key === 'died'` on it (outcome null), and its
+// A part its leg's halt cut off on a DIED run: the server stamps `status.key === 'died'` on it (outcome null), and its
 // box must read "died" — never fall through to the green "done" state (or "running", even as the last part).
-test('partBoxState: an open part whose status is died reads "died", whether or not it is the last live part', () => {
+test('partBoxState: an open part whose status is died reads "died"', () => {
   const { partBoxState } = loadStepMapGeometry();
   const diedPart = {
     kind: 'step', label: 'x', occurrence: 1, outcome: null, status: { key: 'died' }, attempts: [{ n: 1, outcome: null }],
   };
-  assert.equal(partBoxState(diedPart, false), 'died');
-  assert.equal(partBoxState(diedPart, true), 'died');
+  assert.equal(partBoxState(diedPart), 'died');
 });
 
-// item 1 RED-PROOF, real fixture (mujjtrvd-midrun.jsonl via replayRun): the
-// SAME parts data read two ways — once as a genuinely live run (isLive
-// true, matching the run glyph "▶" and !died) and once as a died variant
-// (isLive false, matching hamr's glyph ruling that "?" is reserved for
-// DIED) — must render the open attempt differently: "▶" live, "?" died. A
-// finished run's (real, non-null-outcome) attempts are unaffected either
-// way, proving the fix never touches the resolved-outcome path.
+// item 1 RED-PROOF, real fixture (mujjtrvd-midrun.jsonl via replayRun): the SAME parts data read as a genuinely live run (the server's
+// status says running) and as a died variant (status died) — the open attempt renders "▶" live, "?" died. A finished run's
+// (real, non-null-outcome) attempts are unaffected either way.
 test('item 1 RED-PROOF (real fixture mujjtrvd-midrun): the open attempt on step 2 reads ▶ when the run is live, ? when it is a died variant of the same parts, and finished attempts are unchanged', async () => {
   const { replayRun } = await import('../src/replay.js');
-  const { buildOrderedBoxes, partResultGlyph, attemptGlyph } = loadStepMapGeometry();
+  const { buildOrderedBoxes, partResultGlyph } = loadStepMapGeometry();
   const spinePath = new URL('./fixtures/mujjtrvd-midrun.jsonl', import.meta.url).pathname;
   const spine = readFileSync(spinePath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const s = replayRun(spine, [], { runId: 'mujjtrvd' });
@@ -1167,39 +1160,34 @@ test('item 1 RED-PROOF (real fixture mujjtrvd-midrun): the open attempt on step 
   assert.equal(lastPart.kind, 'step', 'precondition: step 2 (still running) is the last part on this slice');
   assert.equal(lastPart.outcome, null, 'precondition: the open attempt has no outcome yet');
 
-  const liveBoxes = buildOrderedBoxes(s.parts, /* isLive */ true);
+  const liveParts = mintParts(s.parts, { runKey: 'running' });
+  const liveBoxes = buildOrderedBoxes(liveParts);
   const liveLastBox = liveBoxes[liveBoxes.length - 1];
   assert.equal(liveLastBox.state, 'running');
-  assert.equal(partResultGlyph(lastPart, liveLastBox), '▶', 'live variant: open attempt reads ▶, never the died ?');
+  assert.equal(partResultGlyph(liveParts[liveParts.length - 1], liveLastBox), '▶', 'live variant: open attempt reads ▶, never the died ?');
 
-  const diedBoxes = buildOrderedBoxes(s.parts, /* isLive */ false);
+  const diedParts = mintParts(s.parts, { died: true });
+  const diedBoxes = buildOrderedBoxes(diedParts);
   const diedLastBox = diedBoxes[diedBoxes.length - 1];
   assert.notEqual(diedLastBox.state, 'running', 'a died variant\'s last part must never read as running');
-  assert.equal(partResultGlyph(lastPart, diedLastBox), '?', 'died variant: the same open attempt reads the died ?');
+  assert.equal(partResultGlyph(diedParts[diedParts.length - 1], diedLastBox), '?', 'died variant: the same open attempt reads the died ?');
 
-  // finished: a real, resolved-outcome attempt is untouched by boxIsLive.
-  assert.equal(attemptGlyph('green', true), '✓');
-  assert.equal(attemptGlyph('green', false), '✓');
-  assert.equal(attemptGlyph('red', true), '✗');
-  assert.equal(attemptGlyph('red', false), '✗');
+  // finished: the earlier, resolved attempts read the same on both
+  liveParts.slice(0, -1).forEach((p, i) => {
+    assert.deepEqual(p.attempts.map((a) => a.status.sign), diedParts[i].attempts.map((a) => a.status.sign));
+  });
 });
 
-// item 1 wiring check: every caller that can render an attempt glyph must
-// route through the ONE `attemptGlyph(outcome, boxIsLive)` rule with its own
-// box's live-ness — never re-derive live/died itself. Regex-checked against
-// the shipped source text (the grid builder is DOM-only, not part of the
-// pure geometry block extracted above, so it can't be unit-called directly).
-test('item 1: every attemptGlyph call site passes a boxIsLive argument (map title, part cards / Audit headers via partResultGlyph, and the Audit grid\'s try columns)', () => {
+// wiring check: every caller that draws an attempt's sign reads the server's status (src/panel/status.js attemptStatusFor, attached in
+// getRunDetail); none re-derives live/died/outcome. Regex-checked against the shipped source text (the grid builder is DOM-only).
+test('item 1: every attempt-sign call site reads the server\'s status (map title, part cards / Audit headers via partResultGlyph, and the Audit grid\'s try columns)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /function attemptGlyph\(outcome, boxIsLive\)\{/);
-  assert.match(html, /attemptsInlineText\(attempts, boxIsLive\)/);
-  assert.match(html, /attemptsInlineText\(s\.attempts, s\.state === "running"\)/, 'map title (stepTitleText) must derive boxIsLive from the box\'s own state');
-  assert.match(html, /var boxIsLive = box\.state === "running";/, 'partResultGlyph (part cards + Audit grouped headers) must derive boxIsLive from the box\'s own state');
-  assert.match(html, /function gridStepTryOf\(part, t, boxIsLive\)\{/);
-  assert.match(html, /attemptGlyph\(t\.outcome, boxIsLive\)/, 'a step try column');
-  assert.match(html, /glyph: tryGlyph\(a, boxIsLive\)/, 'a fix try column (a try with no verdict reads ?)');
-  assert.match(html, /tryGlyph\(a, boxIsLive\)\); \}\)\.join\(""\)/, 'the part header joins each try\'s tryGlyph');
-  assert.match(html, /buildGridBody\(body, idx, part, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into the grid builder');
+  assert.match(html, /function tryGlyph\(a\)\{/);
+  assert.match(html, /function signOf\(x\)\{/);
+  assert.match(html, /glyph: signOf\(t\),/, 'a step try column');
+  assert.match(html, /glyph: tryGlyph\(a\), hint/, 'a fix try column (a try with no verdict reads ?)');
+  assert.match(html, /glyphSpan\(tryGlyph\(a\)\)\; \}\)\.join\(""\)/, 'the part header joins each try\'s tryGlyph');
+  assert.match(html, /buildGridBody\(body, idx, part, box\.state === "running"\)/, 'the Audit tab passes its own box\'s live-ness into the grid builder');
 });
 
 // ---------------------------------------------------------------------------
@@ -1649,7 +1637,7 @@ test('buildStepMapHTML: a running chip pulses (CSS), a done/waiting chip does no
     { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
     { kind: 'step', label: 'b', occurrence: 1, outcome: null, attempts: [] },
   ];
-  const html = buildStepMapHTML(buildOrderedBoxes(parts, true)); // isLive=true — the last part is the running one
+  const html = buildStepMapHTML(buildOrderedBoxes(mintParts(parts, { runKey: 'running' }))); // the server says the last part is the running one
   assert.equal([...html.matchAll(/class="map-chip s-running/g)].length, 1, 'exactly one running chip');
   assert.match(readFileSync(PAGE_PATH, 'utf8'), /\.map-chip\.s-running \.chip-sign\{animation:chip-pulse/);
 });
@@ -1773,7 +1761,7 @@ test('progress list (2026-10-05): renderProgress reports a change only when the 
   let scrolls = 0; let lastArg = null;
   const li = { scrollIntoView: (o) => { scrolls += 1; lastArg = o; } };
   // eslint-disable-next-line no-new-func
-  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', 'renderQuestionBox', `var lastState, sessionLive;\n${rp}\n${extractFnSource(html, 'syncDestinationFromSession')}\nfunction syncJobBoxFromSession(){} /* its own tests: job-box-follows-answers.test.js */\n${ra}\nreturn renderActions;`)(
+  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', 'renderQuestionBox', `var lastState, sessionLive; var refusalKey = "", dismissedRefusalId = null; function paintRefusal(){} /* its own tests: refusal-box-page.test.js */\n${rp}\n${extractFnSource(html, 'syncDestinationFromSession')}\nfunction syncJobBoxFromSession(){} /* its own tests: job-box-follows-answers.test.js */\n${ra}\nreturn renderActions;`)(
     row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {}, () => {} /* the question box has its own tests (question-box.test.js) */);
   const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] };
   row.lastElementChild = li;

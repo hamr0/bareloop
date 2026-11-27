@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import * as kinds from '../src/kinds.js';
+import * as shell from '../src/shell.js';
 
 function repo(t) {
   const dir = mkdtempSync(join(tmpdir(), 'check-surv-'));
@@ -19,19 +20,19 @@ function repo(t) {
 const SLOW = { name: 'tests', kind: 'command-exit', params: { cmd: process.execPath, args: ['-e', 'setTimeout(()=>{},60000)'], expectExit: 0 } };
 
 test('the words: the pids and the one command that stops them', () => {
-  assert.equal(kinds.survivorsText([4812, 4815]), 'Some test processes did not stop: pid 4812, 4815. To stop them: kill 4812 4815');
-  assert.equal(kinds.survivorsText([7]), 'Some test processes did not stop: pid 7. To stop them: kill 7');
+  assert.equal(shell.survivorsText([4812, 4815]), 'Some test processes did not stop: pid 4812, 4815. To stop them: kill 4812 4815');
+  assert.equal(shell.survivorsText([7]), 'Some test processes did not stop: pid 7. To stop them: kill 7');
 });
 
 test('boxMembers reads the live members of a process group, and nothing once they are gone', async () => {
   const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { detached: true, stdio: 'ignore' });
   try {
-    assert.deepEqual(await kinds.boxMembers(child.pid), [child.pid]);
+    assert.deepEqual(await shell.boxMembers(child.pid), [child.pid]);
   } finally {
     process.kill(-child.pid, 'SIGKILL');
   }
   await new Promise((res) => { child.on('exit', res); });
-  assert.deepEqual(await kinds.boxMembers(child.pid), []);
+  assert.deepEqual(await shell.boxMembers(child.pid), []);
 });
 
 test('a timed-out check whose box is really empty says nothing about survivors', async (t) => {
@@ -48,7 +49,7 @@ test('a process that survived the kill is typed on the stop, and the kill is che
   const listBox = async (/** @type {number} */ pgid) => { asked.push(pgid); return [4812, 4815]; };
   const row = await kinds.runStage(SLOW, { workdir: r.dir, seedRef: r.seed, gapKeep: '', timeoutMsDefault: 400, listBox });
   assert.equal(row.verdict, 'instrument-stop');
-  assert.equal(row.detail.fault, kinds.STOP_FAULTS.TIMED_OUT, 'still a timeout');
+  assert.equal(row.detail.fault, shell.STOP_FAULTS.TIMED_OUT, 'still a timeout');
   assert.match(row.detail.stop, /did not finish inside 400ms$/, 'the stop text itself is unchanged');
   assert.deepEqual(row.detail.survivors, [4812, 4815]);
   assert.equal(asked.length >= 1, true);
@@ -64,7 +65,7 @@ test('count-not-worse types its survivors the same way', async (t) => {
 
 test('the drafting stop and the signing stop each say it, with the pids, and only when there are survivors', async () => {
   const readout = await import('../src/authorreadout.js');
-  const red = { code: 'check-timed-out', path: 'closeDecl.stages.tests', limitMs: kinds.CHECK_LIMIT_MS, detail: 'INSTRUMENT: "npm" did not finish inside 1800000ms', survivors: [4812, 4815] };
+  const red = { code: 'check-timed-out', path: 'closeDecl.stages.tests', limitMs: shell.CHECK_LIMIT_MS, detail: 'INSTRUMENT: "npm" did not finish inside 1800000ms', survivors: [4812, 4815] };
   const said = 'Some test processes did not stop: pid 4812, 4815. To stop them: kill 4812 4815';
   assert.ok(readout.draftStopText({ stop: 'check-timed-out', reds: [red], spend: { knownUsd: 0, spendComplete: true } }).includes(said));
   assert.ok(readout.signingStopText({ reds: [{ ...red, code: 'broken-close' }] }).includes(said));

@@ -8,13 +8,14 @@ import { join } from 'node:path';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as kinds from '../src/kinds.js';
+import * as shell from '../src/shell.js';
 import * as readout from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
 import { makeRangeWorld } from './range-world.mjs';
 import { world, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
 import { gitInPatient } from './helpers.js';
 
-const LIMIT = kinds.CHECK_LIMIT_MS;
+const LIMIT = shell.CHECK_LIMIT_MS;
 const WORDS = (span) => `Your tests did not finish inside ${span}, so bareloop could not see where they start. Nothing ran and no run money was spent.`;
 
 test('the words: the limit in minutes, from the limit that really bound the check', () => {
@@ -34,7 +35,7 @@ test('a stage that timed out carries the limit that bound it, in its detail; a s
   const seed = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim();
   const ctx = { workdir: dir, seedRef: seed, gapKeep: '', timeoutMsDefault: 400 };
   const slow = await kinds.runStage({ name: 'tests', kind: 'command-exit', params: { cmd: process.execPath, args: ['-e', 'setTimeout(()=>{},5000)'], expectExit: 0 } }, ctx);
-  assert.equal(slow.detail.fault, kinds.STOP_FAULTS.TIMED_OUT);
+  assert.equal(slow.detail.fault, shell.STOP_FAULTS.TIMED_OUT);
   assert.equal(slow.detail.limitMs, 400);
   const tight = await kinds.runStage({ name: 'tests', kind: 'command-exit', params: { cmd: process.execPath, args: ['-e', 'setTimeout(()=>{},5000)'], expectExit: 0, timeoutMs: 250 } }, ctx);
   assert.equal(tight.detail.limitMs, 400, 'an old spec\'s authored 250 is ignored: the one limit bound the check (F393)');

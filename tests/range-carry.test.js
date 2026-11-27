@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { workingEdits, createCarryStore } from '../src/carrystore.js';
-import { writeRangeDiffs, DIFF_DIR } from '../src/rangereview.js';
+import { writeRangeDiffs } from '../src/rangereview.js';
+import { DIFF_DIR } from '../src/repocite.js';
 import { gitInPatient, initPatientRepo } from './helpers.js';
 
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'range-carry');

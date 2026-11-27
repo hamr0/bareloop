@@ -106,7 +106,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf, capKindOf, currentLegView, finalCloseOf } from './legs.js';
+import { legsOf, endOf, currentLegView, finalCloseOf } from './legs.js';
 import { isReusableGreen } from './panel/status.js';
 import { thinkingWordsFrom } from './thinking.js';
 
@@ -237,16 +237,6 @@ const ALL_REASON_MAX = 60;
  * (an older archive predating the field, or a run that died before the
  * record fired) — printed literally, never blank, never a fabricated 0. */
 const NONE_RECORDED = 'none recorded';
-
-/**
- * Did this leg end on a cap? Reads the leg's own last escalation and `money-halt` record.
- * @param {import('./legs.js').Leg} leg
- * @returns {'money'|'time'|null}
- */
-function legCapKind(leg) {
-  const esc = leg.outcome === 'escalated' ? leg.records.findLast((r) => r && r.type === 'escalation') : null;
-  return capKindOf({ outcome: leg.outcome, category: esc?.category ?? null, moneyHalt: leg.records.some((r) => r && r.type === 'money-halt') });
-}
 
 /**
  * `stopReason` for a non-green outcome: `category — decision — detail`, every
@@ -410,13 +400,13 @@ function gapLines(gap) {
  *   verdict: string|null, stages: any[]|null}|null}
  */
 function resolveClose(spine) {
-  const picked = finalCloseOf(spine);
-  if (!picked) return null;
+  const close = finalCloseOf(spine);
+  if (!close) return null;
   return {
-    source: picked.type,
-    iteration: typeof picked.iteration === 'number' ? picked.iteration : null,
-    verdict: picked.verdict ?? null,
-    stages: Array.isArray(picked.stages) ? picked.stages : null,
+    source: close.type ?? null,
+    iteration: typeof close.iteration === 'number' ? close.iteration : null,
+    verdict: close.verdict ?? null,
+    stages: Array.isArray(close.stages) ? close.stages : null,
   };
 }
 
@@ -676,6 +666,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     unpricedRounds: unpricedRoundsInFile,
   };
 
+  /** the leg a record's `seq` belongs to (the one leg of an unresumed run) @param {number|undefined} seq */
+  const legOfSeq = (seq) => (legs.length > 1 && typeof seq === 'number' ? legs.reduce((acc, l) => (typeof l.start?.seq === 'number' && seq >= l.start.seq ? l : acc), legs[0]) : (legs[0] ?? null));
+
   /** @param {any} e */
   const tripOf = (e) => (e ? {
     category: e.category ?? null,
@@ -688,7 +681,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     detail: trimTo(e.detail, TRIP_DETAIL_MAX) ?? trimTo(e.decision, TRIP_DETAIL_MAX),
     // the step ladder's own stop is ALSO category `cap-halt` (real spine u-mshcpdg4 seq 185) but carries `spend.strikes`; a money cap's
     // escalation does not (u-msi0w2i5 seq 143). An ADDED field, only when the ladder ended the step.
-    ...(typeof e.spend?.strikes === 'number' ? { ladder: true } : {}),
+    ...(endOf({ own: { green: false, outcome: 'escalated' }, trip: e, leg: legOfSeq(e.seq) }).ladder ? { ladder: true } : {}),
   } : null);
 
   /**
@@ -753,7 +746,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const usedEndSeqs = new Set();
   const idOccurrence = new Map();
-  /** @type {Map<string, {stopReason: string|null, legIdx: number, tryNumber: number}>} */
+  /** @type {Map<string, {cut: boolean, legIdx: number, tryNumber: number}>} */
   const prevOccurrence = new Map();
 
   const steps = stepStarts.map((ss) => {
@@ -774,27 +767,17 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     const cutByLeg = !end && myLeg !== null && Number.isFinite(legEndSeq);
     const endSeq = end && typeof end.seq === 'number' ? end.seq : (cutByLeg ? legEndSeq : Infinity);
     const endTs = end ? parseTs(end.ts) : (cutByLeg ? parseTs(myLeg?.end?.ts) : null);
-    // why this leg stopped the step (code-owned words); null for a step that ended itself or is still running
+    // how this step ended (src/legs.js endOf: the ONE owner): code-owned words for a step a halt cut (its leg's, or its own escalation: a cap, the
+    // person's Stop, a provider failure), null for a step that ended itself or is still running
+    const stepEnd = endOf({
+      own: end ? { green: isReusableGreen(end.outcome), outcome: end.outcome ?? null } : null,
+      trip: end ? findTrip(escalations, startSeq, endSeq) : null,
+      leg: myLeg ?? legs[0] ?? null,
+      cutBy: end ? null : (myLeg === null ? 'single-leg' : (cutByLeg ? 'leg' : (myLegIdx === legs.length - 1 ? 'last-leg' : null))),
+      legGreen: isReusableGreen(myLeg?.outcome),
+    });
     /** @type {string|null} */
-    let stopReason = null;
-    // a single-leg run has no leg boundary to cut a step, but a cap still ends it: its open step reads capped too
-    // (hamr 2026-10-08), from the same rule (`capKindOf`) the run's own status word uses
-    if (!end && myLeg === null) {
-      const only = legs[0];
-      const capKind = only ? legCapKind(only) : null;
-      if (capKind !== null) stopReason = capKind === 'money' ? 'money cap' : 'time cap';
-    }
-    if (!end && myLeg !== null) {
-      const o = myLeg.outcome;
-      const isLastLeg = myLegIdx === legs.length - 1;
-      if (cutByLeg || (isLastLeg && o !== null && !isReusableGreen(o))) {
-        // hamr 2026-10-08: a leg that ended `escalated` on a money-halt / wall-halt reads as the cap, exactly as the
-        // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
-        const capKind = legCapKind(myLeg);
-        stopReason = capKind === 'money' ? 'money cap' : capKind === 'time' ? 'time cap' : o === 'provider-red' ? 'provider failed'
-          : o === 'check-timeout' ? 'tests did not finish' : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
-      }
-    }
+    const stopReason = stepEnd.words;
 
     const phaseTag = `step:${id}`;
     // `judge-round` (a close's paid seam) carries no `.phase` at all
@@ -917,9 +900,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // the SAME step continuing across a leg boundary (the previous occurrence of this id was cut off by its leg's
     // halt, and this one starts in a later leg) is "continued", never a retry; `tryNumber` counts real retries only
     const prevOcc = prevOccurrence.get(id) ?? null;
-    const continued = myLeg !== null && prevOcc !== null && prevOcc.stopReason !== null && prevOcc.legIdx < myLegIdx;
+    const continued = myLeg !== null && prevOcc !== null && prevOcc.cut && prevOcc.legIdx < myLegIdx;
     const tryNumber = prevOcc === null ? 1 : (continued ? prevOcc.tryNumber : prevOcc.tryNumber + 1);
-    prevOccurrence.set(id, { stopReason, legIdx: myLegIdx, tryNumber });
+    prevOccurrence.set(id, { cut: stepEnd.words !== null, legIdx: myLegIdx, tryNumber });
 
     return {
       id,
@@ -1244,6 +1227,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     }];
   }
 
+  /** ids of the per-leg pieces of a part that spans legs (the thinking pass reads each piece's own window) */
+  const splitPartIds = new Set();
   /** @type {Array<any>} */
   const parts = [];
 
@@ -1452,6 +1437,113 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       });
     }
 
+    // hamr 2026-11-26 (ruling "1", Addendum 2026-11-26i): a part that spans legs (scout, plan, fix) is ONE ROW PER LEG, in leg order, each
+    // holding exactly that leg's rounds/attempts. Before this the whole part sat in one row dated by its last attempt, so an earlier leg
+    // (a scout the person stopped, a fix try the provider killed) read empty. A piece the leg's halt cut off carries that leg's own stop words.
+    if (legs.length > 1) {
+      /** @param {number} seq */
+      const legIdxOfSeq = (seq) => {
+        let n = 0;
+        legs.forEach((l, i) => { if (typeof l.start?.seq === 'number' && seq >= l.start.seq) n = i; });
+        return n;
+      };
+      /** @param {number} i @returns {number|null} */
+      const legStartTs = (i) => parseTs(legs[i].start?.ts);
+      // scout / plan: rounds grouped by the leg that ran them
+      /**
+       * @param {string} id @param {any[]} rounds
+       * @param {{wallLo: number|null, wallHi: number|null, behLo: number|null, behHi: number|null}} w
+       */
+      const splitRounds = (id, rounds, w) => {
+        const at = parts.findIndex((p) => p.id === id);
+        if (at === -1) return;
+        /** @type {Map<number, any[]>} */
+        const groups = new Map();
+        for (const r of rounds) {
+          const k = legIdxOfSeq(r.seq);
+          groups.set(k, [...(groups.get(k) ?? []), r]);
+        }
+        if (groups.size < 2) return;
+        const old = parts[at];
+        const idxs = [...groups.keys()].sort((a, b) => a - b);
+        const pieces = idxs.map((k, n) => {
+          const group = /** @type {any[]} */ (groups.get(k));
+          const first = n === 0;
+          const lastPiece = n === idxs.length - 1;
+          const lastRoundTs = parseTs(group[group.length - 1].ts);
+          const startSeq = first ? old.attempts[0].startSeq : legs[k].start.seq;
+          const startTs = first ? old.attempts[0].startTs : legStartTs(k);
+          const endSeq = lastPiece ? old.attempts[0].endSeq : group[group.length - 1].seq;
+          const endTs = lastPiece ? old.attempts[0].endTs : lastRoundTs;
+          const { spentUsd, unpricedRounds } = windowSpend(group);
+          const b = partBehaviour(first ? w.behLo : legStartTs(k), lastPiece ? w.behHi : legStartTs(idxs[n + 1]));
+          splitPartIds.add(`${id}:L${legs[k].leg}`);
+          return {
+            ...old,
+            id: `${id}:L${legs[k].leg}`,
+            rounds: group.length,
+            toolCalls: b ? b.totalCalls : null,
+            byTool: b ? b.byTool : null,
+            blocked: b ? b.denied : null,
+            wallMs: windowWallMs(first ? w.wallLo : legStartTs(k), lastPiece ? w.wallHi : lastRoundTs),
+            spentUsd,
+            unpricedRounds,
+            ...(lastPiece ? {} : { stopReason: endOf({ leg: legs[k], cutBy: 'leg' }).words }),
+            attempts: wholePartAttempt(startSeq, startTs, endSeq, endTs),
+          };
+        });
+        parts.splice(at, 1, ...pieces);
+      };
+      splitRounds('scout', scoutRoundsArr, { wallLo: jobStartTs, wallHi: scoutTsHi, behLo: jobStartTs, behHi: scoutTsHi });
+      splitRounds('plan', planRoundsInitialArr, {
+        wallLo: scoutRoundsArr.length ? parseTs(scoutRoundsArr[scoutRoundsArr.length - 1].ts) : jobStartTs,
+        wallHi: planRoundsInitialArr.length ? parseTs(planRoundsInitialArr[planRoundsInitialArr.length - 1].ts) : null,
+        behLo: scoutTsHi,
+        behHi: firstTs,
+      });
+      // fix: attempts grouped by the leg of the record each one is (an outer-close at its own seq, an iteration at its start)
+      const fixAt = parts.findIndex((p) => p.id === 'fix');
+      if (fixAt !== -1 && fixLoop) {
+        const fl = fixLoop;
+        /** @type {Map<number, number[]>} */
+        const groups = new Map();
+        fl.attempts.forEach((a, n) => {
+          const k = legIdxOfSeq(a.source === 'outer-close' ? a.windowEndSeq : a.windowStartSeq);
+          groups.set(k, [...(groups.get(k) ?? []), n]);
+        });
+        if (groups.size > 1) {
+          const old = parts[fixAt];
+          const idxs = [...groups.keys()].sort((a, b) => a - b);
+          const pieces = idxs.map((k, n) => {
+            // time order: an outer-close sits at its own seq, an iteration at its start (the same key that gave it its leg)
+            const seqOfAttempt = (/** @type {number} */ i) => (fl.attempts[i].source === 'outer-close' ? fl.attempts[i].windowEndSeq : fl.attempts[i].windowStartSeq);
+            const ix = /** @type {number[]} */ (groups.get(k)).slice().sort((x, y) => seqOfAttempt(x) - seqOfAttempt(y));
+            const as = ix.map((i) => fl.attempts[i]);
+            const b = partBehaviour(as[0].windowStartTs, as[as.length - 1].windowEndTs);
+            const allToolsKnown = as.every((a) => typeof a.toolCalls === 'number');
+            const allWallKnown = as.every((a) => typeof a.wallMs === 'number');
+            const unpricedRounds = as.reduce((acc, a) => acc + a.unpricedRounds, 0);
+            splitPartIds.add(`fix:L${legs[k].leg}`);
+            return {
+              ...old,
+              id: `fix:L${legs[k].leg}`,
+              rounds: as.reduce((acc, a) => acc + a.rounds, 0),
+              toolCalls: allToolsKnown ? as.reduce((acc, a) => acc + (a.toolCalls ?? 0), 0) : null,
+              byTool: b ? b.byTool : null,
+              blocked: b ? b.denied : null,
+              wallMs: allWallKnown ? as.reduce((acc, a) => acc + (a.wallMs ?? 0), 0) : null,
+              spentUsd: unpricedRounds > 0 ? null : as.reduce((acc, a) => acc + (a.spentUsd ?? 0), 0),
+              unpricedRounds,
+              outcome: as[as.length - 1].outcome,
+              ...(n === idxs.length - 1 ? {} : { stopReason: endOf({ leg: legs[k], cutBy: 'leg' }).words }),
+              attempts: ix.map((i, at) => ({ ...old.attempts[i], n: at + 1 })),
+            };
+          });
+          parts.splice(fixAt, 1, ...pieces);
+        }
+      }
+    }
+
     // judge (panel build item 6): a bare `judge-round` spend record — a
     // close's own paid seam (`onJudgeCost`, src/planrun.js:1333) — that
     // falls OUTSIDE every window already built above (every step, every
@@ -1553,7 +1645,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         if (words !== null) p.cutOffTry.thinking = words;
       }
       let part = null;
-      if (p.kind === 'scout') part = thinkingWordsFrom(spine, { phase: 'scout', hi: firstStepSeq });
+      if ((p.kind === 'scout' || p.kind === 'plan') && splitPartIds.has(p.id) && atts[0]) part = thinkingWordsFrom(spine, { phase: p.kind, lo: atts[0].startSeq, hi: atts[0].endSeq });
+      else if (p.kind === 'scout') part = thinkingWordsFrom(spine, { phase: 'scout', hi: firstStepSeq });
       else if (p.kind === 'plan') part = thinkingWordsFrom(spine, { phase: 'plan', hi: firstStepSeq });
       else if (p.kind === 'replan' && atts[0]) part = thinkingWordsFrom(spine, { phase: 'plan', lo: atts[0].startSeq, hi: atts[0].endSeq });
       else if ((p.kind === 'step' || p.kind === 'fix') && atts.length === 1) part = atts[0].thinking ?? null;

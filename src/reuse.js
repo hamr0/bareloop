@@ -53,6 +53,7 @@ import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
 import { legsOf } from './legs.js';
+import { checksOf } from './runread.js';
 import { isReusableGreen } from './panel/status.js';
 
 /** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
@@ -480,16 +481,10 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
 export function readTry(events) {
   const last = (/** @type {string} */ t) => events.filter((e) => e.type === t).at(-1) ?? null;
   const je = last('job-end');
-  const oc = last('outer-close');
   const pa = last('plan-accepted');
-  // The stage that rendered the LAST verdict. `outer-close` is emitted ONCE, BEFORE the
-  // close-fix loop — and `escalated`, the only outcome that demotes, is decided AFTER
-  // it — so reading the stage from `outer-close` names a stale wall whenever the fix
-  // loop moved it. Every later verdict arrives as ralph's `close-verdict`; a STEP's
-  // exit-loop verdict comes through the same event type but carries no stage (its judge
-  // is the form evaluator, not the close), which is exactly what disqualifies it here.
-  const cv = events.filter((e) => e.type === 'close-verdict' && isNonEmptyString(e.stage)).at(-1) ?? null;
-  const stage = cv ?? oc;
+  const checks = checksOf(events, null);
+  // The stage that rendered the LAST verdict, and whether the close was reached AT ALL: both read from the run's FINAL close through src/runread.js (F399; it was the last red staged close even when a
+  // later close passed, and `outer-close` only, which an already-green leg never writes).
   const turns = events.filter((e) => (e.type === 'worker-round' && e.kind === 'turn') || e.type === 'worker-turn').length;
   const pricedWork = events.some((e) => e.type === 'worker-round' || e.type === 'worker-turn')
     || (typeof je?.spentUsd === 'number' && je.spentUsd > 0);
@@ -512,8 +507,8 @@ export function readTry(events) {
     // which stage rendered the verdict, and whether the close was reached AT ALL — the
     // second is F45's visible half: a try whose cap bound before any grading is a
     // casualty by shape, and the row says so instead of leaving it to be inferred
-    failingStage: isNonEmptyString(stage?.stage) ? stage.stage : null,
-    closeReached: oc !== null,
+    failingStage: checks?.failingStage ?? null,
+    closeReached: checks?.closeReached === true,
   };
 }
 

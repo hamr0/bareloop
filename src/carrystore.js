@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { redactSecrets } from './validate.js';
 import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
-import { DIFF_DIR } from './rangereview.js';
+import { DIFF_DIR } from './repocite.js';
 
 const exec = promisify(execFile);
 /**

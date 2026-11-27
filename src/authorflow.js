@@ -77,15 +77,17 @@ import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute, dirname } from 'node:path';
-import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, STOP_FAULTS, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { seedRead as runSeedReadStages, makeSeedTrees, checkRunningNote, checkTimedOutText, AGGREGATES, SIGNS, MAX_TERMS } from './kinds.js';
+import { STOP_FAULTS } from './shell.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang, offeredOptional,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
-import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
+import { capStop } from './text.js';
 import { redactSecrets } from './validate.js';
+import { askStructured, makeCostBook, renderRejectBlock, STRUCTURE_INSTRUCTION_TEXT } from './ask.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
@@ -97,7 +99,8 @@ import { sheetSuggestProp, sheetOfferRules, columnChoiceParts, agreedColumnWords
 import { buildSheetChecks } from './sheetbuild.js';
 import { recordSheetShas } from './sheetrun.js';
 import { sheetRolesOf } from './sheetclaims.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineCarriesText, guardNameOfKey } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -106,7 +109,7 @@ import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts, TICKET_FILTER_S
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
 
-/** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
+/** @typedef {import('./ask.js').Red} Red */
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -120,12 +123,37 @@ export const MAX_REVISIONS = 2;
 export const MAX_STRUCTURE_RETRIES = 2;
 /** per-stage gap lines carried into a revise turn, trim announced (F28) */
 export const REVISE_GAP_CAP = 15;
-/** validator reds carried into a revise turn, trim announced (F28) */
-export const REVISE_RED_CAP = 20;
 /** F18 / F30 — caching on, and the 4096 provider default cannot hold a declaration */
 export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
+
+/**
+ * THE ONE OWNER of a guard's fill slot (F389): the slot (`allowPrefixes`) is the signed write fence, so CODE sets it, rubric and repo alike; the model never fills it.
+ * @param {{name: string, kind: string, params: Record<string, any>, fill?: string[]}} g @param {string[]} fence
+ * @returns {{name: string, kind: string, params: Record<string, any>}}
+ */
+export function fencedGuardStage(g, fence) {
+  return { name: g.name, kind: g.kind, params: fenceSlots(g.params, g.fill, fence) };
+}
+
+/** the single rule: `params` with each fill slot set to the fence (the one place a fill slot is written)
+ * @param {Record<string, any>} params @param {string[]|undefined} fill @param {string[]} fence */
+function fenceSlots(params, fill, fence) {
+  return { ...params, ...Object.fromEntries((fill ?? []).map((f) => [f, [...fence]])) };
+}
+
+/** a declaration whose guard stages carry the fence in their fill slots: the model's own value there is overwritten, every other stage is untouched
+ * @param {any} declaration @param {{name: string, fill?: string[]}[]} guards @param {string[]} fence */
+export function withGuardFence(declaration, guards, fence) {
+  if (!declaration || !Array.isArray(declaration.stages)) return declaration;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    const g = st && typeof st === 'object' ? guards.find((x) => x.name === st.name) : undefined;
+    if (!g || !Array.isArray(g.fill) || g.fill.length === 0 || !st.params || typeof st.params !== 'object') return st;
+    return { ...st, params: fenceSlots(st.params, g.fill, fence) };
+  });
+  return { ...declaration, stages };
+}
 
 /** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. PRD v1.107 Part 5b: three (hamr's ruling), shared with the code-forced early asks. */
 export const MAX_QUESTIONS = 3;
@@ -228,11 +256,6 @@ export function seedReadFailure(rows, declaration, guardNames, lineNums) {
   return { failed: true, lines: lines.length ? lines : [...lineNums] };
 }
 
-/** The honest truncation signal: bare-agent's Loop tags a round cut off at the output cap `error: 'truncated:max_tokens'`
- * with the neutral `stopReason: 'max_tokens'` (node_modules/bare-agent/src/loop.js, BA-6/BA-13).
- * @param {any} r */
-export const isOutputCutOff = (r) => r?.error === 'truncated:max_tokens' || (Boolean(r?.error) && r?.stopReason === 'max_tokens');
-
 /**
  * ONE red, scrubbed — the same spelling `prepareSigning` uses (src/authorjob.js),
  * and for the same reason: a validation red QUOTES what the model declared, and
@@ -272,8 +295,6 @@ export const REVISE_INSTRUCTION = 'These are the measured results of running you
  */
 export const STRUCTURE_INSTRUCTION_TOOL = `Your reply did not deliver exactly one declaration through the ${DECLARATION_TOOL_NAME} tool. `
   + `Call ${DECLARATION_TOOL_NAME} exactly once, with the whole declaration as its arguments. Do not write the declaration as text.`;
-export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one JSON declaration. '
-  + 'Reply with ONLY the JSON object, in a single fenced block, and nothing else.';
 
 /**
  * THE UNIFIED INTAKE FORM (PRD item 33 M3 piece 3, `docs/product/ITEM33-BUILD.md`
@@ -1307,10 +1328,12 @@ Two people fed you this brief and neither of them is you:
   // The guards arrive FULLY PARAMETERISED — the battery and its scope are genre
   // property (addendum 6). Only a declared `fill` slot is the model's, and it is
   // marked. Round 3's arm A narrowed a guard's scan and called it stricter.
+  // F389: with a signed write fence, code fills the slot and the model is shown it already filled (it fills nothing)
+  const fenced = Array.isArray(writeScope) && writeScope.length > 0;
   const guardJson = guards.map((g) => ({
     name: g.name,
     kind: g.kind,
-    params: { ...g.params, ...Object.fromEntries(g.fill.map((f) => [f, FILL_MARKER])) },
+    params: fenced ? fencedGuardStage(g, writeScope ?? []).params : { ...g.params, ...Object.fromEntries(g.fill.map((f) => [f, FILL_MARKER])) },
   }));
 
   const envLine = ownedEnvNames.length
@@ -1369,8 +1392,7 @@ measure anything.`;
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries stages the person did not ask for. They are fixed by the job\'s genre and they are\n'
       + 'already in your declaration, with their pattern battery and extensions already filled in — those are genre\n'
-      + `property and you may not change, drop, rename, or re-kind them. The ONLY thing you fill in is each\n`
-      + `"${FILL_MARKER}" slot, from the facts object and the interview:\n\n${JSON.stringify(guardJson, null, 2)}\n\n`
+      + `property and you may not change, drop, rename, or re-kind them. ${fenced ? 'Every slot is already filled from the job\'s write fence, so you fill in nothing' : `The ONLY thing you fill in is each\n"${FILL_MARKER}" slot, from the facts object and the interview`}:\n\n${JSON.stringify(guardJson, null, 2)}\n\n`
       + 'Place them where the ordering law says they belong, and author the remaining stages around them.'
       + envLine,
     output,
@@ -1430,35 +1452,6 @@ export function renderSeedReadBlock(rows, { gapCap = REVISE_GAP_CAP } = {}) {
     }
   }
   return redactSecrets(lines.join('\n'));
-}
-
-/**
- * The measured block when the declaration never reached execution. Both cases are
- * machine outputs of the pipeline, never editorial prose about the model's work.
- *
- * SCRUBBED at the emission boundary, for the SAME reason `renderSeedReadBlock`
- * is and through the SAME one redactor. The channel here is different and just
- * as real: a validation red QUOTES WHAT THE MODEL DECLARED, verbatim — the
- * genre-env branch echoes the expected and the declared value, the deny floor
- * echoes the whole `cmd`, the listing rule echoes the path — and this block
- * becomes the next USER TURN sent to the provider. A declared value shaped like
- * a credential crossed unmasked before this line existed. Applied to the whole
- * rendered block rather than one field, so a red added to the validator is
- * scrubbed by construction rather than by remembering.
- * @param {{kind: 'validation'|'artifact'|'edits', reds: (Red|string)[], cap?: number}} o
- */
-export function renderRejectBlock({ kind, reds, cap = REVISE_RED_CAP }) {
-  const head = kind === 'validation'
-    ? 'MEASURED VALIDATION — your declaration was rejected by the validator before any stage could run:'
-    : kind === 'edits'
-      ? 'MEASURED EDITS — some of your edits were refused; each refusal is its own and your other edits stand:'
-      : 'MEASURED PARSE — your reply could not be read as one declaration:';
-  const rendered = (reds ?? []).map((r) => (typeof r === 'string' ? r : `${r.code} at ${r.path || '(root)'}: ${r.detail}${typeof r.hint === 'string' ? ` ${r.hint}` : ''}`));
-  const shown = rendered.slice(0, cap);
-  const tail = rendered.length > shown.length
-    ? [`  [${rendered.length - shown.length} of ${rendered.length} reds withheld — the cap is ${cap}]`]
-    : [];
-  return redactSecrets([head, ...shown.map((r) => `  ${r}`), ...tail].join('\n'));
 }
 
 /** A revise turn is EXACTLY the measured block, a blank line, and the instruction. */
@@ -1607,75 +1600,6 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
   return [...byReal.values()];
 }
 
-// ── 5. COST ──────────────────────────────────────────────────────────────────
-
-/**
- * F6's shape: an unpriced call or round makes the TOTAL unknown, and unknown is
- * reported as null — never as the sum of the priced half wearing a complete coat.
- * `knownUsd` carries the priced half explicitly so nothing is hidden either way.
- *
- * IT IS ALSO THE RUN'S AUDIT OF WHAT WAS SAID, not only of what was spent. Every
- * `add` records the call's RAW output beside its price, through the one
- * scrubbed-persist helper — one list of calls, read two ways. That pairing is
- * structural rather than remembered: run mslhn707 metered a $0.053 scout call
- * and kept not one byte of what it returned, so the malformation that killed the
- * run could not be read afterwards. A cost entry with no raw beside it is that
- * run again.
- */
-/**
- * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void}} [o]
- *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
- *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
- *   only chance to know what has been spent while the run is still alive. It is
- *   never consulted and never governs: `capStop` below is still the one
- *   predicate, still asked between calls, and still reads the same `entries`.
- *   `absorb` deliberately does NOT fire it: those calls were metered (and
- *   reported) by whoever made them, and reporting them twice would double the
- *   scout's spend in every reader downstream.
- */
-export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
-  /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
-  const entries = [];
-  /** @type {ReturnType<typeof scrubRaw>[]} */
-  const raws = [];
-  return {
-    /** @param {string} label @param {any} r a bare-agent run result @param {number} [attempt] */
-    add(label, r, attempt = 1) {
-      const call = { label, ...priceOf(r) };
-      entries.push(call);
-      const kept = scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null });
-      raws.push(kept);
-      // bare-agent's per-run `thinkingStatus` ('applied' | 'unsupported' | 'ignored' | 'unknown') rides the REPORTING seam only —
-      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent.
-      // R9 (Part B 4): the call's scrubbed answer rides the same seam (secret-masked and bounded by `scrubRaw`, the one mask owner), so the session's drafting log keeps what an
-      // unusable draft try actually said; an empty answer (a tool-delivered reply) adds nothing
-      onCall({ ...call, ...(kept.text === '' ? {} : { raw: kept.text }), ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
-      return entries.at(-1);
-    },
-    /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
-     * @param {ReturnType<typeof scrubRaw>[]} [callRaws] */
-    absorb(calls, callRaws) { for (const c of calls ?? []) entries.push({ ...c }); for (const w of callRaws ?? []) raws.push({ ...w }); },
-    /** the persisted raws, in call order — the same order and the same labels as
-     * `report().calls`, because both are readings of one list */
-    raws() { return raws.map((w) => ({ ...w })); },
-    report() {
-      return { ...tallyCalls(entries), calls: entries.map((e) => ({ ...e })) };
-    },
-    /**
-     * THE CEILING'S OWN READING, asked between metered calls. The book is the one
-     * place this pipeline's spend accumulates, so it is the one place that can
-     * answer honestly — and it answers through the shared predicate rather than a
-     * second hand-spelled comparison (`src/text.js`, beside `priceOf`).
-     * @returns {'cap-halt'|'pricing-red'|null}
-     */
-    capStop() { return capStop({ ceilingUsd, ...tallyCalls(entries) }); },
-    /** what was set, stated — `null` is "nobody set one", which is UNBOUNDED and
-     * a visible operator choice, never a defaulted number */
-    ceilingUsd,
-  };
-}
-
 /**
  * The default model boundary: one bare-agent Loop per call, with the declaration
  * tool wired to END the call the moment it is used. The tool is an OUTPUT
@@ -1723,153 +1647,6 @@ function canonical(x) {
   if (x === null || typeof x !== 'object') return JSON.stringify(x) ?? 'null';
   if (Array.isArray(x)) return `[${x.map(canonical).join(',')}]`;
   return `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonical(x[k])}`).join(',')}}`;
-}
-
-/**
- * ONE structured ask, with the malformed-emission retry bounded on its OWN axis.
- * A reply that carries no artifact is an ARTIFACT-RED — name the axis, retry
- * under a cap, write nothing — and it never consumes a revision, because a
- * transport fault is not a defect in a close.
- *
- * THE CHANNEL IS A PARAMETER, and that is softgreen module 4's only change here:
- * the rubric card and the calibration set are a SECOND schema-forced emission
- * with the same failure modes, and a second ladder is a second place for the cap,
- * the reject block and the re-ask to drift. The declaration channel below is the
- * one this loop has always used, spelled out rather than inlined — nothing about
- * the authoring path's behaviour moves.
- * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
- *   label: string, book: ReturnType<typeof makeCostBook>,
- *   channel: {name: string, instruction: string, textPath?: string, tool: (box: {calls: any[]}) => any}}} o
- * @returns {Promise<{artifact: any, attempts: number, convo: any[], raw: string,
- *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null, allCutOff?: boolean}>}
- */
-export async function askStructured({ messages, generate, mode, retries, label, book, channel }) {
-  /** @type {any[]} */
-  const convo = [...messages];
-  let attempts = 0;
-  /** @type {Red|null} */
-  let red = null;
-  /** how many of this ask's attempts were cut off at the output cap (P7: all of them = a failed try for the question gate) */
-  let cutOffs = 0;
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    // THE CEILING, immediately before the paid call and nowhere else. Sited HERE
-    // rather than in the revise loop because this is where every declaration call
-    // is actually made: the author call, each revise, AND each malformed-emission
-    // retry. The retry axis is the one that matters most — it fires exactly when
-    // the model is malforming, which is the worst moment for a paid loop to be
-    // unbounded. `attempts` is returned as-is so the caller can tell a cap that
-    // tripped before this ask began (0) from one that cut a retry ladder short.
-    const halt = book.capStop();
-    if (halt) return { artifact: null, attempts, convo, raw: '', providerError: null, red: null, budget: halt };
-
-    /** @type {{calls: any[]}} */
-    const box = { calls: [] };
-    // the tool's schema is CLASS-SCOPED, like the prompt's catalogue block: the
-    // two must offer one set of kinds, or the composer reads about a kind it
-    // cannot call — or worse, calls one the ceiling will refuse after we paid.
-    const tools = mode === 'tool' ? [channel.tool(box)] : [];
-    // F179/F180 — bare-agent 0.42.0's OpenAIProvider.generate used to THROW
-    // mid-call (a raw SyntaxError off a malformed tool-call arguments string,
-    // parsed with no try/catch) rather than resolve with `{error}` the way a
-    // settled provider-shape casualty normally does; 0.43.0 fixed that class
-    // upstream (BA-27), so `callCasualty` no longer admits a SyntaxError at
-    // all (its branch was dead code and was removed). This try/catch stays
-    // for the class it was ALSO built to cover: `callCasualty` is the SAME
-    // predicate `authorscout.js`'s `settled` uses for its idle-timeout seam
-    // (src/text.js, beside `priceOf`) — a HaltError or an unrecognised throw
-    // re-raises unchanged; only an admitted casualty class lands here as the
-    // same `{error}` shape the resolved-error path already books and returns
-    // below.
-    let r;
-    try {
-      r = await generate(convo, tools, {});
-    } catch (e) {
-      const reason = callCasualty(e);
-      if (reason === null) throw e;
-      attempts += 1;
-      book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, { error: reason }, attempts);
-      return { artifact: null, attempts, convo, raw: '', providerError: reason, red: null, budget: null };
-    }
-    attempts += 1;
-    book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
-    const raw = redactSecrets(String(r?.text ?? ''));
-
-    // ITEM 6 (P7, live session smv2bzdqmp0f8, 2026-10-10): a round cut off at the output cap is the MODEL's own overlong
-    // answer, not a transport fault — it is a failed try on the same ladder as a malformed artifact (the spend is already
-    // booked above). Only a real error (a throw, a provider/halt tag) stays provider-red.
-    const cutOff = isOutputCutOff(r);
-    if (cutOff) cutOffs += 1;
-    if (r?.error && !cutOff) {
-      return { artifact: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
-    }
-
-    if (cutOff) {
-      red = {
-        code: 'artifact-red',
-        path: channel.name,
-        detail: "the AI's answer was cut off at the output limit",
-        axis: 'output-truncated',
-      };
-    } else if (mode === 'tool') {
-      // F179 (2026-09-15 ruling) — retry, never repair. bare-agent 0.43.0
-      // (BA-27) already priced this round on the real usage and returns it
-      // with `toolCalls: []` plus its own `malformedToolCall` marker instead
-      // of throwing; this ladder's EXISTING malformed-emission retry (below)
-      // is the whole mechanism — no new cap, no second pricing path, nothing
-      // here ever re-parses or edits the model's arguments. The raw malformed
-      // string itself is never persisted, only the parser's own error
-      // message, scrubbed like every other model-authored text on this trail.
-      //
-      // Checked BEFORE the `box.calls.length === 1` accept and REGARDLESS of
-      // how many calls survived (0 or more — bare-agent's `parseToolCalls` is
-      // itself all-or-nothing, BA-27, so a real provider always returns 0 on
-      // a malformed round): before this fix, a two-call reply was ALWAYS the
-      // 'multiple-declaration-tool-calls' red, never an accept, so a
-      // malformed call riding alongside a valid one must not widen what this
-      // ladder takes from a malformed reply. Nothing from a malformed reply
-      // is ever accepted.
-      if (r?.malformedToolCall) {
-        red = {
-          code: 'artifact-red',
-          path: channel.name,
-          detail: `the reply's ${channel.name} call arguments were not valid JSON `
-            + `(${redactSecrets(String(r.malformedToolCall.error))}) — nothing is repaired; the call must be re-sent whole`,
-          axis: 'malformed-tool-call-arguments',
-        };
-      } else if (box.calls.length === 1) {
-        return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
-      } else {
-        red = {
-          code: 'artifact-red',
-          path: channel.name,
-          detail: box.calls.length === 0
-            ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
-            : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
-          axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
-        };
-      }
-    } else {
-      // THE FALLBACK PATH — providers without tool mode only. The ONE shipped
-      // parser, never a second one.
-      const at = channel.textPath ?? channel.name;
-      const { code, red: extractRed } = extractArtifact(raw);
-      if (code) {
-        try { return { artifact: JSON.parse(code), attempts, convo, raw, providerError: null, red: null, budget: null }; }
-        catch (e) { red = { code: 'artifact-red', path: at, detail: `the ${at} did not parse as JSON: ${String(/** @type {any} */ (e)?.message ?? e)}`, axis: 'unparseable-json' }; }
-      } else {
-        red = { code: 'artifact-red', path: at, detail: `no artifact in the reply: ${extractRed}`, axis: 'no-artifact' };
-      }
-    }
-
-    if (attempt < retries) {
-      const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (red).detail] });
-      // a cut-off reply is NOT replayed (it would re-bill the whole cap as input and teach nothing)
-      convo.push({ role: 'assistant', content: (cutOff ? '' : raw.trim()) || '(the reply carried no text)' });
-      convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? channel.instruction : STRUCTURE_INSTRUCTION_TEXT}` });
-    }
-  }
-  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null, allCutOff: attempts > 0 && cutOffs === attempts };
 }
 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
@@ -2667,7 +2444,7 @@ export async function authorClose({
     const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
     const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : [...RUBRIC_FENCE];
-    return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
+    return { stages: [...guards.map((/** @type {any} */ g) => fencedGuardStage(g, fence)), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
   // S2: with a CSV input the row-edit turn also offers the optional `sheetChecks` (typed suggestions; code builds or refuses each: src/sheetbuild.js). The tables are the drafting copy's table of each CSV input, by its label;
   // a sheet line is a job line with a `~` rule. No CSV (or no `~` rule on any line, or a sheet with no header) = no sheet turn: prompt, schema and result are byte-identical to every other job.
@@ -2898,7 +2675,8 @@ export async function authorClose({
       previous = { d: ask.declaration, f: proposedFilter ?? null, ...(sheetProp !== null ? { s: sheetSuggested } : {}) };
 
       // a rubric job: ONE reply of row edits, each judged alone by the block; the declaration is assembled from the rows (a refused edit costs the others nothing)
-      let pre = ask.declaration;
+      // F389: a repo job's guard fill slot is the signed write fence, set by code over whatever the model wrote
+      let pre = !rowEdits && Array.isArray(writeScope) && writeScope.length > 0 ? withGuardFence(ask.declaration, guards, writeScope) : ask.declaration;
       /** @type {any[]} */
       let refusedEdits = [];
       if (rowEdits) {

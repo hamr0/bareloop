@@ -50,7 +50,7 @@ test('two keys ticking the same model id resolve BY KEY; a stale pick is refused
 
 test('validateJobCard and buildReuseSpec use the pick: the card carries provider beside model', () => {
   const card = { jobName: 'menu-p8-job', checkType: 'deterministic', provider: 'B_KEY', model: 'shared', jobText: 'fix\n~ nothing else\nit works', inputs: 'repo: /x', destination: 'src/', capUsd: 1 };
-  assert.deepEqual(validateJobCard({ ...card, provider: 'B_KEY', model: 'a-only' }, { rows, jobsDir: '/nonexistent' }), { ok: false, error: 'Pick a model. Nothing was spent.' });
+  assert.deepEqual(validateJobCard({ ...card, provider: 'B_KEY', model: 'a-only' }, { rows, jobsDir: '/nonexistent' }), { ok: false, error: 'Pick a model. Nothing was spent.', box: 'model' });
   const origin = { schema: 'job-v1', job: 'x', provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 1, verdictType: 'green', writeScope: ['src/**'], goal: 'g', tools: ['read'], escalation: { mode: 'decision-ready' } };
   const spec = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, provider: 'B_KEY', model: 'shared' }, rows);
   assert.deepEqual([spec.provider, spec.baseUrl, spec.model], ['openai-api', 'https://b.example/v1', 'shared']);

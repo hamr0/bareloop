@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG } from '../src/authoring.js';
-import { renderRejectBlock } from '../src/authorflow.js';
+import { renderRejectBlock } from '../src/ask.js';
 import { CheckBlock } from '../src/checkblock.js';
 import { draftStopText } from '../src/authorreadout.js';
 

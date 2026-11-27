@@ -372,10 +372,10 @@ test('the row names the stage that rendered the LAST verdict — `outer-close` i
     opts.emit('worker-round', { kind: 'turn', costUsd: 0.5 });
     opts.emit('plan-accepted', { plan: PLAN('tried') });
     opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision' }); // a STEP's exit loop — no stage
-    opts.emit('outer-close', { verdict: 'needs_revision', stage: 'stage-a' });
+    opts.emit('outer-close', { verdict: 'needs_revision', stage: 'stage-a', stages: [{ name: 'stage-a', verdict: 'needs_revision' }] }); // the real close carries `stage` AND `stages` (src/ralph.js runStages)
     opts.emit('fix-loop', { gapBytes: 120 });
-    opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision', stage: 'stage-a' });
-    opts.emit('close-verdict', { iteration: 2, verdict: 'needs_revision', stage: 'stage-b' }); // stage-a fixed; stage-b is the wall now
+    opts.emit('close-verdict', { iteration: 1, verdict: 'needs_revision', stage: 'stage-a', stages: [{ name: 'stage-a', verdict: 'needs_revision' }] });
+    opts.emit('close-verdict', { iteration: 2, verdict: 'needs_revision', stage: 'stage-b', stages: [{ name: 'stage-a', verdict: 'satisfied' }, { name: 'stage-b', verdict: 'needs_revision' }] }); // stage-a fixed; stage-b is the wall now
     opts.emit('job-end', { outcome: 'escalated', spentUsd: 1, spendComplete: true });
     return 'escalated';
   };

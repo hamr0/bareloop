@@ -70,24 +70,29 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
   is). Repo-only docs (`docs/`, CLAUDE.md) never ship in the tarball.
 - **License: Apache-2.0** (suite-wide) — LICENSE + NOTICE preserved in forks.
 
+<!-- DEV_RULES:START -->
 ## Dev Rules
 
-**POC first.** Always validate logic with a ~15min proof-of-concept before building. Cover happy path + common edges. POC works → design properly → build with tests. Never ship the POC. **Aim the spike at the riskiest assumption, not the easy part; prove, don't assert — measure anything you call "cheap"/"fast"/"constant," and claim only what the evidence supports (no big-mouthed conclusions measurement can falsify). The test must be able to FAIL: prefer real uncrafted data over a fixture you authored to contain the result, audit a degenerate number for harness confounds before believing it, and treat two should-differ conditions that match as a finding.**
+**Spec first.** Interview for the decision, not the task. Ask in batched rounds — only questions whose prerequisites are settled, each with your recommended answer; look up facts yourself, ask me only the choices that are mine. Pin module 0, ask what is out of scope, write a PRD (problem, go/no-go, out of scope, modules, open questions). One round is not an interview; never build on an assumed prerequisite.
 
-**Build incrementally.** Break work into small independent modules. One piece at a time, each must work on its own before integrating.
+**Reuse before you add.** Before adding a function, class, file, or dependency, search for the one that already does it, and report what you reused. A near-duplicate needs a stated reason the original couldn't be extended. One thing, one name, repo-wide.
 
-**Dependency hierarchy — follow strictly:** vanilla language → standard library → external (only when stdlib can't do it in <100 lines). External deps must be maintained, lightweight, and widely adopted. Exception: always use vetted libraries for security-critical code (crypto, auth, sanitization).
+**Don't patch a patch.** A third fix on the same spot means the design is wrong — stop and propose the redesign. A new layer must hide more than its interface costs; otherwise inline it.
 
-**Lightweight over complex.** Fewer moving parts, fewer deps, less config. Simple > clever. Readable > elegant.
+**POC first, one module at a time.** Aim each POC at its riskiest assumption (module 0 = go/no-go); the test must be able to fail. Prove, don't assert — measure anything you call cheap or fast. No fitting to pass. Gates (/self-review, /branch-review, /release) run the full suite; coding runs targeted tests only — a gate skips the run and cites the last proof when only docs changed since. A module works alone, then connects to what's built, before the next starts. Never ship the POC.
 
-**Open-source only.** No vendor lock-in. Every line of code must have a purpose — no speculative code, no premature abstractions.
+**No dependencies by default.** Start with the language itself, then its standard library. Add an outside package only when the standard library can't do it in under 100 lines, and say why. Outside packages must be maintained, lightweight, widely used and open-source — no vendor lock-in. Security code (crypto, auth, sanitizing) always uses a vetted library.
 
-**Responsive web UI is mandatory.** Any web UI must work on mobile by default — fluid layouts, viewport meta, breakpoints, no horizontal scroll. Verify in DevTools device emulation before claiming a UI task is done. POCs exempt; real projects are not. (Applies to the panel, rung N6.)
+**Simple > clever.** Fewer moving parts, fewer deps, less config; readable by a junior beats elegant. Call out overcomplication before building. Express over NestJS, Flask over Django, unless the project needs the framework.
 
-For full development and testing standards, see AGENT_RULES.md — canonical copy at
-`~/PycharmProjects/hamr0/AGENT_RULES.md` (a local, untracked copy lives at
-`.claude/remember/AGENT_RULES.md`). Library-specific standards:
-`~/PycharmProjects/hamr0/LIBRARY_CONVENTIONS.md`.
+**Every line earns its place.** If you can't say what breaks when it's deleted, delete it. No speculative code, no abstraction for one use case.
+
+**One writer per piece of state.** One function assigns each field; everything else calls it. Grep who writes it before you write it — and if a write can land from a callback, thread, or lifecycle, the reader must tell stale from fresh.
+
+**Surgical changes only.** Touch what the task requires; match existing style. Dead code, nits, bugs you pass: if it's inside or affects the code you're already changing and the fix changes no behavior, fix it and say so — otherwise report it and say what it costs to leave it. A problem you don't fix goes in the report, never in a comment.
+
+**Responsive web UI is mandatory.** Any web UI must work on mobile by default — fluid layouts, viewport meta, breakpoints, no horizontal scroll. Verify in DevTools device emulation before claiming a UI task is done. POCs exempt; real projects are not.
+<!-- DEV_RULES:END -->
 
 <!-- MEMORY:START -->
 @.claude/remember/MEMORY.md

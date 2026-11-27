@@ -75,7 +75,8 @@ import { refGuess, refGuessQuestion, refGuessToken } from '../refguess.js';
 import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, draftedLine, readDraftLedger, readDraftSteps } from '../draftspend.js';
-import { CHECK_LIMIT_MS, checkRunningNote } from '../kinds.js';
+import { checkRunningNote } from '../kinds.js';
+import { CHECK_LIMIT_MS } from '../shell.js';
 import { createCarryStore, runStateFile } from '../carrystore.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText, buildReadout, readoutHeadIndexes } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
@@ -86,6 +87,7 @@ import { planFromConfirm } from './jobplan.js';
 import { boxFor, offersOf, panelQuestionText, answerEffectWords, refuseChoice, resolveChoice, CHOICE_SAYS } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
+import { BOX, refusalOf } from './refusal.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -488,28 +490,28 @@ export function repoDestinationProblem(destination, isRepoLike) {
  * so a bad card refuses synchronously, in the same HTTP response.
  * @param {any} card
  * @param {{jobsDir?: string, allowName?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card; `allowName` = the origin job's own name on an unchanged red Reuse (it is the same job, not a collision)
- * @returns {{ok: true}|{ok: false, error: string}}
+ * @returns {{ok: true}|{ok: false, error: string, box: import('./refusal.js').RefusalBox|null}} `box` = the card box the refusal is about (F400), a literal at each check
  */
 export function validateJobCard(card, opts = {}) {
-  if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
+  if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card', box: null };
   const { jobName, checkType, model, destination, capUsd } = card;
-  if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
+  if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)', box: BOX.name };
   if (jobName !== opts.allowName && jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
-    return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
+    return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)`, box: BOX.name };
   }
-  if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
+  if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric', box: null };
   const pick = judgePick(opts.rows ?? [], { provider: card.provider, model });
-  if (!pick.ok) return { ok: false, error: pick.say };
-  if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
+  if (!pick.ok) return { ok: false, error: pick.say, box: BOX.model };
+  if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off', box: null };
   const jb = parseJobBlock(card.jobText);
-  if (!jb.ok) return { ok: false, error: jb.error };
+  if (!jb.ok) return { ok: false, error: jb.error, box: BOX.job };
   const ib = cardInputs(card);
-  if (!ib.ok) return { ok: false, error: ib.error };
+  if (!ib.ok) return { ok: false, error: ib.error, box: BOX.inputs };
   // hamr 2026-11-14: a repo job is Deterministic. Rubric on a repo is for a Tickets job only (its input is the ticket, below).
-  if (checkType === 'rubric' && flowOfCard(card).flowType !== 'tickets' && looksLikeRepoSource(ib.inputs[0].value)) return { ok: false, error: REPO_RUBRIC_WORDS };
-  if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
+  if (checkType === 'rubric' && flowOfCard(card).flowType !== 'tickets' && looksLikeRepoSource(ib.inputs[0].value)) return { ok: false, error: REPO_RUBRIC_WORDS, box: BOX.job };
+  if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required', box: BOX.dest };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
-    return { ok: false, error: '$ cap is required and must be a positive number' };
+    return { ok: false, error: '$ cap is required and must be a positive number', box: BOX.capUsd };
   }
   return { ok: true };
 }
@@ -869,12 +871,14 @@ export function createSession(card, deps = {}) {
 
   // A terminal stop is recorded ONCE, on `state` (phase + error) — never also as a chat bubble: the page shows it in the
   // one progress line, so a thread copy was the same refusal a second and third time (hamr's live reuse test 2026-10-04).
-  /** @param {string} message @param {string} [phase] */
-  const refuse = (message, phase = 'refused') => {
+  // F400: `box` is the card box the refusal is about (a literal at the call site, from src/panel/refusal.js), or null = the words stay under the Draft button.
+  /** @param {string} message @param {string} [phase] @param {import('./refusal.js').RefusalBox|null} [box] */
+  const refuse = (message, phase = 'refused', box = null) => {
     if (abandoned) return;
     dropWorktree();
     state.phase = phase;
     state.error = message;
+    state.refusal = refusalOf(box, message);
     stepFail(message);
   };
 
@@ -893,15 +897,15 @@ export function createSession(card, deps = {}) {
       } catch { draftThinkingPlan = null; }
     }
     stepStart('setup');
-    if (!modelChoice) { refuse(pick.ok ? 'Pick a model. Nothing was spent.' : pick.say); return; }
+    if (!modelChoice) { refuse(pick.ok ? 'Pick a model. Nothing was spent.' : pick.say, 'refused', BOX.model); return; }
     draftIdentity = { provider: modelChoice.provider, baseUrl: modelChoice.baseUrl ?? null, model: modelChoice.name };
     let providerEntry;
-    try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message); return; }
+    try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message, 'refused', BOX.model); return; }
     // the key is the chosen row's own variable (P8: no built-in name)
     const keyCfg = keyRows;
     const draftKeyName = modelChoice.envName;
     const apiKey = keyValueOf(env, draftKeyName);
-    if (!apiKey) { refuse(`${draftKeyName} not set. Stopped — nothing spent.`); return; }
+    if (!apiKey) { refuse(`${draftKeyName} not set. Stopped — nothing spent.`, 'refused', BOX.model); return; }
     // the customer's own price on this row (USD per 1M in config.json), resolved once here at $0 and
     // handed to every model call this session makes; a bad price refuses, never falls back to the guess
     /** @type {import('../providerrows.js').PriceResult} */
@@ -913,7 +917,7 @@ export function createSession(card, deps = {}) {
       draftPrice = dp ? { ...dp, envName: modelChoice.envName } : null;
     }
     const keyProblem = apiKeyProblem(apiKey);
-    if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
+    if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`, 'refused', BOX.model); return; }
 
     // hamr 2026-11-14 (piece 6): a job made with PASS/FAIL examples or the old judge is not reused; old runs are not repaired. Before any copy or read.
     const oldJob = deps.reuse ? oldJobWords(deps.reuse.spec) : null;
@@ -926,19 +930,19 @@ export function createSession(card, deps = {}) {
     let RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
     const destProblem = startDestinationProblem(card);
-    if (destProblem !== null) { refuse(destProblem); return; }
+    if (destProblem !== null) { refuse(destProblem, 'refused', BOX.dest); return; }
 
     // Part 2 (hamr 2026-11-21, "refusal should be at the draft"): what git alone can decide about a range/branch token (many tokens, an end or branch that is not there) is refused HERE, $0, before the worktree, the install and any model call.
     // The one helper (src/rangereview.js `draftRefusal`) is read by the CLI door too. A `range:` on a change job needs the review pick (an AI call), so it stays right after the pick.
     const rangeRepo = isRepoLike && card.checkType !== 'rubric' ? nearestGitAncestor(resolve(SOURCE))?.dir ?? null : null;
     if (rangeRepo !== null) {
       const early = await draftRefusal({ repo: rangeRepo, jobLines });
-      if (early !== null) { refuse(early); return; }
+      if (early !== null) { refuse(early, 'refused', BOX.job); return; }
     }
     // hamr 2026-11-23: EVERY new draft (Change, Review, rubric) needs at least one `~` rule; code counts them, $0, before the copy and any model call. A Reuse replays a signed plan and is never asked.
     if (!deps.reuse) {
       const noRule = needsRuleRefusal(jobLines);
-      if (noRule !== null) { refuse(noRule); return; }
+      if (noRule !== null) { refuse(noRule, 'refused', BOX.job); return; }
     }
 
     state.phase = 'preparing-source';
@@ -991,7 +995,7 @@ export function createSession(card, deps = {}) {
     if (prep.stop !== null) {
       // reaching the source and checking it are two lines: a scan/freeze refusal means the copy itself worked
       if (SOURCE_CHECK_CODES.has(/** @type {any} */ (prep).code)) stepStart('check');
-      refuse(prep.stop);
+      refuse(prep.stop, 'refused', BOX.inputs);
       return;
     }
     // the ONE state file of this job, beside source.json (the run finds it at the same `into`); drafting only keeps and reads check results in it (hamr 2026-11-24)
@@ -1019,7 +1023,7 @@ export function createSession(card, deps = {}) {
     if (IS_REPO_SOURCE) {
       langResult = detectLanguage(prep.tree);
       if (langResult.kind === 'language-unsupported') {
-        refuse(`${langResult.refusal.detail}`);
+        refuse(`${langResult.refusal.detail}`, 'refused', BOX.inputs);
         return;
       }
       LANG = langResult.kind === 'resolved' ? langResult.lang : (langResult.kind === 'ambiguous' ? langResult.candidates[0] : 'none-detected');
@@ -1073,7 +1077,7 @@ export function createSession(card, deps = {}) {
       }
     }
     if (!IS_REPO_SOURCE && !RUBRIC_FILES) {
-      refuse(nonRepoSourceMessage(prep.manifest.kind));
+      refuse(nonRepoSourceMessage(prep.manifest.kind), 'refused', BOX.inputs);
       return;
     }
 

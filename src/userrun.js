@@ -57,7 +57,7 @@ import { makeSpine } from './spine.js';
 // <path>` varies the repo without touching the bundle's signature).
 import { readSourceManifest, manifestDestination, frontDoorFromManifest, proveDestination, copyOut, landStagedReport, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
-import { runBehaviour, formatBehaviour } from './behaviour.js';
+import { runBehaviour, formatBehaviour, writesBlocked } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
 import { normalizeHumanRuling, resolveHumanRuling } from './kinds.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
@@ -1356,6 +1356,8 @@ async function execute(ctx) {
               try {
                 const fin = commitWork(wd, `bareloop: ${spec.job} (run ${DOOR !== null && (DOOR.includes('/') || DOOR.endsWith('.jsonl')) ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR})`, { exclude: defaultsOf(sourceOf(spec.closeDecl)).commitExclude });
                 out(fin.committed ? `WORKTREE  report commit ${fin.sha} on the work branch` : 'WORKTREE  nothing left to commit');
+                // REPORT-ONLY (F399): the Accept's own commit; the door kept the folder
+                doorEmit('work-committed', { branch: (doorEvents ?? []).findLast((/** @type {any} */ e) => e?.type === 'work-branch' && typeof e.branch === 'string')?.branch ?? null, commit: fin.committed ? fin.sha : null, folderKept: true });
               } catch (/** @type {any} */ e) { err(`WORKTREE  the report commit failed (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the report is in the worktree at ${land.file.path}`); }
             } else {
               doorEmit('destination-refused', { code: land.code, detail: land.stop });
@@ -2182,6 +2184,8 @@ async function execute(ctx) {
       appendFileSync(auditFile, `${prior.length > 0 && !prior.endsWith('\n') ? '\n' : ''}${legAuditText}`);
       unlinkSync(auditSrc);
     } else moveFile(auditSrc, auditFile);
+    // REPORT-ONLY (F399): the gate's record for this leg exists, and how many writes it denied; the Audit's fence row reads it back through src/runread.js (no verdict reads it)
+    emit('fence', { held: true, blocked: writesBlocked(audit) });
   }
   // ── P6 item 1: a repo job on a WORKTREE in the person's own repo. GREEN: the run's work is committed on its work
   // branch and the worktree folder removed (an already-green is a green: a cold one has nothing to commit, a resumed one may hold uncommitted work) — the branch stays, and the merge stays the person's. Anything else
@@ -2232,14 +2236,20 @@ async function execute(ctx) {
         // an already-green COLD run never made a work branch (the close passed before any work): nothing to name
         const done = fin.committed ? `final commit ${fin.sha}` : (wb ? 'nothing left to commit' : 'nothing was changed (the close already passed)');
         const onBranch = wb?.branch ?? 'the work branch';
-        if (doorHere) worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
-        else {
+        // REPORT-ONLY (F399): the final commit as it happened, written once the folder's fate is known; the Result tab's work box reads it back through src/runread.js (no verdict reads it)
+        const committedRec = { branch: wb?.branch ?? null, commit: fin.committed ? fin.sha : null };
+        if (doorHere) {
+          worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
+          emit('work-committed', { ...committedRec, folderKept: true });
+        } else {
           const gone = removeWorktree(wtManifest.repo, wd);
           // piece 12 item 3: the PR's private ref goes with the worktree (the branch holds the code now)
           if (gone && Number.isSafeInteger(wtManifest.prNumber)) removePrRef(wtManifest.repo, wtManifest.prNumber);
           worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
+          emit('work-committed', { ...committedRec, folderKept: !gone });
         }
       } catch (e) {
+        emit('work-committed', { branch: wb?.branch ?? null, commit: null, folderKept: true });
         worktreeLine = `\nWORKTREE  the final commit failed, so the folder is KEPT: ${wd} (${redactSecrets(String(/** @type {Error} */ (e).message).split('\n')[0])})`;
       }
     }

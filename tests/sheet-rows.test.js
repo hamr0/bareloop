@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { CheckBlock, REASON } from '../src/checkblock.js';
 import { buildSheetChecks, NO_VALUE_WHY, NO_CHECK_FITS_WHY } from '../src/sheetbuild.js';
 import { parseCsv, sheetTable } from '../src/csv.js';
-import { cardOfClose, listMatchesClose, checksOfClose, lineRules } from '../src/rubricstep.js';
+import { cardOfClose, listMatchesClose, checksOfClose } from '../src/rubricstep.js';
+import { lineRules } from '../src/jobline.js';
 import { sheetRowsOf } from '../src/sheetrows.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

@@ -100,7 +100,8 @@
 
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees } from './kinds.js';
-import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
+import { inputLabelsOf, readFrozenInputs, cardOfClose } from './rubricstep.js';
+import { lineRules } from './jobline.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
@@ -108,10 +109,8 @@ import {
   GENRE_LANGUAGES, RUBRIC_LANG, RUBRIC_FENCE, classGuards, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
-import {
-  QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS,
-} from './authorflow.js';
+import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS } from './authorflow.js';
+import { makeCostBook } from './ask.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
