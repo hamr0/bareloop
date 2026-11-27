@@ -2522,3 +2522,15 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
 - [ ] Phone width of the red lines: hamr's DevTools.
 - Not copied: fwd's F259 fix, fwd 23777c8b, no-`~` step checks (F400).
 - /self-review, hamr's click-through of Result/Audit/Run on a resumed and a plain run, and push: not done yet.
+
+### fwd v0.39.0 copies (2026-11-27) — RULED by hamr ("all fixes, 1B, 2B")
+
+- [x] c2 `isRowChoice` / `ROW_CHOICES` (`src/pickrecord.js`), seven sites. Spec: ITEM33-BUILD.md "Addendum 2026-11-27".
+  - state 2026-11-27: built, b859697a; guard red before, green after.
+- [x] c1 `isAmountShape` / `isPhraseShape` / `isLegalCount` (`src/facts.js`), `canReadLimit` (`src/pagerules.js`); `{min: undefined, max: 2}` now legal at both count doors.
+  - state 2026-11-27: built, 7e9be4e9; test-proven, not seen live.
+- [x] a `tagWordOf` page painter (page-only; fwd am8a not copied); an unknown word draws an empty tag text.
+  - state 2026-11-27: built, 7be91fc3; phone width and hamr's click-through not done.
+- [x] c3 one private record-file reader in `src/pickrecord.js` (pin test, no behaviour change).
+  - state 2026-11-27: built; gate files pending the fwd hold at stash time.
+- [x] b list-rule bounds: already ours, nothing built. fwd 0ea6c272 (addedCountsOf) and 84a35553 (readKept): not applicable, bareloop has neither mechanism.
