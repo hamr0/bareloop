@@ -9,7 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-- **A finished run no longer says a check is "waiting for your answer" (run mwnlw2mo, flights-shape-walk, walk 2026-11-27).** A check that was still waiting on an answer when the plan was signed showed `waiting for your answer on the reading` under Not checked on the Result, Audit and Job tabs of a run that had long finished. A signed view now reads `not answered while drafting — you judge it at Accept`; drafting keeps the old words. Display only: stored records are not rewritten, so older runs read the new words too. One owner of the words in `src/checklist.js`.
+- **A finished run no longer says a check is "waiting for your answer" (run mwnlw2mo, flights-shape-walk, walk 2026-11-27).** A check that was still waiting on an answer when the plan was signed showed `waiting for your answer on the reading` under Not checked on the Result, Audit and Job tabs of a run that had long finished. A signed view now reads `not answered while drafting`; drafting keeps the old words. Display only: stored records are not rewritten, so older runs read the new words too. One owner of the words in `src/checklist.js`.
 
 - **A count of failing tests no longer reads "type errors" in the Audit (run mwue75ih, walk 2026-11-27).** When a plan has no `command-exit` stage, the count of failing tests on `npm test` read "tests/ has 0 type errors?", which is false. A count stage sharing its command with the `tests-kept` floor now reads "no failing tests?" too (`src/stagewords.js`). Runs already recorded keep the words their learnings cards stored.
 

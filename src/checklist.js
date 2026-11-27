@@ -15,7 +15,7 @@ export const MAX_BANG = 3;
 export const WAITING_PICK_WORDS = 'waiting for your answer on the proposed check';
 export const WAITING_READING_WORDS = 'waiting for your answer on the reading';
 /** What a SIGNED list says of a row that was still waiting when it was signed: the drafting words are over, the person judges it at Accept. */
-export const NOT_ANSWERED_WORDS = 'not answered while drafting — you judge it at Accept';
+export const NOT_ANSWERED_WORDS = 'not answered while drafting';
 /**
  * A stored row reason as a SIGNED view reads it: a waiting reason (stored while drafting) reads {@link NOT_ANSWERED_WORDS}; every other reason is unchanged. Display only: the stored record is never rewritten, so old runs read the new words too.
  * @param {string} reason @returns {string}

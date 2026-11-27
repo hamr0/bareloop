@@ -9,7 +9,7 @@ import { refusedOf } from '../src/rubricstep.js';
 import { planFromSpec } from '../src/panel/jobplan.js';
 import { REASON } from '../src/checkblock.js';
 
-const SIGNED_WORDS = 'not answered while drafting — you judge it at Accept';
+const SIGNED_WORDS = 'not answered while drafting';
 const row = (/** @type {string} */ reason) => ({ key: 'L1.~1', line: 1, kind: 'rule', rule: 1, by: 'you', state: 'not-checked', reason });
 const spec = (/** @type {string} */ reason) => ({
   jobLines: [{ n: 1, text: 'Find a flight\n~ departure not a red-eye', rule: 'departure not a red-eye', rules: ['departure not a red-eye'] }],
