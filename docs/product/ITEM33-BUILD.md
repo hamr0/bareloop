@@ -6430,3 +6430,7 @@ FROZEN POC bars ($0, written before any number exists):
 - Item 1 (a): scratch app, root `postinstall` writes ROOT_MARK, a `file:` pure-JS dependency whose install script writes DEP_MARK; the new logic leaves both markers absent; and if plain `npm rebuild <name>` runs the root's scripts, STOP (shape wrong). (b): a throwaway copy of this repo's tracked files, new logic, better-sqlite3 loads and returns {x:1}; rebuilt list = only packages with binding.gyp/gypfile. (c): old logic on the same copy for contrast, both timed. Any miss = FAIL, stop.
 - Item 3: scratch repo, main has m.txt committed after the split, feat has f.txt; new writeRangeDiffs(main, feat) gives files.txt exactly "f.txt\n" and f.txt.diff byte-identical to `git diff $(git merge-base main feat) feat -- f.txt`; a linear history (A ancestor of B) gives byte-identical output old vs new. Any miss = FAIL, stop.
 - Item 2: no POC beyond a fail-first test (scratch repo tracking `output -> <empty outside dir>`; the outside dir stays empty; a normal repo unchanged).
+
+Ruled 2026-11-27 by hamr ('A'): item 3 not built. `range:` stays the documented plain two-end diff (bareloop.context.md, Part 2); `branch:` is the branch's own changes.
+Item 1 built c55e794f (POC a, b PASS); both test-proven, not seen live.
+Item 2 built f8479077; test-proven, not seen live.

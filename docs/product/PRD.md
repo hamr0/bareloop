@@ -2487,7 +2487,7 @@ hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here ride
   - state 2026-11-26: built, option B (replay- and test-proven; hamr's click-through and phone width pending).
   - state 2026-11-26: open, not started.
   - state 2026-11-26: built today, F406 ab683e53 plus 92a0425f; hamr saw the line on mwue75ih live 2026-11-26.
-- [ ] Fix ledger (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch (hamr A: next release).
+- [ ] Fix ledger (.claude/remember/fix-ledger.md), incl. resume reuses a saved red, refguess common-word branch (hamr A: next release).
   - state 2026-11-26: open, not started.
 - [x] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
   - state 2026-11-26: done. Sent, and copied am14b as the refusal boxes.
@@ -2543,11 +2543,12 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
   - state 2026-11-27: built, 77a3a8f4 and 8fa6592e (shortened by hamr); test-proven, not seen live.
 - [x] Walks 2026-11-27 (hamr, 4700 on v0.64.0 + branch panel 4719): mwue75ih Audit, mwuxqx4f Audit, flights-shape-walk Run/Result/Audit, New job red lines (Cap $, Inputs, Job name), phone width, tags, taken name — all pass.
 - [x] Scratch cleanup 2026-11-27 (hamr "stage 3", "A"): walk patients deleted; .claude/scratch slimmed to POC results/prereg/plan notes and doc-cited files (3.6G to 5.4M).
+- [x] Pre-beta safety: `npm rebuild` rebuilds only native packages (c55e794f); a review refuses a symlinked `output` at draft start (f8479077). Spec: ITEM33-BUILD.md "Addendum 2026-11-27d". Test-proven, not seen live; a native package's own install script still runs.
 
 ### After beta (hamr 2026-11-27): build only what users hit
 
 - [ ] fwd M20 am9d word-count edges ("under/fewer than/below/less than N words" = maxWords N-1, "more than/over N words" = minWords N+1; at most/at least stay N): copy from fwd's next release tag only. bareloop site: src/checkpick.js.
-- [ ] Fix ledger (.claude/remember/fix-ledger.md): the worthy items from the 2026-11-27 /refactor evidence pass, safety two first: npm rebuild runs install scripts (src/npminstall.js), review diff follows a tracked `output` symlink (src/rangereview.js); then range two-dot diff, NEGATING_RE silent Not checked, sheet number rules disagree, two Count bullets indistinguishable, sheetEditable predicate twice, hand-read manifest.destination.
+- [ ] Fix ledger (.claude/remember/fix-ledger.md): NEGATING_RE silent Not checked, sheet number rules disagree (sheetfind vs sheetclaims), two Count bullets indistinguishable (resultmd). The two safety items were built pre-beta (ITEM33-BUILD Addendum 2026-11-27d); range two-dot stays as documented (hamr A).
 - [ ] Learnings box: run mwue75ih shows "1 hint" with blank lines while the record holds the hint text (649 chars); check the fold draws it. Not looked at in the page yet.
 - Left as is (hamr 2026-11-27): a check-only first pass labelled "fix · 0 calls" (its fold says the opening close ran before any model call).
 - [ ] New job card Schedule row offers all schedule kinds: asked 2026-11-26, not answered (see the Next-release list above).
