@@ -2487,7 +2487,7 @@ hamr 2026-11-26: "continue cleaning, no leftovers" — every open item here ride
   - state 2026-11-26: built, option B (replay- and test-proven; hamr's click-through and phone width pending).
   - state 2026-11-26: open, not started.
   - state 2026-11-26: built today, F406 ab683e53 plus 92a0425f; hamr saw the line on mwue75ih live 2026-11-26.
-- [ ] Fix ledger (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch, MAX_SHAPE_FIELDS dead constant (hamr A: next release).
+- [ ] Fix ledger (.claude/remember/fix-ledger.md), incl. range two-dot diff, resume reuses a saved red, refguess common-word branch (hamr A: next release).
   - state 2026-11-26: open, not started.
 - [x] fwd exchange after both release: copy fwd's fixes from its tag (incl. am12, am14); tell fwd in one message our tag, files and signed text. Message sent to fwd 2026-11-25; fwd's reply: nothing open in am12-am15a; the copy is the v0.38.0 swap entry below.
   - state 2026-11-26: done. Sent, and copied am14b as the refusal boxes.
