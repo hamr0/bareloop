@@ -2543,7 +2543,7 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
   - state 2026-11-27: built, 77a3a8f4 and 8fa6592e (shortened by hamr); test-proven, not seen live.
 - [x] Walks 2026-11-27 (hamr, 4700 on v0.64.0 + branch panel 4719): mwue75ih Audit, mwuxqx4f Audit, flights-shape-walk Run/Result/Audit, New job red lines (Cap $, Inputs, Job name), phone width, tags, taken name — all pass.
 - [x] Scratch cleanup 2026-11-27 (hamr "stage 3", "A"): walk patients deleted; .claude/scratch slimmed to POC results/prereg/plan notes and doc-cited files (3.6G to 5.4M).
-- [x] Pre-beta safety: `npm rebuild` rebuilds only native packages (c55e794f); a review refuses a symlinked `output` at draft start (f8479077). Spec: ITEM33-BUILD.md "Addendum 2026-11-27d". Test-proven, not seen live; a native package's own install script still runs.
+- [x] Pre-beta safety: `npm rebuild` rebuilds only native packages (c55e794f); the symlinked-output check (f8479077) was reverted: the source front door already refuses a link leaving the repo (walked by hamr 2026-11-27). Spec: ITEM33-BUILD.md "Addendum 2026-11-27d". The rebuild part is test-proven, not seen live; a native package's own install script still runs.
 
 ### After beta (hamr 2026-11-27): build only what users hit
 

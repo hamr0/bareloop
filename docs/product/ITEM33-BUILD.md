@@ -6434,3 +6434,4 @@ FROZEN POC bars ($0, written before any number exists):
 Ruled 2026-11-27 by hamr ('A'): item 3 not built. `range:` stays the documented plain two-end diff (bareloop.context.md, Part 2); `branch:` is the branch's own changes.
 Item 1 built c55e794f (POC a, b PASS); both test-proven, not seen live.
 Item 2 built f8479077; test-proven, not seen live.
+Item 2 reverted 2026-11-27 (hamr 'A'): unreachable, the source front door (src/source.js source-symlink) refuses first; pinned by tests/source.test.js (a tracked symlink escaping the repo root refuses source-symlink).
