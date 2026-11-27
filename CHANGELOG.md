@@ -21,6 +21,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Development
 
+- **Dead constant removed.** The dead `MAX_SHAPE_FIELDS` constant in `src/shapelook.js` is removed; nothing read it, so no cap is lost (bareguard still refuses past 50 shape fields at sign time).
+
+- **`legFactsOf` JSDoc.** `src/legs.js`: the `legFactsOf` JSDoc names its real type (`LegEnd`), and the typedef sits before its first use. Comment only.
+
 - **One read of a picks-record file (copied from fwdloop v0.39.0, M20 am8 item 1m).** The four readers in `src/pickrecord.js` and `writeRecordPart`'s read open the file through one private reader instead of five `JSON.parse(readFileSync(...))` copies. No behaviour change; fwd's inside-the-folder read is not copied (bareloop has no `inside.js`). `tests/fwd-v039-jsonreader.test.js`: the one-reader guard was red (5 copies) before; the same-answer part is a pin that cannot fail on a move.
 
 - **One painter of the tag word (copied from fwdloop v0.39.0, M20 am8b).** `tagWordOf(by)` in `src/panel/index.html` holds the three words (`[you]`, `[agent]`, `[default]`) once; `ckTagHtml` and `byTagOf` ask it. Every row the server sends today carries `you`, `agent`, `default` or nothing and draws the same tag as before. One difference, ruled by hamr 2026-11-27: a word the server never sends now draws an empty tag text (the span and its `data-by` stay) instead of `[word]`. fwd's server-handed word list (am8a) is not copied; the server's own `rowTag` (`src/authorrun.js`) keeps its spelling. `tests/fwd-v039-tagword.test.js` fails if another page function builds a tag word. Test-proven; phone width and hamr's click-through not done.

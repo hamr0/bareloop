@@ -2548,6 +2548,7 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
 ### After beta (hamr 2026-11-27): build only what users hit
 
 - [ ] fwd M20 am9d word-count edges ("under/fewer than/below/less than N words" = maxWords N-1, "more than/over N words" = minWords N+1; at most/at least stay N): copy from fwd's next release tag only. bareloop site: src/checkpick.js.
+- [ ] fwd M20 am9g (F283, fwd e7f15ffb): a `~` rule like "under $150" on a page in another currency goes Not checked, then rules-first handed it to the AI's shape field money "$" max 150, so an honest "€42" answer went red; fwd's fix: the other-currency verdict carries `final: true`, matchRule returns early, shapeCandidates skips it (3 lines in src/checkblock.js). Copy from fwd's next release tag only.
 - [ ] Fix ledger (.claude/remember/fix-ledger.md): NEGATING_RE silent Not checked, sheet number rules disagree (sheetfind vs sheetclaims), two Count bullets indistinguishable (resultmd). The two safety items were built pre-beta (ITEM33-BUILD Addendum 2026-11-27d); range two-dot stays as documented (hamr A).
 - [ ] Learnings box: run mwue75ih shows "1 hint" with blank lines while the record holds the hint text (649 chars); check the fold draws it. Not looked at in the page yet.
 - Left as is (hamr 2026-11-27): a check-only first pass labelled "fix · 0 calls" (its fold says the opening close ran before any model call).
