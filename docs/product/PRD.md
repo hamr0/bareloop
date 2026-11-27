@@ -2535,3 +2535,19 @@ Left as is (hamr 2026-11-25): run mvtatlxw's Audit "9 passed · 8 not checked" i
 - [x] c3 one private record-file reader in `src/pickrecord.js` (pin test, no behaviour change).
   - state 2026-11-27: built, 579cbed3; full suite exit 0 on 579cbed3 (6,676 pass, 0 fail).
 - [x] b list-rule bounds: already ours, nothing built. fwd 0ea6c272 (addedCountsOf) and 84a35553 (readKept): not applicable, bareloop has neither mechanism.
+- [x] One owner for a taken job name (`jobNameTaken`, src/panel/authorsession.js): the New job card refuses a name already in the runs list with the Reuse door's words. Seen live in hamr's walk 2026-11-27 (draft session smwz2xj6bdnq3); hamr ruled A. Spec: ITEM33-BUILD.md "Addendum 2026-11-27b".
+  - state 2026-11-27: built, 357c6473; walked by hamr on the branch panel (pass).
+- [x] A failing-test count reads "no failing tests?", never "type errors" (src/stagewords.js `isSuiteRunner`: the tests-kept floor's command counts as the suite command). Seen live: run mwue75ih. POC PASS (150 specs, 7 names changed, 0 bar violations). Spec: ITEM33-BUILD.md "Addendum 2026-11-27c".
+  - state 2026-11-27: built, c68ddffa; test-proven, not seen live. Limit accepted by hamr: a plan with neither a command-exit stage nor a tests-kept floor on that command still falls back. Old learnings hints keep their stored words.
+- [x] A signed list reads a waiting reason as "not answered while drafting" (src/checklist.js `NOT_ANSWERED_WORDS`; drafting words unchanged). Seen live: run mwnlw2mo. Spec: ITEM33-BUILD.md "Addendum 2026-11-27c".
+  - state 2026-11-27: built, 77a3a8f4 and 8fa6592e (shortened by hamr); test-proven, not seen live.
+- [x] Walks 2026-11-27 (hamr, 4700 on v0.64.0 + branch panel 4719): mwue75ih Audit, mwuxqx4f Audit, flights-shape-walk Run/Result/Audit, New job red lines (Cap $, Inputs, Job name), phone width, tags, taken name — all pass.
+- [x] Scratch cleanup 2026-11-27 (hamr "stage 3", "A"): walk patients deleted; .claude/scratch slimmed to POC results/prereg/plan notes and doc-cited files (3.6G to 5.4M).
+
+### After beta (hamr 2026-11-27): build only what users hit
+
+- [ ] fwd M20 am9d word-count edges ("under/fewer than/below/less than N words" = maxWords N-1, "more than/over N words" = minWords N+1; at most/at least stay N): copy from fwd's next release tag only. bareloop site: src/checkpick.js.
+- [ ] Fix ledger (.claude/remember/fix-ledger.md): the worthy items from the 2026-11-27 /refactor evidence pass, safety two first: npm rebuild runs install scripts (src/npminstall.js), review diff follows a tracked `output` symlink (src/rangereview.js); then range two-dot diff, NEGATING_RE silent Not checked, sheet number rules disagree, two Count bullets indistinguishable, sheetEditable predicate twice, hand-read manifest.destination.
+- [ ] Learnings box: run mwue75ih shows "1 hint" with blank lines while the record holds the hint text (649 chars); check the fold draws it. Not looked at in the page yet.
+- Left as is (hamr 2026-11-27): a check-only first pass labelled "fix · 0 calls" (its fold says the opening close ran before any model call).
+- [ ] New job card Schedule row offers all schedule kinds: asked 2026-11-26, not answered (see the Next-release list above).
