@@ -2,7 +2,7 @@
 // A job STEP line may carry the exact typed text `range: A..B` or `branch: NAME` (local branches only). Code reads only those tokens; it never guesses intent from other words.
 // Code (never the worker) runs the read-only git of src/prcheckout.js (stripped env, no hooks, `diff` on its allow-list) at run start, before any token is spent:
 //   a range is checked at both ends; a branch is diffed against main (merge-base(main, NAME)..NAME); one diff file per changed file is written under `output/review-diff/`, never into the person's repo, never committed.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { spawnClose } from './ralph.js';
 import { readSourceManifest } from './source.js';
@@ -11,6 +11,13 @@ import { prGitArgs, prGitEnv, firstReason, checkoutAt } from './prcheckout.js';
 
 const SHA = /^[0-9a-f]{40}$/;
 const TAIL = 'Nothing spent.';
+/** git's own empty tree (SHA-1 repos, as `SHA` above): the left side that lists every tracked path with its mode */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+/** the two places a review writes through: `output` and `output/review-diff`; a symlink at either would send the diffs outside the run's folder */
+const WRITE_PATHS = Object.freeze(['output', DIFF_DIR]);
+
+/** plain words for a symlinked write path (DRAFT START and the write's own net share them) @param {string} rel */
+const symlinkWords = (rel) => `This repo has "${rel}" as a symlink, so a review would write its diffs outside the run's folder. Take the link out of the repo (or review another repo). ${TAIL}`;
 
 /**
  * The worker may not WRITE or EDIT anything under `DIFF_DIR` (code's per-file diffs are the cite's ground truth; a fenced `output/` alone
@@ -87,6 +94,11 @@ export async function resolveRange({ repo, token, env = process.env, run = spawn
 export async function writeRangeDiffs({ repo, worktree, a, b, env = process.env, run = spawnClose }) {
   const childEnv = prGitEnv(env);
   const git = (/** @type {string} */ sub, /** @type {string[]} */ rest) => run('git', prGitArgs(sub, rest), { env: childEnv, cwd: repo, timeoutMs: 60_000 });
+  for (const rel of WRITE_PATHS) { // the net: whatever the worktree holds, a symlink at a write path is never written through
+    let link = false;
+    try { link = lstatSync(join(worktree, rel)).isSymbolicLink(); } catch { /* absent: the mkdir below makes it */ }
+    if (link) return { ok: false, error: symlinkWords(rel) };
+  }
   const names = await git('diff', ['--name-only', '--no-ext-diff', '-z', `${a}..${b}`]);
   if (names.error || names.status !== 0) return { ok: false, error: `Git could not list the changed files (${firstReason(names.stderr)}). ${TAIL}` };
   const files = names.stdout.split('\0').filter(Boolean);
@@ -146,7 +158,18 @@ export async function draftRefusal({ repo, jobLines, review = false, env = proce
     return tip.ok ? null : tip.error;
   }
   const r = await resolveRange({ repo, token, env, run });
-  return r.ok ? null : r.error;
+  if (!r.ok) return r.error;
+  // a review writes `output/review-diff/` into the worktree, which sits at the range end `b`: a tracked symlink at `output` or `output/review-diff` there is refused now ($0), by reading b's tracked modes.
+  if (token.kind === 'range' || review) {
+    const modes = await run('git', prGitArgs('diff', ['--raw', '--no-ext-diff', '--no-renames', EMPTY_TREE, r.b, '--', ...WRITE_PATHS]), { env: prGitEnv(env), cwd: repo, timeoutMs: 60_000 });
+    if (!modes.error && modes.status === 0) {
+      for (const line of modes.stdout.split('\n')) {
+        const m = /^:\d+ 120000 \S+ \S+ A\t(.+)$/.exec(line);
+        if (m !== null && WRITE_PATHS.includes(m[1])) return symlinkWords(m[1]);
+      }
+    }
+  }
+  return null;
 }
 
 /**
