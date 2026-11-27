@@ -1,5 +1,5 @@
 // Part 2 item 6 (ITEM33-BUILD "Part 2 build spec"): the planner block for a range/branch review: one block from rangeNoteOfSpec, only with a token, words FROZEN from live round W. Invariants: every code-close prompt, every
-// signed-spec fixture's prompt and a no-token review's prompt are byte-identical to the parent commit (tests/fixtures/range-planner-golden.json, captured at 4ba2da23 before this change).
+// signed-spec fixture's prompt and a no-token review's prompt are byte-identical to the parent commit (tests/fixtures/range-planner-golden.json, captured at 4ba2da23 before this change; the entries for fixtures added later, result-a and already-green-result/mwvwcxvy, were computed from the planner of the commit that added them, so they lock current behaviour only).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';
