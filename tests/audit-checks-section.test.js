@@ -43,7 +43,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
+const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
 
 test('the Audit lists Checks, Not checked and Always checked, each row tagged, with its recorded result (real run mwenvde5)', () => {
   const ac = getRunDetail('mwenvde5', { home: runHome() }).auditChecks;

@@ -6,10 +6,13 @@ import { fileURLToPath } from 'node:url';
 import * as AR from '../src/authorrun.js';
 
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
-const start = PAGE.indexOf('function byTagOf(');
-let i = PAGE.indexOf('{', start); let d = 0;
-for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') d += 1; else if (PAGE[i] === '}') { d -= 1; if (d === 0) break; } }
-const byTagOf = new Function(`${PAGE.slice(start, i + 1)}\nreturn byTagOf;`)();
+const fnText = (name) => {
+  const start = PAGE.indexOf(`function ${name}(`);
+  let i = PAGE.indexOf('{', start); let d = 0;
+  for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') d += 1; else if (PAGE[i] === '}') { d -= 1; if (d === 0) break; } }
+  return PAGE.slice(start, i + 1);
+};
+const byTagOf = new Function(`${fnText('tagWordOf')}\n${fnText('byTagOf')}\nreturn byTagOf;`)();
 
 test('the page tags read `~ [you]`, `! [agent]`, `$ [default]`; no tag for an unknown row', () => {
   assert.match(byTagOf('you'), />~ \[you\]<\/span>/);

@@ -27,7 +27,7 @@ const PAGE = readFileSync(new URL('../src/panel/index.html', import.meta.url), '
 const fnSrc = (/** @type {string} */ n) => { const i = PAGE.indexOf(`function ${n}(`); let d = 0; let j = PAGE.indexOf('{', i); for (let k = j; k < PAGE.length; k += 1) { if (PAGE[k] === '{') d += 1; else if (PAGE[k] === '}') { d -= 1; if (d === 0) return PAGE.slice(i, k + 1); } } return ''; };
 
 test('Result tab page: a passed row draws its found words after the check; a row without any draws as before', () => {
-  const draw = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('resultField')}\n${fnSrc('resultCheckRowsHtml')}\nreturn resultCheckRowsHtml;`)();
+  const draw = new Function(`${fnSrc('escapeXml')}\n${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('resultField')}\n${fnSrc('resultCheckRowsHtml')}\nreturn resultCheckRowsHtml;`)();
   const html = draw({ checkRows: [{ text: 'rows — rows where Amount > 500', by: 'you', result: 'passed', found: 'rows checked — 17 rows' }, { text: 'plain', by: 'default', result: 'passed' }], unclaimed: [] });
   assert.match(html, /rows checked — 17 rows/);
   assert.match(html, /data-result="passed"[^]*rows checked[^]*data-result="passed"[^]*plain/);
