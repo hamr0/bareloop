@@ -735,8 +735,8 @@ extensions — resolve at COMPOSITION from the language the declaration names. T
 battery injects `changed-from-seed`
 and `no-suppressions` FULLY PARAMETERISED (`classGuards({ verdictType, lang })`, which
 THROWS rather than ever hand back an empty battery for a known class and language); the
-model fills exactly one
-slot (the target prefixes) and cannot change, drop, rename, re-kind or NARROW them —
+model fills nothing: the one
+slot (the target prefixes) is the signed write fence, set by CODE from it (F389; the model's own value there is overwritten), and the model cannot change, drop, rename, re-kind or NARROW the guards —
 `validateDeclaration` reds `guard-weakened` on any of it, including on an added `scope` that
 would shrink what the suppression scan covers. `genreEnv(lang, { sourcePrefixes })` is the
 same idea for environment: `MYPYPATH` on a Python patient is a fact no user can supply and
@@ -3609,11 +3609,11 @@ key you want first (the panel picks the row by the Model menu).
   stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
   Every PART of a run detail (`parts[]`) also carries its own `status` `{key, sign, word}` from the same table
   (`partStatusFor`, `src/panel/status.js`): drafting, a green outcome and a part with no verdict and no cut-off → passed; a red
-  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap — also a leg that ended `escalated` on a money-halt or wall-halt, and the open step of a single-leg run that ended on a cap; and the LAST step part of a run that ended capped when that step's OWN escalation was the cap — its `step-end` reads `escalated` with no stop reason, so `cappedLastStep` in `src/panel/server.js` gives it the cap word, a `wall-halt` escalation reading time cap and a `cap-halt` that is not the ladder's reading money cap; a step its own strike limit escalated, and any earlier escalated step, stays failed), stopped (you stopped it),
+  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap — also a leg that ended `escalated` on a money-halt or wall-halt, and the open step of a single-leg run that ended on a cap; and a step whose OWN escalation was the cap — its `step-end` reads `escalated`, so `endOf` in `src/legs.js` (the ONE owner of how a part, piece or try ended, F409) reads its escalation: a `wall-halt` reads time cap, a `cap-halt` reads money cap only when it is its leg's last escalation in a leg that ended on a money-halt; a step its own strike limit escalated, and any earlier escalated step, stays failed), stopped (you stopped it),
   died, else failed. A run that DIED (no `job-end`, runner gone) leaves its last part in flight: when that part has no outcome
   and no cut-off, the server marks it `died` (`[?] died`), never the "happened, so passed" default — replay alone cannot tell
   died from still running, so `getRunDetail` decides it from the same `death` verdict as the run's status. A live run's open
-  part stays running; a part that finished before the death keeps its own status. The page's step map is a row of fit-to-text chips that flow and wrap (no truncation, no horizontal scroll), `[sign title]` each, in plan order, with an arrow between neighbours and a leading arrow on a wrapped line; the status word (from the same table) rides in the chip's tooltip, a retried step has a dashed border and a `↻N` tries mark, a leg boundary a dotted right edge, and a click jumps to that part's Audit row (the live part reads `[▶]`); the step cards and Audit rows
+  part stays running; a part that finished before the death keeps its own status. Every attempt and graded try carries its own `status` too (`attemptStatusFor`, same table); the page derives no sign, it reads `status`. A part that spans legs (scout, plan, fix) is one row per leg, `id` `<part>:L<leg>` (for example `fix:L2`), each holding only that leg's rounds and attempts; a piece its leg's halt cut short carries that halt as its `stopReason`. A step a cap, a Stop or a provider failure cut is continued, not retried, by its re-run in the next leg; the provider failure always reads "the model provider failed". The page's step map is a row of fit-to-text chips that flow and wrap (no truncation, no horizontal scroll), `[sign title]` each, in plan order, with an arrow between neighbours and a leading arrow on a wrapped line; the status word (from the same table) rides in the chip's tooltip, a retried step has a dashed border and a `↻N` tries mark, a leg boundary a dotted right edge, and a click jumps to that part's Audit row (the live part reads `[▶]`); the step cards and Audit rows
   show the word only; no surface says "done".
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?, model?, provider?}`
