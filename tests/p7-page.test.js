@@ -16,7 +16,7 @@ function fnSrc(name) {
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // eslint-disable-next-line no-new-func
-const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
+const renderJobPlan = new Function('escapeXml', `${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
 
 const PLAN = {
   lines: [

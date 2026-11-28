@@ -169,7 +169,7 @@ test('the page draws a shape card: the heading once, rows as `› name · senten
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const { renderJobPlan } = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)(escapeXml);
+  const { renderJobPlan } = new Function('escapeXml', `${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)(escapeXml);
   const spec = { jobLines: JOB, closeDecl: { ...CLOSE, list: [...CLOSE.list, { key: 'L2.$prose', line: 2, kind: 'prose', by: 'default', from: 'default', state: 'not-checked', reason: SHAPE_TRUTH_WORDS }] } };
   const plan = { ...planFromSpec(spec), suggested: [{ key: 'L2.shape.owner', line: 2, text: 'owner · text' }] };
   const html = renderJobPlan(plan, (/** @type {string} */ op, /** @type {string} */ key) => `<button data-op="${op}" data-key="${key}">${op}</button>`);
@@ -188,7 +188,7 @@ test('the page draws the Result grid and the Audit shape rows as the signed mock
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'tagWordOf', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard', 'stateDotHTML', 'auditCheckRowHtml'];
   const { shapeResultCard, auditCheckRowHtml } = new Function('escapeXml', `var RESULT_NONE = "no saved result to show";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard, auditCheckRowHtml };`)(escapeXml);
   const { shapeResultModel } = await import('../src/shaperesult.js');
   const part = buildShapePart({ text: 't', fields: [{ name: 'title', spec: { kind: 'text', minChars: 1 }, rule: 1, by: 'you' }, { name: 'status', spec: { kind: 'oneOf', values: ['a', 'b'] }, rule: 2, by: 'you' }] });
@@ -229,7 +229,7 @@ test('a shape line of 5+ fields folds (A2): one <details> per item, k of n, a fa
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'tagWordOf', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
   const { shapeResultCard } = new Function('escapeXml', `var RESULT_NONE = "x";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard };`)(escapeXml);
   const { shapeResultModel } = await import('../src/shaperesult.js');
   const mk = (/** @type {number} */ n) => {
@@ -278,7 +278,7 @@ test('the fold draws no separate errors list for any field count (its reasons si
   const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
   const fnSrc = (/** @type {string} */ name) => { const start = PAGE.indexOf(`function ${name}(`); assert.ok(start !== -1, name); let depth = 0; let i = PAGE.indexOf('{', start); for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } } return PAGE.slice(start, i + 1); };
   const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const names = ['gridGlyph', 'tgMark', 'tgCell', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
+  const names = ['gridGlyph', 'tgMark', 'tgCell', 'tagWordOf', 'byTagOf', 'resultField', 'resultNotChecked', 'shapeFoldHtml', 'shapeResultCard'];
   const { shapeResultCard } = new Function('escapeXml', `var RESULT_NONE = "x";\n${names.map(fnSrc).join('\n')}\nreturn { shapeResultCard };`)(escapeXml);
   const { shapeResultModel } = await import('../src/shaperesult.js');
   const mk = (/** @type {number} */ n) => {

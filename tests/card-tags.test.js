@@ -17,7 +17,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const { renderJobPlan, resultNotChecked } = new Function('escapeXml', 'resultField', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('resultNotChecked')}\nreturn { renderJobPlan, resultNotChecked };`)(escapeXml, (l, h) => h);
+const { renderJobPlan, resultNotChecked } = new Function('escapeXml', 'resultField', `${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('resultNotChecked')}\nreturn { renderJobPlan, resultNotChecked };`)(escapeXml, (l, h) => h);
 
 const byOf = (/** @type {any[]} */ items, /** @type {RegExp} */ re) => items.find((c) => re.test(c.text))?.by;
 const ledgerOf = (/** @type {any} */ block) => block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) }));

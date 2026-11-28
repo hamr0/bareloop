@@ -297,14 +297,14 @@ export function endKindOfWords(words) {
   return KIND_OF_WORDS.get(words) ?? 'failed';
 }
 
-/** a leg's own cap and last escalation: the facts a window's end is read against @param {Leg} leg */
+/** @typedef {Pick<Leg, 'outcome'|'records'>} LegEnd */
+
+/** a leg's own cap and last escalation: the facts a window's end is read against @param {LegEnd} leg */
 function legFactsOf(/** @type {LegEnd} */ leg) {
   const esc = leg.records.findLast((r) => r && r.type === 'escalation') ?? null;
   const cap = capKindOf({ outcome: leg.outcome, category: leg.outcome === 'escalated' ? (esc?.category ?? null) : null, moneyHalt: leg.records.some((r) => r && r.type === 'money-halt') });
   return { cap, esc };
 }
-
-/** @typedef {Pick<Leg, 'outcome'|'records'>} LegEnd */
 
 /**
  * @typedef {object} EndOfInput

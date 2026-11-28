@@ -19,7 +19,7 @@ function fnSrc(/** @type {string} */ name) {
   return PAGE.slice(start, i + 1);
 }
 const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const NAMES = ['byTagOf', 'ckTagHtml', 'ckRowHtml', 'ckGroupHtml', 'renderJobPlan', 'stateDotHTML', 'auditCheckRowHtml'];
+const NAMES = ['tagWordOf', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'ckGroupHtml', 'renderJobPlan', 'stateDotHTML', 'auditCheckRowHtml'];
 const page = /** @type {any} */ (new Function('escapeXml', `${NAMES.map((n) => { try { return fnSrc(n); } catch { return ''; } }).join('\n')}\nreturn { renderJobPlan, auditCheckRowHtml: typeof auditCheckRowHtml === 'function' ? auditCheckRowHtml : null };`)(escapeXml));
 const ctl = (/** @type {string} */ op, /** @type {string} */ key) => `<button data-op="${op}" data-key="${key}">${op === 'drop' ? 'Drop' : 'Add'}</button>`;
 
@@ -104,7 +104,7 @@ test('the Audit page (signed mock): Line N and its text, CHECKED then NOT CHECKE
   const shapeKey = String(plan.lines[0].checks.find((c) => c.shape)?.key);
   const ac = auditChecksOf(plan, [], new Map([['line-1', false], ['changed-from-seed', true]]), 0, true, { results: new Map([[shapeKey, { result: 'failed', why: 'item 3: summary has 241 characters, the limit is 199' }]]), unclaimed: new Map() });
   const doc = { createElement: () => { const el = /** @type {any} */ ({ children: [], innerHTML: '', setAttribute() {}, appendChild(/** @type {any} */ c) { this.children.push(c); }, addEventListener() {} }); return el; } };
-  const fns = ['escapeXml', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'ckGroupHtml', 'stateDotHTML', 'auditCheckRowHtml', 'auditCaret', 'glyphClass', 'auditChecksSignClass', 'auditChecksEl'];
+  const fns = ['escapeXml', 'tagWordOf', 'byTagOf', 'ckTagHtml', 'ckRowHtml', 'ckGroupHtml', 'stateDotHTML', 'auditCheckRowHtml', 'auditCaret', 'glyphClass', 'auditChecksSignClass', 'auditChecksEl'];
   const src = fns.map((n) => { try { return fnSrc(n); } catch { return ''; } }).filter(Boolean).join('\n');
   const auditChecksEl = /** @type {any} */ (new Function('document', `${src}\nreturn auditChecksEl;`)(doc));
   const wrap = auditChecksEl(ac);

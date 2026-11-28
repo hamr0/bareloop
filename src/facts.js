@@ -59,8 +59,20 @@ export function factPartOf(params) {
   return parts.find((/** @type {any} */ p) => isRec(p) && p.class === 'fact') ?? null;
 }
 
+/** the one question "is this fact shape an amount" (money or number: read as a plain number, carries the decimal mark, its bounds are numbers) (fwdloop v0.39.0 am8 item 1n) @param {unknown} shape @returns {boolean} */
+export const isAmountShape = (shape) => shape === 'money' || shape === 'number';
+/** the one question "is this fact shape phrase-like" (the words of a phrase or a place are looked for on the page) @param {unknown} shape @returns {boolean} */
+export const isPhraseShape = (shape) => shape === 'phrase' || shape === 'place';
+/**
+ * the one question "is this a legal result count": `{min, max}` only, at least one given, whole numbers 1 or more, min no more than max; a key counts as given when its value is not `undefined`
+ * (hamr 2026-11-27: the old `Object.hasOwn` spelling here refused `{min: undefined, max: 2}`, `addCount` accepted it; each caller keeps its own words for a refusal)
+ * @param {any} c @returns {boolean}
+ */
+export const isLegalCount = (c) => isRec(c) && Object.keys(c).every((k) => k === 'min' || k === 'max') && (c.min !== undefined || c.max !== undefined)
+  && ['min', 'max'].every((k) => c[k] === undefined || (Number.isInteger(c[k]) && c[k] >= 1)) && (c.min === undefined || c.max === undefined || c.min <= c.max);
+
 /** @param {any} v @returns {boolean} a rule bound has the type its shape needs: a number for number/money, a string for date/time */
-export const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (shape === 'number' || shape === 'money' ? typeof v === 'number' && Number.isFinite(v) : typeof v === 'string' && v !== '');
+export const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (isAmountShape(shape) ? typeof v === 'number' && Number.isFinite(v) : typeof v === 'string' && v !== '');
 
 /**
  * The SHAPE of a `fact` part (what it may carry), pushed as reds in the same form `rubricStepShapeReds` uses. Whether the
@@ -129,7 +141,7 @@ export function factShapeReds(part, w, red) {
         else if (typeof f.lang !== 'string' || !Object.hasOwn(FACT_LANGS, f.lang)) red('invalid-value', `${fw}.lang`, `one of ${Object.keys(FACT_LANGS).join(' | ')}`);
       }
       if (has('decimal')) {
-        if (f.shape !== 'number' && f.shape !== 'money') red('invalid-value', `${fw}.decimal`, 'only a number or money fact carries decimal (the mark the page writes before the decimals)');
+        if (!isAmountShape(f.shape)) red('invalid-value', `${fw}.decimal`, 'only a number or money fact carries decimal (the mark the page writes before the decimals)');
         else if (!FACT_DECIMALS.includes(f.decimal)) red('invalid-value', `${fw}.decimal`, 'one of "." | ","');
       }
       if (f.shape === 'phrase') {
@@ -158,9 +170,7 @@ export function factShapeReds(part, w, red) {
   }
   if (Object.hasOwn(part, 'count')) {
     const c = part.count;
-    const ok = isRec(c) && Object.keys(c).every((k) => k === 'min' || k === 'max') && (Object.hasOwn(c, 'min') || Object.hasOwn(c, 'max'))
-      && ['min', 'max'].every((k) => !Object.hasOwn(c, k) || (Number.isInteger(c[k]) && c[k] >= 1))
-      && (!Object.hasOwn(c, 'min') || !Object.hasOwn(c, 'max') || c.min <= c.max);
+    const ok = isLegalCount(c);
     if (!ok) red('invalid-value', `${w}.count`, '{min?, max?} — how many results the person asked for (integers, 1 or more, min no more than max)');
   }
 }

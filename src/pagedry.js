@@ -8,7 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
-import { linesOf, numberAtEnd, numberAtEndComma, NUM_COMMA } from './pagerules.js';
+import { linesOf, numberAtEnd, numberAtEndComma, NUM_COMMA, canReadLimit } from './pagerules.js';
 import { asList } from './facts.js';
 import { redactSecrets } from './validate.js';
 
@@ -249,7 +249,7 @@ export const AS_SEEN_MAX_CHARS = 3000;
  * @returns {{input: string, lines: string[], labels: string[]} | null} null when every label is on the first line, or nothing fits
  */
 export function asSeenOf(text, facts, input) {
-  const lab = (Array.isArray(facts) ? facts : []).filter((f) => f && typeof f.anchor === 'string' && f.anchor !== '' && (f.shape === 'money' || f.shape === 'time'));
+  const lab = (Array.isArray(facts) ? facts : []).filter((f) => f && typeof f.anchor === 'string' && f.anchor !== '' && canReadLimit(f.shape));
   if (lab.length === 0) return null;
   const raw = text.split('\n');
   /** @type {(line: string, f: any) => boolean} */

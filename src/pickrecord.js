@@ -8,6 +8,17 @@ import path from 'node:path';
 
 /** the record's file, inside a drafting session folder only (never a run folder) */
 export const RECORD_FILE = 'picks-record.json';
+
+/** the two choices a person makes on a check row; ONE owner of "is this a Drop or Add choice" (fwdloop v0.39.0 am8 item 1e) */
+export const ROW_CHOICES = Object.freeze(['drop', 'add']);
+/** @param {unknown} choice @returns {choice is 'drop'|'add'} */
+export const isRowChoice = (choice) => ROW_CHOICES.includes(/** @type {string} */ (choice));
+
+/** the ONE read of a record file (fwdloop v0.39.0 am8 item 1m): the JSON object in it, or null when the file is missing, torn, or not an object (no record yet) @param {string} file @returns {Record<string, any>|null} */
+function readRecordJson(file) {
+  try { const j = JSON.parse(readFileSync(file, 'utf8')); return j !== null && typeof j === 'object' && !Array.isArray(j) ? j : null; } catch { return null; }
+}
+
 /** the exact words a kept pick is marked with in the draft log, the Audit and the plan card (M10 am17 (6)) */
 export const KEPT_WORDS = 'kept from last draft';
 
@@ -96,10 +107,8 @@ export function matchRecord(entries, lines, rules) {
  * @param {string} file @returns {Entry[]|null}
  */
 export function readRecordFile(file) {
-  try {
-    const j = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(j?.picks) ? j.picks.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.ruleText === 'string') : null;
-  } catch { return null; }
+  const j = readRecordJson(file);
+  return Array.isArray(j?.picks) ? j.picks.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.ruleText === 'string') : null;
 }
 
 /** where a drafting session folder keeps its record @param {string} planDir */
@@ -110,16 +119,13 @@ export const recordPath = (planDir) => path.join(planDir, RECORD_FILE);
  * @param {string} file @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]|null}
  */
 export function readRowChoices(file) {
-  try {
-    const j = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(j?.rowChoices) ? j.rowChoices.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.tail === 'string' && (e.choice === 'drop' || e.choice === 'add')) : null;
-  } catch { return null; }
+  const j = readRecordJson(file);
+  return Array.isArray(j?.rowChoices) ? j.rowChoices.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.tail === 'string' && isRowChoice(e.choice)) : null;
 }
 
 /** write a part of the record without losing the other: `patch` is `{picks}`, `{rowChoices}`, `{sheetDropped}` or `{shapeDropped}` @param {string} file @param {Record<string, any>} patch */
 export function writeRecordPart(file, patch) {
-  let cur = {};
-  try { const j = JSON.parse(readFileSync(file, 'utf8')); if (j && typeof j === 'object' && !Array.isArray(j)) cur = j; } catch { /* no record yet */ }
+  const cur = readRecordJson(file) ?? {};
   writeFileSync(file, `${JSON.stringify({ ...cur, ...patch })}\n`, { mode: 0o600 });
 }
 
@@ -128,10 +134,8 @@ export function writeRecordPart(file, patch) {
  * @param {string} file @returns {{lineWords: string, occurrence: number, name?: string, rule?: number}[]|null}
  */
 export function readShapeDropped(file) {
-  try {
-    const j = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(j?.shapeDropped) ? j.shapeDropped.filter((/** @type {any} */ d) => d && typeof d.lineWords === 'string' && Number.isInteger(d.occurrence) && (typeof d.name === 'string' || Number.isInteger(d.rule))) : null;
-  } catch { return null; }
+  const j = readRecordJson(file);
+  return Array.isArray(j?.shapeDropped) ? j.shapeDropped.filter((/** @type {any} */ d) => d && typeof d.lineWords === 'string' && Number.isInteger(d.occurrence) && (typeof d.name === 'string' || Number.isInteger(d.rule))) : null;
 }
 
 /**
@@ -141,8 +145,6 @@ export function readShapeDropped(file) {
  * @param {string} file @returns {{lineWords: string, occurrence: number, check: Record<string, any>, text: string}[]|null}
  */
 export function readSheetDropped(file) {
-  try {
-    const j = JSON.parse(readFileSync(file, 'utf8'));
-    return Array.isArray(j?.sheetDropped) ? j.sheetDropped.filter((/** @type {any} */ d) => d && typeof d.lineWords === 'string' && Number.isInteger(d.occurrence) && d.check && typeof d.check === 'object' && !Array.isArray(d.check)) : null;
-  } catch { return null; }
+  const j = readRecordJson(file);
+  return Array.isArray(j?.sheetDropped) ? j.sheetDropped.filter((/** @type {any} */ d) => d && typeof d.lineWords === 'string' && Number.isInteger(d.occurrence) && d.check && typeof d.check === 'object' && !Array.isArray(d.check)) : null;
 }

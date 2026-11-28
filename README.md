@@ -34,13 +34,10 @@ The harness (budget, time, what it may touch) and the judge both sit **outside**
 
 Software factories run a flow someone wrote in advance. bareloop builds the flow for each job, then lets a gauge it can't touch decide if the work is good. Trust needs four things. Miss one and trust is zero. bareloop has all four.
 
-**Intent.** You write the job as plain numbered steps, and a `~` line under each says what success means and what it must never do. Every step gets a check or a written reason why not. You sign before a dollar is spent.
-
-**Guide rails, not just guardrails.** Guardrails stop the agent going off the road: a money cap, a time cap, and a read/write fence it can't move. Guide rails keep it on the road: each new worker hears what earlier tries read, searched and changed, diffs included; two misses redraw the plan; past lessons go to the planner; an unclear job gets up to 3 questions, not a guess.
-
-**Verification.** The check sits outside the agent's loop: code decides, not an AI judge. Anything code can't check is listed as Not checked, and you judge it at Accept. A red goes back with the real error to be fixed, until it's green or out of budget.
-
-**Evidence.** Every call, every allowed or blocked read and write, every check result and every cent is recorded. You can audit it in the panel and replay it at $0. Research facts are quoted from saved sources.
+- **Intent.** You write the job as plain numbered steps, and a `~` line under each says what success means and what it must never do. Every step gets a check or a written reason why not. You sign before a dollar is spent.
+- **Guide rails, not just guardrails.** Guardrails stop the agent going off the road: a money cap, a time cap, and a read/write fence it can't move. Guide rails keep it on the road: each new worker hears what earlier tries read, searched and changed, diffs included; two misses redraw the plan; past lessons go to the planner; an unclear job gets up to 3 questions, not a guess.
+- **Verification.** The check sits outside the agent's loop: code decides, not an AI judge. Anything code can't check is listed as Not checked, and you judge it at Accept. A red goes back with the real error to be fixed, until it's green or out of budget.
+- **Evidence.** Every call, every allowed or blocked read and write, every check result and every cent is recorded. You can audit it in the panel and replay it at $0. Research facts are quoted from saved sources.
 
 ## Two kinds of jobs
 

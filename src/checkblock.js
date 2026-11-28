@@ -12,10 +12,10 @@ import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWor
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult, asSeenOf } from './pagedry.js';
 import { boundInWords, rubricStepShapeReds, floorWords, stageKeyOf, guardKeyOf, FENCE_KEY, PROSE_WORDS, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
-import { validReading } from './pagerules.js';
-import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
+import { validReading, canReadLimit } from './pagerules.js';
+import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG, WAITING_PICK_WORDS, WAITING_READING_WORDS } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
-import { ruleWords } from './facts.js';
+import { ruleWords, isAmountShape, isPhraseShape, isLegalCount } from './facts.js';
 import { SIGNED_ROW_FIELDS } from './declaredclose.js';
 import { factSentence, countSentence } from './facts.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -25,6 +25,7 @@ import { sheetCheckName, sheetPlainText, coversWords, sheetCheckBody, sheetRowKe
 import { shapeRowKey, shapeDefaultKey, shapeFieldText, buildShapePart, SHAPE_TRUTH_WORDS } from './shaperows.js';
 import { defaultsOf } from './sourcedefaults.js';
 import { fieldSpec } from './shapebuild.js';
+import { isRowChoice } from './pickrecord.js';
 
 /**
  * A row. `kind`: rule, fact, phrase, count, cited, numbers, floor. `by`: you (`~`), agent (`!`), default (`$`). A `~` row may carry `links` (the look's facts tied to it),
@@ -65,8 +66,8 @@ export const REASON = Object.freeze({
   left: 'You chose to leave it Not checked, so you judge it at Accept.',
   nothingOnPage: 'Your own words are on the line; the machine has no check for them, so you judge it at Accept.',
   noRule: 'No rule can check this, so you judge it at Accept.',
-  waitingPick: 'waiting for your answer on the proposed check',
-  waitingReading: 'waiting for your answer on the reading',
+  waitingPick: WAITING_PICK_WORDS,
+  waitingReading: WAITING_READING_WORDS,
   onePerLine: 'this line finds facts, so it has no text to quote',
   manyInputs: 'the job has more than one input and code cannot pick which one the claims quote',
   oneSidedTime: 'a time limit the AI proposes must be a range, so you judge it at Accept.',
@@ -466,7 +467,7 @@ export class CheckBlock {
     if (r.kind === 'count') return [r.min, r.max].filter((x) => Number.isInteger(x)).some((n) => new RegExp(`(?<![\\d.])${n}(?![\\d.])`).test(said));
     // a money, time, number or date fact the person asked for BY NAME ("the release heading") is in the job too: the look's page words rarely echo the job's own words. A phrase or place is job-derived
     // only when its own words are in the person's text: a name the AI gave it is no proof (hamr 2026-11-15, live run mwi76vh8: "friendly" for "Select flight")
-    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w)) || (r.kind === 'fact' && r.shape !== 'phrase' && r.shape !== 'place' && typeof r.name === 'string' && inText(said, r.name));
+    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w)) || (r.kind === 'fact' && !isPhraseShape(r.shape) && typeof r.name === 'string' && inText(said, r.name));
   }
 
   /**
@@ -509,7 +510,7 @@ export class CheckBlock {
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
     // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
     const negated = NEGATING_RE.test(r.text);
-    const isPhrase = (/** @type {any} */ l) => l.shape === 'phrase' || l.shape === 'place';
+    const isPhrase = (/** @type {any} */ l) => isPhraseShape(l.shape);
     if (negated && (r.links ?? []).length && (r.links ?? []).every(isPhrase)) { r.can = { ok: false, why: REASON.negated }; return; }
     const links = (r.links ?? []).filter((/** @type {any} */ l) => !(negated && isPhrase(l)) && l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w)));
     const said = this.said(r.line);
@@ -518,7 +519,7 @@ export class CheckBlock {
     for (const l of links) {
       let reading = l.reading;
       let ownWords = false;
-      if (l.shape === 'money' || l.shape === 'time') {
+      if (canReadLimit(l.shape)) {
         // the person's words win (hamr 2026-11-13): code's reading of the `~` words beats the look's and the AI's; theirs is used only when code cannot read the words
         const rd = this.wordsReading(l, r.text);
         // fwdloop run walk-m16-flights run-1: "under $150" on a euro fact fell back to the look's reading and checked 150 euros; a bound in another currency than the page fact is never replaced by the look's or the AI's reading
@@ -799,7 +800,7 @@ export class CheckBlock {
     const mk = (/** @type {string} */ name, /** @type {any} */ extra) => ({ name: cleanName(name), ...extra });
     const kindFields = (/** @type {any} */ f, /** @type {string} */ anchor, /** @type {any} */ extra) => mk(f.name, {
       shape: f.shape, anchor, ...(f.unit ? { unit: f.unit } : {}), ...(f.currency ? { currency: f.currency } : {}),
-      ...(f.decimal && (f.shape === 'money' || f.shape === 'number') ? { decimal: f.decimal } : {}), ...(f.lang && f.shape === 'date' ? { lang: f.lang } : {}), ...extra,
+      ...(f.decimal && isAmountShape(f.shape) ? { decimal: f.decimal } : {}), ...(f.lang && f.shape === 'date' ? { lang: f.lang } : {}), ...extra,
     });
     /** @type {any[]} */ let fs;
     if (r.kind === 'rule') {
@@ -1165,8 +1166,7 @@ export class CheckBlock {
   }
 
   addCount(/** @type {any} */ e) {
-    const ok = (/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1;
-    if (![e.min, e.max].some(Number.isInteger) || [e.min, e.max].some((x) => x !== undefined && !ok(x)) || (Number.isInteger(e.min) && Number.isInteger(e.max) && e.min > e.max)) return { refusedBecause: 'no legal number given' };
+    if (!isLegalCount({ min: e.min, max: e.max })) return { refusedBecause: 'no legal number given' };
     if (this.rowsOn(e.line, 'count').length) return { refusedBecause: 'already on the list: this line has a result count' };
     const row = this.addRow({ key: `L${e.line}.count.${e.min ?? ''}-${e.max ?? ''}`, line: e.line, kind: 'count', by: 'agent', from: 'agent', min: e.min, max: e.max });
     return { accepted: true, landedKey: row.key };
@@ -1179,7 +1179,7 @@ export class CheckBlock {
 
   /** the one owner of "what do the person's own words say": code's reading of a `~` rule for a money/time fact, or undefined when it cannot read it */
   wordsReading(/** @type {any} */ l, /** @type {string} */ text) {
-    if (l.shape !== 'money' && l.shape !== 'time') return undefined;
+    if (!canReadLimit(l.shape)) return undefined;
     const own = readLimit(l.shape, text, l);
     const rd = 'reading' in own ? own.reading : undefined;
     return rd && validReading(l.shape, rd) && (rd.op === 'between' ? [rd.lo, rd.hi] : [rd.value]).every((b) => boundInWords(b, text)) ? rd : undefined;
@@ -1331,7 +1331,7 @@ export class CheckBlock {
     }
     if (r.by === 'you') return { ok: false, why: 'that check comes from a rule you wrote; edit the job to change it' };
     if (r.by !== 'agent' || !this.droppable(r)) return { ok: false, why: 'that check is code\'s own and stays' };
-    if (choice !== 'drop' && choice !== 'add') return { ok: false, why: 'not one of the choices' };
+    if (!isRowChoice(choice)) return { ok: false, why: 'not one of the choices' };
     if (r.kind === 'stage') {
       // a repo work stage: Drop takes it out of the close (never the last check on its line), Add puts it back
       if (choice === 'drop' && r.state !== 'built') return { ok: false, why: 'only a check that is on the card can be dropped' };
@@ -1352,7 +1352,7 @@ export class CheckBlock {
 
   /** the person's Drop/Add choices, tied to the line's words (not its number) and the row's own name, so a Revise keeps them @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]} */
   choicesRecord() {
-    return choiceEntries(this.lines, this.rows.filter((r) => r.kind !== 'sheet' && r.kind !== 'shape' && (r.choice === 'drop' || r.choice === 'add')).map((r) => ({ line: r.line, key: r.key, choice: String(r.choice) })));
+    return choiceEntries(this.lines, this.rows.filter((r) => r.kind !== 'sheet' && r.kind !== 'shape' && isRowChoice(r.choice)).map((r) => ({ line: r.line, key: r.key, choice: String(r.choice) })));
   }
 
   /** a Revise keeps the last draft's Drop/Add choices on the rows that are still there (same line words, same row); code still judges every one @param {{lineWords: string, occurrence: number, tail: string, choice: string}[]} rec */
@@ -1360,7 +1360,7 @@ export class CheckBlock {
     const seen = new Map();
     const lines = this.lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return { n: l.n, w, o }; });
     for (const c of Array.isArray(rec) ? rec : []) {
-      if (!c || (c.choice !== 'drop' && c.choice !== 'add')) continue;
+      if (!c || !isRowChoice(c.choice)) continue;
       const line = lines.find((l) => l.w === c.lineWords && l.o === c.occurrence);
       const r = line ? this.rows.find((x) => x.line === line.n && this.droppable(x) && x.key.replace(/^L\d+\./, '') === c.tail) : undefined;
       if (r) { r.choice = c.choice; r.keptFromLast = true; }

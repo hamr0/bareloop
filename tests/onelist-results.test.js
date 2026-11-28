@@ -50,7 +50,7 @@ function fnSrc(/** @type {string} */ name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
+const rowHtml = new Function(`${fnSrc('escapeXml')}\n${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('stateDotHTML')}\n${fnSrc('auditCheckRowHtml')}\nreturn auditCheckRowHtml;`)();
 
 test('Audit: each check row reads ITS row\'s recorded result: the failed row failed with its reason, the rest of the line passed', () => {
   const ac = getRunDetail('mwenvde5', { home: runHome(redClose({ rows: ROWS })) }).auditChecks;
@@ -88,7 +88,7 @@ test('Result tab: each line carries its rows with their own mark (and the unclai
 
 test('Result tab page: the line draws one mark per row (and the reason of a failed one); the old single line tick is not the only mark', () => {
   assert.match(PAGE, /data-testid="result-checkrows"/);
-  const draw = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('resultField')}\n${fnSrc('resultCheckRowsHtml')}\nreturn resultCheckRowsHtml;`)();
+  const draw = new Function(`${fnSrc('escapeXml')}\n${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('resultField')}\n${fnSrc('resultCheckRowsHtml')}\nreturn resultCheckRowsHtml;`)();
   const html = draw({ checkRows: [{ text: 'a', by: 'you', result: 'failed', why: 'because' }, { text: 'b', by: 'default', result: 'passed' }], unclaimed: ['gap words'] });
   assert.match(html, /data-result="failed"[^]*because/);
   assert.match(html, /data-result="passed"/);

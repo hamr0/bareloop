@@ -1895,7 +1895,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
   // exactly the Job tab's items (its per-line "not checked" rows plus its Not checked fold) — never a second spelling.
   const ledgerDir = sessionDirForRow(row, opts);
-  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null, { signed: true });
   const proseByLine = proseNotCheckedItems(spec?.closeDecl);
   const prosePool = proseByLine.map((i) => i.text);
   const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
@@ -3600,7 +3600,7 @@ export function successFromSpec(spec) {
 function auditChecksFor(row, records, spec, opts, c = checksReadOf(row, records, spec)) {
   if (!spec || typeof spec !== 'object') return null;
   const ledgerDir = sessionDirForRow(row, opts);
-  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null, { signed: true });
   /** @type {string[]} */
   let guards = [];
   if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
@@ -3866,7 +3866,7 @@ function getRunJobBody(runid, opts) {
   /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
   const fromSpec = (spec, resolved, resolvedFrom, note) => ({
     // P7: the same plan model the chat's plan bubble is drawn from (src/panel/jobplan.js), read from the SIGNED spec
-    plan: planFromSpec(spec, ledgerOf()),
+    plan: planFromSpec(spec, ledgerOf(), { signed: true }),
     jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
     inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : [{ n: 1, label: 'repo', value: sourceDisplay() }],
     signedAt: typeof firstStart?.ts === 'string' ? firstStart.ts : null,
@@ -4298,7 +4298,7 @@ function describeSpec(spec) {
     goal: nr(typeof spec.goal === 'string' ? spec.goal : null),
     success: nr(successFromSpec(spec)),
     guardrails: nr(guardrailsFromSpec(spec)),
-    plan: planFromSpec(spec),
+    plan: planFromSpec(spec, null, { signed: true }),
     inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : null,
     model: nr(typeof spec.model === 'string' ? spec.model : null),
     budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,

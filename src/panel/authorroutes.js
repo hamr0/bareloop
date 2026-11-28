@@ -27,8 +27,9 @@ import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
 import { BOX } from './refusal.js';
-import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, recordedDestination, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, jobNameTaken, JOB_NAME_TAKEN_WORDS, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
+import { isRowChoice } from '../pickrecord.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob, flowTypeOf, oldJobWords } from '../job.js';
@@ -409,8 +410,8 @@ export function createAuthorRoutes(opts) {
         const changed = jobBoxesChanged(card, pre.card);
         if (changed) {
           // a NEW workflow: its name may not be any existing job's, the origin's included (a different job cannot pass for the old one)
-          if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || (opts.runJobNames && opts.runJobNames().includes(card.jobName)))) {
-            send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.`, box: BOX.name });
+          if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || jobNameTaken(card.jobName, { jobsDir: opts.jobsDir, runJobNames: opts.runJobNames ? opts.runJobNames() : [] }))) {
+            send(400, { ok: false, error: JOB_NAME_TAKEN_WORDS(card.jobName), box: BOX.name });
             return true;
           }
         } else {
@@ -432,7 +433,7 @@ export function createAuthorRoutes(opts) {
         }
       }
       if (reuse === null) {
-        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows, ...(allowName !== undefined ? { allowName } : {}) });
+        const v = validateJobCard(card, { jobsDir: opts.jobsDir, runJobNames: opts.runJobNames ? opts.runJobNames() : [], rows, ...(allowName !== undefined ? { allowName } : {}) });
         if (!v.ok) { send(400, { ok: false, error: v.error, box: v.box }); return true; }
       }
       // P7: the Inputs are proven at $0 before a session (so before any token): line 1 the repo, lines 2+ tracked files inside it.
@@ -484,7 +485,7 @@ export function createAuthorRoutes(opts) {
       // hamr 2026-11-13 (N-2): the confirm card's Drop / Add. $0 and instant: a row edit through the live check block, never a model call
       // the FINAL repo card's Drop (hamr 2026-11-15): the signing gates run again, so the answer comes when they have
       // a sheet job's FINAL card takes a Drop and an Add (S4): the live check block edits the row, the gates run again
-      if (session.state.phase === 'prepared' && (body?.op === 'drop' || body?.op === 'add')) {
+      if (session.state.phase === 'prepared' && isRowChoice(body?.op)) {
         session.finalEdit(body?.op, body?.key).then((r) => send(r.ok ? 200 : 400, { ...r, state: viewOf(session) }), () => send(500, { ok: false, error: 'could not change that check' }));
         return true;
       }

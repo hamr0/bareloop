@@ -7,6 +7,7 @@
 // `L<n>.$shape`): the answer is a list of items, with the item count when the person's words gave one.
 import { createRubric, rubricVocabulary } from 'bareguard';
 import { lineRules } from './jobline.js';
+import { isAmountShape } from './facts.js';
 import { nameWhy, shapeNameRules, SHAPE_KINDS } from './shapemenu.js';
 import { SOURCE_DEFAULTS } from './sourcedefaults.js';
 
@@ -195,7 +196,7 @@ export function shapeItemCheck(part, id, factPart = null) {
   const count = facts !== null && factCounted ? {} : { ...(Number.isInteger(part.minItems) ? { minItems: part.minItems } : {}), ...(Number.isInteger(part.maxItems) ? { maxItems: part.maxItems } : {}) };
   const fields = facts === null ? own : {
     quote: { kind: 'text', required: true },
-    values: { kind: 'object', fields: Object.fromEntries(facts.map((f) => [String(f.name), f.shape === 'money' || f.shape === 'number' ? { kind: 'number', fromText: true } : { kind: 'text' }])) },
+    values: { kind: 'object', fields: Object.fromEntries(facts.map((f) => [String(f.name), isAmountShape(f.shape) ? { kind: 'number', fromText: true } : { kind: 'text' }])) },
     ...own,
   };
   return { id, rule: 'itemShape', field: SHAPE_FIELD, ...count, fields };

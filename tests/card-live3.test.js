@@ -65,7 +65,7 @@ function fnSrc(/** @type {string} */ name) {
 }
 const escapeXml = (/** @type {unknown} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // eslint-disable-next-line no-new-func
-const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
+const renderJobPlan = new Function('escapeXml', `${fnSrc('tagWordOf')}\n${fnSrc('byTagOf')}\n${fnSrc('ckTagHtml')}\n${fnSrc('ckRowHtml')}\n${fnSrc('ckGroupHtml')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
 
 test('3: the always-on guards are [default] file rows of CHECKED (the same tag markup as the other rows), under the line and beside it', () => {
   const h = renderJobPlan({ lines: [{ n: 1, text: 'a', checks: [], always: ['changed-from-seed'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: ['no-suppressions', 'changed-from-seed'], older: false });

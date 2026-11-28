@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
-import { runNpmCi, npmEnv, NPM_CI_TIMEOUT_MS } from '../src/npminstall.js';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { runNpmCi, npmEnv, nativePackagesOf, NPM_CI_TIMEOUT_MS } from '../src/npminstall.js';
 
 const fakeRun = (/** @type {any} */ result, /** @type {any[]} */ seen = []) => async (/** @type {any} */ cmd, /** @type {any} */ args, /** @type {any} */ o) => { seen.push({ cmd, args, o }); return result; };
 
@@ -45,15 +47,58 @@ const ok = { error: null, status: 0, signal: null, stdout: '', stderr: '' };
 /** @param {any[]} results @param {any[]} seen */
 const seqRun = (results, seen) => async (/** @type {any} */ cmd, /** @type {any} */ args, /** @type {any} */ o) => { seen.push({ cmd, args, o }); return results[seen.length - 1] ?? ok; };
 
+/** a tree with node_modules: a binding.gyp package, a gypfile:true scoped one, a nested one, a pure-JS one with install scripts; root scripts too */
+const nativeTree = () => {
+  const root = mkdtempSync(join(tmpdir(), 'npmnative-'));
+  const pkg = (/** @type {string} */ rel, /** @type {any} */ json, /** @type {string[]} */ files = []) => {
+    const d = join(root, 'node_modules', rel); mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'package.json'), JSON.stringify(json));
+    for (const f of files) writeFileSync(join(d, f), '');
+  };
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'root', scripts: { postinstall: 'echo root' } }));
+  pkg('gypone', { name: 'gypone' }, ['binding.gyp']);
+  pkg('@sc/flagged', { name: '@sc/flagged', gypfile: true });
+  pkg('purejs', { name: 'purejs', scripts: { install: 'echo dep', postinstall: 'echo dep' } });
+  pkg('purejs/node_modules/nested', { name: 'nested' }, ['binding.gyp']);
+  pkg('falseflag', { name: 'falseflag', gypfile: false });
+  return root;
+};
+
+test('nativePackagesOf: only packages with a binding.gyp or "gypfile": true, scoped and nested too, sorted; none = []', () => {
+  assert.deepEqual(nativePackagesOf(nativeTree()), ['@sc/flagged', 'gypone', 'nested']);
+  assert.deepEqual(nativePackagesOf(mkdtempSync(join(tmpdir(), 'npmnone-'))), []);
+  assert.deepEqual(nativePackagesOf('/no/such/folder'), []);
+});
+
+test('runNpmCi: `npm rebuild` names ONLY the native packages (never the repo\'s own or pure-JS packages\' scripts)', async () => {
+  const root = nativeTree();
+  const seen = [];
+  const r = await runNpmCi(root, { run: seqRun([ok, ok], seen) });
+  assert.deepEqual(r, { ok: true });
+  assert.equal(seen.length, 2);
+  assert.deepEqual(seen[1].args, ['rebuild', '@sc/flagged', 'gypone', 'nested']);
+});
+
+test('runNpmCi: no native package = no rebuild call at all, ok:true', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'npmnone-'));
+  mkdirSync(join(root, 'node_modules', 'purejs'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'purejs', 'package.json'), JSON.stringify({ name: 'purejs' }));
+  const seen = [];
+  assert.deepEqual(await runNpmCi(root, { run: seqRun([ok, ok], seen) }), { ok: true });
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0].args, ['ci', '--ignore-scripts']);
+});
+
 test('runNpmCi: after a good install `npm rebuild` runs in the same tree with the same stripped env and deadline', async () => {
   const seen = [];
   const env = { PATH: '/usr/bin', HOME: '/h', NPM_TOKEN: 't', ANTHROPIC_API_KEY: 'k' };
-  const r = await runNpmCi('/some/dir', { env, timeoutMs: 7000, run: seqRun([ok, ok], seen) });
+  const root = nativeTree();
+  const r = await runNpmCi(root, { env, timeoutMs: 7000, run: seqRun([ok, ok], seen) });
   assert.deepEqual(r, { ok: true });
   assert.equal(seen.length, 2);
-  assert.deepEqual(seen[1].args, ['rebuild']);
+  assert.deepEqual(seen[1].args.slice(0, 1), ['rebuild']);
   assert.equal(seen[1].cmd, 'npm');
-  assert.equal(seen[1].o.cwd, '/some/dir');
+  assert.equal(seen[1].o.cwd, root);
   assert.equal(seen[1].o.timeoutMs, 7000);
   assert.equal(seen[1].o.env.NPM_TOKEN, undefined);
   assert.deepEqual(seen[1].o.env, seen[0].o.env);
@@ -62,7 +107,7 @@ test('runNpmCi: after a good install `npm rebuild` runs in the same tree with th
 test('runNpmCi: a failing rebuild is ok:false in plain words with npm\'s last error line, secret-masked', async () => {
   const seen = [];
   const bad = { error: null, status: 1, signal: null, stdout: '', stderr: 'gyp info\nnpm error build failed sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789\n' };
-  const r = await runNpmCi('/d', { run: seqRun([ok, bad], seen) });
+  const r = await runNpmCi(nativeTree(), { run: seqRun([ok, bad], seen) });
   assert.equal(r.ok, false);
   assert.match(r.reason, /the build step \(npm rebuild\) of the packages failed: npm error build failed/);
   assert.ok(!/abcdefghijklmnopqrstuvwxyz0123456789/.test(r.reason));
@@ -71,7 +116,7 @@ test('runNpmCi: a failing rebuild is ok:false in plain words with npm\'s last er
 test('runNpmCi: a timed-out rebuild (killed by the spawn deadline) is ok:false and says the build step timed out', async () => {
   const seen = [];
   const to = { error: Object.assign(new Error('t'), { code: 'ETIMEDOUT' }), status: null, signal: 'SIGTERM', stdout: '', stderr: '' };
-  const r = await runNpmCi('/d', { timeoutMs: 5000, run: seqRun([ok, to], seen) });
+  const r = await runNpmCi(nativeTree(), { timeoutMs: 5000, run: seqRun([ok, to], seen) });
   assert.deepEqual(r, { ok: false, reason: 'the build step (npm rebuild) of the packages timed out after 5s' });
   assert.equal(seen[1].o.timeoutMs, 5000);
 });

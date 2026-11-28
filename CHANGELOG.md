@@ -5,6 +5,34 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.64.1] - 2026-11-28
+
+### Fixed
+
+- **The install's build step no longer runs the repo's own or pure-JS packages' scripts (found in the 2026-11-27 refactor evidence pass).** After `npm ci --ignore-scripts`, bareloop ran a bare `npm rebuild`, which also ran the repo's own `postinstall` and every other package's install scripts. It now runs `npm rebuild` naming only the packages that need a native build (a `binding.gyp` file or `"gypfile": true`; none found means no rebuild step). One owner, `nativePackagesOf` in `src/npminstall.js`. Named limit: a native package's own install script still runs (that is how it builds). Proven on a throwaway copy of this repo (better-sqlite3 still loads, it is the only package rebuilt) and a scratch app (root and dependency markers absent).
+
+- **A finished run no longer says a check is "waiting for your answer" (run mwnlw2mo, flights-shape-walk, walk 2026-11-27).** A check that was still waiting on an answer when the plan was signed showed `waiting for your answer on the reading` under Not checked on the Result, Audit and Job tabs of a run that had long finished. A signed view now reads `not answered while drafting`; drafting keeps the old words. Display only: stored records are not rewritten, so older runs read the new words too. One owner of the words in `src/checklist.js`.
+
+- **A count of failing tests no longer reads "type errors" in the Audit (run mwue75ih, walk 2026-11-27).** When a plan has no `command-exit` stage, the count of failing tests on `npm test` read "tests/ has 0 type errors?", which is false. A count stage sharing its command with the `tests-kept` floor now reads "no failing tests?" too (`src/stagewords.js`). Runs already recorded keep the words their learnings cards stored.
+
+- **The New job card now refuses a job name already used in your runs list, with the same words as Reuse (seen live 2026-11-27, draft session smwz2xj6bdnq3, walk).** The card only looked at the package's own `jobs/` folder, so a name already in the runs list started drafting and spent money; the Reuse door already refused it. One owner, `jobNameTaken` in `src/panel/authorsession.js`, now answers for both doors, and both refuse with one sentence (`A job named "x" already exists and is a different job. Pick another name.`) in the Job name box; the old `P3 is new jobs only (Q4=A)` words are gone. Test-proven (`tests/jobname-taken-owner.test.js`, red before); not clicked through live.
+
+- **A result count of `{min: undefined, max: 2}` reads the same at both doors (copied from fwdloop v0.39.0, M20 am8 item 1n).** The signed-fact shape check (`src/facts.js`) refused it (it counted a key as given when it was present); the check block's Add door (`addCount`) accepted it (`!== undefined`). One `isLegalCount` now asks the same question for both, with fwd's `!== undefined`. A count arrives as parsed JSON, where `undefined` cannot occur, so no signed spec changes; test-proven only, not seen live.
+
+### Development
+
+- **Dead constant removed.** The dead `MAX_SHAPE_FIELDS` constant in `src/shapelook.js` is removed; nothing read it, so no cap is lost (bareguard still refuses past 50 shape fields at sign time).
+
+- **`legFactsOf` JSDoc.** `src/legs.js`: the `legFactsOf` JSDoc names its real type (`LegEnd`), and the typedef sits before its first use. Comment only.
+
+- **One read of a picks-record file (copied from fwdloop v0.39.0, M20 am8 item 1m).** The four readers in `src/pickrecord.js` and `writeRecordPart`'s read open the file through one private reader instead of five `JSON.parse(readFileSync(...))` copies. No behaviour change; fwd's inside-the-folder read is not copied (bareloop has no `inside.js`). `tests/fwd-v039-jsonreader.test.js`: the one-reader guard was red (5 copies) before; the same-answer part is a pin that cannot fail on a move.
+
+- **One painter of the tag word (copied from fwdloop v0.39.0, M20 am8b).** `tagWordOf(by)` in `src/panel/index.html` holds the three words (`[you]`, `[agent]`, `[default]`) once; `ckTagHtml` and `byTagOf` ask it. Every row the server sends today carries `you`, `agent`, `default` or nothing and draws the same tag as before. One difference, ruled by hamr 2026-11-27: a word the server never sends now draws an empty tag text (the span and its `data-by` stay) instead of `[word]`. fwd's server-handed word list (am8a) is not copied; the server's own `rowTag` (`src/authorrun.js`) keeps its spelling. `tests/fwd-v039-tagword.test.js` fails if another page function builds a tag word. Test-proven; phone width and hamr's click-through not done.
+
+- **One owner for four shape questions (copied from fwdloop v0.39.0, M20 am8 item 1n).** `isAmountShape` (money or number), `isPhraseShape` (phrase or place) and `isLegalCount` in `src/facts.js`, `canReadLimit` (money or time) in `src/pagerules.js`; the sites in `facts.js`, `pagerules.js`, `checkblock.js`, `pagedry.js` and `shaperows.js` ask them instead of spelling the pairs out. Named and left, a different question: `shapebuild.js` (a shape-menu kind), the four-shape sets. `tests/fwd-v039-shape-owners.test.js` fails if a src file spells a pair out again.
+
+- **One owner for "is this a Drop or Add choice" (copied from fwdloop v0.39.0, M20 am8 item 1e).** `ROW_CHOICES` and `isRowChoice` in `src/pickrecord.js`; the record reader, the check block (two sites) and the panel's three doors (`authorsession.js` twice, `authorroutes.js`) ask it instead of spelling `'drop'` and `'add'` out. No behaviour change. `tests/fwd-v039-rowchoice.test.js` fails if another src file compares one value to both words.
+
 ## [0.64.0] - 2026-11-27
 
 ### Added

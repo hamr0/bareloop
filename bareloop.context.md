@@ -3480,7 +3480,7 @@ key you want first (the panel picks the row by the Model menu).
   and `declaredStages[{name, question}]` in DECLARED order, plus per stage `kind`/`direction`/
   `baselineKind`/`question`: the plain-English question is derived in `src/panel/server.js`
   (`stageQuestionText`) from the signed stage's kind/params only, `null` when no honest
-  wording exists (the client then shows the stage's own name). Every
+  wording exists (the client then shows the stage's own name); a `count-not-worse` stage sharing the suite's command with a `command-exit` stage or the `tests-kept` floor reads "no failing tests?", never "type errors". A SIGNED view (Result, Audit, Job tab) reads a Not checked reason stored while drafting as "waiting for your answer ..." as "not answered while drafting" (`signedReasonWords`, `src/checklist.js`; display only, stored records are untouched). Every
   GET/HEAD answers only when its `Host` header is the panel's own `127.0.0.1:<port>` (`checkHostGuard`,
   `src/panel/authorroutes.js`; any other Host is `403`, no token needed to read). Every
   P1 endpoint is GET/HEAD only (anything else — including every write verb — is `405`, outside the
@@ -3541,7 +3541,7 @@ key you want first (the panel picks the row by the Model menu).
   /api/author/:id/check-deps` is the install-gap's "Check again" (the main button's wording while waiting on an install) (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
   same worktree — the AGENT never installs; for a committed npm lock file the panel door first runs `npm ci --ignore-scripts` itself,
-  then `npm rebuild` (so native packages such as better-sqlite3 get built; same stripped env and deadline; note `npm rebuild` also runs the install/postinstall scripts of every installed package and of the repo's own package, which `--ignore-scripts` alone had skipped - the same local-trust model as the repo's own check running at drafting), $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure (the install or the build step), a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
+  then `npm rebuild` (so native packages such as better-sqlite3 get built; same stripped env and deadline; `npm rebuild` names ONLY the installed packages that need a native build - a `binding.gyp` file or `"gypfile": true`, found by `nativePackagesOf` - so the repo's own and pure-JS packages' install scripts never run, and no native package means no rebuild step; a native package's own install script still runs, that is how it builds), $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure (the install or the build step), a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
   stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts, and a check still running for the draft (a repo's own tests at drafting or at the signing gates) is killed whole (`ctx.signal`, see "The check limit");
   `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
@@ -3677,7 +3677,7 @@ key you want first (the panel picks the row by the Model menu).
   changes, then the next free `<base>-N` (`GET start-from` returns it as `nextName`; renamable; base = the part before a trailing
   `-<digits>` when that part is itself a run-list or jobs/ job, so `x-2` suggests `x-3`); changing the boxes back restores the origin name. A name owned by a
   different job, or the origin's own name on a changed job, is refused at $0 ("A job named "x" already exists and is a different job.
-  Pick another name."); a name typed while nothing is changed is ignored (the origin's is forced). The main button reads Sign & run on
+  Pick another name."; the New job card refuses a name in the run list or `jobs/` with the same sentence, one owner `jobNameTaken` in `src/panel/authorsession.js`); a name typed while nothing is changed is ignored (the origin's is forced). The main button reads Sign & run on
   the reuse path and Start drafting otherwise, flipping as the person types. A new workflow has no schedule until its own first green;
   nothing here ever clears a schedule. Only the schedule card keeps its job boxes locked (it signs the green run's plan as it is).
   Routes, behind `checkHumanGuard`:
